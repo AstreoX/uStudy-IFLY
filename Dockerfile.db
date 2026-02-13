@@ -1,6 +1,5 @@
 # PostgreSQL + pgvector 数据库
-# 使用阿里云镜像源
-FROM registry.cn-hangzhou.aliyuncs.com/library/postgres:16
+FROM postgres:16
 
 # 安装 pgvector 扩展（通过 apt 仓库）
 RUN apt-get update \
