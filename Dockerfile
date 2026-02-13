@@ -16,7 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 复制依赖文件
 COPY requirements.txt .
 
-# 安装 Python 依赖（使用阿里云镜像）
+# 先安装 CPU 版本的 PyTorch（避免下载 2GB+ 的 CUDA 版本）
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# 安装其他 Python 依赖（使用阿里云镜像）
 RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
 # 复制应用代码
