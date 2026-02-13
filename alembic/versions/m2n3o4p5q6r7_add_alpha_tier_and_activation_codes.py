@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     # 1. Add ALPHA to subscriptiontier enum
     op.execute("COMMIT")
-    op.execute("ALTER TYPE subscriptiontier ADD VALUE IF NOT EXISTS 'alpha'")
+    op.execute("ALTER TYPE subscriptiontier ADD VALUE IF NOT EXISTS 'ALPHA'")
 
     # 2. Create activation_codes table
     op.execute("BEGIN")
