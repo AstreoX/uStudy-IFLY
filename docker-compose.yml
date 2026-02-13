@@ -1,9 +1,9 @@
-version: "3.8"
-
 services:
   # PostgreSQL + pgvector 数据库
   db:
-    image: pgvector/pgvector:pg16
+    build:
+      context: .
+      dockerfile: Dockerfile.db
     container_name: ustudy-db
     restart: unless-stopped
     environment:

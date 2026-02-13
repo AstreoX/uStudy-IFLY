@@ -1,0 +1,11 @@
+# 使用 PostgreSQL 官方镜像
+FROM postgres:16
+
+# 安装 pgvector 扩展（通过 apt 仓库）
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        postgresql-16-pgvector \
+    && rm -rf /var/lib/apt/lists/*
+
+# 创建初始化脚本，自动启用 pgvector 扩展
+RUN echo "CREATE EXTENSION IF NOT EXISTS vector;" > /docker-entrypoint-initdb.d/init-pgvector.sql
