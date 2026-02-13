@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import UUID
 
 
@@ -25,9 +26,15 @@ def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     # 2. Create ProcessingStatus enum
-    op.execute(
-        "CREATE TYPE processingstatus AS ENUM ('pending', 'processing', 'completed', 'failed')"
+    processing_status_enum = postgresql.ENUM(
+        "pending",
+        "processing",
+        "completed",
+        "failed",
+        name="processingstatus",
+        create_type=False,
     )
+    processing_status_enum.create(op.get_bind(), checkfirst=True)
 
     # 3. Create document_processing_tasks table
     op.create_table(
@@ -36,7 +43,7 @@ def upgrade() -> None:
         sa.Column("document_id", UUID(as_uuid=True), nullable=False),
         sa.Column(
             "status",
-            sa.Enum(
+            postgresql.ENUM(
                 "pending",
                 "processing",
                 "completed",
