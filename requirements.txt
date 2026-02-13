@@ -1,0 +1,48 @@
+# Web 框架
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# 数据库（后续步骤使用）
+sqlalchemy[asyncio]>=2.0.25
+asyncpg>=0.29.0
+alembic>=1.13.0
+
+# 配置
+python-dotenv>=1.0.0
+pydantic[email]>=2.5.0
+pydantic-settings>=2.1.0
+
+# 安全
+bcrypt>=4.0.0
+python-jose[cryptography]>=3.3.0
+resend>=2.0.0
+aiosmtplib>=3.0.0
+tenacity>=8.2.0
+structlog>=24.0.0
+
+# 文件上传
+Pillow>=10.0.0
+python-multipart>=0.0.6
+aiofiles>=23.0.0
+
+# 联网搜索
+ddgs>=9.0.0
+
+# RAG 系统
+PyMuPDF>=1.23.0           # PDF 解析
+python-docx>=1.0.0        # DOCX 解析
+pgvector>=0.2.0           # PostgreSQL 向量扩展
+tiktoken>=0.5.0           # Token 计数
+chardet>=5.0.0            # 编码检测
+sentence-transformers>=2.2.0  # Cross-Encoder 重排序
+
+# 定时任务
+apscheduler>=3.10.0
+
+# 测试
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx>=0.26.0
+testcontainers>=3.7.0
+aiosqlite>=0.19.0  # SQLite 异步驱动（用于测试）
+pytest-cov>=4.1.0  # 测试覆盖率

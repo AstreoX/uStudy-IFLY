@@ -1,0 +1,924 @@
+"""数据库表模型"""
+
+import enum
+from datetime import datetime
+from typing import TYPE_CHECKING, Optional
+from uuid import uuid4
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects.postgresql import ENUM, JSON, JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+try:
+    from pgvector.sqlalchemy import Vector
+except ImportError:
+    # 如果 pgvector 未安装，使用占位符
+    Vector = None
+
+from db.database import Base
+
+if TYPE_CHECKING:
+    pass
+
+
+# ============ 枚举定义 ============
+
+
+class SubscriptionTier(str, enum.Enum):
+    """订阅等级"""
+
+    FREE = "FREE"
+    BASIC = "BASIC"
+    PREMIUM = "PREMIUM"
+    ALPHA = "ALPHA"  # Alpha 内测用户
+
+
+class MessageRole(str, enum.Enum):
+    """消息角色"""
+
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
+class EdgeType(str, enum.Enum):
+    """边类型"""
+
+    KNOWLEDGE_TREE = "knowledge_tree"
+    LEARNING_PATH = "learning_path"
+    ADVANCED = "advanced"
+
+
+class AgentTaskStatus(str, enum.Enum):
+    """Agent 任务状态"""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class AgentTaskType(str, enum.Enum):
+    """Agent 任务类型"""
+
+    GENERATE_KNOWLEDGE_GRAPH = "generate_knowledge_graph"
+    GENERATE_QUIZ = "generate_quiz"
+
+
+class QuestionType(str, enum.Enum):
+    """题目类型"""
+
+    SINGLE_CHOICE = "single_choice"
+    MULTIPLE_CHOICE = "multiple_choice"
+    TRUE_FALSE = "true_false"
+    SHORT_ANSWER = "short_answer"
+
+
+class DocumentType(str, enum.Enum):
+    """文档类型"""
+
+    DOCUMENT = "document"
+    LINK = "link"
+
+
+class AttachmentType(str, enum.Enum):
+    """附件类型"""
+
+    IMAGE = "image"
+    FILE = "file"
+
+
+class DifficultyLevel(str, enum.Enum):
+    """难度级别"""
+
+    EASY = "easy"
+    MEDIUM = "medium"
+    HARD = "hard"
+
+
+class VerificationCodePurpose(str, enum.Enum):
+    """验证码用途"""
+
+    REGISTRATION = "registration"
+    PASSWORD_RESET = "password_reset"
+
+
+class ProcessingStatus(str, enum.Enum):
+    """文档处理状态"""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+# ============ 表模型 ============
+
+
+class User(Base):
+    """用户表"""
+
+    __tablename__ = "users"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    apple_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    nickname: Mapped[str] = mapped_column(String(100), nullable=False)
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    subscription_tier: Mapped[SubscriptionTier] = mapped_column(
+        Enum(SubscriptionTier), default=SubscriptionTier.FREE, nullable=False
+    )
+    subscription_expires_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # 关系
+    spaces: Mapped[list["Space"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    conversations: Mapped[list["Conversation"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+    # 索引
+    __table_args__ = (
+        Index("ix_users_email", "email", unique=True),
+        Index("ix_users_apple_id", "apple_id", unique=True),
+    )
+
+
+class Space(Base):
+    """学习空间表"""
+
+    __tablename__ = "spaces"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    color: Mapped[str] = mapped_column(String(20), nullable=False)
+    learning_preferences: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True, comment="学习偏好设置"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # 关系
+    user: Mapped["User"] = relationship(back_populates="spaces")
+    nodes: Mapped[list["Node"]] = relationship(
+        back_populates="space", cascade="all, delete-orphan"
+    )
+    edges: Mapped[list["Edge"]] = relationship(
+        back_populates="space", cascade="all, delete-orphan"
+    )
+    conversations: Mapped[list["Conversation"]] = relationship(
+        back_populates="space", cascade="all, delete-orphan"
+    )
+    documents: Mapped[list["SpaceDocument"]] = relationship(
+        back_populates="space", cascade="all, delete-orphan"
+    )
+
+    # 索引
+    __table_args__ = (Index("ix_spaces_user_id", "user_id"),)
+
+
+class Conversation(Base):
+    """对话表"""
+
+    __tablename__ = "conversations"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    space_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # 关系
+    user: Mapped["User"] = relationship(back_populates="conversations")
+    space: Mapped[Optional["Space"]] = relationship(back_populates="conversations")
+    messages: Mapped[list["Message"]] = relationship(
+        back_populates="conversation", cascade="all, delete-orphan"
+    )
+
+    # 索引
+    __table_args__ = (
+        Index("ix_conversations_user_created", "user_id", "created_at"),
+        Index("ix_conversations_space_id", "space_id"),
+    )
+
+
+class Message(Base):
+    """消息表"""
+
+    __tablename__ = "messages"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    conversation_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    role: Mapped[MessageRole] = mapped_column(Enum(MessageRole), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    llm_context: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Complete LLM API request/response context for debugging and feedback",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        default=func.now(), nullable=False
+    )
+
+    # 关系
+    conversation: Mapped["Conversation"] = relationship(back_populates="messages")
+    attachments: Mapped[list["MessageAttachment"]] = relationship(
+        back_populates="message", cascade="all, delete-orphan"
+    )
+
+    # 索引
+    __table_args__ = (
+        Index("ix_messages_conversation_created", "conversation_id", "created_at"),
+    )
+
+
+class MessageAttachment(Base):
+    """消息附件表"""
+
+    __tablename__ = "message_attachments"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    message_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("messages.id", ondelete="CASCADE"),
+        nullable=True,  # 可为空，支持孤儿附件
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    attachment_type: Mapped[AttachmentType] = mapped_column(
+        ENUM("image", "file", name="attachmenttype", create_type=False), nullable=False
+    )
+
+    # 文件信息
+    file_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    # 图片特定字段
+    width: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    height: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    thumbnail_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # 文件内容提取字段
+    extracted_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    extraction_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # metadata 格式: {
+    #   "extracted_at": "ISO timestamp",
+    #   "token_count": int,
+    #   "truncated": bool,
+    #   "extraction_error": str | None
+    # }
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    message: Mapped[Optional["Message"]] = relationship(back_populates="attachments")
+    user: Mapped["User"] = relationship()
+
+    # 索引
+    __table_args__ = (
+        Index("ix_message_attachments_message_id", "message_id"),
+        Index("ix_message_attachments_user_id", "user_id"),
+        Index("ix_message_attachments_created_at", "created_at"),
+    )
+
+
+class Node(Base):
+    """知识节点表"""
+
+    __tablename__ = "nodes"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    mastery: Mapped[Optional[int]] = mapped_column(Integer, default=None, nullable=True)
+
+    # 关系
+    space: Mapped["Space"] = relationship(back_populates="nodes")
+
+    # 索引和约束
+    __table_args__ = (
+        Index("ix_nodes_space_id", "space_id"),
+        UniqueConstraint("space_id", "label", name="uq_nodes_space_label"),
+        CheckConstraint(
+            "mastery IS NULL OR (mastery >= 0 AND mastery <= 100)",
+            name="ck_nodes_mastery_range",
+        ),
+    )
+
+
+class Edge(Base):
+    """知识边表"""
+
+    __tablename__ = "edges"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    from_node_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("nodes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    to_node_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("nodes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    type: Mapped[EdgeType] = mapped_column(Enum(EdgeType), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        default=func.now(), nullable=False
+    )
+
+    # 关系
+    space: Mapped["Space"] = relationship(back_populates="edges")
+    from_node: Mapped["Node"] = relationship(foreign_keys=[from_node_id])
+    to_node: Mapped["Node"] = relationship(foreign_keys=[to_node_id])
+
+    # 索引和约束
+    __table_args__ = (
+        Index("ix_edges_space_id", "space_id"),
+        Index("ix_edges_from_node", "from_node_id"),
+        Index("ix_edges_to_node", "to_node_id"),
+        UniqueConstraint(
+            "space_id", "from_node_id", "to_node_id", "type", name="uq_edges_unique"
+        ),
+    )
+
+
+class VerificationCode(Base):
+    """邮箱验证码表"""
+
+    __tablename__ = "verification_codes"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(20), nullable=False)
+    purpose: Mapped[VerificationCodePurpose] = mapped_column(
+        Enum(VerificationCodePurpose), nullable=False
+    )
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_verification_email_purpose", "email", "purpose"),
+    )
+
+
+class RefreshToken(Base):
+    """Refresh Token 表（轮换机制）"""
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    device_info: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    replaced_by: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+
+    user: Mapped["User"] = relationship(back_populates="refresh_tokens")
+
+    __table_args__ = (
+        Index("ix_refresh_tokens_user_id", "user_id"),
+        Index("ix_refresh_tokens_token_hash", "token_hash"),
+    )
+
+
+class AgentTask(Base):
+    """Agent 异步任务表"""
+
+    __tablename__ = "agent_tasks"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    conversation_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    task_type: Mapped[AgentTaskType] = mapped_column(
+        Enum(AgentTaskType), nullable=False
+    )
+    status: Mapped[AgentTaskStatus] = mapped_column(
+        Enum(AgentTaskStatus), default=AgentTaskStatus.PENDING, nullable=False
+    )
+    input_data: Mapped[dict] = mapped_column(JSON, nullable=False)
+    output_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # 关系
+    user: Mapped["User"] = relationship()
+    space: Mapped["Space"] = relationship()
+    conversation: Mapped[Optional["Conversation"]] = relationship()
+
+    # 索引
+    __table_args__ = (
+        Index("ix_agent_tasks_user_id", "user_id"),
+        Index("ix_agent_tasks_space_id", "space_id"),
+        Index("ix_agent_tasks_status", "status"),
+    )
+
+
+class Quiz(Base):
+    """测试表"""
+
+    __tablename__ = "quizzes"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    agent_task_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_tasks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    topic: Mapped[str] = mapped_column(String(500), nullable=False)
+    difficulty: Mapped[DifficultyLevel] = mapped_column(
+        Enum(DifficultyLevel, values_callable=lambda x: [e.value for e in x]),
+        default=DifficultyLevel.MEDIUM,
+        nullable=False,
+    )
+    total_questions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    space: Mapped["Space"] = relationship()
+    agent_task: Mapped[Optional["AgentTask"]] = relationship()
+    questions: Mapped[list["Question"]] = relationship(
+        back_populates="quiz", cascade="all, delete-orphan"
+    )
+
+    # 索引
+    __table_args__ = (
+        Index("ix_quizzes_space_id", "space_id"),
+        Index("ix_quizzes_agent_task_id", "agent_task_id"),
+    )
+
+
+class Question(Base):
+    """题目表"""
+
+    __tablename__ = "questions"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    quiz_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("quizzes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    question_type: Mapped[QuestionType] = mapped_column(
+        Enum(QuestionType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
+    question_stem: Mapped[str] = mapped_column(Text, nullable=False)
+    options: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    correct_answer: Mapped[dict] = mapped_column(JSON, nullable=False)
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    quiz: Mapped["Quiz"] = relationship(back_populates="questions")
+
+    # 索引
+    __table_args__ = (
+        Index("ix_questions_quiz_id", "quiz_id"),
+    )
+
+
+class QuizAttempt(Base):
+    """测试作答记录表"""
+
+    __tablename__ = "quiz_attempts"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    quiz_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("quizzes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    # 评估结果
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    strengths: Mapped[list] = mapped_column(JSON, nullable=False)
+    weaknesses: Mapped[list] = mapped_column(JSON, nullable=False)
+    suggestions: Mapped[list] = mapped_column(JSON, nullable=False)
+    question_results: Mapped[list] = mapped_column(JSON, nullable=False)
+    debug_info: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    quiz: Mapped["Quiz"] = relationship()
+    user: Mapped["User"] = relationship()
+
+    # 索引和约束
+    __table_args__ = (
+        Index("ix_quiz_attempts_quiz_id", "quiz_id"),
+        Index("ix_quiz_attempts_user_id", "user_id"),
+        UniqueConstraint("quiz_id", "user_id", name="uq_quiz_attempt_once"),
+    )
+
+
+class SpaceDocument(Base):
+    """学习空间文档/链接表"""
+
+    __tablename__ = "space_documents"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    doc_type: Mapped[DocumentType] = mapped_column(
+        Enum(DocumentType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    original_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    mime_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    space: Mapped["Space"] = relationship(back_populates="documents")
+    processing_task: Mapped[Optional["DocumentProcessingTask"]] = relationship(
+        back_populates="document", uselist=False, cascade="all, delete-orphan"
+    )
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
+
+    # 索引
+    __table_args__ = (
+        Index("ix_space_documents_space_id", "space_id"),
+    )
+
+
+# ============ RAG 相关表 ============
+
+
+class DocumentProcessingTask(Base):
+    """文档处理任务表"""
+
+    __tablename__ = "document_processing_tasks"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("space_documents.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    status: Mapped[ProcessingStatus] = mapped_column(
+        Enum(ProcessingStatus), default=ProcessingStatus.PENDING, nullable=False
+    )
+    chunk_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    document: Mapped["SpaceDocument"] = relationship(back_populates="processing_task")
+
+    # 索引
+    __table_args__ = (
+        Index("ix_doc_processing_document_id", "document_id"),
+        Index("ix_doc_processing_status", "status"),
+    )
+
+
+class DocumentChunk(Base):
+    """文档切片向量存储表"""
+
+    __tablename__ = "document_chunks"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("space_documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[Optional[list]] = mapped_column(Vector(1536), nullable=True)
+    token_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    chunk_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    document: Mapped["SpaceDocument"] = relationship(back_populates="chunks")
+    space: Mapped["Space"] = relationship()
+
+    # 索引（embedding 索引将在迁移中单独创建）
+    __table_args__ = (
+        Index("ix_document_chunks_document_id", "document_id"),
+        Index("ix_document_chunks_space_id", "space_id"),
+    )
+
+
+class LongTermMemory(Base):
+    """用户长期记忆表"""
+
+    __tablename__ = "long_term_memories"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,  # 每用户一条记录
+    )
+    # JSONB 数组存储条目：[{"id": 1, "content": "...", "created_at": "..."}]
+    entries: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # 自增序号计数器
+    next_entry_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # 关系
+    user: Mapped["User"] = relationship()
+
+    # 索引
+    __table_args__ = (
+        Index("ix_long_term_memories_user_id", "user_id"),
+    )
+
+
+class SpaceMemory(Base):
+    """学习空间记忆表"""
+
+    __tablename__ = "space_memories"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,  # 每空间一条记录
+    )
+    # JSONB 数组存储条目：[{"id": 1, "content": "...", "created_at": "..."}]
+    entries: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # 自增序号计数器
+    next_entry_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # 关系
+    space: Mapped["Space"] = relationship()
+
+    # 索引
+    __table_args__ = (
+        Index("ix_space_memories_space_id", "space_id"),
+    )
+
+
+# ============ 激活码相关表 ============
+
+
+class ActivationCode(Base):
+    """激活码表"""
+
+    __tablename__ = "activation_codes"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    used_by: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    used_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    validity_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    user: Mapped[Optional["User"]] = relationship()
+
+    # 索引
+    __table_args__ = (
+        Index("ix_activation_codes_code", "code", unique=True),
+        Index("ix_activation_codes_used_by", "used_by"),
+    )
+
+
+class PendingClientToolRequest(Base):
+    """客户端工具请求表 — 跨 worker 共享待处理的客户端工具请求"""
+
+    __tablename__ = "pending_client_tool_requests"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    conversation_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    tool_call_id: Mapped[str] = mapped_column(
+        String(100), nullable=False, unique=True
+    )
+    tool_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    params: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending"
+    )  # pending / completed / timeout
+    result_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # 关系
+    conversation: Mapped["Conversation"] = relationship()
+
+    # 索引
+    __table_args__ = (
+        Index("ix_pending_client_tool_requests_conv_id", "conversation_id"),
+        Index("ix_pending_client_tool_requests_tool_call_id", "tool_call_id", unique=True),
+        Index("ix_pending_client_tool_requests_status", "status"),
+    )
