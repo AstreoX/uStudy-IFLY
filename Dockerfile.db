@@ -1,7 +1,10 @@
 # PostgreSQL + pgvector 数据库
 FROM postgres:16
 
-# 安装 pgvector 扩展（通过 apt 仓库）
+# 配置国内 apt 镜像源（阿里云）
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
+
+# 安装 pgvector 扩展
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         postgresql-16-pgvector \
