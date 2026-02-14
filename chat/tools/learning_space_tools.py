@@ -109,6 +109,10 @@ TOOL_METADATA: dict[str, dict[str, Any]] = {
         "requires_confirmation": True,
         "display_name": "创建学习空间",
     },
+    "get_current_time": {
+        "requires_confirmation": False,
+        "display_name": "查看当前时间",
+    },
 }
 
 

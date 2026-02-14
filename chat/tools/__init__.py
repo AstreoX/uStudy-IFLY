@@ -13,6 +13,7 @@ from chat.tools.memory_tools import MEMORY_TOOLS, MEMORY_TOOL_NAMES
 from chat.tools.memory_executor import MemoryToolExecutor, format_memory_for_prompt
 from chat.tools.space_memory_tools import SPACE_MEMORY_TOOLS, SPACE_MEMORY_TOOL_NAMES
 from chat.tools.space_memory_executor import SpaceMemoryToolExecutor, format_space_memory_for_prompt
+from chat.tools.time_tools import TIME_TOOLS, TIME_TOOL_NAMES, TIME_TOOL_METADATA, TimeToolExecutor
 
 __all__ = [
     "ToolResult",
@@ -31,4 +32,8 @@ __all__ = [
     "SPACE_MEMORY_TOOL_NAMES",
     "SpaceMemoryToolExecutor",
     "format_space_memory_for_prompt",
+    "TIME_TOOLS",
+    "TIME_TOOL_NAMES",
+    "TIME_TOOL_METADATA",
+    "TimeToolExecutor",
 ]

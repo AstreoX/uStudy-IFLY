@@ -28,6 +28,7 @@ from chat.tools.rag_tools import RAG_TOOLS, RAGToolExecutor
 from chat.tools.client_tool_bridge import create_pending_request, wait_for_result
 from chat.tools.schedule_tools import SCHEDULE_TOOLS
 from chat.tools.web_tools import WEB_TOOLS, WebToolExecutor
+from chat.tools.time_tools import TIME_TOOLS, TIME_TOOL_NAMES, TimeToolExecutor
 from db.database import get_scoped_session
 from db.models import LongTermMemory, SpaceMemory
 from config import get_settings
@@ -85,9 +86,10 @@ class QuickChatOrchestrator:
             user_id, conversation_id
         )
         self.memory_tool_executor = MemoryToolExecutor(user_id)
+        self.time_tool_executor = TimeToolExecutor()
 
-        # Available tools for quick chat (learning space + memory)
-        self.available_tools = LEARNING_SPACE_TOOLS + MEMORY_TOOLS
+        # Available tools for quick chat (learning space + memory + time)
+        self.available_tools = LEARNING_SPACE_TOOLS + MEMORY_TOOLS + TIME_TOOLS
 
     async def process_message(
         self,
@@ -257,6 +259,11 @@ class QuickChatOrchestrator:
                             tool_call.name,
                             tool_call.arguments,
                         )
+                    elif tool_call.name in TIME_TOOL_NAMES:
+                        tool_result = await self.time_tool_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
                     else:
                         tool_result = await self.tool_executor.execute(
                             tool_call.name,
@@ -418,9 +425,10 @@ class LLMOrchestrator:
         self.rag_tool_executor = RAGToolExecutor(space_id)
         self.memory_tool_executor = MemoryToolExecutor(user_id)
         self.space_memory_executor = SpaceMemoryToolExecutor(space_id)
+        self.time_tool_executor = TimeToolExecutor()
 
-        # Combined tools list for learning space mode (including memory and space memory tools)
-        self.available_tools = GRAPH_TOOLS + QUIZ_GENERATION_TOOLS + WEB_TOOLS + SCHEDULE_TOOLS + RAG_TOOLS + MEMORY_TOOLS + SPACE_MEMORY_TOOLS
+        # Combined tools list for learning space mode (including memory, space memory, and time tools)
+        self.available_tools = GRAPH_TOOLS + QUIZ_GENERATION_TOOLS + WEB_TOOLS + SCHEDULE_TOOLS + RAG_TOOLS + MEMORY_TOOLS + SPACE_MEMORY_TOOLS + TIME_TOOLS
 
         # Tool name to executor mapping
         self._quiz_tool_names = {"generate_test"}
@@ -429,6 +437,7 @@ class LLMOrchestrator:
         self._rag_tool_names = {"search_documents"}
         self._memory_tool_names = MEMORY_TOOL_NAMES
         self._space_memory_tool_names = SPACE_MEMORY_TOOL_NAMES
+        self._time_tool_names = TIME_TOOL_NAMES
 
     async def process_message(
         self,
@@ -610,6 +619,11 @@ class LLMOrchestrator:
                         )
                     elif tool_call.name in self._space_memory_tool_names:
                         tool_result = await self.space_memory_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
+                    elif tool_call.name in self._time_tool_names:
+                        tool_result = await self.time_tool_executor.execute(
                             tool_call.name,
                             tool_call.arguments,
                         )
