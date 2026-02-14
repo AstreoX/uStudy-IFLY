@@ -396,13 +396,17 @@ class ChatService:
         async for event in orchestrator.process_message(
             current_message_dict, llm_history
         ):
-            yield event
-
             if event["event"] == "text_delta":
                 full_response += event["data"].get("content", "")
+                yield event
             elif event["event"] == "done":
                 full_response = event["data"].get("content", full_response)
                 llm_context = event["data"].get("llm_context")
+                # Strip llm_context from SSE payload (client doesn't need it,
+                # and it can be 50-100KB+ causing the done event to never arrive)
+                yield {"event": "done", "data": {"content": full_response}}
+            else:
+                yield event
 
         # === Phase 3: Save (short-lived DB session) ===
         if full_response:
@@ -800,13 +804,17 @@ class ChatService:
         async for event in orchestrator.process_message(
             current_message_dict, llm_history
         ):
-            yield event
-
             if event["event"] == "text_delta":
                 full_response += event["data"].get("content", "")
+                yield event
             elif event["event"] == "done":
                 full_response = event["data"].get("content", full_response)
                 llm_context = event["data"].get("llm_context")
+                # Strip llm_context from SSE payload (client doesn't need it,
+                # and it can be 50-100KB+ causing the done event to never arrive)
+                yield {"event": "done", "data": {"content": full_response}}
+            else:
+                yield event
 
         # === Phase 3: Save (short-lived DB session) ===
         if full_response:
