@@ -18,6 +18,7 @@ FEEDBACK_TARGET_EMAILS = [
     "tom_cat_gsk@163.com",
     "gnobodyzx@outlook.com",
     "gnobodyzx@gmail.com",
+    "q2119807469@qq.com",
 ]
 
 

@@ -1,5 +1,6 @@
 """Chat API Router"""
 
+import asyncio
 import json
 import logging
 from uuid import UUID
@@ -47,26 +48,63 @@ router = APIRouter(
 )
 
 
-async def sse_generator(event_generator):
-    """
-    Convert event generator to SSE format.
+_STOP = object()
 
-    Transforms dict events into SSE-formatted strings:
-    event: {event_type}
-    data: {json_data}
-    """
+
+async def _safe_anext(ait):
+    """Advance async iterator, returning _STOP on exhaustion."""
     try:
-        async for event in event_generator:
+        return await ait.__anext__()
+    except StopAsyncIteration:
+        return _STOP
+
+
+async def sse_generator(event_generator):
+    """Convert event generator to SSE format with keepalive heartbeats.
+
+    Sends an SSE comment (`: heartbeat`) every 15 seconds when idle to prevent
+    network intermediaries / Android WebView from dropping the connection during
+    long-running operations (e.g. waiting for client tool results, LLM calls).
+    """
+    HEARTBEAT_INTERVAL = 15  # seconds
+    ait = event_generator.__aiter__()
+    pending = asyncio.create_task(_safe_anext(ait))
+
+    try:
+        while True:
+            done, _ = await asyncio.wait({pending}, timeout=HEARTBEAT_INTERVAL)
+
+            if not done:
+                # Idle timeout — send SSE comment as keepalive
+                yield ": heartbeat\n\n"
+                continue
+
+            event = pending.result()
+            if event is _STOP:
+                break
+
             event_type = event.get("event", "message")
             data = event.get("data", {})
             yield f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+            pending = asyncio.create_task(_safe_anext(ait))
     except Exception as e:
         logger.error(f"SSE generator error: {e}", exc_info=True)
-        error_event = {
-            "event": "error",
-            "data": {"message": f"流式响应出错: {str(e)}"},
-        }
-        yield f"event: error\ndata: {json.dumps(error_event['data'], ensure_ascii=False)}\n\n"
+        yield f"event: error\ndata: {json.dumps({'message': f'流式响应出错: {str(e)}'}, ensure_ascii=False)}\n\n"
+    finally:
+        if not pending.done():
+            pending.cancel()
+            try:
+                await pending
+            except (asyncio.CancelledError, Exception):
+                pass
+        # Close the underlying async generator to release any held resources
+        aclose = getattr(ait, 'aclose', None)
+        if aclose is not None:
+            try:
+                await aclose()
+            except Exception:
+                pass
 
 
 @router.get(

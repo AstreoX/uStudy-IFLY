@@ -9,7 +9,7 @@ Workflow:
 
 Cross-worker strategy:
 - asyncio.Event works when SSE stream and POST hit the same worker (common case).
-- DB polling (500 ms) serves as fallback for cross-worker scenarios.
+- DB polling (2 s) interleaved with Event waiting handles cross-worker scenarios.
 """
 
 import asyncio
@@ -118,37 +118,50 @@ async def submit_tool_result(
 async def wait_for_result(
     tool_call_id: str,
     timeout: float = 60.0,
-    poll_interval: float = 0.5,
+    poll_interval: float = 2.0,
 ) -> ToolResult:
     """Wait for the client to submit the tool result.
 
-    Strategy:
-    1. Wait on the in-memory asyncio.Event (fast, same-worker).
-    2. If Event doesn't fire within timeout, fall back to DB polling.
-    3. If nothing arrives by timeout, return a timeout error ToolResult.
+    Strategy: interleave Event waiting with DB polling so that cross-worker
+    scenarios are resolved within *poll_interval* seconds instead of waiting
+    the full timeout.  Same-worker hits still resolve instantly via Event.
     """
     event = _pending_events.get(tool_call_id)
+    start = time.monotonic()
 
-    if event is not None:
-        try:
-            await asyncio.wait_for(event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            pass  # Fall through to DB check
-        finally:
-            _pending_events.pop(tool_call_id, None)
+    try:
+        while True:
+            elapsed = time.monotonic() - start
+            remaining = timeout - elapsed
+            if remaining <= 0:
+                break
 
-        # Check DB for result (Event may have been set)
-        row = await _fetch_completed_row(tool_call_id)
-        if row is not None:
-            return _row_to_tool_result(row)
-    else:
-        # Cross-worker: no local event, poll DB
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
+            wait_time = min(poll_interval, remaining)
+
+            if event is not None:
+                try:
+                    await asyncio.wait_for(event.wait(), timeout=wait_time)
+                    break  # Event was set — same-worker fast path
+                except asyncio.TimeoutError:
+                    # Race: event may have been set in the same tick the
+                    # timeout fired; asyncio.wait_for can raise TimeoutError
+                    # even if the inner coroutine completed.
+                    if event.is_set():
+                        break
+            else:
+                await asyncio.sleep(wait_time)
+
+            # Check DB (handles cross-worker case)
             row = await _fetch_completed_row(tool_call_id)
             if row is not None:
                 return _row_to_tool_result(row)
-            await asyncio.sleep(poll_interval)
+    finally:
+        _pending_events.pop(tool_call_id, None)
+
+    # Final DB check after event set or loop exit
+    row = await _fetch_completed_row(tool_call_id)
+    if row is not None:
+        return _row_to_tool_result(row)
 
     # Timeout — mark row as timeout in DB
     await _mark_timeout(tool_call_id)
