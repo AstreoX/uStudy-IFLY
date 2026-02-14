@@ -1,0 +1,513 @@
+<template>
+  <view class="settings-page">
+    <!-- Navigation Bar -->
+    <view class="settings-nav-bar">
+      <view class="nav-left" @click="goBack">
+        <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
+      </view>
+      <text class="nav-title">学习空间设置</text>
+      <view class="nav-right-placeholder"></view>
+    </view>
+
+    <!-- Content -->
+    <view class="content-area">
+      <!-- Settings Section -->
+      <view class="settings-section">
+        <view class="settings-card">
+          <view class="settings-item">
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/brain.svg" mode="aspectFit"></image>
+            <text class="item-label">记忆共享</text>
+            <switch class="item-switch" :checked="memorySharing" @change="onMemorySharingChange" color="#22C55E" />
+          </view>
+
+          <view class="settings-divider"></view>
+
+          <view class="settings-item" @click="handleChatHistory">
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/chats.svg" mode="aspectFit"></image>
+            <text class="item-label">对话记录</text>
+            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+          </view>
+
+          <view class="settings-divider"></view>
+
+          <view class="settings-item" @click="handleKnowledgeBase">
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/books.svg" mode="aspectFit"></image>
+            <text class="item-label">知识库管理</text>
+            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+          </view>
+
+          <view class="settings-divider"></view>
+
+          <view class="settings-item" @click="handleTestManagement">
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/exam.svg" mode="aspectFit"></image>
+            <text class="item-label">测试管理</text>
+            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+          </view>
+        </view>
+      </view>
+
+      <!-- Color Scheme Section -->
+      <view class="color-section">
+        <text class="section-label">卡片配色</text>
+        <view class="color-picker-card">
+          <view class="color-swatches">
+            <view
+              v-for="scheme in colorSchemes"
+              :key="scheme.hex"
+              class="color-swatch"
+              :class="{ 'swatch-selected': isColorSelected(scheme.hex), 'swatch-loading': isUpdatingColor && pendingColor === scheme.hex }"
+              :style="{ background: scheme.gradient }"
+              @click="selectColor(scheme.hex)"
+            >
+              <view v-if="isColorSelected(scheme.hex)" class="swatch-check">
+                <image class="check-icon" src="/static/icons/phosphor-icons/SVGs/bold/check.svg" mode="aspectFit"></image>
+              </view>
+              <view v-if="isUpdatingColor && pendingColor === scheme.hex" class="swatch-loading-indicator"></view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- Danger Zone -->
+      <view class="danger-section">
+        <view class="danger-card" @click="handleDeleteSpace">
+          <image class="danger-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit"></image>
+          <text class="danger-label">删除该学习空间</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- Delete Confirmation Modal -->
+    <u-modal
+      :visible="showDeleteModal"
+      title="删除学习空间"
+      :content="deleteModalContent"
+      confirm-text="删除"
+      confirm-type="danger"
+      @confirm="doDeleteSpace"
+      @close="showDeleteModal = false"
+    />
+
+    <!-- Toast -->
+    <u-toast
+      :visible="toast.visible"
+      :message="toast.message"
+      :type="toast.type"
+      @close="toast.visible = false"
+    />
+  </view>
+</template>
+
+<script>
+import { deleteSpace, getSpace, updateSpace } from '@/api/space'
+import UModal from '@/components/u-modal/u-modal.vue'
+import UToast from '@/components/u-toast/u-toast.vue'
+
+export default {
+  components: {
+    UModal,
+    UToast
+  },
+
+  data() {
+    return {
+      spaceId: '',
+      spaceName: '',
+      memorySharing: false,
+      showDeleteModal: false,
+      isDeleting: false,
+      toast: {
+        visible: false,
+        message: '',
+        type: 'info'
+      },
+      colorSchemes: [
+        { hex: '#0F6FFF', gradient: 'linear-gradient(to bottom right, #0F6FFF 0%, #B1DD8B 100%)' },
+        { hex: '#A18CD1', gradient: 'linear-gradient(to bottom right, #A18CD1 0%, #FBC2EB 100%)' },
+        { hex: '#FA709A', gradient: 'linear-gradient(to bottom right, #FA709A 0%, #FEE140 100%)' },
+        { hex: '#84FAB0', gradient: 'linear-gradient(to bottom right, #84FAB0 0%, #38F9D7 100%)' },
+        { hex: '#F43B37', gradient: 'linear-gradient(to bottom right, #F43B37 0%, #453A94 100%)' }
+      ],
+      currentColor: '',
+      isUpdatingColor: false,
+      pendingColor: ''
+    }
+  },
+
+  computed: {
+    deleteModalContent() {
+      return `确定要删除「${this.spaceName}」吗？此操作不可恢复，所有学习记录、知识图谱和对话记录将被永久删除。`
+    }
+  },
+
+  onLoad(options) {
+    this.spaceId = options.id || ''
+    this.spaceName = options.name ? decodeURIComponent(options.name) : '该学习空间'
+    this.currentColor = options.color ? decodeURIComponent(options.color) : ''
+
+    if (!this.currentColor && this.spaceId) {
+      this.loadSpaceColor()
+    }
+  },
+
+  methods: {
+    showCustomToast(message, type = 'info') {
+      this.toast = { visible: true, message, type }
+    },
+
+    async loadSpaceColor() {
+      try {
+        const space = await getSpace(this.spaceId)
+        this.currentColor = space.color || '#0F6FFF'
+      } catch (error) {
+        this.currentColor = '#0F6FFF'
+      }
+    },
+
+    isColorSelected(hex) {
+      return this.currentColor.toUpperCase() === hex.toUpperCase()
+    },
+
+    async selectColor(hex) {
+      if (!this.spaceId || this.isColorSelected(hex) || this.isUpdatingColor) return
+
+      this.isUpdatingColor = true
+      this.pendingColor = hex
+
+      try {
+        await updateSpace(this.spaceId, { color: hex })
+        this.currentColor = hex
+        this.showCustomToast('配色已更新', 'success')
+      } catch (error) {
+        this.showCustomToast(error.message || '更新失败，请重试', 'error')
+      } finally {
+        this.isUpdatingColor = false
+        this.pendingColor = ''
+      }
+    },
+
+    goBack() {
+      const pages = getCurrentPages()
+      if (pages.length > 1) {
+        uni.navigateBack({ delta: 1 })
+      } else {
+        uni.reLaunch({ url: '/pages/index/index' })
+      }
+    },
+
+    onMemorySharingChange(e) {
+      this.memorySharing = e.detail.value
+    },
+
+    handleChatHistory() {
+      uni.navigateTo({
+        url: `/pages/chatHistory/chatHistory?spaceId=${this.spaceId}&spaceName=${encodeURIComponent(this.spaceName)}`
+      })
+    },
+
+    handleKnowledgeBase() {
+      uni.navigateTo({
+        url: `/pages/knowledgeBase/knowledgeBase?spaceId=${this.spaceId}&spaceName=${encodeURIComponent(this.spaceName)}`
+      })
+    },
+
+    handleTestManagement() {
+      uni.navigateTo({
+        url: `/pages/quizList/quizList?spaceId=${this.spaceId}&spaceName=${encodeURIComponent(this.spaceName)}`
+      })
+    },
+
+    handleDeleteSpace() {
+      this.showDeleteModal = true
+    },
+
+    async doDeleteSpace() {
+      if (this.isDeleting) return
+      this.isDeleting = true
+
+      try {
+        await deleteSpace(this.spaceId)
+        this.showDeleteModal = false
+        this.showCustomToast('学习空间已删除', 'success')
+
+        setTimeout(() => {
+          uni.reLaunch({ url: '/pages/index/index' })
+        }, 1000)
+      } catch (error) {
+        this.showCustomToast(error.message || '删除失败，请重试', 'error')
+      } finally {
+        this.isDeleting = false
+      }
+    }
+  }
+}
+</script>
+
+<style>
+.settings-page {
+  width: 100%;
+  min-height: 100vh;
+  background-color: rgb(10, 10, 10);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Navigation Bar */
+.settings-nav-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding-top: calc(100vh * 1.5 / 26);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: calc(100vw / 24);
+  padding-right: calc(100vw / 24);
+}
+
+.nav-left {
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.06);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  outline: 1rpx solid rgba(255, 255, 255, 0.04);
+  outline-offset: 1rpx;
+  box-shadow:
+    inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
+    0 2rpx 12rpx rgba(0, 0, 0, 0.25);
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .nav-left {
+    background: rgba(80, 80, 95, 0.65);
+  }
+}
+
+.nav-right-placeholder {
+  width: 72rpx;
+  height: 72rpx;
+}
+
+.nav-icon {
+  width: 48rpx;
+  height: 48rpx;
+  filter: brightness(0) invert(1);
+}
+
+.nav-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+/* Content Area */
+.content-area {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  padding-top: calc(100vh * 3.5 / 26);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Settings Section */
+.settings-section {
+  margin: 0 calc(100vw / 24);
+}
+
+.settings-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1rpx solid rgba(255, 255, 255, 0.15);
+  border-radius: 24rpx;
+  overflow: hidden;
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .settings-card {
+    background: rgba(80, 80, 95, 0.65);
+  }
+}
+
+.settings-item {
+  display: flex;
+  align-items: center;
+  padding: 32rpx;
+}
+
+.settings-item:active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.item-icon {
+  width: 44rpx;
+  height: 44rpx;
+  margin-right: 24rpx;
+  filter: brightness(0) invert(1);
+}
+
+.item-label {
+  flex: 1;
+  font-size: 32rpx;
+  color: #ffffff;
+}
+
+.item-arrow {
+  width: 32rpx;
+  height: 32rpx;
+  filter: brightness(0) invert(1);
+  opacity: 0.4;
+}
+
+.item-switch {
+  transform: scale(0.85);
+}
+
+.settings-divider {
+  height: 1rpx;
+  background: rgba(255, 255, 255, 0.1);
+  margin-left: 100rpx;
+}
+
+/* Danger Section */
+.danger-section {
+  margin: 48rpx calc(100vw / 24) 0;
+}
+
+.danger-card {
+  display: flex;
+  align-items: center;
+  padding: 32rpx;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1rpx solid rgba(239, 68, 68, 0.3);
+  border-radius: 24rpx;
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .danger-card {
+    background: rgba(239, 68, 68, 0.25);
+  }
+}
+
+.danger-card:active {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.danger-icon {
+  width: 44rpx;
+  height: 44rpx;
+  margin-right: 24rpx;
+  filter: invert(47%) sepia(82%) saturate(2476%) hue-rotate(332deg) brightness(97%) contrast(92%);
+}
+
+.danger-label {
+  flex: 1;
+  font-size: 32rpx;
+  color: #EF4444;
+  font-weight: 500;
+}
+
+/* Color Scheme Section */
+.color-section {
+  margin: 32rpx calc(100vw / 24) 0;
+}
+
+.section-label {
+  display: block;
+  font-size: 28rpx;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 16rpx;
+  padding-left: 8rpx;
+}
+
+.color-picker-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1rpx solid rgba(255, 255, 255, 0.15);
+  border-radius: 24rpx;
+  padding: 24rpx;
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .color-picker-card {
+    background: rgba(80, 80, 95, 0.65);
+  }
+}
+
+.color-swatches {
+  display: flex;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.color-swatch {
+  flex: 1;
+  aspect-ratio: 1;
+  border-radius: 16rpx;
+  position: relative;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border: 3rpx solid transparent;
+}
+
+.color-swatch:active {
+  transform: scale(0.95);
+}
+
+.swatch-selected {
+  border-color: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 0 20rpx rgba(255, 255, 255, 0.3);
+}
+
+.swatch-check {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40rpx;
+  height: 40rpx;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.check-icon {
+  width: 28rpx;
+  height: 28rpx;
+  filter: brightness(0) invert(1);
+}
+
+.swatch-loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.swatch-loading-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 32rpx;
+  height: 32rpx;
+  border: 3rpx solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+</style>

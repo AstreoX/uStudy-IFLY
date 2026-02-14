@@ -1,0 +1,541 @@
+/**
+ * SSE (Server-Sent Events) 跨平台连接工具
+ *
+ * H5: 使用 fetch + ReadableStream
+ * App-Android: 使用 renderjs + fetch (在 WebView 渲染层直接使用浏览器原生 API)
+ * App-iOS: 使用 uni.request + onChunkReceived
+ * 小程序: 使用 uni.request (无流式，完整响应后解析)
+ */
+
+import config from '@/config'
+import { getTokens } from './storage'
+
+const { API_BASE_URL } = config
+
+// ==================== Renderjs 事件总线 (Android) ====================
+
+/** @type {Object|null} renderjs 组件引用 */
+let sseEventBus = null
+
+/** @type {Object<number, { onEvent, onComplete, onError }>} 按 requestId 注册的回调 */
+const sseCallbacks = {}
+
+/**
+ * 注册 renderjs 组件实例作为事件总线
+ * 在页面 mounted 时调用
+ */
+export function setSseEventBus(bus) {
+  sseEventBus = bus
+}
+
+/**
+ * 清除事件总线引用
+ * 在页面 beforeDestroy 时调用
+ */
+export function clearSseEventBus() {
+  sseEventBus = null
+}
+
+/**
+ * 处理 renderjs 传回的批量 SSE 事件
+ */
+export function handleSseEvents(eventData) {
+  const { requestId, events } = eventData
+  const callbacks = sseCallbacks[requestId]
+  if (callbacks?.onEvent) {
+    for (const evt of events) {
+      callbacks.onEvent(evt.eventType, evt.data)
+      if (evt.eventType === 'done') {
+        callbacks._doneReceived = true
+      }
+    }
+  }
+}
+
+/**
+ * 处理 renderjs 传回的完成信号（含 doneEventData 冗余投递）
+ */
+export function handleSseComplete(eventData) {
+  const { requestId, finalEvents, doneEventData } = eventData
+  const callbacks = sseCallbacks[requestId]
+  if (!callbacks) return
+
+  if (finalEvents?.length > 0 && callbacks.onEvent) {
+    for (const evt of finalEvents) {
+      callbacks.onEvent(evt.eventType, evt.data)
+      if (evt.eventType === 'done') {
+        callbacks._doneReceived = true
+      }
+    }
+  }
+
+  // 安全兜底：如果 done 事件未通过常规 events 到达，从 doneEventData 重播
+  if (!callbacks._doneReceived && doneEventData && callbacks.onEvent) {
+    console.warn('[SSE] Done event missed in regular events, replaying from completion payload')
+    callbacks.onEvent('done', doneEventData)
+  }
+
+  callbacks.onComplete?.()
+  delete sseCallbacks[requestId]
+}
+
+/**
+ * 处理 renderjs 传回的错误
+ */
+export function handleSseError(eventData) {
+  const { requestId, error } = eventData
+  const callbacks = sseCallbacks[requestId]
+  if (callbacks?.onError) {
+    callbacks.onError(new Error(error))
+  }
+  delete sseCallbacks[requestId]
+}
+
+/**
+ * 解析 SSE 数据块
+ * @param {string} buffer - 累积的数据缓冲区
+ * @param {Function} onEvent - 事件回调 (eventType, data)
+ * @returns {string} 剩余的未完成数据
+ */
+function parseSSEBuffer(buffer, onEvent) {
+  const lines = buffer.split('\n')
+  const remaining = lines.pop() // 保留不完整的行
+
+  let currentEvent = 'message'
+
+  for (const line of lines) {
+    if (line.startsWith('event: ')) {
+      currentEvent = line.slice(7).trim()
+    } else if (line.startsWith('data: ')) {
+      try {
+        const parsed = JSON.parse(line.slice(6))
+        console.log('[SSE] Event received:', currentEvent, parsed)
+        onEvent?.(currentEvent, parsed)
+      } catch (e) {
+        console.warn('[SSE] Parse error:', e, 'line:', line)
+      }
+      currentEvent = 'message'
+    }
+  }
+
+  return remaining
+}
+
+/**
+ * 将完整 SSE 响应文本解析为事件数组
+ * @param {string} text
+ * @returns {Array<{ eventType: string, data: any }>}
+ */
+function collectSSEEvents(text) {
+  const events = []
+  parseSSEBuffer(text, (eventType, data) => {
+    events.push({ eventType, data })
+  })
+  return events
+}
+
+/**
+ * 在无真分块能力时，按小间隔回放事件，模拟流式输出
+ */
+function replayEventsGradually(events, onEvent, onDone, isAborted) {
+  if (!events || events.length === 0) {
+    onDone?.()
+    return []
+  }
+
+  let delay = 0
+  const timerIds = []
+
+  events.forEach((evt, index) => {
+    const step = evt.eventType === 'text_delta' ? 24 : 0
+    delay += step
+
+    const timerId = setTimeout(() => {
+      if (isAborted()) return
+      onEvent?.(evt.eventType, evt.data)
+      if (index === events.length - 1) {
+        onDone?.()
+      }
+    }, delay)
+    timerIds.push(timerId)
+  })
+
+  return timerIds
+}
+
+/**
+ * 检测是否为 Android 平台
+ */
+function isAndroidPlatform() {
+  try {
+    const info = uni.getSystemInfoSync()
+    return (info.platform || '').toLowerCase() === 'android'
+  } catch (e) {
+    return false
+  }
+}
+
+/**
+ * H5 平台 SSE 实现
+ */
+function connectSSE_H5(fullUrl, method, headers, data, onEvent, onComplete, onConnectionError) {
+  let aborted = false
+  const abortController = new AbortController()
+
+  console.log('[SSE-H5] Starting fetch...')
+
+  fetch(fullUrl, {
+    method,
+    headers,
+    body: JSON.stringify(data),
+    signal: abortController.signal
+  })
+    .then(response => {
+      console.log('[SSE-H5] Response:', response.status, response.statusText)
+
+      if (!response.ok) {
+        return response.text().then(text => {
+          throw new Error(`HTTP ${response.status}: ${text}`)
+        })
+      }
+
+      // 检查是否支持 ReadableStream
+      if (!response.body) {
+        console.warn('[SSE-H5] ReadableStream not supported, using text fallback')
+        return response.text().then(text => {
+          console.log('[SSE-H5] Full response length:', text.length)
+          parseSSEBuffer(text + '\n', onEvent)
+          onComplete?.()
+          return null
+        })
+      }
+
+      console.log('[SSE-H5] Using ReadableStream')
+      return response.body.getReader()
+    })
+    .then(reader => {
+      if (!reader) return // Fallback 已处理
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      function read() {
+        reader.read().then(({ done, value }) => {
+          if (done || aborted) {
+            console.log('[SSE-H5] Stream ended')
+            onComplete?.()
+            return
+          }
+
+          const chunk = decoder.decode(value, { stream: true })
+          console.log('[SSE-H5] Chunk received:', chunk.length, 'bytes')
+          buffer += chunk
+          buffer = parseSSEBuffer(buffer, onEvent)
+
+          read()
+        }).catch(err => {
+          if (!aborted) {
+            console.error('[SSE-H5] Read error:', err)
+            onConnectionError?.(err)
+          }
+        })
+      }
+
+      read()
+    })
+    .catch(err => {
+      if (!aborted) {
+        console.error('[SSE-H5] Connection error:', err)
+        onConnectionError?.(err)
+      }
+    })
+
+  return () => {
+    console.log('[SSE-H5] Aborting')
+    aborted = true
+    abortController.abort()
+  }
+}
+
+/**
+ * Android 平台 SSE 实现 (使用 plus.net.XMLHttpRequest)
+ * plus.net.XMLHttpRequest 支持 onprogress 事件，可实现真正的流式响应
+ */
+function connectSSE_Android(fullUrl, method, headers, data, onEvent, onComplete, onConnectionError) {
+  let aborted = false
+  let buffer = ''
+  let lastProcessedLength = 0
+  let xhr = null
+
+  console.log('[SSE-Android] Starting plus.net.XMLHttpRequest...')
+
+  // 清理函数，防止内存泄漏
+  const cleanup = () => {
+    if (xhr) {
+      xhr.onprogress = null
+      xhr.onload = null
+      xhr.onerror = null
+      xhr.ontimeout = null
+      xhr = null
+    }
+  }
+
+  xhr = new plus.net.XMLHttpRequest()
+  xhr.timeout = 120000 // 2分钟超时
+
+  xhr.onprogress = function(e) {
+    if (aborted || !xhr) return
+
+    try {
+      const responseText = xhr.responseText
+      // 校验 responseText 有效性
+      if (typeof responseText !== 'string' || responseText.length <= lastProcessedLength) {
+        return
+      }
+
+      const newData = responseText.substring(lastProcessedLength)
+      lastProcessedLength = responseText.length
+
+      if (newData) {
+        console.log('[SSE-Android] Progress chunk:', newData.length, 'bytes')
+        buffer += newData
+        buffer = parseSSEBuffer(buffer, onEvent)
+      }
+    } catch (e) {
+      console.warn('[SSE-Android] Progress parse error:', e)
+    }
+  }
+
+  xhr.onload = function() {
+    if (aborted) {
+      cleanup()
+      return
+    }
+
+    console.log('[SSE-Android] Request completed, status:', xhr?.status)
+
+    if (xhr && xhr.status >= 200 && xhr.status < 300) {
+      // 处理缓冲区中剩余的数据
+      if (buffer) {
+        parseSSEBuffer(buffer + '\n', onEvent)
+      }
+      onComplete?.()
+    } else {
+      onConnectionError?.(new Error(`HTTP ${xhr?.status}: ${xhr?.statusText}`))
+    }
+    cleanup()
+  }
+
+  xhr.onerror = function(e) {
+    if (!aborted) {
+      console.error('[SSE-Android] Request error:', e)
+      onConnectionError?.(e)
+    }
+    cleanup()
+  }
+
+  xhr.ontimeout = function() {
+    if (!aborted) {
+      console.error('[SSE-Android] Request timeout')
+      onConnectionError?.(new Error('Request timeout'))
+    }
+    cleanup()
+  }
+
+  // 配置请求
+  xhr.open(method.toUpperCase(), fullUrl)
+
+  // 设置请求头
+  Object.keys(headers).forEach(key => {
+    xhr.setRequestHeader(key, headers[key])
+  })
+
+  // 发送请求
+  xhr.send(JSON.stringify(data))
+
+  // 返回取消函数
+  return () => {
+    console.log('[SSE-Android] Aborting')
+    aborted = true
+    try {
+      xhr?.abort()
+    } catch (e) {
+      console.warn('[SSE-Android] Abort error:', e)
+    }
+    cleanup()
+  }
+}
+
+/**
+ * App 平台 SSE 实现
+ * Android + renderjs: 使用 renderjs + fetch (浏览器原生流式读取)
+ * Android (fallback): 使用 plus.net.XMLHttpRequest + onprogress
+ * iOS: 使用 uni.request + onChunkReceived
+ */
+function connectSSE_App(fullUrl, method, headers, data, onEvent, onComplete, onConnectionError) {
+  // Android + renderjs 可用: 使用 renderjs 实现真正的流式响应
+  if (isAndroidPlatform() && sseEventBus) {
+    console.log('[SSE-App] Detected Android, using renderjs fetch')
+
+    const requestId = sseEventBus.startSSE({
+      url: fullUrl,
+      method,
+      headers,
+      data
+    })
+
+    sseCallbacks[requestId] = {
+      onEvent,
+      onComplete,
+      onError: onConnectionError
+    }
+
+    return () => {
+      console.log('[SSE-App] Aborting renderjs request:', requestId)
+      sseEventBus?.abortSSE(requestId)
+      delete sseCallbacks[requestId]
+    }
+  }
+
+  // Android fallback: 使用 plus.net.XMLHttpRequest
+  if (isAndroidPlatform() && typeof plus !== 'undefined' && plus.net && plus.net.XMLHttpRequest) {
+    console.log('[SSE-App] Detected Android, falling back to plus.net.XMLHttpRequest')
+    return connectSSE_Android(fullUrl, method, headers, data, onEvent, onComplete, onConnectionError)
+  }
+
+  // iOS 和其他平台: 保持现有 uni.request 实现
+  let aborted = false
+  let buffer = ''
+  let chunksReceived = 0
+  let replayTimerIds = []
+
+  console.log('[SSE-App] Starting request...')
+
+  const requestTask = uni.request({
+    url: fullUrl,
+    method: method.toUpperCase(),
+    header: headers,
+    data,
+    enableChunked: true,
+    success: (res) => {
+      console.log('[SSE-App] Request completed, status:', res.statusCode, 'chunks:', chunksReceived)
+
+      // 如果没有收到分块数据，尝试从完整响应解析
+      if (chunksReceived === 0 && res.data) {
+        console.log('[SSE-App] No chunks received, replaying parsed events gradually')
+        const responseText = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
+        const events = collectSSEEvents(responseText + '\n')
+        replayTimerIds = replayEventsGradually(
+          events,
+          onEvent,
+          onComplete,
+          () => aborted
+        )
+        return
+      }
+
+      onComplete?.()
+    },
+    fail: (err) => {
+      if (!aborted) {
+        console.error('[SSE-App] Request failed:', JSON.stringify(err))
+        onConnectionError?.(err)
+      }
+    }
+  })
+
+  // 监听分块数据
+  if (requestTask && typeof requestTask.onChunkReceived === 'function') {
+    console.log('[SSE-App] onChunkReceived available')
+
+    requestTask.onChunkReceived((res) => {
+      if (aborted) return
+      chunksReceived++
+
+      try {
+        let chunk
+        if (typeof TextDecoder !== 'undefined') {
+          chunk = new TextDecoder('utf-8').decode(new Uint8Array(res.data))
+        } else {
+          // Fallback
+          const arr = new Uint8Array(res.data)
+          chunk = Array.from(arr).map(b => String.fromCharCode(b)).join('')
+        }
+
+        console.log('[SSE-App] Chunk #' + chunksReceived + ':', chunk.length, 'bytes')
+        buffer += chunk
+        buffer = parseSSEBuffer(buffer, onEvent)
+      } catch (e) {
+        console.warn('[SSE-App] Chunk parse error:', e)
+      }
+    })
+  } else {
+    console.warn('[SSE-App] onChunkReceived NOT available - using gradual replay fallback')
+  }
+
+  return () => {
+    console.log('[SSE-App] Aborting')
+    aborted = true
+    if (replayTimerIds.length > 0) {
+      replayTimerIds.forEach((id) => clearTimeout(id))
+      replayTimerIds = []
+    }
+    requestTask?.abort()
+  }
+}
+
+/**
+ * 跨平台 SSE 连接
+ */
+export function connectSSE(options) {
+  const { url, method = 'POST', data, onEvent, onComplete, onConnectionError } = options
+
+  const tokens = getTokens()
+  const fullUrl = `${API_BASE_URL}${url}`
+  const headers = {
+    'Content-Type': 'application/json',
+    'Accept': 'text/event-stream',
+  }
+
+  if (tokens?.access_token) {
+    headers['Authorization'] = `Bearer ${tokens.access_token}`
+  }
+
+  console.log('[SSE] ===== New Connection =====')
+  console.log('[SSE] URL:', fullUrl)
+  console.log('[SSE] Has token:', !!tokens?.access_token)
+
+  // #ifdef H5
+  console.log('[SSE] Platform: H5')
+  return connectSSE_H5(fullUrl, method, headers, data, onEvent, onComplete, onConnectionError)
+  // #endif
+
+  // #ifdef APP-PLUS
+  console.log('[SSE] Platform: APP-PLUS')
+  return connectSSE_App(fullUrl, method, headers, data, onEvent, onComplete, onConnectionError)
+  // #endif
+
+  // #ifdef MP
+  console.log('[SSE] Platform: Mini Program (no streaming)')
+
+  uni.request({
+    url: fullUrl,
+    method: method.toUpperCase(),
+    header: headers,
+    data,
+    success: (res) => {
+      console.log('[SSE-MP] Response:', res.statusCode)
+      if (res.statusCode >= 200 && res.statusCode < 300 && typeof res.data === 'string') {
+        parseSSEBuffer(res.data + '\n', onEvent)
+      }
+      onComplete?.()
+    },
+    fail: (err) => {
+      console.error('[SSE-MP] Failed:', err)
+      onConnectionError?.(err)
+    }
+  })
+
+  return () => {}
+  // #endif
+}
