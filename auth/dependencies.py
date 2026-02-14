@@ -1,7 +1,7 @@
 """Auth 依赖注入"""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -76,7 +76,12 @@ async def require_active_subscription(
     user: User = Depends(get_current_user),
 ) -> User:
     """要求用户拥有有效订阅（非 FREE 且未过期）"""
-    if user.subscription_tier == SubscriptionTier.FREE:
+    tier_value = (
+        user.subscription_tier.value
+        if isinstance(user.subscription_tier, SubscriptionTier)
+        else str(user.subscription_tier)
+    )
+    if tier_value.upper() == SubscriptionTier.FREE.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -84,10 +89,16 @@ async def require_active_subscription(
                 "message": "此功能需要激活订阅，请使用激活码升级账户",
             },
         )
-    if (
-        user.subscription_expires_at is not None
-        and user.subscription_expires_at < datetime.utcnow()
-    ):
+
+    expires_at = user.subscription_expires_at
+    if expires_at is None:
+        return user
+
+    # 兼容数据库中可能存在的 naive/aware datetime，避免直接比较导致 500
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if expires_at < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
