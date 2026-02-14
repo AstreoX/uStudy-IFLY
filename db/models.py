@@ -718,7 +718,13 @@ class DocumentProcessingTask(Base):
         unique=True,
     )
     status: Mapped[ProcessingStatus] = mapped_column(
-        Enum(ProcessingStatus), default=ProcessingStatus.PENDING, nullable=False
+        Enum(
+            ProcessingStatus,
+            values_callable=lambda x: [e.value for e in x],
+            name="processingstatus",
+        ),
+        default=ProcessingStatus.PENDING,
+        nullable=False,
     )
     chunk_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

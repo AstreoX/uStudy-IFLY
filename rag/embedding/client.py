@@ -58,6 +58,17 @@ class EmbeddingClient:
         self.batch_size = self.settings.embedding_batch_size
         self.timeout = 60  # embedding 请求超时时间（秒）
         self.max_retries = self.settings.llm_max_retries
+        self.proxy_url = self.settings.llm_proxy_url or None
+
+    def _get_client_kwargs(self) -> dict:
+        """获取 httpx.AsyncClient 的配置参数"""
+        kwargs = {"timeout": self.timeout}
+        if self.proxy_url:
+            kwargs["proxy"] = self.proxy_url
+        else:
+            # 显式关闭环境变量代理，避免意外走系统代理
+            kwargs["trust_env"] = False
+        return kwargs
 
     def _get_headers(self) -> dict[str, str]:
         """获取请求头"""
@@ -89,7 +100,7 @@ class EmbeddingClient:
             httpx.TimeoutException: 请求超时
             EmbeddingClientError: API 返回错误
         """
-        async with httpx.AsyncClient(timeout=self.timeout, proxies={}) as client:
+        async with httpx.AsyncClient(**self._get_client_kwargs()) as client:
             response = await client.post(
                 f"{self.base_url}/embeddings",
                 headers=self._get_headers(),
