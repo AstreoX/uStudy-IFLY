@@ -380,8 +380,6 @@ class OpenRouterClient:
                         accumulated_usage: dict[str, int] = {}
                         # 记录 finish_reason（可能在 usage 之前到达）
                         final_finish_reason: str | None = None
-                        # 标记是否已发送工具调用结束事件
-                        tool_calls_emitted = False
 
                         async for line in response.aiter_lines():
                             if not line.startswith("data: "):
@@ -450,25 +448,30 @@ class OpenRouterClient:
                                             tool_calls_buffer[index]["arguments"] += args_delta
 
                             # 记录 finish_reason（但不立即结束，等待 usage chunk）
+                            # tool_call_end 统一在循环结束后发送，避免 Gemini/OpenRouter
+                            # finish_reason 先于部分 tool_call delta 到达导致遗漏
                             if finish_reason:
                                 final_finish_reason = finish_reason
-                                # 发送完整的工具调用（只发送一次）
-                                if not tool_calls_emitted and tool_calls_buffer:
-                                    for tc_data in tool_calls_buffer.values():
-                                        try:
-                                            args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
-                                        except json.JSONDecodeError:
-                                            logger.warning("工具参数 JSON 解析失败: %s", tc_data["arguments"][:100] if tc_data["arguments"] else "")
-                                            args = {}
-                                        yield {
-                                            "type": "tool_call_end",
-                                            "id": tc_data["id"],
-                                            "name": tc_data["name"],
-                                            "arguments": args
-                                        }
-                                    tool_calls_emitted = True
 
-                        # 循环结束（[DONE] 后），发送 done 事件
+                        # 循环结束（[DONE] 后），统一发送所有 tool_call_end
+                        if tool_calls_buffer:
+                            for tc_data in tool_calls_buffer.values():
+                                try:
+                                    args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
+                                except json.JSONDecodeError:
+                                    logger.warning(
+                                        "工具参数 JSON 解析失败: %s",
+                                        tc_data["arguments"][:100] if tc_data["arguments"] else ""
+                                    )
+                                    args = {}
+                                yield {
+                                    "type": "tool_call_end",
+                                    "id": tc_data["id"],
+                                    "name": tc_data["name"],
+                                    "arguments": args,
+                                }
+
+                        # 发送 done 事件
                         # 构建 usage 信息（如果可用）
                         usage_info = None
                         if accumulated_usage:

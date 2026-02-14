@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import get_current_user
+from auth.dependencies import get_current_user, require_active_subscription
 from chat.schemas import (
     SendMessageRequest,
     CreateConversationRequest,
@@ -40,7 +40,11 @@ from spaces.service import SpaceService, SpaceNotFoundError as SpaceServiceNotFo
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api", tags=["chat"])
+router = APIRouter(
+    prefix="/api",
+    tags=["chat"],
+    dependencies=[Depends(require_active_subscription)],
+)
 
 
 async def sse_generator(event_generator):

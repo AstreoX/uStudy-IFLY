@@ -686,6 +686,11 @@ class LLMOrchestrator:
                 continue
 
             # No tool calls - check if we're done
+            if not pending_tool_calls and finish_reason == "tool_calls":
+                logger.warning(
+                    "LLM indicated tool_calls but no tool_call_end events received. "
+                    "This may indicate a streaming format issue."
+                )
             if finish_reason == "stop" or not pending_tool_calls:
                 # Append final iteration (no tool calls)
                 if current_iteration.content:

@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import get_current_user
+from auth.dependencies import get_current_user, require_active_subscription
 from db.database import get_db
 from db.models import User
 from spaces.schemas import (
@@ -17,7 +17,11 @@ from spaces.schemas import (
 )
 from spaces.service import SpaceAccessDeniedError, SpaceNotFoundError, SpaceService
 
-router = APIRouter(prefix="/api/spaces", tags=["spaces"])
+router = APIRouter(
+    prefix="/api/spaces",
+    tags=["spaces"],
+    dependencies=[Depends(require_active_subscription)],
+)
 
 
 @router.post(
