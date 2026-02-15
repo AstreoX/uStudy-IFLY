@@ -1,6 +1,6 @@
 """change embedding dimension to 2000 for qwen3-embedding-8b
 
-Revision ID: p5q6r7s8t9u0
+Revision ID: emb_dim_2000_v1
 Revises: o4p5q6r7s8t9
 Create Date: 2026-02-15
 
@@ -14,7 +14,7 @@ from typing import Sequence, Union
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "p5q6r7s8t9u0"
+revision: str = "emb_dim_2000_v1"
 down_revision: Union[str, None] = "o4p5q6r7s8t9"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
