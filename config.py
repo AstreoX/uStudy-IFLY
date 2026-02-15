@@ -83,8 +83,8 @@ class Settings(BaseSettings):
 
     # RAG 配置
     # Embedding 模型配置
-    embedding_model: str = "openai/text-embedding-3-small"
-    embedding_dimension: int = 1536
+    embedding_model: str = "qwen/qwen3-embedding-8b"
+    embedding_dimension: int = 4096
     embedding_batch_size: int = 20  # 每批处理的文本数量
 
     # 切片配置

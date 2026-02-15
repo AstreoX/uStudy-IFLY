@@ -101,13 +101,16 @@ class EmbeddingClient:
             EmbeddingClientError: API 返回错误
         """
         async with httpx.AsyncClient(**self._get_client_kwargs()) as client:
+            payload = {
+                "model": self.model,
+                "input": texts,
+                # 显式开启 provider 自动回退，降低单一 provider 故障导致的失败率
+                "provider": {"allow_fallbacks": True},
+            }
             response = await client.post(
                 f"{self.base_url}/embeddings",
                 headers=self._get_headers(),
-                json={
-                    "model": self.model,
-                    "input": texts,
-                },
+                json=payload,
             )
             response.raise_for_status()
             data = response.json()
@@ -117,6 +120,9 @@ class EmbeddingClient:
                 error_msg = data.get("error", {})
                 if isinstance(error_msg, dict):
                     error_text = error_msg.get("message", str(error_msg))
+                    error_code = error_msg.get("code")
+                    if error_code:
+                        error_text = f"{error_text} (code={error_code})"
                 else:
                     error_text = str(error_msg)
                 logger.error("Embedding API 错误: %s", error_text)
