@@ -50,9 +50,9 @@
 						class="preferences-scroll-container"
 						scroll-x
 						:scroll-left="scrollLeft"
-						:scroll-with-animation="!isJumping"
 						@touchstart="handleScrollTouchStart"
 						@touchend="handleScrollTouchEnd"
+						@touchcancel="handleScrollTouchCancel"
 						@scroll="handleScroll"
 					>
 						<view class="preferences-tags">
@@ -88,6 +88,12 @@
 <script>
 	import { createSpace, generateKnowledgeGraph } from '@/api/space'
 
+	const ENABLE_AUTO_SCROLL = true
+	const DEBUG_LOOP_SCROLL = false
+	const AUTO_SPEED_PX_PER_SEC = 24
+	const AUTO_TICK_MS = 16
+	const RESUME_DELAY_MS = 1200
+
 	export default {
 		data() {
 			return {
@@ -106,12 +112,17 @@
 					{ id: 'research', label: '学术研究', emoji: '🔬' },
 					{ id: 'practice', label: '实践项目', emoji: '🛠️' }
 				],
-				isUserScrolling: false,
 				showPreferenceTags: false,
 				scrollLeft: 0,
-				autoScrollTimer: null,
-				halfScrollWidth: 0,
-				isJumping: false
+				loopUnitWidth: 0,
+				loopMin: 0,
+				loopMax: 0,
+				currentScrollLeft: 0,
+				autoTickTimer: null,
+				resumeTimer: null,
+				isInteracting: false,
+				isRepositioning: false,
+				lastTickTs: 0
 			}
 		},
 
@@ -131,7 +142,11 @@
 					})),
 					...this.preferenceOptions.map((opt, idx) => ({
 						...opt,
-						uniqueKey: `second-${opt.id}-${idx}`
+						uniqueKey: `middle-${opt.id}-${idx}`
+					})),
+					...this.preferenceOptions.map((opt, idx) => ({
+						...opt,
+						uniqueKey: `last-${opt.id}-${idx}`
 					}))
 				]
 			}
@@ -141,11 +156,35 @@
 			this.inputFocused = true
 		},
 
+		onShow() {
+			if (!this.showPreferenceTags) return
+			if (this.loopUnitWidth > 0) {
+				this.startAutoScroll()
+				return
+			}
+			this.$nextTick(() => {
+				this.initializeLoopScroll()
+			})
+		},
+
+		onHide() {
+			this.teardownLoopScroll()
+		},
+
+		onUnload() {
+			this.teardownLoopScroll()
+		},
+
 		beforeDestroy() {
-			this.stopAutoScroll()
+			this.teardownLoopScroll()
 		},
 
 		methods: {
+			logLoop(...args) {
+				if (!DEBUG_LOOP_SCROLL) return
+				console.log('[createSpace][loop-scroll]', ...args)
+			},
+
 			togglePreference(id) {
 				if (this.selectedPreferences.includes(id)) {
 					this.selectedPreferences = this.selectedPreferences.filter(p => p !== id)
@@ -158,58 +197,202 @@
 				if (!this.showPreferenceTags) {
 					this.showPreferenceTags = true
 					this.$nextTick(() => {
-						this.calculateHalfWidth()
-						this.startAutoScroll()
+						this.initializeLoopScroll()
+					})
+					return
+				}
+
+				if (this.loopUnitWidth > 0) {
+					this.startAutoScroll()
+				} else {
+					this.$nextTick(() => {
+						this.initializeLoopScroll()
 					})
 				}
 			},
 
-			calculateHalfWidth() {
-				const query = uni.createSelectorQuery().in(this)
-				query.select('.preferences-tags').boundingClientRect(rect => {
-					if (rect) {
-						this.halfScrollWidth = rect.width / 2
-					}
-				}).exec()
+			measureTagsWidth() {
+				return new Promise((resolve) => {
+					const query = uni.createSelectorQuery().in(this)
+					query.select('.preferences-tags').boundingClientRect(rect => {
+						if (!rect || !Number.isFinite(rect.width) || rect.width <= 0) {
+							resolve(0)
+							return
+						}
+						resolve(rect.width)
+					}).exec()
+				})
+			},
+
+			async initializeLoopScroll() {
+				const fullWidth = await this.measureTagsWidth()
+				if (!Number.isFinite(fullWidth) || fullWidth <= 0) {
+					this.logLoop('measure failed, keep manual scroll only')
+					this.stopAutoScroll()
+					return
+				}
+
+				const unitWidth = fullWidth / 3
+				if (!Number.isFinite(unitWidth) || unitWidth <= 0) {
+					this.logLoop('unit width invalid, keep manual scroll only', fullWidth)
+					this.stopAutoScroll()
+					return
+				}
+
+				this.loopUnitWidth = unitWidth
+				this.loopMin = 0
+				this.loopMax = unitWidth * 2
+
+				this.scrollLeft = unitWidth
+				this.currentScrollLeft = unitWidth
+				this.lastTickTs = Date.now()
+				this.isRepositioning = true
+				this.logLoop('init loop', {
+					fullWidth,
+					unitWidth,
+					loopMin: this.loopMin,
+					loopMax: this.loopMax
+				})
+
+				this.startAutoScroll()
+			},
+
+			normalizeIfNeeded(rawLeft, source = '') {
+				if (this.loopUnitWidth <= 0) {
+					return { left: rawLeft, normalized: false }
+				}
+
+				let nextLeft = rawLeft
+				let normalized = false
+
+				const lowerBound = -this.loopUnitWidth
+				const upperBound = this.loopMax + this.loopUnitWidth
+				if (!Number.isFinite(nextLeft) || nextLeft < lowerBound || nextLeft > upperBound) {
+					nextLeft = this.loopUnitWidth
+					normalized = true
+					this.logLoop('abnormal reset', { source, rawLeft, nextLeft })
+				}
+
+				while (nextLeft >= this.loopMax) {
+					nextLeft -= this.loopUnitWidth
+					normalized = true
+				}
+
+				while (nextLeft <= this.loopMin) {
+					nextLeft += this.loopUnitWidth
+					normalized = true
+				}
+
+				return { left: nextLeft, normalized }
+			},
+
+			applyScrollLeft(nextLeft) {
+				this.scrollLeft = nextLeft
+				this.currentScrollLeft = nextLeft
 			},
 
 			startAutoScroll() {
-				if (this.autoScrollTimer) return
-				this.autoScrollTimer = setInterval(() => {
-					if (!this.isUserScrolling) {
-						this.scrollLeft += 1
-						if (this.halfScrollWidth > 0 && this.scrollLeft >= this.halfScrollWidth) {
-							this.isJumping = true
-							this.scrollLeft = this.scrollLeft - this.halfScrollWidth
-							this.$nextTick(() => {
-								this.isJumping = false
-							})
-						}
+				if (!ENABLE_AUTO_SCROLL) return
+				if (this.autoTickTimer) return
+				if (!this.showPreferenceTags) return
+				if (this.loopUnitWidth <= 0) return
+
+				this.lastTickTs = Date.now()
+				this.autoTickTimer = setInterval(() => {
+					if (this.isRepositioning) {
+						this.isRepositioning = false
+						this.lastTickTs = Date.now()
+						return
 					}
-				}, 30)
+
+					if (this.isInteracting) {
+						this.lastTickTs = Date.now()
+						return
+					}
+
+					const now = Date.now()
+					const dt = Math.min((now - this.lastTickTs) / 1000, 0.05)
+					this.lastTickTs = now
+
+					if (!Number.isFinite(dt) || dt <= 0) return
+
+					const baseLeft = Number.isFinite(this.currentScrollLeft) ? this.currentScrollLeft : this.loopUnitWidth
+					const rawLeft = baseLeft + AUTO_SPEED_PX_PER_SEC * dt
+					const { left, normalized } = this.normalizeIfNeeded(rawLeft, 'auto')
+					if (normalized) {
+						this.isRepositioning = true
+						this.logLoop('normalize(auto)', { rawLeft, normalizedLeft: left })
+					}
+					this.applyScrollLeft(left)
+				}, AUTO_TICK_MS)
+				this.logLoop('auto timer started')
 			},
 
 			handleScroll(e) {
-				if (this.isUserScrolling) {
-					this.scrollLeft = e.detail.scrollLeft
+				const nextLeft = Number(e && e.detail ? e.detail.scrollLeft : NaN)
+				if (!Number.isFinite(nextLeft)) return
+
+				if (this.isRepositioning) {
+					this.currentScrollLeft = nextLeft
+					this.isRepositioning = false
+					return
+				}
+
+				const { left, normalized } = this.normalizeIfNeeded(nextLeft, 'scroll')
+				this.currentScrollLeft = left
+				if (normalized) {
+					this.isRepositioning = true
+					this.scrollLeft = left
+					this.logLoop('normalize(scroll)', { rawLeft: nextLeft, normalizedLeft: left })
 				}
 			},
 
 			stopAutoScroll() {
-				if (this.autoScrollTimer) {
-					clearInterval(this.autoScrollTimer)
-					this.autoScrollTimer = null
+				if (this.autoTickTimer) {
+					clearInterval(this.autoTickTimer)
+					this.autoTickTimer = null
+					this.logLoop('auto timer stopped')
 				}
 			},
 
 			handleScrollTouchStart() {
-				this.isUserScrolling = true
+				this.isInteracting = true
+				this.clearResumeTimer()
+				this.logLoop('touchstart')
 			},
 
 			handleScrollTouchEnd() {
-				setTimeout(() => {
-					this.isUserScrolling = false
-				}, 2000)
+				this.scheduleAutoResume('touchend')
+			},
+
+			handleScrollTouchCancel() {
+				this.scheduleAutoResume('touchcancel')
+			},
+
+			clearResumeTimer() {
+				if (this.resumeTimer) {
+					clearTimeout(this.resumeTimer)
+					this.resumeTimer = null
+				}
+			},
+
+			scheduleAutoResume(source) {
+				this.clearResumeTimer()
+				this.resumeTimer = setTimeout(() => {
+					this.isInteracting = false
+					this.lastTickTs = Date.now()
+					this.resumeTimer = null
+					this.logLoop('interaction resume', source)
+				}, RESUME_DELAY_MS)
+				this.logLoop('schedule resume', source)
+			},
+
+			teardownLoopScroll() {
+				this.stopAutoScroll()
+				this.clearResumeTimer()
+				this.isInteracting = false
+				this.isRepositioning = false
+				this.lastTickTs = 0
 			},
 
 			async handleCreate() {

@@ -63,3 +63,43 @@ export function setCardOrder(spaceIds) {
 export function clearCardOrder() {
   uni.removeStorageSync(CARD_ORDER_KEY)
 }
+
+// ========== Update Preferences ==========
+const UPDATE_PREFS_KEY = config.UPDATE_STORAGE_KEY
+
+export function getUpdatePrefs() {
+  try {
+    const data = uni.getStorageSync(UPDATE_PREFS_KEY)
+    return data ? JSON.parse(data) : { skippedVersionCode: 0, lastCheckTime: 0 }
+  } catch (error) {
+    return { skippedVersionCode: 0, lastCheckTime: 0 }
+  }
+}
+
+export function setUpdatePrefs(prefs) {
+  try {
+    uni.setStorageSync(UPDATE_PREFS_KEY, JSON.stringify(prefs))
+  } catch (error) {
+    // Storage write failed
+  }
+}
+
+// ========== Announcement Preferences ==========
+const ANNOUNCEMENT_PREFS_KEY = config.ANNOUNCEMENT_STORAGE_KEY
+
+export function getAnnouncementPrefs() {
+  try {
+    const data = uni.getStorageSync(ANNOUNCEMENT_PREFS_KEY)
+    return data ? JSON.parse(data) : { dismissedIds: [] }
+  } catch (error) {
+    return { dismissedIds: [] }
+  }
+}
+
+export function setAnnouncementPrefs(prefs) {
+  try {
+    uni.setStorageSync(ANNOUNCEMENT_PREFS_KEY, JSON.stringify(prefs))
+  } catch (error) {
+    // Storage write failed
+  }
+}

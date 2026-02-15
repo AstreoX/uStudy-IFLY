@@ -145,24 +145,6 @@
       @close="toast.visible = false"
     />
 
-    <!-- 底部导航栏 -->
-    <view class="bottom-nav">
-      <view class="nav-item" @click="navigateToHome">
-        <view class="nav-icon">
-          <image class="icon-img" src="/static/icons/phosphor-icons/SVGs/fill/cards-three-fill.svg" mode="aspectFit"></image>
-        </view>
-      </view>
-      <view class="nav-item" @click="navigateToChat">
-        <view class="nav-icon">
-          <image class="icon-img" src="/static/icons/phosphor-icons/SVGs/duotone/chat-centered-duotone.svg" mode="aspectFit"></image>
-        </view>
-      </view>
-      <view class="nav-item nav-item-active">
-        <view class="nav-icon-wrapper">
-          <image class="icon-img-active" src="/static/icons/phosphor-icons/SVGs/duotone/user-circle-duotone.svg" mode="aspectFit"></image>
-        </view>
-      </view>
-    </view>
   </view>
 </template>
 
@@ -336,40 +318,6 @@ export default {
 
     goBack() {
       goBack()
-    },
-
-    // 导航到首页
-    navigateToHome() {
-      // #ifdef APP-PLUS
-      uni.navigateTo({
-        url: '/pages/index/index',
-        animationType: 'slide-in-right',
-        animationDuration: 300
-      })
-      // #endif
-
-      // #ifndef APP-PLUS
-      uni.navigateTo({
-        url: '/pages/index/index'
-      })
-      // #endif
-    },
-
-    // 导航到快速对话页面
-    navigateToChat() {
-      // #ifdef APP-PLUS
-      uni.navigateTo({
-        url: '/pages/quickChat/quickChat',
-        animationType: 'slide-in-right',
-        animationDuration: 300
-      })
-      // #endif
-
-      // #ifndef APP-PLUS
-      uni.navigateTo({
-        url: '/pages/quickChat/quickChat'
-      })
-      // #endif
     },
 
     // 修改昵称
@@ -614,7 +562,7 @@ export default {
   z-index: 1;
   width: 100%;
   padding-top: calc(100vh * 3.5 / 26);
-  padding-bottom: calc(220rpx + env(safe-area-inset-bottom));
+  padding-bottom: calc(48rpx + env(safe-area-inset-bottom));
 }
 
 /* Profile Card */
@@ -839,79 +787,4 @@ export default {
   color: #EF4444;
 }
 
-/* 底部导航栏 */
-.bottom-nav {
-  position: fixed;
-  top: calc(100vh / 26 * 23);
-  bottom: 0;
-  left: 0;
-  right: 0;
-  border-radius: 36rpx 36rpx 0 0;
-  background-color: rgba(48, 48, 58, 0.55);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
-  border-top: 1rpx solid rgba(255, 255, 255, 0.15);
-  border-left: 1rpx solid rgba(255, 255, 255, 0.08);
-  border-right: 1rpx solid rgba(255, 255, 255, 0.08);
-  box-shadow:
-    0 -4rpx 30rpx rgba(0, 0, 0, 0.3),
-    inset 0 1rpx 0 rgba(255, 255, 255, 0.1);
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
-  padding-bottom: env(safe-area-inset-bottom);
-  z-index: 90;
-}
-
-@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .bottom-nav {
-    background-color: rgba(48, 48, 58, 0.92);
-  }
-}
-
-.bottom-nav .nav-item {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 100rpx;
-  height: 100rpx;
-}
-
-.bottom-nav .nav-icon {
-  width: 75rpx;
-  height: 75rpx;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.bottom-nav .icon-img {
-  width: 75rpx;
-  height: 75rpx;
-  filter: brightness(0) invert(1);
-}
-
-.bottom-nav .nav-item-active .nav-icon-wrapper {
-  width: 140rpx;
-  height: 140rpx;
-  min-width: 140rpx;
-  min-height: 140rpx;
-  background-color: #0088FF;
-  border: 1rpx solid rgba(255, 255, 255, 0.2);
-  box-shadow:
-    0 4rpx 24rpx rgba(0, 136, 255, 0.35),
-    inset 0 1rpx 0 rgba(255, 255, 255, 0.15);
-  border-radius: 50%;
-  aspect-ratio: 1 / 1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.bottom-nav .icon-img-active {
-  width: 72rpx;
-  height: 72rpx;
-  filter: brightness(0) invert(1);
-}
 </style>

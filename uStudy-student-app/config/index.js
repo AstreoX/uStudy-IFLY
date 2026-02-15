@@ -44,10 +44,16 @@ const API_BASE_URL = resolveBaseUrl()
 const TOKEN_KEY = 'ustudy_tokens'
 const USER_KEY = 'ustudy_user'
 const CARD_ORDER_KEY = 'ustudy_card_order'
+const GITEE_RAW_BASE = 'https://gitee.com/Gskyer/u-study-release/raw/master'
+const UPDATE_STORAGE_KEY = 'ustudy_update_prefs'
+const ANNOUNCEMENT_STORAGE_KEY = 'ustudy_announcement_prefs'
 
 export default {
   API_BASE_URL,
   TOKEN_KEY,
   USER_KEY,
-  CARD_ORDER_KEY
+  CARD_ORDER_KEY,
+  GITEE_RAW_BASE,
+  UPDATE_STORAGE_KEY,
+  ANNOUNCEMENT_STORAGE_KEY
 }

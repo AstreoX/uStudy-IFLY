@@ -162,17 +162,19 @@
           scroll-with-animation
           :show-scrollbar="false"
         >
-          <view class="question-dots-inner">
-            <view
-              v-for="(q, idx) in questions"
-              :key="q.id"
-              class="dot"
-              :class="{
-                'dot-current': idx === currentIndex,
-                'dot-answered': hasAnswer(q.id) && idx !== currentIndex
-              }"
-              @click="jumpToQuestion(idx)"
-            ></view>
+          <view class="question-dots-center">
+            <view class="question-dots-inner">
+              <view
+                v-for="(q, idx) in questions"
+                :key="q.id"
+                class="dot"
+                :class="{
+                  'dot-current': idx === currentIndex,
+                  'dot-answered': hasAnswer(q.id) && idx !== currentIndex
+                }"
+                @click="jumpToQuestion(idx)"
+              ></view>
+            </view>
           </view>
         </scroll-view>
         <view
@@ -445,44 +447,32 @@ export default {
      * @param {number} index - 目标圆点索引
      */
     scrollDotsToCenter(index) {
-      // 使用 uni.createSelectorQuery 获取尺寸信息
       const query = uni.createSelectorQuery().in(this)
       query.select('.question-dots').boundingClientRect()
+      query.select('.question-dots-inner').boundingClientRect()
       query.selectAll('.dot').boundingClientRect()
       query.exec((res) => {
-        if (!res || !res[0] || !res[1]) return
+        if (!res || !res[0] || !res[1] || !res[2]) return
 
         const containerRect = res[0]
-        const dotRects = res[1]
+        const innerRect = res[1]
+        const dotRects = res[2]
         if (!dotRects[index]) return
 
-        const dot = dotRects[index]
-        const containerWidth = containerRect.width
-
-        // 计算圆点相对于容器的偏移位置
-        // 通过累加前面所有圆点的宽度和间距来计算
-        const dotWidth = 16  // rpx，普通圆点宽度
-        const currentDotWidth = 32  // rpx，当前圆点宽度
-        const gap = 12  // rpx 间距
-        const padding = 8  // rpx 内边距
-
-        // 计算当前圆点的左侧偏移（单位 rpx）
-        let offsetRpx = padding
-        for (let i = 0; i < index; i++) {
-          offsetRpx += dotWidth + gap
+        // 如果内容未超出容器，无需滚动（圆点已居中显示）
+        if (innerRect.width <= containerRect.width) {
+          this.dotsScrollLeft = 0
+          return
         }
 
-        // 将 rpx 转换为 px
-        const systemInfo = uni.getSystemInfoSync()
-        const ratio = systemInfo.screenWidth / 750
-        const offsetPx = offsetRpx * ratio
-        const currentDotWidthPx = (index === this.currentIndex ? currentDotWidth : dotWidth) * ratio
+        // 计算使当前圆点居中的滚动位置
+        const currentDot = dotRects[index]
+        const dotCenter = currentDot.left - innerRect.left + currentDot.width / 2
+        const scrollLeft = dotCenter - containerRect.width / 2
 
-        // 计算滚动位置，使当前圆点居中
-        const scrollLeft = offsetPx - (containerWidth / 2) + (currentDotWidthPx / 2)
-
-        // 设置滚动位置
-        this.dotsScrollLeft = Math.max(0, scrollLeft)
+        // 限制滚动范围
+        const maxScroll = innerRect.width - containerRect.width
+        this.dotsScrollLeft = Math.max(0, Math.min(scrollLeft, maxScroll))
       })
     },
 
@@ -995,6 +985,13 @@ export default {
   min-width: 0;
   overflow: hidden;
   padding: 8rpx 0;
+}
+
+.question-dots-center {
+  display: inline-flex;
+  min-width: 100%;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 .question-dots-inner {
