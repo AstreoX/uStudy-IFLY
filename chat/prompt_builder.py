@@ -420,6 +420,7 @@ class PromptBuilder:
         self,
         with_tools: bool = False,
         long_term_memory: Optional[str] = None,
+        previous_conversation_context: Optional[str] = None,
     ) -> str:
         """
         Build system prompt for quick chat mode (no space binding).
@@ -427,6 +428,7 @@ class PromptBuilder:
         Args:
             with_tools: If True, include learning space management tool instructions
             long_term_memory: Formatted long-term memory string (optional)
+            previous_conversation_context: Formatted previous conversation context (optional)
 
         Returns:
             System prompt string
@@ -436,11 +438,18 @@ class PromptBuilder:
         else:
             base_prompt = self.QUICK_CHAT_PROMPT
 
+        # 如果有上一次对话上下文（新对话时加载），拼接到提示词
+        if previous_conversation_context:
+            context_section = self.PREVIOUS_CONVERSATION_CONTEXT.format(
+                previous_rounds=previous_conversation_context
+            )
+            base_prompt = base_prompt + "\n" + context_section
+
         # 如果有长期记忆，拼接到提示词末尾
         if long_term_memory:
             memory_section = self.LONG_TERM_MEMORY_SECTION.format(
                 long_term_memory=long_term_memory
             )
-            return base_prompt + "\n" + memory_section
+            base_prompt = base_prompt + "\n" + memory_section
 
         return base_prompt

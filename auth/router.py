@@ -30,6 +30,7 @@ from auth.schemas import (
     ResetPasswordRequest,
     SendCodeRequest,
     TokenResponse,
+    UpdateNicknameRequest,
     UserProfile,
     VerifyCodeRequest,
     VerifyCodeResponse,
@@ -45,6 +46,7 @@ from auth.service import (
     register,
     register_with_code,
     reset_password,
+    update_nickname,
 )
 from auth.verification import send_verification_code, verify_code
 from config import get_settings
@@ -312,6 +314,25 @@ async def get_me(
     需要在 Authorization header 中提供有效的 Bearer token
     """
     return UserProfile.model_validate(user)
+
+
+@router.patch(
+    "/me",
+    response_model=UserProfile,
+    summary="更新用户昵称",
+)
+async def update_me(
+    request: UpdateNicknameRequest,
+    user: Annotated[User, Depends(get_current_user_from_header)],
+    db: AsyncSession = Depends(get_db),
+) -> UserProfile:
+    """
+    更新当前用户昵称
+
+    需要在 Authorization header 中提供有效的 Bearer token
+    """
+    updated = await update_nickname(db, user, request.nickname)
+    return UserProfile.model_validate(updated)
 
 
 @router.post(

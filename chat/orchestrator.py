@@ -70,6 +70,7 @@ class QuickChatOrchestrator:
         self,
         user_id: UUID,
         conversation_id: UUID,
+        previous_conversation_context: str | None = None,
     ) -> None:
         """
         Initialize the quick chat orchestrator.
@@ -77,9 +78,11 @@ class QuickChatOrchestrator:
         Args:
             user_id: Current user ID
             conversation_id: Current conversation ID
+            previous_conversation_context: Previous conversation context for continuity (optional)
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
+        self.previous_conversation_context = previous_conversation_context
 
         self.settings = get_settings()
         self.llm_client = OpenRouterClient(
@@ -117,10 +120,11 @@ class QuickChatOrchestrator:
         # Load user's long-term memory
         long_term_memory = await self._load_long_term_memory()
 
-        # Build system prompt with tool instructions and memory
+        # Build system prompt with tool instructions, memory, and previous conversation context
         system_prompt = self.prompt_builder.build_quick_chat_prompt(
             with_tools=True,
             long_term_memory=long_term_memory,
+            previous_conversation_context=self.previous_conversation_context,
         )
 
         # Handle both string and dict formats for user message

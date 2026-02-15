@@ -171,7 +171,7 @@ async def get_previous_conversation_context(
     max_content_length: int = 1000,
 ) -> str | None:
     """
-    主入口：获取格式化的上一个对话上下文
+    主入口：获取格式化的上一个对话上下文（限定学习空间）
 
     Args:
         db: 数据库会话
@@ -190,6 +190,91 @@ async def get_previous_conversation_context(
     if not prev_conv_id:
         return None
 
+    messages = await load_last_rounds(db, prev_conv_id, max_rounds)
+    if not messages:
+        return None
+
+    return format_previous_conversation(messages, max_content_length)
+
+
+async def get_previous_conversation_id_global(
+    db: AsyncSession,
+    user_id: UUID,
+    current_conversation_id: UUID,
+) -> UUID | None:
+    """
+    获取用户最近的对话 ID（跨所有空间 + 快速对话）
+
+    与 get_previous_conversation_id() 的区别：
+    - 不过滤 space_id
+    - 检索范围：所有学习空间对话 + 快速对话
+
+    Args:
+        db: 数据库会话
+        user_id: 用户 ID
+        current_conversation_id: 当前对话 ID（排除）
+
+    Returns:
+        上一个对话的 ID，或 None（如果没有）
+    """
+    # 子查询: 当前用户所有对话的最后 user 消息时间（不过滤 space_id）
+    last_msg_subq = (
+        select(
+            Message.conversation_id,
+            func.max(Message.created_at).label("last_user_msg_time"),
+        )
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(
+            Message.role == MessageRole.USER,
+            Conversation.user_id == user_id,
+            Conversation.id != current_conversation_id,
+            # 无 space_id 过滤 → 检索所有对话（学习空间 + 快速对话）
+        )
+        .group_by(Message.conversation_id)
+        .subquery()
+    )
+
+    # 主查询：按最后消息时间排序取第一个
+    query = (
+        select(last_msg_subq.c.conversation_id)
+        .order_by(last_msg_subq.c.last_user_msg_time.desc())
+        .limit(1)
+    )
+
+    result = await db.execute(query)
+    return result.scalar_one_or_none()
+
+
+async def get_previous_conversation_context_global(
+    db: AsyncSession,
+    user_id: UUID,
+    current_conversation_id: UUID,
+    max_rounds: int = 2,
+    max_content_length: int = 1000,
+) -> str | None:
+    """
+    获取格式化的上一个对话上下文（跨所有对话类型）
+
+    用于快速对话模式的对话连续性，检索用户最近的对话
+    （无论是学习空间对话还是快速对话）
+
+    Args:
+        db: 数据库会话
+        user_id: 用户 ID
+        current_conversation_id: 当前对话 ID
+        max_rounds: 加载的最大轮数（如不足则加载实际轮数）
+        max_content_length: 单条消息最大截断长度
+
+    Returns:
+        格式化的上下文字符串，或 None（如果没有上一个对话）
+    """
+    prev_conv_id = await get_previous_conversation_id_global(
+        db, user_id, current_conversation_id
+    )
+    if not prev_conv_id:
+        return None
+
+    # 复用现有的 load_last_rounds（会返回实际存在的轮数）
     messages = await load_last_rounds(db, prev_conv_id, max_rounds)
     if not messages:
         return None

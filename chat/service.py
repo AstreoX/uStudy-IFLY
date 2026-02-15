@@ -867,12 +867,38 @@ class ChatService:
             current_message_dict = await _build_llm_message_with_attachments_async(
                 user_message, db
             )
+
+            # 4. 对话连续性：检测新对话并加载上一个对话上下文
+            # 新对话定义：当前对话只有刚发送的这一条消息
+            is_new_conversation = len(history_messages) == 1
+            previous_conversation_context = None
+
+            settings = get_settings()
+            if is_new_conversation and settings.conversation_continuity_enabled:
+                from chat.previous_conversation import (
+                    get_previous_conversation_context_global,
+                )
+
+                previous_conversation_context = (
+                    await get_previous_conversation_context_global(
+                        db=db,
+                        user_id=user_id,
+                        current_conversation_id=conversation_id,
+                        max_rounds=settings.conversation_continuity_max_rounds,
+                        max_content_length=settings.conversation_continuity_max_content_length,
+                    )
+                )
+                if previous_conversation_context:
+                    logger.debug(
+                        f"Loaded global previous conversation context for quick chat {conversation_id}"
+                    )
         # === DB session released here ===
 
         # === Phase 2: Stream (no DB connection held) ===
         orchestrator = QuickChatOrchestrator(
             user_id=user_id,
             conversation_id=conversation_id,
+            previous_conversation_context=previous_conversation_context,
         )
 
         full_response = ""

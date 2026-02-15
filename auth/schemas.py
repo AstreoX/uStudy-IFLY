@@ -105,3 +105,9 @@ class UserProfile(BaseModel):
     avatar_url: Optional[str] = None
     subscription_tier: SubscriptionTier
     subscription_expires_at: Optional[datetime]
+
+
+class UpdateNicknameRequest(BaseModel):
+    """更新昵称请求"""
+
+    nickname: str = Field(..., min_length=2, max_length=20)

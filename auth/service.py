@@ -210,6 +210,25 @@ async def reset_password(
     await revoke_all_user_tokens(user.id, db)
 
 
+async def update_nickname(db: AsyncSession, user: User, nickname: str) -> User:
+    """
+    更新用户昵称
+
+    Args:
+        db: 数据库 session
+        user: 当前用户
+        nickname: 新昵称
+
+    Returns:
+        更新后的 User 对象
+    """
+    user.nickname = nickname
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
 async def refresh_token(db: AsyncSession, request: RefreshRequest) -> TokenResponse:
     """
     刷新 Token
