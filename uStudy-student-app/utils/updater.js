@@ -31,6 +31,8 @@ export function isForceUpdate(manifest) {
 
 export function getDownloadUrl(manifest) {
   if (!manifest || !manifest.latestVersion) return null
+  const browser = manifest.latestVersion.browserDownloadUrl?.android
+  if (browser) return browser
   const relative = manifest.latestVersion.downloadUrl?.android
   if (!relative) return null
   return `${GITEE_RAW_BASE}/${relative}`

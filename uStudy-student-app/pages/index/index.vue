@@ -755,7 +755,7 @@
 				const index = this.spaceCount
 				const targetY = this.selectionTopPadding + index * (this.cardHeight + this.selectionGap)
 				const offsetY = targetY - this.mainCardTop - this.selectionScrollY
-				const delay = 0.02 * index
+				const delay = 0
 
 				// 滚动时禁用动画，否则启用
 				const transition = this.isScrolling
@@ -770,11 +770,29 @@
 				const baseZIndex = 10
 				const zIndex = baseZIndex + (10 - index)
 
+				// 退出过渡状态：与真实卡片同步回到堆叠位置
+				if (this.isExitingSelection) {
+					if (index === 0) {
+						return `transform: translateY(0) scale(1); z-index: ${zIndex};`
+					}
+					const unitVh = this.screenHeight / 26
+					if (index <= 3) {
+						const stackIndex = 4 - index
+						const scales = { 1: 0.8, 2: 0.9, 3: 1 }
+						const offsets = { 1: -1.0, 2: -0.5, 3: 0 }
+						const targetTop = unitVh * (21.5 + offsets[stackIndex])
+						const offsetY = targetTop - this.mainCardTop
+						return `transform: translateY(${offsetY}px) scale(${scales[stackIndex]}); z-index: ${zIndex};`
+					}
+					const offsetY = this.screenHeight - this.mainCardTop
+					return `transform: translateY(${offsetY}px) scale(0.8); opacity: 0; z-index: ${zIndex};`
+				}
+
 				// 选择模式：列表排列（与真实卡片相同逻辑）
 				if (this.isSelectionMode) {
 					const targetY = this.selectionTopPadding + index * (this.cardHeight + this.selectionGap)
 					const offsetY = targetY - this.mainCardTop - this.selectionScrollY
-					const delay = 0.02 * index
+					const delay = 0
 					const transition = this.isScrolling
 						? 'transition: none;'
 						: `transition-delay: ${delay}s;`
