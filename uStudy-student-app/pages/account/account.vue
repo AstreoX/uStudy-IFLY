@@ -158,6 +158,7 @@
 
 <script>
 import { useUserStore } from '@/store/user'
+import { updateNickname } from '@/api/auth'
 import { uploadAvatar } from '@/api/user'
 import config from '@/config'
 import UModal from '@/components/u-modal/u-modal.vue'
@@ -338,7 +339,7 @@ export default {
       this.showNicknameModal = true
     },
 
-    onNicknameConfirm(newNickname) {
+    async onNicknameConfirm(newNickname) {
       // 验证长度
       if (newNickname.length < 2 || newNickname.length > 20) {
         this.showCustomToast('昵称长度应为2-20个字符', 'error')
@@ -352,9 +353,14 @@ export default {
         return
       }
 
-      const userStore = useUserStore()
-      userStore.updateNickname(newNickname)
-      this.showCustomToast('昵称已更新', 'success')
+      try {
+        await updateNickname(newNickname)
+        const userStore = useUserStore()
+        userStore.updateNickname(newNickname)
+        this.showCustomToast('昵称已更新', 'success')
+      } catch (error) {
+        this.showCustomToast('昵称更新失败，请重试', 'error')
+      }
     },
 
     handleChangePassword() {

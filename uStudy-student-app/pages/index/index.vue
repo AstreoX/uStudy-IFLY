@@ -1398,12 +1398,12 @@
 		right: 0;
 		bottom: 0;
 		z-index: 55;
-		pointer-events: none;
+		touch-action: none;
 	}
 
-	.unified-cards-container.selection-mode {
+	.unified-cards-container.selection-mode,
+	.unified-cards-container.swiping-mode {
 		z-index: 100;
-		pointer-events: auto;
 	}
 
 	/* ========== 统一卡片基础样式 ========== */

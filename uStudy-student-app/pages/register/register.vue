@@ -245,8 +245,12 @@ export default {
         this.errors.nickname = '请输入昵称'
         return false
       }
-      if (this.form.nickname.length > 100) {
-        this.errors.nickname = '昵称不能超过100个字符'
+      if (this.form.nickname.length < 2) {
+        this.errors.nickname = '昵称至少需要2个字符'
+        return false
+      }
+      if (this.form.nickname.length > 50) {
+        this.errors.nickname = '昵称不能超过50个字符'
         return false
       }
       this.errors.nickname = ''

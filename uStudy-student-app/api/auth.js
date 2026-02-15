@@ -87,6 +87,14 @@ export function getMe() {
   })
 }
 
+export function updateNickname(nickname) {
+  return request({
+    url: '/api/auth/me',
+    method: 'PATCH',
+    data: { nickname }
+  })
+}
+
 export function activateCode(code) {
   return request({
     url: '/api/auth/activate',

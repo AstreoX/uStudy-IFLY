@@ -1,6 +1,11 @@
 <template>
 	<view class="markdown-container">
-		<rich-text :nodes="parsedHtml" class="markdown-content" selectable="true"></rich-text>
+		<rich-text
+			:nodes="parsedHtml"
+			class="markdown-content"
+			selectable="true"
+			@itemclick="onRichTextItemClick"
+		></rich-text>
 	</view>
 </template>
 
@@ -14,6 +19,55 @@ function escapeHtml(text) {
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&#39;')
+}
+
+function isSafeHttpUrl(url) {
+	return /^https?:\/\//i.test(String(url || ''))
+}
+
+const LINK_INLINE_STYLE = 'color: rgb(92, 144, 247); text-decoration: underline;'
+
+function countChar(str, target) {
+	let count = 0
+	for (let i = 0; i < str.length; i++) {
+		if (str[i] === target) count++
+	}
+	return count
+}
+
+function splitTrailingUrlSuffix(url) {
+	let trimmed = String(url || '')
+	if (!trimmed) return { url: '', suffix: '' }
+
+	while (/[.,!?;:]+$/.test(trimmed)) {
+		trimmed = trimmed.slice(0, -1)
+	}
+
+	while (/[)\]}]$/.test(trimmed)) {
+		const last = trimmed[trimmed.length - 1]
+		const opening = last === ')' ? '(' : last === ']' ? '[' : '{'
+		const openCount = countChar(trimmed, opening)
+		const closeCount = countChar(trimmed, last)
+		if (closeCount > openCount) {
+			trimmed = trimmed.slice(0, -1)
+			continue
+		}
+		break
+	}
+
+	return {
+		url: trimmed,
+		suffix: String(url || '').slice(trimmed.length)
+	}
+}
+
+function linkifyRawUrls(text) {
+	if (!text) return ''
+	return text.replace(/(^|[\s(（\[【<>"'])((?:https?:\/\/)[^\s<>"']+)/gi, (match, prefix, candidate) => {
+		const { url, suffix } = splitTrailingUrlSuffix(candidate)
+		if (!url || !isSafeHttpUrl(url)) return match
+		return `${prefix}<a href="${url}" style="${LINK_INLINE_STYLE}">${url}</a>${suffix}`
+	})
 }
 
 function parseSimpleMarkdown(text) {
@@ -57,12 +111,30 @@ function parseSimpleMarkdown(text) {
 
 	content = content.replace(/(^|\n)>\s?(.*)(?=\n|$)/g, '$1<blockquote>$2</blockquote>')
 
+	content = content.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, (match, label, url) => {
+		if (!isSafeHttpUrl(url)) return label
+		return `<a href="${url}" style="${LINK_INLINE_STYLE}">${label}</a>`
+	})
+
 	content = content
-		.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>')
 		.replace(/`([^`\n]+)`/g, '<code>$1</code>')
 		.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
 		.replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
-		.replace(/\n/g, '<br/>')
+
+	const protectedSegments = []
+	content = content.replace(/<a href="[^"]+">[\s\S]*?<\/a>|<code>[\s\S]*?<\/code>/g, (segment) => {
+		const key = `@@PROTECTED_SEGMENT_${protectedSegments.length}@@`
+		protectedSegments.push({ key, html: segment })
+		return key
+	})
+
+	content = linkifyRawUrls(content)
+
+	for (const item of protectedSegments) {
+		content = content.split(item.key).join(item.html)
+	}
+
+	content = content.replace(/\n/g, '<br/>')
 
 	content = content
 		.replace(/<br\/>(<\/?(?:h1|h2|h3|ul|ol|li|blockquote|pre|hr)[^>]*>)/g, '$1')
@@ -131,6 +203,37 @@ export default {
 		content: {
 			type: String,
 			default: ''
+		}
+	},
+	methods: {
+		onRichTextItemClick(event) {
+			const detail = event && event.detail
+			const node = detail && detail.node
+			const nodeName = node && node.name
+			const attrs = node && node.attrs
+			const href = attrs && attrs.href
+			if (nodeName !== 'a' || !isSafeHttpUrl(href)) {
+				return
+			}
+			this.openExternalLink(href)
+		},
+		openExternalLink(url) {
+			// #ifdef APP-PLUS
+			plus.runtime.openURL(url)
+			return
+			// #endif
+
+			// #ifdef H5
+			window.open(url, '_blank')
+			return
+			// #endif
+
+			uni.setClipboardData({
+				data: url,
+				success: () => {
+					uni.showToast({ title: '链接已复制', icon: 'none' })
+				}
+			})
 		}
 	},
 	computed: {
@@ -233,7 +336,7 @@ export default {
 
 /* 链接 */
 .markdown-content a {
-	color: #60a5fa;
+	color: rgb(92, 144, 247);
 	text-decoration: none;
 }
 

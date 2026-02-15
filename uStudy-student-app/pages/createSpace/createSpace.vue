@@ -1,4 +1,5 @@
 <template>
+	<page-meta :page-style="createSpacePageStyle"></page-meta>
 	<view class="page-container">
 		<!-- Aurora Background Layer -->
 		<view class="aurora-bg">
@@ -129,6 +130,9 @@
 		computed: {
 			canCreate() {
 				return this.topicName.trim().length > 0 && !this.isCreating
+			},
+			createSpacePageStyle() {
+				return 'height: 100vh; overflow: hidden; overscroll-behavior: none; background-color: #0A0A12;'
 			},
 			placeholderStyle() {
 				return 'color: rgba(255, 255, 255, 0.45);'
@@ -474,9 +478,9 @@
 		position: relative;
 		display: flex;
 		flex-direction: column;
-		min-height: 100vh;
+		height: 100vh;
 		background-color: #0A0A12;
-		overflow-x: hidden;
+		overflow: hidden;
 	}
 
 	/* ========== Aurora Background ========== */
@@ -646,6 +650,7 @@
 	.preferences-scroll-container {
 		width: 100%;
 		white-space: nowrap;
+		touch-action: pan-x;
 	}
 
 	.preferences-tags {
