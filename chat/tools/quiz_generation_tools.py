@@ -25,7 +25,7 @@ QUIZ_GENERATION_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "generate_test",
-            "description": "根据指定的主题和要求生成测试题。这是一个异步任务，调用后会返回任务 ID，题目将在后台生成。",
+            "description": "根据指定主题与结构生成正式测试题（由专门的测试题 Sub-Agent 执行）。当用户要求整套测试时，主Agent应优先调用此工具，不要在回复正文中直接手写整套题目。调用后返回任务 ID，题目在后台生成。",
             "parameters": {
                 "type": "object",
                 "properties": {

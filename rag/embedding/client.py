@@ -104,6 +104,7 @@ class EmbeddingClient:
             payload = {
                 "model": self.model,
                 "input": texts,
+                "dimensions": self.dimension,  # 指定输出向量维度
                 # 显式开启 provider 自动回退，降低单一 provider 故障导致的失败率
                 "provider": {"allow_fallbacks": True},
             }
