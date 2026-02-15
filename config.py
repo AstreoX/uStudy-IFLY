@@ -94,6 +94,7 @@ class Settings(BaseSettings):
 
     # 检索配置
     retrieval_top_k: int = 10  # 向量搜索返回数量
+    rerank_enabled: bool = False  # 是否启用重排序（需要访问 HuggingFace）
     rerank_top_k: int = 5  # 重排序后返回数量
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 

@@ -118,24 +118,26 @@ class RAGToolExecutor:
                     message="未找到相关文档内容",
                 )
 
-            # 2. 重排序 (wrap synchronous call to avoid blocking event loop)
-            # 如果 reranker 失败，回退到直接使用向量搜索结果
+            # 2. 重排序（可选）
             formatted_results = []
-            try:
-                ranked = await asyncio.to_thread(
-                    rerank_results, query, results, top_k
-                )
-                # 使用重排序结果
-                for item in ranked:
-                    result = item.result
-                    formatted_results.append({
-                        "content": result.content,
-                        "source": result.document_title or result.document_filename,
-                        "score": round(item.rerank_score, 3),
-                    })
-            except Exception as rerank_error:
-                logger.warning(f"Reranker failed, falling back to vector search results: {rerank_error}")
-                # 回退：直接使用向量搜索结果
+            if settings.rerank_enabled:
+                try:
+                    ranked = await asyncio.to_thread(
+                        rerank_results, query, results, top_k
+                    )
+                    for item in ranked:
+                        result = item.result
+                        formatted_results.append({
+                            "content": result.content,
+                            "source": result.document_title or result.document_filename,
+                            "score": round(item.rerank_score, 3),
+                        })
+                except Exception as rerank_error:
+                    logger.warning(f"Reranker failed, falling back to vector search results: {rerank_error}")
+                    formatted_results = []  # 清空，下面会重新填充
+
+            # 如果未启用 rerank 或 rerank 失败，使用向量搜索结果
+            if not formatted_results:
                 for result in results[:top_k]:
                     formatted_results.append({
                         "content": result.content,
