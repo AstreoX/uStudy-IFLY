@@ -216,7 +216,7 @@ export default {
 .settings-page {
   width: 100%;
   min-height: 100vh;
-  background-color: rgb(10, 10, 10);
+  background-color: rgb(24, 24, 24);
   position: relative;
   overflow: hidden;
 }

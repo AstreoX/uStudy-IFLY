@@ -182,7 +182,7 @@
 			</template>
 		</view>
 
-		<view class="message-bottom-spacer"></view>
+		<view class="message-bottom-spacer" :style="keyboardHeight > 0 ? { height: 'calc(100vh * 6 / 26 + ' + keyboardHeight + 'px)' } : {}"></view>
 		</scroll-view>
 
 
@@ -326,6 +326,7 @@
 	import { goBack } from '@/utils/navigation'
 	import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
 	import { setSseEventBus, clearSseEventBus, handleSseEvents, handleSseComplete, handleSseError } from '@/utils/sse'
+	import { savePendingMessage, getPendingMessages, removePendingMessage, savePendingMessagesFromArray } from '@/utils/messageDraft'
 	// #ifdef APP-PLUS
 	import SseRenderjs from '@/components/sse-renderjs/sse-renderjs.vue'
 	// #endif
@@ -444,6 +445,20 @@
 			}
 		},
 
+		onShow() {
+			// 页面显示时，合并本地缓存的待同步消息
+			if (this.conversationId) {
+				this.mergePendingMessages()
+			}
+		},
+
+		onHide() {
+			// 页面隐藏时，保存未同步的消息到本地存储
+			if (this.conversationId) {
+				savePendingMessagesFromArray(this.conversationId, this.messages)
+			}
+		},
+
 		mounted() {
 			// #ifdef APP-PLUS
 			if (this.$refs.sseRenderjs) {
@@ -461,6 +476,7 @@
 			uni.onKeyboardHeightChange((res) => {
 				this.keyboardHeight = res.height
 				if (res.height > 0) {
+					this.isAutoScrollEnabled = true
 					this.$nextTick(() => {
 						this.scrollToLatestMessage()
 					})
@@ -1136,16 +1152,28 @@
 				const attachments = [...this.pendingAttachments]  // 保留副本
 				this.pendingAttachments = []
 
-				this.messages.push({
+				// 生成待同步消息的唯一标识
+				const pendingId = `pending_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+				const userMessage = {
 					id: this.nextId++,
 					role: 'user',
 					content: text,
-					attachments: attachments  // 添加附件字段
-				})
+					attachments: attachments,
+					pendingId: pendingId,
+					synced: false,
+					timestamp: Date.now()
+				}
+
+				this.messages.push(userMessage)
 				this.inputText = ''
 				this.scrollToLatestMessage()
 
-				this.sendRealMessage(text, attachmentIds.length > 0 ? attachmentIds : null)
+				// 保存到本地存储，防止请求失败后消息丢失
+				if (this.conversationId) {
+					savePendingMessage(this.conversationId, userMessage)
+				}
+
+				this.sendRealMessage(text, attachmentIds.length > 0 ? attachmentIds : null, pendingId)
 			},
 
 			async initConversation() {
@@ -1183,11 +1211,60 @@
 				}
 			},
 
-			async sendRealMessage(userMessage, attachmentIds = null) {
+			/**
+			 * 合并本地缓存的待同步消息
+			 * 用于页面重新显示时恢复未成功发送的消息
+			 */
+			mergePendingMessages() {
+				if (!this.conversationId) return
+
+				const pendingMessages = getPendingMessages(this.conversationId)
+				if (!pendingMessages || pendingMessages.length === 0) return
+
+				// 获取当前消息的 pendingId 集合，用于去重
+				const existingPendingIds = new Set(
+					this.messages.filter(m => m.pendingId).map(m => m.pendingId)
+				)
+
+				// 合并待同步消息（避免重复）
+				for (const pm of pendingMessages) {
+					if (!existingPendingIds.has(pm.pendingId)) {
+						this.messages.push({
+							id: this.nextId++,
+							role: pm.role,
+							content: pm.content,
+							attachments: pm.attachments || [],
+							pendingId: pm.pendingId,
+							synced: false,
+							timestamp: pm.timestamp,
+							isFailed: true  // 标记为发送失败状态
+						})
+					}
+				}
+
+				if (pendingMessages.length > 0) {
+					this.$nextTick(() => {
+						this.scrollToLatestMessage()
+					})
+				}
+			},
+
+			async sendRealMessage(userMessage, attachmentIds = null, pendingId = null) {
+				// 记录是否是新对话（创建对话前 conversationId 为空）
+				const isNewConversation = !this.conversationId
+
 				try {
 					await this.initConversation()
 				} catch {
 					return
+				}
+
+				// 新对话创建成功后，保存用户消息到本地存储
+				if (isNewConversation && pendingId && this.conversationId) {
+					const userMsg = this.messages.find(m => m.pendingId === pendingId)
+					if (userMsg) {
+						savePendingMessage(this.conversationId, userMsg)
+					}
 				}
 
 				const aiMsgId = this.nextId++
@@ -1257,6 +1334,15 @@
 							this.stopHeightMonitor()
 							this.activeToolCalls = []
 							this.scrollToLatestMessage()
+
+							// 消息发送成功，标记用户消息为已同步并移除本地缓存
+							if (pendingId && this.conversationId) {
+								const userMsg = this.messages.find(m => m.pendingId === pendingId)
+								if (userMsg) {
+									userMsg.synced = true
+								}
+								removePendingMessage(this.conversationId, pendingId)
+							}
 						},
 
 						onError: (message) => {
@@ -1411,7 +1497,7 @@
 		display: flex;
 		flex-direction: column;
 		height: 100vh;
-		background-color: rgb(10, 10, 10);
+		background-color: rgb(24, 24, 24);
 		overflow: hidden;
 	}
 
@@ -1515,7 +1601,7 @@
 	}
 
 	.bubble-user {
-		background-color: #191919;
+		background-color: #2d2d2d;
 		border-radius: calc(100vh * 1.3 / 26 / 2);
 		min-height: calc(100vh * 1.3 / 26);
 		padding: 16rpx 28rpx;

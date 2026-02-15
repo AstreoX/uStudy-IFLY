@@ -1,6 +1,6 @@
 <template>
 	<view class="markdown-container">
-		<rich-text :nodes="parsedHtml" class="markdown-content"></rich-text>
+		<rich-text :nodes="parsedHtml" class="markdown-content" selectable="true"></rich-text>
 	</view>
 </template>
 
@@ -152,6 +152,11 @@ export default {
 <style scoped>
 .markdown-container {
 	width: 100%;
+	/* 启用 APP 端长按选择复制 */
+	-webkit-user-select: text;
+	-moz-user-select: text;
+	-ms-user-select: text;
+	user-select: text;
 }
 
 /* 基础文本 */

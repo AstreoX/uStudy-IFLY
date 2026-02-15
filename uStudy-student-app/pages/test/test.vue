@@ -636,7 +636,7 @@ export default {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  background-color: rgb(10, 10, 10);
+  background-color: rgb(24, 24, 24);
   overflow-x: hidden;
 }
 

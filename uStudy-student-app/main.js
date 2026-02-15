@@ -1,4 +1,5 @@
 import App from './App'
+import 'katex/dist/katex.min.css'
 
 // Polyfill for runtimes (e.g. app-plus on some Android engines) without requestAnimationFrame
 const rafGlobal = typeof globalThis !== 'undefined'

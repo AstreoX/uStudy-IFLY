@@ -24,11 +24,22 @@
 		</view>
 
 		<!-- 小地图 -->
-		<view class="minimap-container" @touchstart="onMinimapTouchStart" @touchmove="onMinimapTouchMove">
+		<view
+			class="minimap-container"
+			@touchstart.stop.prevent="onMinimapTouchStart"
+			@touchmove.stop.prevent="onMinimapTouchMove"
+			@touchend.stop="onMinimapTouchEnd"
+			@touchcancel.stop="onMinimapTouchEnd"
+		>
 			<canvas
 				canvas-id="minimapCanvas"
 				id="minimapCanvas"
 				class="minimap-canvas"
+			></canvas>
+			<canvas
+				canvas-id="minimapViewportCanvas"
+				id="minimapViewportCanvas"
+				class="minimap-viewport-canvas"
 			></canvas>
 		</view>
 
@@ -319,6 +330,17 @@
 			@album="handleAlbumSelect"
 			@close="showImageSourcePicker = false"
 		/>
+
+		<!-- 性能调试面板（开发网格开启时显示） -->
+		<view v-if="showDevGrid" class="perf-debug-panel">
+			<text class="perf-debug-title">Graph Perf</text>
+			<text class="perf-debug-line">mode: {{ graphPerfMode }} / drag: {{ dragLodMode }}</text>
+			<text class="perf-debug-line">nodes: {{ nodes.length }} / edges: {{ edges.length }}</text>
+			<text class="perf-debug-line">visible: {{ perfStats.render.lastVisibleNodes }} / rendered: {{ perfStats.render.lastRenderedNodes }}</text>
+			<text class="perf-debug-line">graph(ms): last {{ formatPerfValue(perfStats.graph.lastMs) }}, avg {{ formatPerfValue(perfStats.graph.avgMs) }}, p95 {{ formatPerfValue(perfStats.graph.p95Ms) }}, max {{ formatPerfValue(perfStats.graph.maxMs) }}</text>
+			<text class="perf-debug-line">minimap(ms): last {{ formatPerfValue(perfStats.minimap.lastMs) }}, avg {{ formatPerfValue(perfStats.minimap.avgMs) }}, p95 {{ formatPerfValue(perfStats.minimap.p95Ms) }}, max {{ formatPerfValue(perfStats.minimap.maxMs) }}</text>
+			<text class="perf-debug-line">draw: edges {{ perfStats.render.lastRenderedEdges }}, minimap {{ perfStats.render.lastMinimapMode }}, interacting {{ perfStats.render.interactionMode ? 'Y' : 'N' }}</text>
+		</view>
 	</view>
 </template>
 
@@ -405,6 +427,40 @@
 		levelSpacing: 100     // 每层之间的间距
 	}
 
+	// 标签布局配置（完整显示 + 自动换行）
+	const LABEL_LAYOUT_CONFIG = {
+		fontSize: 11,
+		lineHeightRatio: 1.28,
+		paddingX: 8,
+		paddingY: 5,
+		nodeLabelGap: 8,
+		maxWidthRatio: 0.34,
+		maxWidthCap: 240,
+		minWidth: 96,
+		collisionPadding: 10,
+		connectorColor: 'rgba(226, 232, 240, 0.32)',
+		background: 'rgba(15, 23, 42, 0.64)',
+		borderColor: 'rgba(226, 232, 240, 0.18)',
+		cornerRadius: 8,
+		candidatePositions: ['bottom', 'right', 'left', 'top', 'br', 'bl', 'tr', 'tl']
+	}
+
+	function clamp(value, min, max) {
+		return Math.max(min, Math.min(max, value))
+	}
+
+	function isFiniteNumber(value) {
+		return typeof value === 'number' && Number.isFinite(value)
+	}
+
+	function isDevEnv() {
+		if (typeof __DEV__ !== 'undefined') return Boolean(__DEV__)
+		if (typeof process !== 'undefined' && process.env) {
+			return process.env.NODE_ENV !== 'production'
+		}
+		return false
+	}
+
 	// 生成测试数据 (约50个节点)
 	function generateMockData() {
 		const nodes = []
@@ -476,6 +532,18 @@
 			}
 		})
 
+		nodes.forEach(node => {
+			node.labelLines = []
+			node.labelSize = null
+			node.labelBox = null
+			node.labelAnchor = null
+			node.layoutFootprint = 0
+			node.targetX = 0
+			node.targetY = 0
+			node.angle = 0
+			node.targetAngle = 0
+		})
+
 		return { nodes, edges }
 	}
 
@@ -529,6 +597,13 @@
 				// 小地图尺寸
 				minimapWidth: 120,
 				minimapHeight: 100,
+				minimapRect: {
+					left: 0,
+					top: 0,
+					width: 120,
+					height: 100
+				},
+				minimapViewportRecoveryPending: false,
 
 				// 触摸状态
 				lastTouchX: 0,
@@ -551,12 +626,22 @@
 				// 画布上下文
 				graphCtx: null,
 				minimapCtx: null,
+				minimapViewportCtx: null,
 
 				// 性能优化
 				renderPending: false,
 				minimapPending: false,
+				graphPerfMode: 'optimized',     // legacy | optimized
+				dragLodMode: 'aggressive',      // aggressive | balanced | off
+				minimapDragIntervalMs: 200,
+				viewportPaddingPxIdle: 120,
+				viewportPaddingPxDrag: 48,
 				nodeMap: new Map(),
+				labelLayoutCache: new Map(),
+				textWidthCache: new Map(),
 				visibleNodesCache: null,
+				visibleNodeIdSetCache: new Set(),
+				frameNodeIdSet: new Set(),
 				childCountCache: new Map(),
 				edgeBuckets: {
 					treeEdges: [],
@@ -564,12 +649,39 @@
 					pathEdges: [],
 					nonPathEdges: []
 				},
+				levelRadiusMap: new Map(),
 				learningPathSet: new Set(),
 				isInteracting: false,
 				interactionEndTimer: null,
 				interactionEndDelayMs: 120,
 				minimapIntervalMs: 120,
 				lastMinimapRenderAt: 0,
+				minimapNeedsFullRedraw: true,
+				graphBoundsCache: null,
+				graphBoundsDirty: true,
+				perfStats: {
+					graph: {
+						lastMs: 0,
+						avgMs: 0,
+						p95Ms: 0,
+						maxMs: 0,
+						samples: []
+					},
+					minimap: {
+						lastMs: 0,
+						avgMs: 0,
+						p95Ms: 0,
+						maxMs: 0,
+						samples: []
+					},
+					render: {
+						lastVisibleNodes: 0,
+						lastRenderedNodes: 0,
+						lastRenderedEdges: 0,
+						lastMinimapMode: 'full',
+						interactionMode: false
+					}
+				},
 
 				// 单击延迟处理（解决双击时误触发单击的问题）
 				tapTimer: null,
@@ -789,6 +901,8 @@
 			// 清理画布上下文
 			this.graphCtx = null
 			this.minimapCtx = null
+			this.minimapViewportCtx = null
+			this.minimapViewportRecoveryPending = false
 
 			// 清理单击延迟定时器
 			if (this.tapTimer) {
@@ -818,6 +932,244 @@
 		},
 
 		methods: {
+			formatPerfValue(value) {
+				const n = Number(value)
+				if (!Number.isFinite(n)) return '0.00'
+				return n.toFixed(2)
+			},
+
+			getPerfNow() {
+				// #ifdef H5
+				if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+					return performance.now()
+				}
+				// #endif
+				return Date.now()
+			},
+
+			recordPerfStat(key, durationMs) {
+				const target = this.perfStats[key]
+				if (!target) return
+				const safeDuration = Number(durationMs)
+				if (!Number.isFinite(safeDuration)) return
+
+				target.lastMs = Math.round(safeDuration * 100) / 100
+				target.samples.push(safeDuration)
+				if (target.samples.length > 120) {
+					target.samples.shift()
+				}
+
+				if (target.samples.length === 0) return
+				const total = target.samples.reduce((sum, v) => sum + v, 0)
+				target.avgMs = Math.round((total / target.samples.length) * 100) / 100
+
+				const sorted = [...target.samples].sort((a, b) => a - b)
+				const p95Index = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))
+				target.p95Ms = Math.round(sorted[p95Index] * 100) / 100
+				target.maxMs = Math.round(Math.max(...target.samples) * 100) / 100
+			},
+
+			isOptimizedPerfEnabled() {
+				return this.graphPerfMode === 'optimized'
+			},
+
+			isDragLodActive() {
+				return this.isOptimizedPerfEnabled() && this.dragLodMode !== 'off' && this.isInteracting
+			},
+
+			invalidateGraphBoundsCache() {
+				this.graphBoundsDirty = true
+				this.graphBoundsCache = null
+				this.minimapNeedsFullRedraw = true
+			},
+
+			getGraphViewportBounds(paddingPx = 96) {
+				const safeScale = Math.max(0.0001, this.scale || 1)
+				const padding = paddingPx / safeScale
+				return {
+					minX: (0 - this.offsetX) / safeScale - padding,
+					maxX: (this.canvasWidth - this.offsetX) / safeScale + padding,
+					minY: (0 - this.offsetY) / safeScale - padding,
+					maxY: (this.canvasHeight - this.offsetY) / safeScale + padding
+				}
+			},
+
+			prepareFrameNodeIdSet(nodes) {
+				this.frameNodeIdSet.clear()
+				nodes.forEach(node => this.frameNodeIdSet.add(node.id))
+				return this.frameNodeIdSet
+			},
+
+			isNodeInViewport(node, viewportBounds, includeLabel = false) {
+				if (!node || !viewportBounds) return false
+				const radius = this.getNodeBaseRadius(node)
+				if (
+					node.x + radius >= viewportBounds.minX &&
+					node.x - radius <= viewportBounds.maxX &&
+					node.y + radius >= viewportBounds.minY &&
+					node.y - radius <= viewportBounds.maxY
+				) {
+					return true
+				}
+
+				if (!includeLabel) return false
+				const labelBox = node.labelBox
+				if (!labelBox) return false
+				return !(
+					labelBox.x > viewportBounds.maxX ||
+					labelBox.x + labelBox.width < viewportBounds.minX ||
+					labelBox.y > viewportBounds.maxY ||
+					labelBox.y + labelBox.height < viewportBounds.minY
+				)
+			},
+
+			filterNodesForViewport(visibleNodes, viewportBounds, includeLabel = false) {
+				if (!this.isOptimizedPerfEnabled() || !viewportBounds) {
+					return visibleNodes
+				}
+				return visibleNodes.filter(node => this.isNodeInViewport(node, viewportBounds, includeLabel))
+			},
+
+			getMinimapTransform() {
+				const bounds = this.getGraphBounds()
+				const graphWidth = bounds.maxX - bounds.minX
+				const graphHeight = bounds.maxY - bounds.minY
+				const padding = Math.max(graphWidth, graphHeight) * 0.1
+				const totalWidth = graphWidth + padding * 2
+				const totalHeight = graphHeight + padding * 2
+				const scaleX = this.minimapWidth / totalWidth
+				const scaleY = this.minimapHeight / totalHeight
+				const minimapScale = Math.min(scaleX, scaleY)
+
+				return {
+					bounds,
+					minimapScale,
+					centerX: this.minimapWidth / 2,
+					centerY: this.minimapHeight / 2,
+					graphCenterX: (bounds.minX + bounds.maxX) / 2,
+					graphCenterY: (bounds.minY + bounds.maxY) / 2
+				}
+			},
+
+			getTouchPoint(touch) {
+				if (!touch) return null
+				if (isFiniteNumber(touch.clientX) && isFiniteNumber(touch.clientY)) {
+					return { x: touch.clientX, y: touch.clientY, space: 'screen' }
+				}
+				if (isFiniteNumber(touch.pageX) && isFiniteNumber(touch.pageY)) {
+					return { x: touch.pageX, y: touch.pageY, space: 'screen' }
+				}
+				if (isFiniteNumber(touch.x) && isFiniteNumber(touch.y)) {
+					return { x: touch.x, y: touch.y, space: 'unknown' }
+				}
+				return null
+			},
+
+			toMinimapLocal(point) {
+				if (!point) return null
+
+				const rect = this.minimapRect || {}
+				const width = isFiniteNumber(this.minimapWidth) && this.minimapWidth > 0
+					? this.minimapWidth
+					: rect.width
+				const height = isFiniteNumber(this.minimapHeight) && this.minimapHeight > 0
+					? this.minimapHeight
+					: rect.height
+				if (!isFiniteNumber(width) || !isFiniteNumber(height) || width <= 0 || height <= 0) {
+					return null
+				}
+
+				let localX = point.x
+				let localY = point.y
+				const hasRectOrigin = isFiniteNumber(rect.left) && isFiniteNumber(rect.top)
+
+				if (point.space === 'screen' && hasRectOrigin) {
+					localX -= rect.left
+					localY -= rect.top
+				} else if (point.space === 'unknown' && hasRectOrigin) {
+					const looksLikeLocal = localX >= -2 && localX <= width + 2 && localY >= -2 && localY <= height + 2
+					if (!looksLikeLocal) {
+						localX -= rect.left
+						localY -= rect.top
+					}
+				}
+
+				if (!isFiniteNumber(localX) || !isFiniteNumber(localY)) return null
+				return {
+					x: clamp(localX, 0, width),
+					y: clamp(localY, 0, height)
+				}
+			},
+
+			resetViewportToGraphCenter(source = 'unknown') {
+				const bounds = this.getGraphBounds()
+				const centerX = (bounds.minX + bounds.maxX) / 2
+				const centerY = (bounds.minY + bounds.maxY) / 2
+				const nextScale = clamp(
+					(isFiniteNumber(this.scale) && this.scale > 0) ? this.scale : 1,
+					0.3,
+					3
+				)
+
+				this.scale = nextScale
+				const nextOffsetX = this.canvasWidth / 2 - centerX * nextScale
+				const nextOffsetY = this.canvasHeight / 2 - centerY * nextScale
+				if (isFiniteNumber(nextOffsetX) && isFiniteNumber(nextOffsetY)) {
+					this.offsetX = nextOffsetX
+					this.offsetY = nextOffsetY
+					return true
+				}
+
+				if (isDevEnv()) {
+					console.warn('[LearningSpace] resetViewportToGraphCenter produced invalid offsets', {
+						source,
+						nextScale,
+						centerX,
+						centerY,
+						canvasWidth: this.canvasWidth,
+						canvasHeight: this.canvasHeight
+					})
+				}
+				this.offsetX = 0
+				this.offsetY = 0
+				this.scale = 1
+				return false
+			},
+
+			applyViewportOffset(nextOffsetX, nextOffsetY, source = 'unknown') {
+				if (isFiniteNumber(nextOffsetX) && isFiniteNumber(nextOffsetY)) {
+					this.offsetX = nextOffsetX
+					this.offsetY = nextOffsetY
+					return true
+				}
+
+				if (isDevEnv()) {
+					console.warn('[LearningSpace] invalid viewport offset, fallback to center', {
+						source,
+						nextOffsetX,
+						nextOffsetY,
+						scale: this.scale
+					})
+				}
+				return this.resetViewportToGraphCenter(`${source}:invalid_offset`)
+			},
+
+			queueMinimapViewportRecovery(source = 'unknown') {
+				if (this.minimapViewportRecoveryPending || this.isDestroyed) return
+				this.minimapViewportRecoveryPending = true
+				const schedule = typeof requestAnimationFrame === 'function'
+					? requestAnimationFrame
+					: (cb) => setTimeout(cb, 16)
+
+				schedule(() => {
+					this.minimapViewportRecoveryPending = false
+					if (this.isDestroyed) return
+					this.resetViewportToGraphCenter(`${source}:recovery`)
+					this.requestRender()
+					this.requestMinimapRender(true)
+				})
+			},
+
 			onTextareaInput() {
 				this.$nextTick(() => {
 					this.adjustTextareaHeight()
@@ -987,7 +1339,15 @@
 						mastery: n.mastery,
 						parent: parentMap.get(n.id) || null,
 						collapsed: false,
-						x: 0, y: 0, vx: 0, vy: 0
+						x: 0, y: 0, vx: 0, vy: 0,
+						labelLines: [],
+						labelSize: null,
+						labelBox: null,
+						labelAnchor: null,
+						layoutFootprint: 0,
+						targetX: 0, targetY: 0,
+						angle: 0,
+						targetAngle: 0
 					}))
 
 					// 转换为本地边格式
@@ -1012,6 +1372,7 @@
 						this.learningPath = []
 					}
 
+					this.invalidateGraphBoundsCache()
 					// 预构建渲染缓存（边桶、路径集合、节点样式）
 					this.rebuildRenderCaches({ refreshVisible: false, refreshChildCount: false })
 				} catch (err) {
@@ -1073,7 +1434,15 @@
 						mastery: n.mastery,
 						parent: parentMap.get(n.id) || null,
 						collapsed: false,
-						x: 0, y: 0, vx: 0, vy: 0
+						x: 0, y: 0, vx: 0, vy: 0,
+						labelLines: [],
+						labelSize: null,
+						labelBox: null,
+						labelAnchor: null,
+						layoutFootprint: 0,
+						targetX: 0, targetY: 0,
+						angle: 0,
+						targetAngle: 0
 					}))
 
 					// 转换为本地边格式
@@ -1099,6 +1468,7 @@
 
 					// 重新计算布局（处理新增/变更的节点）
 					this.initializeLayout()
+					this.invalidateGraphBoundsCache()
 
 					// 重建渲染缓存
 					this.rebuildRenderCaches()
@@ -1458,6 +1828,7 @@
 			// ========== 操作按钮方法 ==========
 			togglePathHighlight() {
 				this.isPathHighlightOn = !this.isPathHighlightOn
+				this.minimapNeedsFullRedraw = true
 				this.isInteracting = false
 				if (this.interactionEndTimer) {
 					clearTimeout(this.interactionEndTimer)
@@ -1698,7 +2069,7 @@
 					if (this.isDestroyed) return
 
 					const graphRect = results[0]
-					const minimapRect = results[1]
+					const minimapRectResult = results[1]
 
 					if (!graphRect || !graphRect.width || !graphRect.height) {
 						if (retryCount < maxRetries) {
@@ -1714,9 +2085,18 @@
 					this.canvasHeight = graphRect.height
 
 					// 动态设置小地图尺寸（匹配容器实际大小）
-					if (minimapRect && minimapRect.width && minimapRect.height) {
-						this.minimapWidth = minimapRect.width
-						this.minimapHeight = minimapRect.height
+					if (minimapRectResult && minimapRectResult.width && minimapRectResult.height) {
+						this.minimapWidth = minimapRectResult.width
+						this.minimapHeight = minimapRectResult.height
+					}
+					if (minimapRectResult) {
+						const nextRect = {
+							left: isFiniteNumber(minimapRectResult.left) ? minimapRectResult.left : 0,
+							top: isFiniteNumber(minimapRectResult.top) ? minimapRectResult.top : 0,
+							width: isFiniteNumber(minimapRectResult.width) ? minimapRectResult.width : this.minimapWidth,
+							height: isFiniteNumber(minimapRectResult.height) ? minimapRectResult.height : this.minimapHeight
+						}
+						this.minimapRect = nextRect
 					}
 
 					// 初始化同心圆布局
@@ -1726,15 +2106,12 @@
 					this.rebuildRenderCaches()
 
 					// 设置初始偏移，使图谱居中
-					const bounds = this.getGraphBounds()
-					const centerX = (bounds.minX + bounds.maxX) / 2
-					const centerY = (bounds.minY + bounds.maxY) / 2
-					this.offsetX = this.canvasWidth / 2 - centerX
-					this.offsetY = this.canvasHeight / 2 - centerY
+					this.resetViewportToGraphCenter('initCanvas')
 
 					this.$nextTick(() => {
 						this.graphCtx = uni.createCanvasContext('graphCanvas', this)
 						this.minimapCtx = uni.createCanvasContext('minimapCanvas', this)
+						this.minimapViewportCtx = uni.createCanvasContext('minimapViewportCanvas', this)
 
 						// 触发渲染动画（如果启用）
 						this.animateGraphAppearance()
@@ -1887,6 +2264,492 @@
 					return 8
 				},
 
+				getLabelMaxWidth() {
+					const width = this.canvasWidth || 360
+					return clamp(
+						Math.round(width * LABEL_LAYOUT_CONFIG.maxWidthRatio),
+						LABEL_LAYOUT_CONFIG.minWidth,
+						LABEL_LAYOUT_CONFIG.maxWidthCap
+					)
+				},
+
+				normalizeLabelText(label) {
+					if (label == null) return ''
+					return String(label)
+						.replace(/\r\n/g, '\n')
+						.replace(/[ \t]+/g, ' ')
+						.trim()
+				},
+
+				measureTextApprox(text, fontSize = LABEL_LAYOUT_CONFIG.fontSize) {
+					const source = text == null ? '' : String(text)
+					if (!source) return 0
+
+					const cacheKey = `${fontSize}:${source}`
+					const cached = this.textWidthCache.get(cacheKey)
+					if (cached != null) return cached
+
+					let width = 0
+					for (const ch of source) {
+						if (ch === ' ') {
+							width += fontSize * 0.32
+							continue
+						}
+						if (/[A-Z]/.test(ch)) {
+							width += fontSize * 0.64
+							continue
+						}
+						if (/[a-z0-9]/.test(ch)) {
+							width += fontSize * 0.56
+							continue
+						}
+						if (/[\u3400-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]/.test(ch)) {
+							width += fontSize * 1.0
+							continue
+						}
+						if (/[.,;:!?'"`~_\-+=|/\\()[\]{}<>]/.test(ch)) {
+							width += fontSize * 0.38
+							continue
+						}
+						width += fontSize * 0.74
+					}
+
+					const rounded = Math.ceil(width)
+					if (this.textWidthCache.size > 6000) {
+						this.textWidthCache.clear()
+					}
+					this.textWidthCache.set(cacheKey, rounded)
+					return rounded
+				},
+
+				wrapLabelLines(text, maxWidth, fontSize = LABEL_LAYOUT_CONFIG.fontSize) {
+					const raw = String(text || '')
+					if (!raw) return ['']
+
+					const safeMaxWidth = Math.max(12, maxWidth)
+					const paragraphs = raw.split('\n')
+					const lines = []
+
+					paragraphs.forEach(paragraph => {
+						if (!paragraph) {
+							lines.push('')
+							return
+						}
+
+						let current = ''
+						for (const ch of paragraph) {
+							const candidate = current + ch
+							if (current && this.measureTextApprox(candidate, fontSize) > safeMaxWidth) {
+								lines.push(current)
+								current = ch
+							} else {
+								current = candidate
+							}
+						}
+						if (current) {
+							lines.push(current)
+						}
+					})
+
+					return lines.length ? lines : ['']
+				},
+
+				buildNodeLabelLayout(node) {
+					const fontSize = LABEL_LAYOUT_CONFIG.fontSize
+					const lineHeight = Math.round(fontSize * LABEL_LAYOUT_CONFIG.lineHeightRatio)
+					const maxWidth = this.getLabelMaxWidth()
+					const text = this.normalizeLabelText(node && node.label)
+					const innerMaxWidth = Math.max(12, maxWidth - LABEL_LAYOUT_CONFIG.paddingX * 2)
+					const lines = this.wrapLabelLines(text, innerMaxWidth, fontSize)
+					const contentWidth = lines.reduce(
+						(max, line) => Math.max(max, this.measureTextApprox(line, fontSize)),
+						0
+					)
+					const width = clamp(
+						Math.ceil(contentWidth + LABEL_LAYOUT_CONFIG.paddingX * 2),
+						LABEL_LAYOUT_CONFIG.minWidth,
+						maxWidth
+					)
+					const height = Math.max(
+						lineHeight + LABEL_LAYOUT_CONFIG.paddingY * 2,
+						Math.ceil(lines.length * lineHeight + LABEL_LAYOUT_CONFIG.paddingY * 2)
+					)
+
+					return {
+						lines,
+						width,
+						height,
+						fontSize,
+						lineHeight,
+						paddingX: LABEL_LAYOUT_CONFIG.paddingX,
+						paddingY: LABEL_LAYOUT_CONFIG.paddingY,
+						text
+					}
+				},
+
+				getNodeLabelLayout(node) {
+					if (!node) return null
+					if (node.labelSize && node.labelLines) {
+						return node.labelSize
+					}
+
+					const cached = this.labelLayoutCache.get(node.id)
+					if (cached) return cached
+
+					const layout = this.buildNodeLabelLayout(node)
+					this.labelLayoutCache.set(node.id, layout)
+					node.labelLines = layout.lines
+					node.labelSize = layout
+					return layout
+				},
+
+				buildLabelLayoutCache() {
+					if (!this.labelLayoutCache) {
+						this.labelLayoutCache = new Map()
+					}
+					this.labelLayoutCache.clear()
+
+					this.nodes.forEach(node => {
+						const layout = this.buildNodeLabelLayout(node)
+						this.labelLayoutCache.set(node.id, layout)
+						node.labelLines = layout.lines
+						node.labelSize = layout
+						node.layoutFootprint = this.getNodeLayoutFootprint(node, layout)
+						if (!node.labelAnchor) {
+							node.labelAnchor = {
+								position: 'bottom',
+								x: node.x || 0,
+								y: (node.y || 0) + this.getNodeBaseRadius(node) + LABEL_LAYOUT_CONFIG.nodeLabelGap + layout.height / 2
+							}
+						}
+						if (!node.labelBox) {
+							node.labelBox = this.getLabelBoxByPosition(node, layout, 'bottom').box
+						}
+					})
+				},
+
+				getNodeLayoutFootprint(node, layoutInput = null) {
+					if (!node) return 0
+					const layout = layoutInput || this.getNodeLabelLayout(node)
+					const radius = this.getNodeBaseRadius(node)
+					if (!layout) return radius + 8
+
+					const halfW = layout.width / 2
+					const verticalExtent = radius + LABEL_LAYOUT_CONFIG.nodeLabelGap + layout.height / 2
+					const diagonalReach = Math.sqrt(halfW * halfW + verticalExtent * verticalExtent)
+					return Math.max(radius + 8, diagonalReach + LABEL_LAYOUT_CONFIG.collisionPadding)
+				},
+
+				normalizeAnglePositive(angle) {
+					const twoPi = Math.PI * 2
+					let normalized = angle % twoPi
+					if (normalized < 0) normalized += twoPi
+					return normalized
+				},
+
+				normalizeAngleDiff(angle) {
+					const twoPi = Math.PI * 2
+					let normalized = (angle + Math.PI) % twoPi
+					if (normalized < 0) normalized += twoPi
+					return normalized - Math.PI
+				},
+
+				getLevelRadius(level) {
+					if (level <= 0) return 0
+					if (this.levelRadiusMap && this.levelRadiusMap.has(level)) {
+						return this.levelRadiusMap.get(level)
+					}
+					return LAYOUT_CONFIG.baseRadius + (level - 1) * LAYOUT_CONFIG.levelSpacing
+				},
+
+				buildLevelRadiusMap() {
+					const map = new Map()
+					if (!this.nodes || this.nodes.length === 0) {
+						this.levelRadiusMap = map
+						return
+					}
+
+					const root = this.nodes.find(n => n.level === 0)
+					let prevRadius = 0
+					let prevFootprint = root
+						? this.getNodeLayoutFootprint(root, this.getNodeLabelLayout(root))
+						: 0
+					const maxLevel = this.nodes.reduce((max, node) => Math.max(max, node.level || 0), 0)
+
+					for (let level = 1; level <= maxLevel; level++) {
+						const levelNodes = this.nodes.filter(n => n.level === level)
+						if (levelNodes.length === 0) continue
+
+						const baseRadius = LAYOUT_CONFIG.baseRadius + (level - 1) * LAYOUT_CONFIG.levelSpacing
+						let requiredCircumference = 0
+						let maxFootprint = 0
+
+						levelNodes.forEach(node => {
+							const layout = this.getNodeLabelLayout(node)
+							const footprint = this.getNodeLayoutFootprint(node, layout)
+							requiredCircumference += Math.max(
+								footprint * 1.42,
+								this.getNodeBaseRadius(node) * 2 + LABEL_LAYOUT_CONFIG.collisionPadding * 2
+							)
+							maxFootprint = Math.max(maxFootprint, footprint)
+						})
+
+						const radiusByCircumference = requiredCircumference / (Math.PI * 2)
+						const radialGap = Math.max(
+							LAYOUT_CONFIG.levelSpacing * 0.72,
+							prevFootprint + maxFootprint * 0.62 + LABEL_LAYOUT_CONFIG.nodeLabelGap * 2
+						)
+						const radiusByPrevLevel = prevRadius > 0 ? prevRadius + radialGap : baseRadius
+						const radius = Math.max(baseRadius, radiusByCircumference, radiusByPrevLevel)
+
+						map.set(level, radius)
+						prevRadius = radius
+						prevFootprint = maxFootprint
+					}
+
+					this.levelRadiusMap = map
+				},
+
+				resolveNodeAndLabelCollisions() {
+					if (!this.nodes || this.nodes.length <= 1) return
+
+					const iterations = 140
+					const springStrength = 0.14
+					const pushScale = 0.9
+					const maxStep = 0.12
+					const byLevel = new Map()
+
+					this.nodes.forEach(node => {
+						const level = node.level || 0
+						if (level <= 0) return
+						if (!byLevel.has(level)) byLevel.set(level, [])
+
+						const angle = this.normalizeAnglePositive(Math.atan2(node.y, node.x))
+						node.angle = angle
+						node.targetAngle = node.targetAngle == null
+							? angle
+							: this.normalizeAnglePositive(node.targetAngle)
+						node.layoutFootprint = this.getNodeLayoutFootprint(node, this.getNodeLabelLayout(node))
+						byLevel.get(level).push(node)
+					})
+
+					for (let iter = 0; iter < iterations; iter++) {
+						byLevel.forEach((nodes, level) => {
+							if (!nodes || nodes.length === 0) return
+							const radius = this.getLevelRadius(level)
+							if (!radius || radius <= 1) return
+
+							const angleDelta = new Map()
+							nodes.forEach(node => angleDelta.set(node.id, 0))
+
+							for (let i = 0; i < nodes.length; i++) {
+								const a = nodes[i]
+								for (let j = i + 1; j < nodes.length; j++) {
+									const b = nodes[j]
+									const minAngle = Math.min(
+										Math.PI - 0.02,
+										(
+											(a.layoutFootprint || this.getNodeLayoutFootprint(a)) +
+											(b.layoutFootprint || this.getNodeLayoutFootprint(b)) +
+											LABEL_LAYOUT_CONFIG.collisionPadding
+										) / radius
+									)
+									const diff = this.normalizeAngleDiff(b.angle - a.angle)
+									const absDiff = Math.abs(diff)
+									if (absDiff >= minAngle) continue
+
+									const overlap = minAngle - absDiff
+									const sign = diff >= 0 ? 1 : -1
+									const push = overlap * 0.5
+
+									angleDelta.set(a.id, angleDelta.get(a.id) - sign * push)
+									angleDelta.set(b.id, angleDelta.get(b.id) + sign * push)
+								}
+							}
+
+							nodes.forEach(node => {
+								const collisionPush = angleDelta.get(node.id) || 0
+								const toTarget = this.normalizeAngleDiff(node.targetAngle - node.angle)
+								const step = clamp(
+									collisionPush * pushScale + toTarget * springStrength,
+									-maxStep,
+									maxStep
+								)
+								node.angle = this.normalizeAnglePositive(node.angle + step)
+								node.x = Math.cos(node.angle) * radius
+								node.y = Math.sin(node.angle) * radius
+							})
+						})
+					}
+
+					const root = this.nodes.find(n => n.level === 0)
+					if (root) {
+						root.x = 0
+						root.y = 0
+						root.angle = 0
+						root.targetAngle = 0
+					}
+				},
+
+				getLabelBoxByPosition(node, layout, position) {
+					const radius = this.getNodeBaseRadius(node)
+					const gap = LABEL_LAYOUT_CONFIG.nodeLabelGap
+					const halfW = layout.width / 2
+					const halfH = layout.height / 2
+					const diagonalX = radius + gap + halfW * 0.72
+					const diagonalY = radius + gap + halfH * 0.72
+					let centerX = node.x
+					let centerY = node.y + radius + gap + halfH
+
+					switch (position) {
+						case 'top':
+							centerY = node.y - radius - gap - halfH
+							break
+						case 'left':
+							centerX = node.x - radius - gap - halfW
+							centerY = node.y
+							break
+						case 'right':
+							centerX = node.x + radius + gap + halfW
+							centerY = node.y
+							break
+						case 'br':
+							centerX = node.x + diagonalX
+							centerY = node.y + diagonalY
+							break
+						case 'bl':
+							centerX = node.x - diagonalX
+							centerY = node.y + diagonalY
+							break
+						case 'tr':
+							centerX = node.x + diagonalX
+							centerY = node.y - diagonalY
+							break
+						case 'tl':
+							centerX = node.x - diagonalX
+							centerY = node.y - diagonalY
+							break
+						case 'bottom':
+						default:
+							centerX = node.x
+							centerY = node.y + radius + gap + halfH
+							break
+					}
+
+					return {
+						box: {
+							x: centerX - halfW,
+							y: centerY - halfH,
+							width: layout.width,
+							height: layout.height
+						},
+						anchor: {
+							position,
+							x: centerX,
+							y: centerY
+						}
+					}
+				},
+
+				getCanvasPenaltyBounds() {
+					const width = this.canvasWidth || 360
+					const height = this.canvasHeight || 640
+					const halfW = Math.max(width * 0.95, 240)
+					const halfH = Math.max(height * 0.95, 320)
+					return {
+						minX: -halfW,
+						maxX: halfW,
+						minY: -halfH,
+						maxY: halfH
+					}
+				},
+
+				getRectOverlapArea(a, b) {
+					const left = Math.max(a.x, b.x)
+					const right = Math.min(a.x + a.width, b.x + b.width)
+					const top = Math.max(a.y, b.y)
+					const bottom = Math.min(a.y + a.height, b.y + b.height)
+					if (right <= left || bottom <= top) return 0
+					return (right - left) * (bottom - top)
+				},
+
+				placeLabelsGreedy() {
+					if (!this.nodes || this.nodes.length === 0) return
+
+					const bounds = this.getCanvasPenaltyBounds()
+					const placed = []
+					const sortedNodes = [...this.nodes].sort((a, b) => {
+						const layoutA = this.getNodeLabelLayout(a)
+						const layoutB = this.getNodeLabelLayout(b)
+						return layoutB.width * layoutB.height - layoutA.width * layoutA.height
+					})
+
+					sortedNodes.forEach(node => {
+						const layout = this.getNodeLabelLayout(node)
+						let best = null
+
+						LABEL_LAYOUT_CONFIG.candidatePositions.forEach((position, index) => {
+							const candidate = this.getLabelBoxByPosition(node, layout, position)
+							const box = candidate.box
+							let score = index * 2.5
+
+							placed.forEach(item => {
+								const overlapArea = this.getRectOverlapArea(box, item.box)
+								if (overlapArea > 0) {
+									score += overlapArea * 3.5
+								}
+							})
+
+							this.nodes.forEach(other => {
+								if (other.id === node.id) return
+								const otherRadius = this.getNodeBaseRadius(other) + 4
+								const nearestX = clamp(other.x, box.x, box.x + box.width)
+								const nearestY = clamp(other.y, box.y, box.y + box.height)
+								const dx = other.x - nearestX
+								const dy = other.y - nearestY
+								const distSq = dx * dx + dy * dy
+								const safeDistSq = otherRadius * otherRadius
+								if (distSq < safeDistSq) {
+									score += (safeDistSq - distSq) * 1.8
+								}
+							})
+
+							if (box.x < bounds.minX) score += (bounds.minX - box.x) * 6
+							if (box.y < bounds.minY) score += (bounds.minY - box.y) * 6
+							if (box.x + box.width > bounds.maxX) score += (box.x + box.width - bounds.maxX) * 6
+							if (box.y + box.height > bounds.maxY) score += (box.y + box.height - bounds.maxY) * 6
+
+							const anchorDx = candidate.anchor.x - node.x
+							const anchorDy = candidate.anchor.y - node.y
+							score += Math.sqrt(anchorDx * anchorDx + anchorDy * anchorDy) * 0.32
+
+							if (!best || score < best.score) {
+								best = { ...candidate, score }
+							}
+						})
+
+						if (!best) {
+							best = this.getLabelBoxByPosition(node, layout, 'bottom')
+						}
+
+						node.labelBox = best.box
+						node.labelAnchor = best.anchor
+						node.labelLines = layout.lines
+						node.labelSize = layout
+
+						const anchorDx = Math.abs(best.anchor.x - node.x) + layout.width / 2
+						const anchorDy = Math.abs(best.anchor.y - node.y) + layout.height / 2
+						const labelReach = Math.sqrt(anchorDx * anchorDx + anchorDy * anchorDy)
+						node.layoutFootprint = Math.max(
+							this.getNodeLayoutFootprint(node, layout),
+							labelReach + LABEL_LAYOUT_CONFIG.collisionPadding
+						)
+
+						placed.push({ nodeId: node.id, box: best.box })
+					})
+					this.invalidateGraphBoundsCache()
+				},
+
 				getAnimatedNodeFillColor(node) {
 					return node.mastery == null ? UNMASTERED_NODE_COLOR : getMasteryColor(node.mastery)
 				},
@@ -1941,12 +2804,11 @@
 					ctx.setFillStyle(this.getAnimatedNodeFillColor(node))
 					ctx.fill()
 
-					// 与静态图一致：标签在节点下方
-					ctx.setFillStyle('#E2E8F0')
-					ctx.setFontSize(11 * this.scale)
-					ctx.setTextAlign('center')
-					ctx.setTextBaseline('top')
-					ctx.fillText(node.label, x, y + radius + 6 * this.scale)
+					this.drawNodeLabelBlock(ctx, node, {
+						screenSpace: true,
+						scaleFactor: this.scale,
+						alpha: opacity
+					})
 
 					ctx.restore()
 				},
@@ -2054,9 +2916,29 @@
 				// 根节点在圆心
 				root.x = 0
 				root.y = 0
+				root.angle = 0
+				root.targetAngle = 0
+
+				// 先构建标签缓存，供半径估算使用
+				this.buildLabelLayoutCache()
+				// 构建严格同心圆每层半径
+				this.buildLevelRadiusMap()
 
 				// 从根节点开始，分配整个圆周 (0 到 2π)
 				this.layoutSubtree(root, 0, Math.PI * 2)
+
+				// 保存目标位置，后续用于弹簧回弹
+				this.nodes.forEach(node => {
+					node.targetX = node.x
+					node.targetY = node.y
+				})
+
+				// 节点+标签占位碰撞松弛
+				this.resolveNodeAndLabelCollisions()
+
+				// 基于候选方位放置标签
+				this.placeLabelsGreedy()
+				this.invalidateGraphBoundsCache()
 			},
 
 			// 递归布局子树
@@ -2068,8 +2950,8 @@
 				const subtreeSizes = children.map(c => this.getSubtreeSize(c.id))
 				const totalSize = subtreeSizes.reduce((a, b) => a + b, 0)
 
-				// 子节点到圆心的距离（同心圆半径）
-				const radius = LAYOUT_CONFIG.baseRadius + parent.level * LAYOUT_CONFIG.levelSpacing
+				// 子节点到圆心的距离（严格按层级同心圆）
+				const radius = this.getLevelRadius(parent.level + 1)
 
 				// 分配角度
 				let currentAngle = angleStart
@@ -2081,6 +2963,8 @@
 					// 计算位置
 					child.x = Math.cos(childAngle) * radius
 					child.y = Math.sin(childAngle) * radius
+					child.angle = this.normalizeAnglePositive(childAngle)
+					child.targetAngle = child.angle
 
 					// 递归布局该子节点的子树
 					this.layoutSubtree(child, currentAngle, currentAngle + angleRange)
@@ -2103,7 +2987,9 @@
 			// 小地图渲染节流（交互期降频）
 			requestMinimapRender(force = false) {
 				const now = Date.now()
-				if (!force && this.isInteracting && (now - this.lastMinimapRenderAt < this.minimapIntervalMs)) {
+				const isDragInteraction = this.isDragLodActive()
+				const interval = isDragInteraction ? this.minimapDragIntervalMs : this.minimapIntervalMs
+				if (!force && (now - this.lastMinimapRenderAt < interval)) {
 					return
 				}
 				if (this.minimapPending) return
@@ -2111,10 +2997,16 @@
 				requestAnimationFrame(() => {
 					this.minimapPending = false
 					const frameNow = Date.now()
-					if (!force && this.isInteracting && (frameNow - this.lastMinimapRenderAt < this.minimapIntervalMs)) {
+					const frameIsDragInteraction = this.isDragLodActive()
+					const frameInterval = frameIsDragInteraction ? this.minimapDragIntervalMs : this.minimapIntervalMs
+					if (!force && (frameNow - this.lastMinimapRenderAt < frameInterval)) {
 						return
 					}
-					this.drawMinimap()
+					if (!force && frameIsDragInteraction && this.isOptimizedPerfEnabled() && !this.minimapNeedsFullRedraw) {
+						this.drawMinimap('viewport')
+						return
+					}
+					this.drawMinimap('full')
 				})
 			},
 
@@ -2137,6 +3029,7 @@
 					this.interactionEndTimer = null
 					if (!this.isInteracting) return
 					this.isInteracting = false
+					this.minimapNeedsFullRedraw = true
 					this.requestRender()
 					this.requestMinimapRender(true)
 				}, this.interactionEndDelayMs)
@@ -2152,12 +3045,14 @@
 				this.buildEdgeBuckets()
 				this.buildLearningPathSet()
 				this.buildNodeStyleCache()
+				this.buildLabelLayoutCache()
 				if (refreshChildCount) {
 					this.buildChildCountCache()
 				}
 				if (refreshVisible) {
 					this.updateVisibleNodesCache()
 				}
+				this.invalidateGraphBoundsCache()
 			},
 
 			// 构建节点索引 Map
@@ -2174,16 +3069,24 @@
 					nonPathEdges: []
 				}
 				this.edges.forEach(edge => {
-					if (this.isKnowledgeTreeEdge(edge)) {
-						buckets.treeEdges.push(edge)
+					const fromNode = this.nodeMap.get(edge.from) || null
+					const toNode = this.nodeMap.get(edge.to) || null
+					const linkedEdge = {
+						...edge,
+						fromNode,
+						toNode
 					}
-					if (edge.type === 'advanced') {
-						buckets.advancedEdges.push(edge)
+
+					if (this.isKnowledgeTreeEdge(linkedEdge)) {
+						buckets.treeEdges.push(linkedEdge)
 					}
-					if (edge.type === 'learning_path') {
-						buckets.pathEdges.push(edge)
+					if (linkedEdge.type === 'advanced') {
+						buckets.advancedEdges.push(linkedEdge)
+					}
+					if (linkedEdge.type === 'learning_path') {
+						buckets.pathEdges.push(linkedEdge)
 					} else {
-						buckets.nonPathEdges.push(edge)
+						buckets.nonPathEdges.push(linkedEdge)
 					}
 				})
 				this.edgeBuckets = buckets
@@ -2244,15 +3147,22 @@
 					}
 					return true
 				})
+				this.visibleNodeIdSetCache = new Set(this.visibleNodesCache.map(node => node.id))
 			},
 
 			// ========== 绘制知识图谱 ==========
 			drawGraph() {
 				if (!this.graphCtx) return
 
+				const frameStart = this.getPerfNow()
 				const ctx = this.graphCtx
 				const visibleNodes = this.getVisibleNodes()
-				const interactionMode = this.isInteracting
+				const interactionMode = this.isDragLodActive()
+				const viewportBounds = this.getGraphViewportBounds(
+					interactionMode ? this.viewportPaddingPxDrag : this.viewportPaddingPxIdle
+				)
+				const renderNodes = this.filterNodesForViewport(visibleNodes, viewportBounds, !interactionMode)
+				const renderNodeIds = this.prepareFrameNodeIdSet(renderNodes)
 
 				// 清空画布
 				ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight)
@@ -2263,10 +3173,14 @@
 				ctx.scale(this.scale, this.scale)
 
 				// 绘制边（先绘制，这样节点会覆盖在上面）
-				this.drawEdges(ctx, visibleNodes, { interactionMode })
+				const renderedEdgeCount = this.drawEdges(ctx, {
+					interactionMode,
+					visibleNodeIds: this.visibleNodeIdSetCache,
+					viewportNodeIds: renderNodeIds
+				})
 
 				// 绘制节点
-				visibleNodes.forEach(node => {
+				renderNodes.forEach(node => {
 					// 检查是否有交互缩放动画
 					if (this.nodeInteractionScale && this.nodeInteractionScale.nodeId === node.id) {
 						ctx.save()
@@ -2282,28 +3196,37 @@
 
 				ctx.restore()
 				ctx.draw()
+
+				this.perfStats.render.lastVisibleNodes = visibleNodes.length
+				this.perfStats.render.lastRenderedNodes = renderNodes.length
+				this.perfStats.render.lastRenderedEdges = renderedEdgeCount
+				this.perfStats.render.interactionMode = interactionMode
+				this.recordPerfStat('graph', this.getPerfNow() - frameStart)
 			},
 
-			drawEdges(ctx, visibleNodes, options = {}) {
+			drawEdges(ctx, options = {}) {
 				const interactionMode = Boolean(options.interactionMode)
-				const visibleNodeIds = new Set(visibleNodes.map(n => n.id))
+				const visibleNodeIds = options.visibleNodeIds || this.visibleNodeIdSetCache
+				const viewportNodeIds = options.viewportNodeIds || null
 				const buckets = this.edgeBuckets || {
 					treeEdges: [],
 					advancedEdges: [],
 					pathEdges: []
 				}
+				let renderedCount = 0
 
 				// 路径高亮时，非路径边变暗
-				if (this.isPathHighlightOn) {
+				if (!interactionMode && this.isPathHighlightOn) {
 					ctx.setGlobalAlpha(0.15)
 				}
 
 				// 1. 绘制知识树边（灰色实线 - 树形骨架）
 				buckets.treeEdges.forEach(edge => {
 					if (!visibleNodeIds.has(edge.from) || !visibleNodeIds.has(edge.to)) return
+					if (viewportNodeIds && !viewportNodeIds.has(edge.from) && !viewportNodeIds.has(edge.to)) return
 
-					const fromNode = this.nodeMap.get(edge.from)
-					const toNode = this.nodeMap.get(edge.to)
+					const fromNode = edge.fromNode || this.nodeMap.get(edge.from)
+					const toNode = edge.toNode || this.nodeMap.get(edge.to)
 
 					if (!fromNode || !toNode) return
 
@@ -2314,15 +3237,17 @@
 					ctx.setLineWidth(KNOWLEDGE_EDGE_WIDTH)
 					ctx.setLineDash([])
 					ctx.stroke()
+					renderedCount++
 				})
 
 				// 2. 绘制进阶边（紫色虚线 - 跨分支关联）
 				if (!interactionMode && this.showAdvancedEdges) {
 					buckets.advancedEdges.forEach(edge => {
 						if (!visibleNodeIds.has(edge.from) || !visibleNodeIds.has(edge.to)) return
+						if (viewportNodeIds && !viewportNodeIds.has(edge.from) && !viewportNodeIds.has(edge.to)) return
 
-						const fromNode = this.nodeMap.get(edge.from)
-						const toNode = this.nodeMap.get(edge.to)
+						const fromNode = edge.fromNode || this.nodeMap.get(edge.from)
+						const toNode = edge.toNode || this.nodeMap.get(edge.to)
 
 						if (!fromNode || !toNode) return
 
@@ -2334,11 +3259,12 @@
 						ctx.setLineDash([5, 5])
 						ctx.stroke()
 						ctx.setLineDash([])
+						renderedCount++
 					})
 				}
 
 				// 恢复透明度后再绘制路径边
-				if (this.isPathHighlightOn) {
+				if (!interactionMode && this.isPathHighlightOn) {
 					ctx.setGlobalAlpha(1.0)
 				}
 
@@ -2346,15 +3272,19 @@
 				if (!interactionMode && this.isPathHighlightOn) {
 					buckets.pathEdges.forEach(edge => {
 						if (!visibleNodeIds.has(edge.from) || !visibleNodeIds.has(edge.to)) return
+						if (viewportNodeIds && !viewportNodeIds.has(edge.from) && !viewportNodeIds.has(edge.to)) return
 
-						const fromNode = this.nodeMap.get(edge.from)
-						const toNode = this.nodeMap.get(edge.to)
+						const fromNode = edge.fromNode || this.nodeMap.get(edge.from)
+						const toNode = edge.toNode || this.nodeMap.get(edge.to)
 
 						if (!fromNode || !toNode) return
 
 						this.drawPathEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y)
+						renderedCount++
 					})
 				}
+
+				return renderedCount
 			},
 
 			// 绘制学习路径边（蓝色实线 + 中间箭头）
@@ -2398,21 +3328,133 @@
 				ctx.fill()
 			},
 
+			drawRoundedRect(ctx, x, y, width, height, radius) {
+				const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2))
+				ctx.beginPath()
+				ctx.moveTo(x + r, y)
+				ctx.lineTo(x + width - r, y)
+				ctx.arcTo(x + width, y, x + width, y + r, r)
+				ctx.lineTo(x + width, y + height - r)
+				ctx.arcTo(x + width, y + height, x + width - r, y + height, r)
+				ctx.lineTo(x + r, y + height)
+				ctx.arcTo(x, y + height, x, y + height - r, r)
+				ctx.lineTo(x, y + r)
+				ctx.arcTo(x, y, x + r, y, r)
+				ctx.closePath()
+			},
+
+			drawNodeLabelBlock(ctx, node, options = {}) {
+				const {
+					screenSpace = false,
+					scaleFactor = this.scale,
+					alpha = 1
+				} = options
+
+				const layout = this.getNodeLabelLayout(node)
+				if (!layout) return
+
+				const fallback = this.getLabelBoxByPosition(node, layout, 'bottom')
+				const labelBox = node.labelBox || fallback.box
+				const labelAnchor = node.labelAnchor || fallback.anchor
+
+				const mapValue = (value) => {
+					if (!screenSpace) return value
+					return value * scaleFactor + this.offsetX
+				}
+				const mapValueY = (value) => {
+					if (!screenSpace) return value
+					return value * scaleFactor + this.offsetY
+				}
+				const mapSize = (value) => {
+					if (!screenSpace) return value
+					return value * scaleFactor
+				}
+
+				const box = {
+					x: mapValue(labelBox.x),
+					y: mapValueY(labelBox.y),
+					width: mapSize(labelBox.width),
+					height: mapSize(labelBox.height)
+				}
+				const fontSize = mapSize(layout.fontSize)
+				const lineHeight = mapSize(layout.lineHeight)
+				const paddingY = mapSize(layout.paddingY)
+				const nodeX = screenSpace ? mapValue(node.x) : node.x
+				const nodeY = screenSpace ? mapValueY(node.y) : node.y
+				const nodeRadius = this.getNodeBaseRadius(node) * (screenSpace ? scaleFactor : 1)
+
+				ctx.save()
+				ctx.setShadow(0, 0, 0, 'transparent')
+				ctx.globalAlpha = clamp(alpha, 0, 1)
+
+				if (labelAnchor.position !== 'bottom') {
+					const connectorEndX = box.x + box.width / 2
+					const connectorEndY = box.y + box.height / 2
+					const dx = connectorEndX - nodeX
+					const dy = connectorEndY - nodeY
+					const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy))
+					const ux = dx / dist
+					const uy = dy / dist
+
+					ctx.beginPath()
+					ctx.moveTo(nodeX + ux * (nodeRadius + 2), nodeY + uy * (nodeRadius + 2))
+					ctx.lineTo(connectorEndX - ux * Math.max(2, mapSize(3)), connectorEndY - uy * Math.max(2, mapSize(3)))
+					ctx.setStrokeStyle(LABEL_LAYOUT_CONFIG.connectorColor)
+					ctx.setLineWidth(Math.max(1, mapSize(1)))
+					ctx.stroke()
+				}
+
+				this.drawRoundedRect(
+					ctx,
+					box.x,
+					box.y,
+					box.width,
+					box.height,
+					mapSize(LABEL_LAYOUT_CONFIG.cornerRadius)
+				)
+				ctx.setFillStyle(LABEL_LAYOUT_CONFIG.background)
+				ctx.fill()
+				ctx.setStrokeStyle(LABEL_LAYOUT_CONFIG.borderColor)
+				ctx.setLineWidth(Math.max(1, mapSize(1)))
+				ctx.stroke()
+
+				ctx.setFillStyle('#E2E8F0')
+				ctx.setFontSize(fontSize)
+				ctx.setTextAlign('center')
+				ctx.setTextBaseline('top')
+
+				let textY = box.y + paddingY
+				layout.lines.forEach(line => {
+					ctx.fillText(line, box.x + box.width / 2, textY)
+					textY += lineHeight
+				})
+
+				ctx.restore()
+			},
+
 			drawNode(ctx, node, options = {}) {
 				const interactionMode = Boolean(options.interactionMode)
+				const skipHeavyVisual = interactionMode && this.dragLodMode === 'aggressive'
 				const radius = this.getNodeBaseRadius(node)
 				const isSelected = this.selectedNodeId === node.id
-				const isOnPath = this.isPathHighlightOn && this.learningPathSet.has(node.id)
+				const isOnPath = !interactionMode && this.isPathHighlightOn && this.learningPathSet.has(node.id)
 
 				// 路径高亮时，非路径节点变暗（选中节点始终清晰）
-				const isDimmed = this.isPathHighlightOn && !isOnPath && !isSelected
+				const isDimmed = !interactionMode && this.isPathHighlightOn && !isOnPath && !isSelected
 				if (isDimmed) {
 					ctx.setGlobalAlpha(0.25)
 				}
 
 				const fillColor = node.fillColor || (node.mastery == null ? UNMASTERED_NODE_COLOR : getMasteryColor(node.mastery))
 
-				if (interactionMode) {
+				if (skipHeavyVisual) {
+					// 交互期优先流畅：仅主圆 + 选中描边
+					ctx.setShadow(0, 0, 0, 'transparent')
+					ctx.beginPath()
+					ctx.arc(node.x, node.y, radius, 0, Math.PI * 2)
+					ctx.setFillStyle(fillColor)
+					ctx.fill()
+				} else if (interactionMode) {
 					// 交互期走轻量渲染：仅主圆，不绘制阴影和外轮廓
 					ctx.setShadow(0, 0, 0, 'transparent')
 					ctx.beginPath()
@@ -2452,7 +3494,7 @@
 				}
 
 				// 路径节点：蓝色描边（非选中时）
-				if (isOnPath && !isSelected) {
+				if (!skipHeavyVisual && isOnPath && !isSelected) {
 					ctx.beginPath()
 					ctx.arc(node.x, node.y, radius + 5, 0, Math.PI * 2)
 					ctx.setStrokeStyle('#0088FF')
@@ -2460,17 +3502,17 @@
 					ctx.stroke()
 				}
 
-				// 交互期仅保留选中节点文字，静止期显示全部
-				if (!interactionMode || isSelected) {
-					ctx.setFillStyle('#E2E8F0')
-					ctx.setFontSize(11)
-					ctx.setTextAlign('center')
-					ctx.setTextBaseline('top')
-					ctx.fillText(node.label, node.x, node.y + radius + 6)
+				// 全量显示标签（完整文本 + 自动换行）
+				if (!skipHeavyVisual) {
+					const labelAlpha = isDimmed ? 0.25 : ((!interactionMode || isSelected) ? 1 : 0.92)
+					this.drawNodeLabelBlock(ctx, node, {
+						screenSpace: false,
+						alpha: labelAlpha
+					})
 				}
 
 				// 如果折叠了，显示子节点数量角标
-				if (node.collapsed) {
+				if (!skipHeavyVisual && node.collapsed) {
 					const childCount = this.getChildCount(node.id)
 					if (childCount > 0) {
 						this.drawBadge(ctx, node.x + radius - 2, node.y - radius + 2, childCount)
@@ -2505,49 +3547,41 @@
 			},
 
 			// ========== 绘制小地图 ==========
-			drawMinimap() {
-				if (!this.minimapCtx) return
+			drawMinimap(mode = 'full') {
+				if (!this.minimapCtx || !this.minimapViewportCtx) return
+				const start = this.getPerfNow()
+				const drawStatic = mode === 'full' || this.minimapNeedsFullRedraw
+				const transform = this.getMinimapTransform()
 
+				if (drawStatic) {
+					this.drawMinimapStaticLayer(transform)
+					this.minimapNeedsFullRedraw = false
+				}
+				this.drawMinimapViewportLayer(transform)
+
+				this.lastMinimapRenderAt = Date.now()
+				this.perfStats.render.lastMinimapMode = drawStatic ? 'full' : 'viewport'
+				this.recordPerfStat('minimap', this.getPerfNow() - start)
+			},
+
+			drawMinimapStaticLayer(transform) {
 				const ctx = this.minimapCtx
 				const allNodes = this.nodes
 				const buckets = this.edgeBuckets || {
 					nonPathEdges: [],
 					pathEdges: []
 				}
+				const { centerX, centerY, graphCenterX, graphCenterY, minimapScale } = transform
 
-				// 清空小地图（不绘制背景，容器已有背景）
 				ctx.clearRect(0, 0, this.minimapWidth, this.minimapHeight)
 
-				// 计算图谱边界
-				const bounds = this.getGraphBounds()
-				const graphWidth = bounds.maxX - bounds.minX
-				const graphHeight = bounds.maxY - bounds.minY
-
-				// 使用 10% padding（动态，而非固定 100px）
-				const padding = Math.max(graphWidth, graphHeight) * 0.1
-				const totalWidth = graphWidth + padding * 2
-				const totalHeight = graphHeight + padding * 2
-
-				// 计算小地图缩放比例（移除 0.85 系数，充分利用空间）
-				const scaleX = this.minimapWidth / totalWidth
-				const scaleY = this.minimapHeight / totalHeight
-				const minimapScale = Math.min(scaleX, scaleY)
-
-				// 小地图中心偏移
-				const centerX = this.minimapWidth / 2
-				const centerY = this.minimapHeight / 2
-				const graphCenterX = (bounds.minX + bounds.maxX) / 2
-				const graphCenterY = (bounds.minY + bounds.maxY) / 2
-
-				// 路径高亮时，非路径边变暗
 				if (this.isPathHighlightOn) {
 					ctx.setGlobalAlpha(0.15)
 				}
 
-				// 绘制边（使用 nodeMap 优化 O(1) 查找）- 只绘制非路径边
 				buckets.nonPathEdges.forEach(edge => {
-					const fromNode = this.nodeMap.get(edge.from)
-					const toNode = this.nodeMap.get(edge.to)
+					const fromNode = edge.fromNode || this.nodeMap.get(edge.from)
+					const toNode = edge.toNode || this.nodeMap.get(edge.to)
 					if (!fromNode || !toNode) return
 
 					const x1 = centerX + (fromNode.x - graphCenterX) * minimapScale
@@ -2563,14 +3597,11 @@
 					ctx.stroke()
 				})
 
-				// 恢复透明度绘制路径边
 				if (this.isPathHighlightOn) {
 					ctx.setGlobalAlpha(1.0)
-
-					// 绘制学习路径边（蓝色）
 					buckets.pathEdges.forEach(edge => {
-						const fromNode = this.nodeMap.get(edge.from)
-						const toNode = this.nodeMap.get(edge.to)
+						const fromNode = edge.fromNode || this.nodeMap.get(edge.from)
+						const toNode = edge.toNode || this.nodeMap.get(edge.to)
 						if (!fromNode || !toNode) return
 
 						const x1 = centerX + (fromNode.x - graphCenterX) * minimapScale
@@ -2587,20 +3618,16 @@
 					})
 				}
 
-				// 绘制节点（小圆点）
 				allNodes.forEach(node => {
 					const x = centerX + (node.x - graphCenterX) * minimapScale
 					const y = centerY + (node.y - graphCenterY) * minimapScale
 					const isOnPath = this.isPathHighlightOn && this.learningPathSet.has(node.id)
 					const isDimmed = this.isPathHighlightOn && !isOnPath
 
-					// 路径高亮时，非路径节点变暗
 					if (isDimmed) {
 						ctx.setGlobalAlpha(0.25)
 					}
 
-					// 小地图使用统一灰色：根节点稍亮，其他节点较暗
-					// 路径上的节点使用蓝色
 					const dotColor = isOnPath ? '#0088FF' : (node.level === 0 ? '#9CA3AF' : '#6B7280')
 					const dotRadius = node.level === 0 ? 3 : (node.level === 1 ? 2.5 : 2)
 
@@ -2609,22 +3636,40 @@
 					ctx.setFillStyle(dotColor)
 					ctx.fill()
 
-					// 恢复透明度
 					if (isDimmed) {
 						ctx.setGlobalAlpha(1.0)
 					}
 				})
 
-				// 绘制视口指示器
+				ctx.draw()
+			},
+
+			drawMinimapViewportLayer(transform) {
+				const ctx = this.minimapViewportCtx
+				const { centerX, centerY, graphCenterX, graphCenterY, minimapScale } = transform
+
+				if (
+					!isFiniteNumber(this.scale) ||
+					this.scale <= 0 ||
+					!isFiniteNumber(this.offsetX) ||
+					!isFiniteNumber(this.offsetY) ||
+					!isFiniteNumber(minimapScale) ||
+					minimapScale <= 0
+				) {
+					this.queueMinimapViewportRecovery('drawMinimapViewportLayer')
+					return
+				}
+
+				ctx.clearRect(0, 0, this.minimapWidth, this.minimapHeight)
+
 				const viewportWidth = (this.canvasWidth / this.scale) * minimapScale
 				const viewportHeight = (this.canvasHeight / this.scale) * minimapScale
 				const viewportCenterX = centerX - ((this.offsetX - this.canvasWidth / 2) / this.scale + graphCenterX) * minimapScale
 				const viewportCenterY = centerY - ((this.offsetY - this.canvasHeight / 2) / this.scale + graphCenterY) * minimapScale
 
-				// 绘制圆角矩形视口
 				const vx = viewportCenterX - viewportWidth / 2
 				const vy = viewportCenterY - viewportHeight / 2
-				const vr = 4 // 圆角半径
+				const vr = 4
 
 				ctx.beginPath()
 				ctx.moveTo(vx + vr, vy)
@@ -2641,30 +3686,48 @@
 				ctx.setStrokeStyle('#FFFFFF')
 				ctx.setLineWidth(1.5)
 				ctx.stroke()
-
-				this.lastMinimapRenderAt = Date.now()
 				ctx.draw()
 			},
 
 			getGraphBounds() {
-				if (this.nodes.length === 0) {
-					return { minX: 0, maxX: 100, minY: 0, maxY: 100 }
+				if (!this.graphBoundsDirty && this.graphBoundsCache) {
+					return this.graphBoundsCache
 				}
 
-				let minX = Infinity, maxX = -Infinity
-				let minY = Infinity, maxY = -Infinity
+				if (this.nodes.length === 0) {
+					const emptyBounds = { minX: 0, maxX: 100, minY: 0, maxY: 100 }
+					this.graphBoundsCache = emptyBounds
+					this.graphBoundsDirty = false
+					return emptyBounds
+				}
+
+				let minX = Infinity
+				let maxX = -Infinity
+				let minY = Infinity
+				let maxY = -Infinity
 
 				this.nodes.forEach(node => {
-					minX = Math.min(minX, node.x)
-					maxX = Math.max(maxX, node.x)
-					minY = Math.min(minY, node.y)
-					maxY = Math.max(maxY, node.y)
+					const radius = this.getNodeBaseRadius(node)
+					minX = Math.min(minX, node.x - radius)
+					maxX = Math.max(maxX, node.x + radius)
+					minY = Math.min(minY, node.y - radius)
+					maxY = Math.max(maxY, node.y + radius)
+
+					const labelBox = node.labelBox
+					if (labelBox) {
+						minX = Math.min(minX, labelBox.x)
+						maxX = Math.max(maxX, labelBox.x + labelBox.width)
+						minY = Math.min(minY, labelBox.y)
+						maxY = Math.max(maxY, labelBox.y + labelBox.height)
+					}
 				})
 
 				if (maxX - minX < 1) { maxX = minX + 100 }
 				if (maxY - minY < 1) { maxY = minY + 100 }
 
-				return { minX, maxX, minY, maxY }
+				this.graphBoundsCache = { minX, maxX, minY, maxY }
+				this.graphBoundsDirty = false
+				return this.graphBoundsCache
 			},
 
 			// ========== 可见节点计算 ==========
@@ -2711,6 +3774,15 @@
 			},
 
 			onGraphTouchMove(e) {
+				if (
+					!isFiniteNumber(this.scale) ||
+					this.scale <= 0 ||
+					!isFiniteNumber(this.offsetX) ||
+					!isFiniteNumber(this.offsetY)
+				) {
+					this.resetViewportToGraphCenter('onGraphTouchMove')
+				}
+
 				if (this.isPinching && e.touches.length === 2) {
 					this.markInteractionStart()
 					const distance = this.getPinchDistance(e.touches)
@@ -2804,6 +3876,14 @@
 			onGraphWheel(e) {
 				e.preventDefault()
 				this.markInteractionStart()
+				if (
+					!isFiniteNumber(this.scale) ||
+					this.scale <= 0 ||
+					!isFiniteNumber(this.offsetX) ||
+					!isFiniteNumber(this.offsetY)
+				) {
+					this.resetViewportToGraphCenter('onGraphWheel')
+				}
 
 				// 缩放灵敏度
 				const zoomSensitivity = 0.001
@@ -2936,37 +4016,64 @@
 						return node
 					}
 				}
+
+				for (const node of visibleNodes) {
+					const layout = this.getNodeLabelLayout(node)
+					const fallback = layout ? this.getLabelBoxByPosition(node, layout, 'bottom').box : null
+					const box = node.labelBox || fallback
+					if (!box) continue
+					if (
+						graphX >= box.x &&
+						graphX <= box.x + box.width &&
+						graphY >= box.y &&
+						graphY <= box.y + box.height
+					) {
+						return node
+					}
+				}
 				return null
 			},
 
 			// ========== 小地图触摸事件 ==========
 			onMinimapTouchStart(e) {
 				this.markInteractionStart()
-				this.navigateFromMinimap(e.touches[0])
+				const touch = e.touches?.[0]
+				if (!touch) return
+				this.navigateFromMinimap(touch)
 			},
 
 			onMinimapTouchMove(e) {
 				this.markInteractionStart()
-				this.navigateFromMinimap(e.touches[0])
+				const touch = e.touches?.[0]
+				if (!touch) return
+				this.navigateFromMinimap(touch)
+			},
+
+			onMinimapTouchEnd() {
+				this.scheduleInteractionEnd()
 			},
 
 			navigateFromMinimap(touch) {
-				const bounds = this.getGraphBounds()
-				const graphWidth = bounds.maxX - bounds.minX + 100
-				const graphHeight = bounds.maxY - bounds.minY + 100
+				const point = this.getTouchPoint(touch)
+				if (!point) return
+				const localPoint = this.toMinimapLocal(point)
+				if (!localPoint) return
 
-				const scaleX = this.minimapWidth / graphWidth
-				const scaleY = this.minimapHeight / graphHeight
-				const minimapScale = Math.min(scaleX, scaleY) * 0.85
+				const { graphCenterX, graphCenterY, minimapScale } = this.getMinimapTransform()
+				if (!isFiniteNumber(minimapScale) || minimapScale <= 0) return
 
-				const graphCenterX = (bounds.minX + bounds.maxX) / 2
-				const graphCenterY = (bounds.minY + bounds.maxY) / 2
+				const targetX = graphCenterX + (localPoint.x - this.minimapWidth / 2) / minimapScale
+				const targetY = graphCenterY + (localPoint.y - this.minimapHeight / 2) / minimapScale
+				const safeScale = clamp(
+					(isFiniteNumber(this.scale) && this.scale > 0) ? this.scale : 1,
+					0.3,
+					3
+				)
 
-				const targetX = graphCenterX + (touch.x - this.minimapWidth / 2) / minimapScale
-				const targetY = graphCenterY + (touch.y - this.minimapHeight / 2) / minimapScale
-
-				this.offsetX = this.canvasWidth / 2 - targetX * this.scale
-				this.offsetY = this.canvasHeight / 2 - targetY * this.scale
+				this.scale = safeScale
+				const nextOffsetX = this.canvasWidth / 2 - targetX * safeScale
+				const nextOffsetY = this.canvasHeight / 2 - targetY * safeScale
+				this.applyViewportOffset(nextOffsetX, nextOffsetY, 'navigateFromMinimap')
 
 				this.requestRender()
 				this.requestMinimapRender()
@@ -2989,7 +4096,7 @@
 		display: flex;
 		flex-direction: column;
 		height: 100vh;
-		background-color: rgb(10, 10, 10);
+		background-color: rgb(24, 24, 24);
 		overflow: hidden;
 	}
 
@@ -3102,11 +4209,22 @@
 		border: 1rpx solid rgba(255, 255, 255, 0.1);
 		border-radius: 16rpx;
 		overflow: hidden;
+		pointer-events: auto;
 	}
 
 	.minimap-canvas {
+		position: absolute;
+		inset: 0;
 		width: 100%;
 		height: 100%;
+	}
+
+	.minimap-viewport-canvas {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
 	}
 
 	/* 知识图谱容器 */
@@ -3175,6 +4293,35 @@
 		width: 66rpx;
 		height: 66rpx;
 		filter: brightness(0) invert(1);
+	}
+
+	.perf-debug-panel {
+		position: fixed;
+		top: calc(100vh * 3.5 / 26 + 220rpx);
+		left: calc(100vw / 24);
+		z-index: 95;
+		max-width: 620rpx;
+		padding: 14rpx 18rpx;
+		border-radius: 12rpx;
+		background: rgba(10, 10, 18, 0.8);
+		border: 1rpx solid rgba(255, 255, 255, 0.15);
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+		display: flex;
+		flex-direction: column;
+		gap: 6rpx;
+	}
+
+	.perf-debug-title {
+		font-size: 22rpx;
+		color: #93c5fd;
+		font-weight: 600;
+	}
+
+	.perf-debug-line {
+		font-size: 20rpx;
+		color: rgba(255, 255, 255, 0.9);
+		line-height: 1.35;
 	}
 
 	/* 底部输入栏 - 透明悬浮 */
