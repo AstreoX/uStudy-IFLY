@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     # RAG 配置
     # Embedding 模型配置
     embedding_model: str = "qwen/qwen3-embedding-8b"
-    embedding_dimension: int = 4096
+    embedding_dimension: int = 2000  # HNSW 索引最大支持 2000 维
     embedding_batch_size: int = 20  # 每批处理的文本数量
 
     # 切片配置

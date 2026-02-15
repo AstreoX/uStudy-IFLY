@@ -768,7 +768,7 @@ class DocumentChunk(Base):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding: Mapped[Optional[list]] = mapped_column(Vector(4096), nullable=True)
+    embedding: Mapped[Optional[list]] = mapped_column(Vector(2000), nullable=True)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
