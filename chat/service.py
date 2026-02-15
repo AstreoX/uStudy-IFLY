@@ -1,5 +1,6 @@
 """Chat Service - Conversation and Message Management"""
 
+import asyncio
 import base64
 import logging
 import os
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from chat.orchestrator import LLMOrchestrator, QuickChatOrchestrator
+from memory.extractor import MemoryExtractor
 from chat.schemas import (
     MessageResponse,
     ConversationDetailResponse,
@@ -201,6 +203,42 @@ async def _build_llm_message_with_attachments_async(
     return {"role": message.role.value, "content": content_parts}
 
 
+async def _extract_memories_background(
+    user_id: UUID,
+    space_id: UUID | None,
+    space_name: str,
+    conversation: list[dict],
+) -> None:
+    """
+    后台异步提取记忆（不阻塞主响应流）。
+
+    Args:
+        user_id: 用户 ID
+        space_id: 学习空间 ID（可选）
+        space_name: 学习空间名称
+        conversation: 对话历史列表
+    """
+    try:
+        extractor = MemoryExtractor()
+        result = await extractor.extract_and_save(
+            user_id=user_id,
+            space_id=space_id,
+            space_name=space_name,
+            conversation=conversation,
+        )
+        if result.long_term_count > 0 or result.space_count > 0:
+            logger.info(
+                f"Extracted memories for user {user_id}: "
+                f"long_term={result.long_term_count}, space={result.space_count}"
+            )
+    except Exception as e:
+        # 记忆提取失败不影响主流程，静默记录错误
+        logger.error(
+            f"Memory extraction failed for user {user_id}: {e}",
+            exc_info=True,
+        )
+
+
 class ConversationNotFoundError(Exception):
     """Raised when conversation is not found"""
 
@@ -379,6 +417,28 @@ class ChatService:
                 raise SpaceRequiredError("绑定的学习空间不存在")
 
             space_name = space.name
+
+            # 6. 对话连续性：检测新对话并加载上一次对话上下文
+            # 新对话定义：当前对话只有刚发送的这一条消息
+            is_new_conversation = len(history_messages) == 1
+            previous_conversation_context = None
+
+            settings = get_settings()
+            if is_new_conversation and settings.conversation_continuity_enabled:
+                from chat.previous_conversation import get_previous_conversation_context
+
+                previous_conversation_context = await get_previous_conversation_context(
+                    db=db,
+                    user_id=user_id,
+                    space_id=space_id,
+                    current_conversation_id=conversation_id,
+                    max_rounds=settings.conversation_continuity_max_rounds,
+                    max_content_length=settings.conversation_continuity_max_content_length,
+                )
+                if previous_conversation_context:
+                    logger.debug(
+                        f"Loaded previous conversation context for new conversation {conversation_id}"
+                    )
         # === DB session released here ===
 
         # === Phase 2: Stream (no DB connection held) ===
@@ -387,6 +447,7 @@ class ChatService:
             conversation_id=conversation_id,
             space_id=space_id,
             space_name=space_name,
+            previous_conversation_context=previous_conversation_context,
         )
 
         full_response = ""
@@ -425,6 +486,23 @@ class ChatService:
                     f"Failed to save assistant response for conversation {conversation_id}, "
                     f"response length: {len(full_response)}. Message was streamed to user but NOT persisted.",
                     exc_info=True,
+                )
+
+            # === Phase 3.5: 异步触发记忆提取（不阻塞响应） ===
+            settings = get_settings()
+            if settings.memory_auto_extract_enabled and full_response:
+                # 构建对话历史用于记忆提取
+                conversation_for_extraction = llm_history + [
+                    {"role": "user", "content": content},
+                    {"role": "assistant", "content": full_response},
+                ]
+                asyncio.create_task(
+                    _extract_memories_background(
+                        user_id=user_id,
+                        space_id=space_id,
+                        space_name=space_name,
+                        conversation=conversation_for_extraction,
+                    )
                 )
 
         logger.info(

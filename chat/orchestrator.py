@@ -19,10 +19,14 @@ from chat.tools.learning_space_tools import (
     LEARNING_SPACE_TOOLS,
     get_tool_metadata,
 )
+# 新向量记忆系统
+from chat.tools.vector_memory_tools import VECTOR_MEMORY_TOOLS, VECTOR_MEMORY_TOOL_NAMES
+from chat.tools.vector_memory_executor import VectorMemoryExecutor
+from memory.retriever import MemoryRetriever, format_memories_for_prompt
+
+# 旧记忆系统（仅 QuickChat 暂时保留，后续统一迁移）
 from chat.tools.memory_tools import MEMORY_TOOLS, MEMORY_TOOL_NAMES
 from chat.tools.memory_executor import MemoryToolExecutor, format_memory_for_prompt
-from chat.tools.space_memory_tools import SPACE_MEMORY_TOOLS, SPACE_MEMORY_TOOL_NAMES
-from chat.tools.space_memory_executor import SpaceMemoryToolExecutor, format_space_memory_for_prompt
 from chat.tools.quiz_generation_tools import QUIZ_GENERATION_TOOLS, QuizGenerationToolExecutor
 from chat.tools.rag_tools import RAG_TOOLS, RAGToolExecutor
 from chat.tools.client_tool_bridge import create_pending_request, wait_for_result
@@ -30,7 +34,7 @@ from chat.tools.schedule_tools import SCHEDULE_TOOLS
 from chat.tools.web_tools import WEB_TOOLS, WebToolExecutor
 from chat.tools.time_tools import TIME_TOOLS, TIME_TOOL_NAMES, TimeToolExecutor
 from db.database import get_scoped_session
-from db.models import LongTermMemory, SpaceMemory
+from db.models import LongTermMemory
 from config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -396,6 +400,7 @@ class LLMOrchestrator:
         conversation_id: UUID,
         space_id: UUID,
         space_name: str,
+        previous_conversation_context: str | None = None,
     ) -> None:
         """
         Initialize the orchestrator.
@@ -405,11 +410,13 @@ class LLMOrchestrator:
             conversation_id: Current conversation ID
             space_id: Learning space ID
             space_name: Learning space name
+            previous_conversation_context: Previous conversation context for continuity (optional)
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
         self.space_id = space_id
         self.space_name = space_name
+        self.previous_conversation_context = previous_conversation_context
 
         # Initialize components
         self.settings = get_settings()
@@ -423,20 +430,29 @@ class LLMOrchestrator:
         )
         self.web_tool_executor = WebToolExecutor()
         self.rag_tool_executor = RAGToolExecutor(space_id)
-        self.memory_tool_executor = MemoryToolExecutor(user_id)
-        self.space_memory_executor = SpaceMemoryToolExecutor(space_id)
         self.time_tool_executor = TimeToolExecutor()
 
-        # Combined tools list for learning space mode (including memory, space memory, and time tools)
-        self.available_tools = GRAPH_TOOLS + QUIZ_GENERATION_TOOLS + WEB_TOOLS + SCHEDULE_TOOLS + RAG_TOOLS + MEMORY_TOOLS + SPACE_MEMORY_TOOLS + TIME_TOOLS
+        # 新向量记忆系统（统一处理长期记忆和空间记忆）
+        self.vector_memory_executor = VectorMemoryExecutor(user_id, space_id)
+        self.memory_retriever = MemoryRetriever(user_id, space_id)
+
+        # Combined tools list for learning space mode (using new vector memory tools)
+        self.available_tools = (
+            GRAPH_TOOLS
+            + QUIZ_GENERATION_TOOLS
+            + WEB_TOOLS
+            + SCHEDULE_TOOLS
+            + RAG_TOOLS
+            + VECTOR_MEMORY_TOOLS
+            + TIME_TOOLS
+        )
 
         # Tool name to executor mapping
         self._quiz_tool_names = {"generate_test"}
         self._web_tool_names = {"web_search", "web_fetch"}
         self._schedule_tool_names = {"get_schedule", "add_schedule", "delete_schedule", "update_schedule"}
         self._rag_tool_names = {"search_documents"}
-        self._memory_tool_names = MEMORY_TOOL_NAMES
-        self._space_memory_tool_names = SPACE_MEMORY_TOOL_NAMES
+        self._vector_memory_tool_names = VECTOR_MEMORY_TOOL_NAMES
         self._time_tool_names = TIME_TOOL_NAMES
 
     async def process_message(
@@ -458,16 +474,37 @@ class LLMOrchestrator:
             - {"event": "done", "data": {"content": "full response"}}
             - {"event": "error", "data": {"message": "..."}}
         """
-        # 1. Load user's long-term memory and space memory
-        long_term_memory = await self._load_long_term_memory()
-        space_memory = await self._load_space_memory()
+        # 1. 提取用户消息文本用于语义检索
+        if isinstance(user_message, str):
+            message_text = user_message
+        else:
+            # 多模态消息：提取文本内容
+            content = user_message.get("content", "")
+            if isinstance(content, list):
+                message_text = " ".join(
+                    c.get("text", "") for c in content if c.get("type") == "text"
+                )
+            else:
+                message_text = str(content)
 
-        # 2. Build system prompt with memory
+        # 2. 使用向量检索获取相关记忆（语义搜索）
+        relevant_memories = await self.memory_retriever.get_relevant_memories(
+            user_message=message_text,
+            max_long_term=5,
+            max_space=5,
+        )
+
+        # 3. 格式化记忆用于 prompt 注入（标注本空间/共享来源）
+        formatted_memories = format_memories_for_prompt(
+            relevant_memories, current_space_id=self.space_id
+        )
+
+        # 4. Build system prompt with relevant memories and previous conversation context
         system_prompt = self.prompt_builder.build_system_prompt(
             space_id=self.space_id,
             space_name=self.space_name,
-            long_term_memory=long_term_memory,
-            space_memory=space_memory,
+            relevant_memories=formatted_memories,
+            previous_conversation_context=self.previous_conversation_context,
         )
 
         # Handle both string and dict formats for user message
@@ -612,13 +649,8 @@ class LLMOrchestrator:
                             tool_call.name,
                             tool_call.arguments,
                         )
-                    elif tool_call.name in self._memory_tool_names:
-                        tool_result = await self.memory_tool_executor.execute(
-                            tool_call.name,
-                            tool_call.arguments,
-                        )
-                    elif tool_call.name in self._space_memory_tool_names:
-                        tool_result = await self.space_memory_executor.execute(
+                    elif tool_call.name in self._vector_memory_tool_names:
+                        tool_result = await self.vector_memory_executor.execute(
                             tool_call.name,
                             tool_call.arguments,
                         )
@@ -736,26 +768,5 @@ class LLMOrchestrator:
             },
         }
 
-    async def _load_long_term_memory(self) -> str:
-        """Load user's long-term memory and format for prompt injection."""
-        async with get_scoped_session() as db:
-            result = await db.execute(
-                select(LongTermMemory).where(LongTermMemory.user_id == self.user_id)
-            )
-            memory = result.scalar_one_or_none()
-
-            if memory and memory.entries:
-                return format_memory_for_prompt(memory.entries)
-            return ""
-
-    async def _load_space_memory(self) -> str:
-        """Load space memory and format for prompt injection."""
-        async with get_scoped_session() as db:
-            result = await db.execute(
-                select(SpaceMemory).where(SpaceMemory.space_id == self.space_id)
-            )
-            memory = result.scalar_one_or_none()
-
-            if memory and memory.entries:
-                return format_space_memory_for_prompt(memory.entries)
-            return ""
+    # Note: 旧的 _load_long_term_memory 和 _load_space_memory 已被
+    # MemoryRetriever.get_relevant_memories() 替代，使用语义检索而非全量加载

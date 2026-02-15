@@ -103,6 +103,18 @@ class Settings(BaseSettings):
     attachment_text_timeout_seconds: int = 30  # 提取超时（秒）
     attachment_cache_extracted_text: bool = True  # 是否缓存到数据库
 
+    # 向量记忆系统配置
+    memory_search_top_k_long_term: int = 5  # 长期记忆语义检索数量
+    memory_search_top_k_space: int = 5  # 空间记忆语义检索数量
+    memory_search_score_threshold: float = 0.3  # 最低相似度阈值
+    memory_auto_extract_enabled: bool = True  # 是否启用自动记忆提取
+    memory_extraction_model: str = ""  # 记忆提取用的 LLM 模型（空则使用默认模型）
+
+    # 对话连续性配置
+    conversation_continuity_enabled: bool = True  # 是否启用上一次对话上下文加载
+    conversation_continuity_max_rounds: int = 2  # 加载上一次对话的最后几轮（1-5）
+    conversation_continuity_max_content_length: int = 1000  # 单条消息最大截断长度
+
 
 @lru_cache
 def get_settings() -> Settings:

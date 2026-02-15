@@ -47,6 +47,9 @@ class SpaceUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=1000)
     color: Optional[str] = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    memory_sharing_enabled: Optional[bool] = Field(
+        None, description="是否开启记忆共享（允许其他空间检索本空间记忆）"
+    )
 
 
 class SpaceResponse(BaseModel):
@@ -58,6 +61,7 @@ class SpaceResponse(BaseModel):
     description: Optional[str]
     color: str
     learning_preferences: Optional[dict] = None
+    memory_sharing_enabled: bool = False
     created_at: datetime
     updated_at: datetime
 

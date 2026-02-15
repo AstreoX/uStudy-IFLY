@@ -100,6 +100,13 @@ class AttachmentType(str, enum.Enum):
     FILE = "file"
 
 
+class MemoryType(str, enum.Enum):
+    """记忆类型"""
+
+    LONG_TERM = "long_term"  # 用户长期记忆（跨所有学习空间）
+    SPACE = "space"  # 学习空间记忆（特定空间内）
+
+
 class DifficultyLevel(str, enum.Enum):
     """难度级别"""
 
@@ -187,6 +194,13 @@ class Space(Base):
     color: Mapped[str] = mapped_column(String(20), nullable=False)
     learning_preferences: Mapped[Optional[dict]] = mapped_column(
         JSONB, nullable=True, comment="学习偏好设置"
+    )
+    memory_sharing_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+        comment="是否开启记忆共享（允许其他空间检索本空间记忆）",
     )
     created_at: Mapped[datetime] = mapped_column(
         default=func.now(), nullable=False
@@ -851,6 +865,57 @@ class SpaceMemory(Base):
     # 索引
     __table_args__ = (
         Index("ix_space_memories_space_id", "space_id"),
+    )
+
+
+class VectorMemory(Base):
+    """向量记忆表 - 基于 pgvector 的语义记忆存储"""
+
+    __tablename__ = "vector_memories"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    space_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=True,  # NULL 表示长期记忆（跨空间）
+    )
+    memory_type: Mapped[MemoryType] = mapped_column(
+        Enum(
+            MemoryType,
+            name="memorytype",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],  # 使用 value 而非 name
+        ),
+        nullable=False,
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # pgvector 向量列，2000 维度（与现有 embedding 配置一致）
+    embedding: Mapped[list] = mapped_column(
+        Vector(2000) if Vector else Text,  # fallback for dev without pgvector
+        nullable=False,
+    )
+    # 可选元数据（来源、置信度等）- 注意：不能用 metadata，是 SQLAlchemy 保留字
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    user: Mapped["User"] = relationship()
+    space: Mapped[Optional["Space"]] = relationship()
+
+    # 索引（向量索引将在迁移中单独创建）
+    __table_args__ = (
+        Index("ix_vector_memories_user_id", "user_id"),
+        Index("ix_vector_memories_space_id", "space_id"),
+        Index("ix_vector_memories_user_type", "user_id", "memory_type"),
     )
 
 
