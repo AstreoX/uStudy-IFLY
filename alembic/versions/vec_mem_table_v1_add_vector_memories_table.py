@@ -1,6 +1,6 @@
 """add vector_memories table for semantic memory storage
 
-Revision ID: q6r7s8t9u0v1
+Revision ID: vec_mem_table_v1
 Revises: emb_dim_2000_v1
 Create Date: 2026-02-15
 
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 # revision identifiers, used by Alembic.
-revision: str = "q6r7s8t9u0v1"
+revision: str = "vec_mem_table_v1"
 down_revision: Union[str, None] = "emb_dim_2000_v1"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

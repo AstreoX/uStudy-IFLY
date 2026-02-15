@@ -1,7 +1,7 @@
 """add memory_sharing_enabled to spaces
 
-Revision ID: r7s8t9u0v1w2
-Revises: q6r7s8t9u0v1
+Revision ID: mem_sharing_v1
+Revises: vec_mem_table_v1
 Create Date: 2026-02-15
 
 """
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "r7s8t9u0v1w2"
-down_revision: Union[str, None] = "q6r7s8t9u0v1"
+revision: str = "mem_sharing_v1"
+down_revision: Union[str, None] = "vec_mem_table_v1"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
