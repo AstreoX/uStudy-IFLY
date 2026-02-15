@@ -28,6 +28,9 @@ export function fetchReleaseManifest() {
 }
 
 export function fetchMarkdownContent(relativePath) {
+  if (!relativePath || relativePath.includes('..') || /^(https?:)?\/\//i.test(relativePath)) {
+    return Promise.reject(new Error('Invalid path'))
+  }
   const url = `${GITEE_RAW_BASE}/${relativePath}?t=${Date.now()}`
   return giteeGet(url)
 }

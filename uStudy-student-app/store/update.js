@@ -34,6 +34,10 @@ export const useUpdateStore = defineStore('update', {
   }),
 
   actions: {
+    setManifest(manifest) {
+      this.manifest = manifest
+    },
+
     async checkForUpdates() {
       try {
         const manifest = await fetchReleaseManifest()
@@ -114,9 +118,11 @@ export const useUpdateStore = defineStore('update', {
     dismissAnnouncement(dontShowAgain) {
       if (dontShowAgain && this.currentAnnouncement) {
         const prefs = getAnnouncementPrefs()
+        const ids = new Set(prefs.dismissedIds)
+        ids.add(this.currentAnnouncement.id)
         setAnnouncementPrefs({
           ...prefs,
-          dismissedIds: [...prefs.dismissedIds, this.currentAnnouncement.id]
+          dismissedIds: [...ids].slice(-100)
         })
       }
 
@@ -167,13 +173,12 @@ export const useUpdateStore = defineStore('update', {
       } catch (error) {
         this.isDownloading = false
         this.downloadError = error.message || '下载失败'
-        this.fallbackToBrowser()
       }
     },
 
-    installUpdate() {
+    async installUpdate() {
       try {
-        installApk(this.downloadedFilePath)
+        await installApk(this.downloadedFilePath)
       } catch (error) {
         this.fallbackToBrowser()
       }

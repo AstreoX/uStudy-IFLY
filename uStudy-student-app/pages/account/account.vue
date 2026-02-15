@@ -75,6 +75,14 @@
 
           <view class="settings-divider"></view>
 
+          <view class="settings-item" @click="handleAnnouncements">
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/megaphone.svg" mode="aspectFit"></image>
+            <text class="item-label">更新公告</text>
+            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+          </view>
+
+          <view class="settings-divider"></view>
+
           <view class="settings-item" @click="handlePrivacy">
             <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/shield-check.svg" mode="aspectFit"></image>
             <text class="item-label">隐私政策</text>
@@ -120,7 +128,7 @@
     <u-modal
       :visible="showAboutModal"
       title="关于 uStudy"
-      content="uStudy v1.0.0&#10;&#10;您的智能学习助手"
+      :content="aboutContent"
       :show-cancel="false"
       confirm-text="确定"
       @close="showAboutModal = false"
@@ -248,6 +256,10 @@ export default {
         ALPHA: 'Alpha'
       }
       return labels[tier] || tier
+    },
+
+    aboutContent() {
+      return `uStudy v${config.APP_VERSION_NAME}\n\n您的智能学习助手`
     }
   },
 
@@ -358,6 +370,12 @@ export default {
     // 关于弹窗
     handleAbout() {
       this.showAboutModal = true
+    },
+
+    handleAnnouncements() {
+      uni.navigateTo({
+        url: '/pages/announcementHistory/announcementHistory'
+      })
     },
 
     handlePrivacy() {

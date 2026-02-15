@@ -18,7 +18,7 @@
           <text class="version-badge-text">NEW</text>
         </view>
         <text class="update-title">发现新版本 v{{ versionName }}</text>
-        <text class="update-size">{{ fileSizeMB }} MB</text>
+        <text class="update-size">{{ fileSizeMb }} MB</text>
       </view>
 
       <!-- Changelog Area -->
@@ -56,6 +56,14 @@
             <text class="btn-text-disabled">下载中...</text>
           </view>
         </template>
+        <template v-else-if="downloadError">
+          <view class="btn btn-secondary" @click="$emit('browser')">
+            <text class="btn-text-secondary">浏览器下载</text>
+          </view>
+          <view class="btn btn-primary" @click="$emit('update')">
+            <text class="btn-text-primary">重试</text>
+          </view>
+        </template>
         <template v-else>
           <view v-if="!isForced" class="btn btn-ghost" @click="$emit('skip')">
             <text class="btn-text-ghost">跳过</text>
@@ -81,7 +89,7 @@ export default {
   props: {
     visible: { type: Boolean, default: false },
     versionName: { type: String, default: '' },
-    fileSizeMB: { type: Number, default: 0 },
+    fileSizeMb: { type: Number, default: 0 },
     isForced: { type: Boolean, default: false },
     changelog: { type: String, default: '' },
     isDownloading: { type: Boolean, default: false },
@@ -89,7 +97,7 @@ export default {
     downloadComplete: { type: Boolean, default: false },
     downloadError: { type: String, default: '' }
   },
-  emits: ['skip', 'later', 'update', 'install'],
+  emits: ['skip', 'later', 'update', 'install', 'browser'],
 
   data() {
     return {

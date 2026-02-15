@@ -1,16 +1,20 @@
 <script>
 	import { useUserStore } from '@/store/user'
+	import { useUpdateStore } from '@/store/update'
 
 	export default {
 		onLaunch: function() {
 			useUserStore()
-			console.log('App Launch')
+			// #ifdef APP-PLUS
+			setTimeout(() => {
+				const updateStore = useUpdateStore()
+				updateStore.checkForUpdates()
+			}, 2000)
+			// #endif
 		},
 		onShow: function() {
-			console.log('App Show')
 		},
 		onHide: function() {
-			console.log('App Hide')
 		}
 	}
 </script>

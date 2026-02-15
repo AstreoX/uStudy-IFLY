@@ -139,6 +139,34 @@
 			@close="showActivationModal = false"
 		/>
 
+		<!-- 更新弹窗 -->
+		<update-dialog
+			:visible="updateStore.showUpdateDialog"
+			:version-name="updateStore.manifest?.latestVersion?.versionName || ''"
+			:file-size-mb="updateStore.manifest?.latestVersion?.fileSizeMB || 0"
+			:is-forced="updateStore.isForced"
+			:changelog="updateStore.changelogContent"
+			:is-downloading="updateStore.isDownloading"
+			:download-progress="updateStore.downloadProgress"
+			:download-complete="updateStore.downloadComplete"
+			:download-error="updateStore.downloadError"
+			@skip="updateStore.skipThisVersion()"
+			@later="updateStore.dismissUpdate()"
+			@update="updateStore.startDownload()"
+			@install="updateStore.installUpdate()"
+			@browser="updateStore.fallbackToBrowser()"
+		/>
+
+		<!-- 公告弹窗 -->
+		<announcement-dialog
+			:visible="updateStore.showAnnouncementDialog"
+			:title="updateStore.currentAnnouncement?.title || ''"
+			:date="updateStore.currentAnnouncement?.date || ''"
+			:type="updateStore.currentAnnouncement?.type || 'notice'"
+			:body="updateStore.announcementContent"
+			@close="onAnnouncementClose"
+		/>
+
 		<!-- 启动兜底遮罩：避免网络异常时出现纯黑屏 -->
 		<view v-if="bootState !== 'ready'" class="boot-overlay">
 			<view class="boot-panel">
@@ -162,13 +190,18 @@
 	import { getSpaces, getSpaceGraph } from '@/api/space'
 	import { getTokens, getCardOrder, setCardOrder, clearAuth } from '@/utils/storage'
 	import { useUserStore } from '@/store/user'
+	import { useUpdateStore } from '@/store/update'
 	import KnowledgeTreeMini from '@/components/knowledge-tree-mini/knowledge-tree-mini.vue'
 	import ActivationModal from '@/components/activation-modal/activation-modal.vue'
+	import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
+	import AnnouncementDialog from '@/components/announcement-dialog/announcement-dialog.vue'
 
 	export default {
 		components: {
 			KnowledgeTreeMini,
-			ActivationModal
+			ActivationModal,
+			UpdateDialog,
+			AnnouncementDialog
 		},
 
 		data() {
@@ -229,6 +262,10 @@
 		},
 
 		computed: {
+			updateStore() {
+				return useUpdateStore()
+			},
+
 			// 真实学习空间数量
 			spaceCount() {
 				return this.learningTopics.length
@@ -384,6 +421,11 @@
 			// 用户取消激活（稍后再说）
 			onActivationCancel() {
 				this.showActivationModal = false
+			},
+
+			// 公告关闭
+			onAnnouncementClose({ dontShowAgain }) {
+				this.updateStore.dismissAnnouncement(dontShowAgain)
 			},
 
 			// 从后端加载学习空间

@@ -3,25 +3,19 @@ import config from '@/config'
 const { GITEE_RAW_BASE } = config
 
 export function getCurrentVersionCode() {
-  // #ifdef APP-PLUS
-  return Number(plus.runtime.versionCode) || 0
-  // #endif
-  // #ifndef APP-PLUS
-  return 0
-  // #endif
+  return config.APP_VERSION_CODE || 0
 }
 
 export function getCurrentVersionName() {
-  // #ifdef APP-PLUS
-  return plus.runtime.version || '0.0.0'
-  // #endif
-  // #ifndef APP-PLUS
-  return '0.0.0'
-  // #endif
+  return config.APP_VERSION_NAME || '0.0.0'
 }
 
 export function isUpdateAvailable(manifest) {
   if (!manifest || !manifest.latestVersion) return false
+  // #ifdef APP-PLUS
+  const info = uni.getSystemInfoSync()
+  if (info.platform === 'ios') return false
+  // #endif
   const current = getCurrentVersionCode()
   return manifest.latestVersion.versionCode > current
 }
@@ -50,17 +44,31 @@ export function getBrowserDownloadUrl(manifest) {
 export function downloadApk(url, onProgress) {
   return new Promise((resolve, reject) => {
     // #ifdef APP-PLUS
+    let settled = false
+
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true
+        try { task.abort() } catch (e) { /* ignore */ }
+        reject(new Error('下载超时'))
+      }
+    }, 60000)
+
     const task = plus.downloader.createDownload(url, {
       filename: '_downloads/uStudy-update.apk'
     }, (download, status) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
       if (status === 200) {
         resolve(download.filename)
       } else {
-        reject(new Error(`Download failed: ${status}`))
+        reject(new Error(`下载失败 (HTTP ${status})`))
       }
     })
 
     task.addEventListener('statechanged', (download) => {
+      if (settled) return
       if (download.state === 3 && download.totalSize > 0) {
         const progress = Math.round((download.downloadedSize / download.totalSize) * 100)
         if (onProgress) onProgress(progress)
@@ -77,13 +85,20 @@ export function downloadApk(url, onProgress) {
 }
 
 export function installApk(filePath) {
-  // #ifdef APP-PLUS
-  plus.runtime.install(filePath, { force: true }, () => {
-    plus.runtime.restart()
-  }, (err) => {
-    throw new Error(err.message || 'Install failed')
+  return new Promise((resolve, reject) => {
+    // #ifdef APP-PLUS
+    plus.runtime.install(filePath, { force: true }, () => {
+      resolve()
+      plus.runtime.restart()
+    }, (err) => {
+      reject(new Error(err.message || 'Install failed'))
+    })
+    // #endif
+
+    // #ifndef APP-PLUS
+    reject(new Error('Install not supported on this platform'))
+    // #endif
   })
-  // #endif
 }
 
 export function openInBrowser(url) {
