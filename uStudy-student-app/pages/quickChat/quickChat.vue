@@ -53,9 +53,14 @@
 						</view>
 					</view>
 
-					<!-- 消息气泡（仅文字） -->
-					<view v-if="msg.content && msg.content.trim()" class="message-bubble bubble-user">
-						<text class="message-text">{{ msg.content }}</text>
+					<!-- 气泡行：左侧放重试按钮 -->
+					<view class="user-bubble-row">
+						<view v-if="msg.isFailed" class="msg-retry-btn" @click="resendMessage(msg)">
+							<image class="msg-retry-icon" src="/static/icons/phosphor-icons/SVGs Flat/fill/arrows-clockwise-fill.svg" mode="aspectFit" />
+						</view>
+						<view v-if="msg.content && msg.content.trim()" class="message-bubble bubble-user">
+							<text class="message-text">{{ msg.content }}</text>
+						</view>
 					</view>
 				</template>
 
@@ -383,6 +388,7 @@
 				keyboardHeight: 0,
 				nextId: 1,
 				cancelSSE: null,
+				isLoadingHistory: false,
 
 				// 滚动控制
 				scrollTopValue: 0,
@@ -446,8 +452,8 @@
 		},
 
 		onShow() {
-			// 页面显示时，合并本地缓存的待同步消息
-			if (this.conversationId) {
+			// 页面显示时，合并本地缓存的待同步消息（历史加载中不重复 merge）
+			if (this.conversationId && !this.isLoadingHistory) {
 				this.mergePendingMessages()
 			}
 		},
@@ -1161,6 +1167,7 @@
 					attachments: attachments,
 					pendingId: pendingId,
 					synced: false,
+					isFailed: false,
 					timestamp: Date.now()
 				}
 
@@ -1189,6 +1196,7 @@
 			},
 
 			async loadExistingConversation(convId) {
+				this.isLoadingHistory = true
 				try {
 					const result = await getConversation(convId)
 					const historyMessages = result.messages || []
@@ -1203,11 +1211,14 @@
 						})
 					})
 
+					this.mergePendingMessages()
 					this.$nextTick(() => {
 						this.scrollToLatestMessage()
 					})
 				} catch (err) {
 					uni.showToast({ title: '加载对话失败', icon: 'none' })
+				} finally {
+					this.isLoadingHistory = false
 				}
 			},
 
@@ -1256,6 +1267,12 @@
 				try {
 					await this.initConversation()
 				} catch {
+					if (pendingId) {
+						const userMsg = this.messages.find(m => m.pendingId === pendingId)
+						if (userMsg) {
+							userMsg.isFailed = true
+						}
+					}
 					return
 				}
 
@@ -1351,13 +1368,58 @@
 							this.messages[msgIndex].isStreaming = false
 							this.messages[msgIndex].content = this.messages[msgIndex].content || '（回复失败）'
 							this.stopHeightMonitor()
+							if (pendingId) {
+								const userMsg = this.messages.find(m => m.pendingId === pendingId)
+								if (userMsg) {
+									userMsg.isFailed = true
+								}
+							}
 						},
 
 						onComplete: () => {
+							// 兜底：如果 onDone 未触发，标记用户消息为失败
+							const aiMsg = this.messages[msgIndex]
+							if (aiMsg && aiMsg.isStreaming) {
+								aiMsg.isStreaming = false
+								aiMsg.isWaitingOutput = false
+								aiMsg.content = aiMsg.content || '（连接中断）'
+								this.stopHeightMonitor()
+								if (pendingId) {
+									const userMsg = this.messages.find(m => m.pendingId === pendingId)
+									if (userMsg) {
+										userMsg.isFailed = true
+									}
+								}
+							}
 							this.cancelSSE = null
 						}
 					},
 					attachmentIds
+				)
+			},
+
+			resendMessage(msg) {
+				if (this.isAiStreaming) return
+				this.isAutoScrollEnabled = true
+
+				msg.isFailed = false
+
+				// 移除对应的失败 AI 回复消息
+				const msgIdx = this.messages.findIndex(m => m.id === msg.id)
+				if (msgIdx >= 0 && msgIdx + 1 < this.messages.length) {
+					const nextMsg = this.messages[msgIdx + 1]
+					if (nextMsg.role === 'ai' && !nextMsg.isStreaming) {
+						this.messages.splice(msgIdx + 1, 1)
+					}
+				}
+
+				const attachmentIds = (msg.attachments && msg.attachments.length > 0)
+					? msg.attachments.map(att => att.id).filter(Boolean)
+					: null
+				this.sendRealMessage(
+					msg.content,
+					attachmentIds && attachmentIds.length > 0 ? attachmentIds : null,
+					msg.pendingId
 				)
 			},
 
@@ -1600,11 +1662,38 @@
 		word-break: break-all;
 	}
 
+	.user-bubble-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		max-width: 98%;
+	}
+
+	.msg-retry-btn {
+		width: 40rpx;
+		height: 40rpx;
+		border-radius: 50%;
+		background-color: #FF3B30;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 16rpx;
+		flex-shrink: 0;
+	}
+
+	.msg-retry-icon {
+		width: 24rpx;
+		height: 24rpx;
+		filter: brightness(0) invert(1);
+	}
+
 	.bubble-user {
 		background-color: #2d2d2d;
 		border-radius: calc(100vh * 1.3 / 26 / 2);
 		min-height: calc(100vh * 1.3 / 26);
 		padding: 16rpx 28rpx;
+		max-width: none;
+		min-width: 0;
 	}
 
 	.bubble-ai {

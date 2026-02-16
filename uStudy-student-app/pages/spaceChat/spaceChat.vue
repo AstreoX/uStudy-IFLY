@@ -69,9 +69,14 @@
 						</view>
 					</view>
 
-					<!-- 消息气泡（仅文字） -->
-					<view v-if="msg.content && msg.content.trim()" class="message-bubble bubble-user">
-						<text class="message-text">{{ msg.content }}</text>
+					<!-- 气泡行：左侧放重试按钮 -->
+					<view class="user-bubble-row">
+						<view v-if="msg.isFailed" class="msg-retry-btn" @click="resendMessage(msg)">
+							<image class="msg-retry-icon" src="/static/icons/phosphor-icons/SVGs Flat/fill/arrows-clockwise-fill.svg" mode="aspectFit" />
+						</view>
+						<view v-if="msg.content && msg.content.trim()" class="message-bubble bubble-user">
+							<text class="message-text">{{ msg.content }}</text>
+						</view>
 					</view>
 				</template>
 
@@ -842,8 +847,8 @@
 		},
 
 		onShow() {
-			// 页面显示时，合并本地缓存的待同步消息
-			if (this.conversationId) {
+			// 页面显示时，合并本地缓存的待同步消息（历史加载中不重复 merge）
+			if (this.conversationId && !this.isLoadingHistory) {
 				this.mergePendingMessages()
 			}
 		},
@@ -1578,6 +1583,7 @@
 					attachments: attachments,
 					pendingId: pendingId,
 					synced: false,
+					isFailed: false,
 					timestamp: Date.now()
 				}
 				this.messages.push(userMessage)
@@ -1608,6 +1614,7 @@
 						savePendingMessage(this.conversationId, userMessage)
 					} catch (err) {
 						this.isSendingMessage = false
+						userMessage.isFailed = true
 						uni.showToast({ title: '创建对话失败', icon: 'none' })
 						return
 					}
@@ -1747,6 +1754,12 @@
 						}
 						this.stopHeightMonitor()
 						uni.showToast({ title: message || '请求失败', icon: 'none' })
+						if (pendingId) {
+							const userMsg = this.messages.find(m => m.pendingId === pendingId)
+							if (userMsg) {
+								userMsg.isFailed = true
+							}
+						}
 					},
 
 					onComplete: () => {
@@ -1770,6 +1783,13 @@
 							if (!hasText && !hasTextSegments) {
 								msg.content = '网络连接中断，AI 未能完成回复。请重新发送消息。'
 							}
+							// 标记用户消息为失败
+							if (pendingId) {
+								const userMsg = this.messages.find(m => m.pendingId === pendingId)
+								if (userMsg) {
+									userMsg.isFailed = true
+								}
+							}
 						}
 						// 清理残留 running 状态的工具卡片（标记为超时失败）
 						if (this.activeToolCalls.length > 0) {
@@ -1788,6 +1808,146 @@
 				}, attachmentIds.length > 0 ? attachmentIds : null)
 			},
 
+			async resendMessage(msg) {
+				if (this.isAiStreaming || this.isSendingMessage) return
+
+				this.isAutoScrollEnabled = true
+				msg.isFailed = false
+
+				// 移除对应的失败 AI 回复消息
+				const msgIdx = this.messages.findIndex(m => m.id === msg.id)
+				if (msgIdx >= 0 && msgIdx + 1 < this.messages.length) {
+					const nextMsg = this.messages[msgIdx + 1]
+					if (nextMsg.role === 'ai' && !nextMsg.isStreaming) {
+						this.messages.splice(msgIdx + 1, 1)
+					}
+				}
+
+				const pendingId = msg.pendingId
+				const text = msg.content
+				const attachmentIds = (msg.attachments && msg.attachments.length > 0)
+					? msg.attachments.map(att => att.id).filter(Boolean)
+					: null
+
+				this.isSendingMessage = true
+
+				// 如果没有对话，先创建
+				if (!this.conversationId) {
+					try {
+						const conv = await createConversation(this.spaceId, text.slice(0, 50))
+						this.conversationId = conv.id
+						savePendingMessage(this.conversationId, msg)
+					} catch {
+						this.isSendingMessage = false
+						msg.isFailed = true
+						uni.showToast({ title: '创建对话失败', icon: 'none' })
+						return
+					}
+				}
+
+				// 添加 AI 消息占位并启动 SSE
+				const aiMsgId = this.nextId++
+				this.messages.push({ id: aiMsgId, role: 'ai', content: '', isStreaming: true, isWaitingOutput: true })
+				this.scrollToLatestMessage()
+				this.startHeightMonitor(aiMsgId)
+				this.activeToolCalls = []
+
+				this.cancelSSE = sendChatMessage(this.conversationId, text, {
+					onTextDelta: (content) => {
+						if (!this.preKnowledgeParser) {
+							this.preKnowledgeParser = new PreKnowledgeTagParser()
+						}
+						const { cleanText, events } = this.preKnowledgeParser.parse(content)
+						for (const event of events) {
+							if (event.type === 'preknowledge') this.handlePreKnowledgeTag(event.payload)
+							else if (event.type === 'highlight') this.handleHighlightTag(event.payload)
+						}
+						if (cleanText) this.appendToTypewriter(aiMsgId, cleanText)
+					},
+					onToolCall: (data) => { this.handleToolCallEvent(aiMsgId, data) },
+					onClientToolRequest: (data) => { this.handleClientToolRequest(aiMsgId, data) },
+					onDone: (fullContent) => {
+						this.flushTypewriter()
+						if (this.showPreKnowledgeCard) this.schedulePreKnowledgeDismiss()
+						this.preKnowledgeParser = null
+
+						const aiMsg = this.messages.find(m => m.id === aiMsgId)
+						if (aiMsg) {
+							const finalSegments = []
+							if (aiMsg.streamSegments && aiMsg.streamSegments.length > 0) {
+								for (const seg of aiMsg.streamSegments) {
+									if (seg.type === 'tool') {
+										const tc = this.activeToolCalls.find(t => t.id === seg.toolCall.id)
+										finalSegments.push({ type: 'tool', toolCall: tc ? { ...tc } : { ...seg.toolCall } })
+									} else {
+										finalSegments.push({ ...seg })
+									}
+								}
+								if (aiMsg.content && aiMsg.content.length > 0) {
+									finalSegments.push({ type: 'text', content: aiMsg.content })
+								}
+							} else if (fullContent) {
+								finalSegments.push({ type: 'text', content: fullContent })
+							}
+							aiMsg.segments = finalSegments
+							aiMsg.content = fullContent
+							delete aiMsg.streamSegments
+							if (this.activeToolCalls.length > 0) {
+								aiMsg.toolCalls = this.activeToolCalls.map(tc => ({ ...tc }))
+							}
+							aiMsg.isWaitingOutput = false
+							aiMsg.isStreaming = false
+						}
+						this.stopHeightMonitor()
+						this.activeToolCalls = []
+						this.scrollToLatestMessage()
+
+						if (pendingId && this.conversationId) {
+							const userMsg = this.messages.find(m => m.pendingId === pendingId)
+							if (userMsg) userMsg.synced = true
+							removePendingMessage(this.conversationId, pendingId)
+						}
+					},
+					onError: (message) => {
+						this.flushTypewriter()
+						const aiMsg = this.messages.find(m => m.id === aiMsgId)
+						if (aiMsg) {
+							aiMsg.content = aiMsg.content || '请求失败'
+							aiMsg.isWaitingOutput = false
+							aiMsg.isStreaming = false
+							aiMsg.isError = true
+						}
+						this.stopHeightMonitor()
+						uni.showToast({ title: message || '请求失败', icon: 'none' })
+						if (pendingId) {
+							const userMsg = this.messages.find(m => m.pendingId === pendingId)
+							if (userMsg) userMsg.isFailed = true
+						}
+					},
+					onComplete: () => {
+						const aiMsg = this.messages.find(m => m.id === aiMsgId)
+						if (aiMsg && aiMsg.isStreaming) {
+							this.flushTypewriter()
+							this.preKnowledgeParser = null
+							aiMsg.isWaitingOutput = false
+							aiMsg.isStreaming = false
+							this.stopHeightMonitor()
+							this.activeToolCalls = []
+							const hasText = aiMsg.content && aiMsg.content.trim() !== ''
+							if (!hasText) {
+								aiMsg.content = '网络连接中断，AI 未能完成回复。请重新发送消息。'
+							}
+							if (pendingId) {
+								const userMsg = this.messages.find(m => m.pendingId === pendingId)
+								if (userMsg) userMsg.isFailed = true
+							}
+						}
+						this.cancelSSE = null
+						this.isSendingMessage = false
+					}
+				}, attachmentIds && attachmentIds.length > 0 ? attachmentIds : null)
+			},
+
 			/**
 			 * 加载对话历史消息
 			 */
@@ -1803,6 +1963,7 @@
 						created_at: m.created_at
 					}))
 					this.nextId = this.messages.length + 1
+					this.mergePendingMessages()
 					this.$nextTick(() => this.scrollToLatestMessage())
 				} catch (err) {
 					uni.showToast({ title: '加载对话失败', icon: 'none' })
@@ -2875,11 +3036,38 @@
 		gap: 8rpx;
 	}
 
+	.user-bubble-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		max-width: 98%;
+	}
+
+	.msg-retry-btn {
+		width: 40rpx;
+		height: 40rpx;
+		border-radius: 50%;
+		background-color: #FF3B30;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 16rpx;
+		flex-shrink: 0;
+	}
+
+	.msg-retry-icon {
+		width: 24rpx;
+		height: 24rpx;
+		filter: brightness(0) invert(1);
+	}
+
 	.bubble-user {
 		background-color: #2d2d2d;
 		border-radius: calc(100vh * 1.3 / 26 / 2);
 		min-height: calc(100vh * 1.3 / 26);
 		padding: 16rpx 28rpx;
+		max-width: none;
+		min-width: 0;
 	}
 
 	.bubble-ai {
