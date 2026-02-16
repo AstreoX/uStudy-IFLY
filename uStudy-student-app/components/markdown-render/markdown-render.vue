@@ -177,7 +177,8 @@ function processLatex(text) {
 
 	// 避免 lookbehind，兼容旧 Android JS 引擎
 	processed = processed.replace(/(^|[^$])\$(?!\$)([^\$\n]+?)\$(?!\$)/g, (match, prefix, formula) => {
-		if (/^\d/.test(formula.trim())) {
+		// 只跳过纯数字/货币格式（如 $10, $10.00, $1,000），允许包含 LaTeX 命令的数字公式
+		if (/^[\d,]+(\.\d+)?$/.test(formula.trim())) {
 			return match
 		}
 		const rendered = renderLatex(formula.trim(), false)
