@@ -22,6 +22,23 @@ if (rafGlobal && typeof rafGlobal.cancelAnimationFrame !== 'function') {
   }
 }
 
+// 启动阶段全局错误捕获：如果 JS 初始化过程中抛错，强制关闭 splash 防止卡死
+if (rafGlobal) {
+  rafGlobal.onerror = function (message, source, lineno) {
+    try {
+      // #ifdef APP-PLUS
+      if (typeof plus !== 'undefined' && plus.navigator) {
+        plus.navigator.closeSplashscreen()
+      }
+      // #endif
+      try {
+        uni.setStorageSync('__last_runtime_error__', String(message) + ' at ' + String(source) + ':' + lineno)
+      } catch (e) {}
+    } catch (e) {}
+    return false
+  }
+}
+
 // #ifndef VUE3
 import Vue from 'vue'
 import './uni.promisify.adaptor'

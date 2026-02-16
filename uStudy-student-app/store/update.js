@@ -191,6 +191,21 @@ export const useUpdateStore = defineStore('update', {
       if (url) {
         openInBrowser(url)
       }
+    },
+
+    /**
+     * 直接跳转浏览器下载（不使用应用内下载）
+     */
+    downloadInBrowser() {
+      const url = getBrowserDownloadUrl(this.manifest)
+      if (url) {
+        openInBrowser(url)
+        // 非强制更新时，跳转浏览器后关闭对话框
+        if (!this.isForced) {
+          this.showUpdateDialog = false
+          this.checkAnnouncements()
+        }
+      }
     }
   }
 })

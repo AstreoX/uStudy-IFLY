@@ -1,10 +1,17 @@
 <script>
 	import { useUserStore } from '@/store/user'
 	import { useUpdateStore } from '@/store/update'
+	import config from '@/config'
 
 	export default {
 		onLaunch: function() {
+			// #ifdef APP-PLUS
+			this.clearCacheOnVersionChange()
+			this.setupSplashTimeout()
+			// #endif
+
 			useUserStore()
+
 			// #ifdef APP-PLUS
 			setTimeout(() => {
 				const updateStore = useUpdateStore()
@@ -15,6 +22,37 @@
 		onShow: function() {
 		},
 		onHide: function() {
+		},
+		methods: {
+			clearCacheOnVersionChange() {
+				try {
+					const versionKey = '__app_cached_version_code__'
+					const currentVersion = String(config.APP_VERSION_CODE)
+					const lastVersion = uni.getStorageSync(versionKey)
+
+					if (lastVersion && lastVersion !== currentVersion) {
+						// 版本变更：清除 WebView 缓存（不影响 localStorage/Storage）
+						if (typeof plus !== 'undefined' && plus.navigator) {
+							plus.navigator.clearCache()
+						}
+					}
+
+					// 无论是否清除缓存，都更新记录的版本号
+					uni.setStorageSync(versionKey, currentVersion)
+				} catch (error) {
+					// 缓存清理失败不阻塞启动
+				}
+			},
+			setupSplashTimeout() {
+				// 安全网：5 秒后如果 splash 仍未关闭，强制关闭
+				try {
+					setTimeout(() => {
+						if (typeof plus !== 'undefined' && plus.navigator) {
+							plus.navigator.closeSplashscreen()
+						}
+					}, 5000)
+				} catch (error) {}
+			}
 		}
 	}
 </script>

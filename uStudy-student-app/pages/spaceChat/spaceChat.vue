@@ -1,5 +1,16 @@
 <template>
 	<view class="chat-page">
+		<!-- 掌握分胶囊通知 -->
+		<u-capsule-toast
+			v-for="(item, idx) in masteryNotifications"
+			:key="item.id"
+			:visible="item.visible"
+			:node-name="item.nodeName"
+			:change="item.change"
+			:index="idx"
+			@close="removeMasteryNotification(item.id)"
+		/>
+
 		<!-- 顶部导航栏 -->
 		<view class="chat-nav-bar">
 			<view class="nav-left" @click="goBack">
@@ -504,6 +515,7 @@
 </template>
 
 <script>
+	import UCapsuleToast from '@/components/u-capsule-toast/u-capsule-toast.vue'
 	import USnackbar from '@/components/u-snackbar/u-snackbar.vue'
 	import UInputModal from '@/components/u-input-modal/u-input-modal.vue'
 	import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
@@ -511,6 +523,7 @@
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
 	import { generateQuiz, getTaskStatus, getSpaceGraph } from '@/api/space'
 	import { createConversation, getConversation, sendMessage as sendChatMessage, executeToolCall, submitFeedback, submitToolResult } from '@/api/chat'
+	import { connectNotificationStream } from '@/api/notification'
 	import { executeCalendarTool } from '@/utils/calendar'
 	import { uploadAttachment, deleteAttachment } from '@/api/attachment'
 	import { PreKnowledgeTagParser } from '@/utils/preKnowledgeParser'
@@ -611,6 +624,7 @@
 
 	export default {
 		components: {
+			UCapsuleToast,
 			USnackbar,
 			UInputModal,
 			MarkdownRender,
@@ -722,7 +736,12 @@
 
 				// 附件管理
 				pendingAttachments: [],  // 已上传待发送的附件列表
-				uploadingFiles: []       // 上传中的文件列表
+				uploadingFiles: [],      // 上传中的文件列表
+
+				// 掌握分通知
+				masteryNotifications: [],
+				notificationAbort: null,
+				notificationIdCounter: 0
 			}
 		},
 
@@ -867,6 +886,22 @@
 			}
 			// #endif
 
+			// 建立通知 SSE 连接
+			this.notificationAbort = connectNotificationStream({
+				onMasteryUpdate: (data) => {
+					this.notificationIdCounter++
+					this.masteryNotifications = [
+						...this.masteryNotifications,
+						{
+							id: this.notificationIdCounter,
+							visible: true,
+							nodeName: data.node_name,
+							change: data.change
+						}
+					]
+				}
+			})
+
 			this.$nextTick(() => {
 				this.adjustTextareaHeight()
 				this.scrollToLatestMessage()
@@ -940,6 +975,12 @@
 				this.cancelSSE()
 				this.cancelSSE = null
 			}
+
+			// 清理通知 SSE 连接
+			if (this.notificationAbort) {
+				this.notificationAbort()
+				this.notificationAbort = null
+			}
 		},
 
 		watch: {
@@ -960,6 +1001,11 @@
 			},
 			onRenderjsSseError(data) {
 				handleSseError(data)
+			},
+
+			// ==================== 掌握分通知 ====================
+			removeMasteryNotification(id) {
+				this.masteryNotifications = this.masteryNotifications.filter(n => n.id !== id)
 			},
 
 			onTextareaInput() {

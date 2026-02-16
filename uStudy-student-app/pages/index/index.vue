@@ -54,6 +54,14 @@
 			>
 				<!-- 真实学习空间卡片 -->
 				<template v-if="card.cardType === 'space'">
+					<!-- 删除按钮（仅选择模式显示，带淡入淡出动画） -->
+					<view
+						class="delete-btn"
+						:class="{ 'delete-btn-visible': isSelectionMode && !isExitingSelection }"
+						@click.stop="handleDeleteClick(card)"
+					>
+						<image class="delete-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit"></image>
+					</view>
 					<!-- 卡片内容 -->
 					<view class="card-header">
 						<text class="card-title">{{ card.name }}</text>
@@ -113,6 +121,25 @@
 			</view>
 		</view>
 
+		<!-- 删除确认弹窗 -->
+		<u-modal
+			:visible="showDeleteModal"
+			title="删除学习空间"
+			:content="deleteModalContent"
+			confirm-text="删除"
+			confirm-type="danger"
+			@confirm="doDeleteSpace"
+			@close="showDeleteModal = false"
+		/>
+
+		<!-- Toast 通知 -->
+		<u-toast
+			:visible="toast.visible"
+			:message="toast.message"
+			:type="toast.type"
+			@close="toast.visible = false"
+		/>
+
 		<!-- 底部导航栏 -->
 		<view class="bottom-nav" :class="{ 'nav-hidden': isSelectionMode }">
 			<view class="nav-item">
@@ -152,7 +179,7 @@
 			:download-error="updateStore.downloadError"
 			@skip="updateStore.skipThisVersion()"
 			@later="updateStore.dismissUpdate()"
-			@update="updateStore.startDownload()"
+			@update="updateStore.downloadInBrowser()"
 			@install="updateStore.installUpdate()"
 			@browser="updateStore.fallbackToBrowser()"
 		/>
@@ -187,7 +214,7 @@
 
 <script>
 	import { getMe } from '@/api/auth'
-	import { getSpaces, getSpaceGraph } from '@/api/space'
+	import { getSpaces, getSpaceGraph, deleteSpace } from '@/api/space'
 	import { getTokens, getCardOrder, setCardOrder, clearAuth } from '@/utils/storage'
 	import { useUserStore } from '@/store/user'
 	import { useUpdateStore } from '@/store/update'
@@ -195,13 +222,17 @@
 	import ActivationModal from '@/components/activation-modal/activation-modal.vue'
 	import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 	import AnnouncementDialog from '@/components/announcement-dialog/announcement-dialog.vue'
+	import UModal from '@/components/u-modal/u-modal.vue'
+	import UToast from '@/components/u-toast/u-toast.vue'
 
 	export default {
 		components: {
 			KnowledgeTreeMini,
 			ActivationModal,
 			UpdateDialog,
-			AnnouncementDialog
+			AnnouncementDialog,
+			UModal,
+			UToast
 		},
 
 		data() {
@@ -246,6 +277,12 @@
 				treeCanvasHeight: 0,
 				// Alpha 激活码弹窗
 				showActivationModal: false,
+				// 删除学习空间
+				showDeleteModal: false,
+				deletingSpace: null,
+				isDeleting: false,
+				// Toast
+				toast: { visible: false, message: '', type: 'info' },
 				// 启动状态兜底
 				bootState: 'loading',
 				bootErrorMessage: '',
@@ -279,6 +316,12 @@
 			// 是否为空状态（0个空间）
 			isEmptyState() {
 				return this.spaceCount === 0
+			},
+
+			// 删除弹窗内容
+			deleteModalContent() {
+				if (!this.deletingSpace) return ''
+				return `确定要删除「${this.deletingSpace.name}」吗？此操作不可恢复，所有学习记录、知识图谱和对话记录将被永久删除。`
 			},
 
 			// 当前主卡片数据（栈顶）
@@ -1127,6 +1170,43 @@
 				// #ifndef APP-PLUS
 				uni.navigateTo({ url })
 				// #endif
+			},
+
+			// 点击删除按钮
+			handleDeleteClick(card) {
+				this.deletingSpace = { id: card.id, name: card.name }
+				this.showDeleteModal = true
+			},
+
+			// 确认删除学习空间
+			async doDeleteSpace() {
+				if (this.isDeleting || !this.deletingSpace) return
+				this.isDeleting = true
+
+				try {
+					await deleteSpace(this.deletingSpace.id)
+					this.showDeleteModal = false
+					this.showToast('学习空间已删除', 'success')
+
+					// 刷新空间列表（保持选择模式）
+					await this.loadSpaces()
+
+					// 如果没有空间了，退出选择模式
+					if (this.spaceCount === 0) {
+						this.isSelectionMode = false
+						this.showArrow = true
+					}
+				} catch (error) {
+					this.showToast(error.message || '删除失败，请重试', 'error')
+				} finally {
+					this.isDeleting = false
+					this.deletingSpace = null
+				}
+			},
+
+			// 显示 Toast 通知
+			showToast(message, type = 'info') {
+				this.toast = { visible: true, message, type }
 			}
 		}
 	}
@@ -1797,6 +1877,39 @@
 		width: 72rpx;
 		height: 72rpx;
 		filter: brightness(0) invert(1);
+	}
+
+	/* ========== 删除按钮 ========== */
+	.delete-btn {
+		position: absolute;
+		top: 16rpx;
+		right: 16rpx;
+		width: 48rpx;
+		height: 48rpx;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		opacity: 0;
+		transform: scale(0.7);
+		pointer-events: none;
+		transition: opacity 0.3s ease, transform 0.3s ease;
+		z-index: 10;
+	}
+
+	.delete-btn.delete-btn-visible {
+		opacity: 1;
+		transform: scale(1);
+		pointer-events: auto;
+	}
+
+	.delete-btn:active {
+		transform: scale(0.85);
+	}
+
+	.delete-icon {
+		width: 40rpx;
+		height: 40rpx;
+		filter: brightness(0) saturate(100%) invert(28%) sepia(93%) saturate(5765%) hue-rotate(351deg) brightness(97%) contrast(93%);
 	}
 
 </style>

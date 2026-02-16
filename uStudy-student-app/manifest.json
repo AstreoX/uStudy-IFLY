@@ -2,8 +2,8 @@
     "name" : "uStudy",
     "appid" : "__UNI__87BF873",
     "description" : "",
-    "versionName" : "1.2.2",
-    "versionCode" : "122",
+    "versionName" : "1.2.5",
+    "versionCode" : "125",
     "transformPx" : false,
     /* 5+App特有相关 */
     "app-plus" : {
@@ -11,8 +11,8 @@
         "nvueStyleCompiler" : "uni-app",
         "compilerVersion" : 3,
         "splashscreen" : {
-            "alwaysShowBeforeRender" : false,
-            "waiting" : false,
+            "alwaysShowBeforeRender" : true,
+            "waiting" : true,
             "autoclose" : true,
             "delay" : 0
         },
