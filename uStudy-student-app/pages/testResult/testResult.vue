@@ -1149,6 +1149,7 @@ export default {
   flex: 1;
   padding: 20rpx;
   overflow-y: auto;
+  box-sizing: border-box;
 }
 
 /* 总耗时摘要 */
@@ -1159,11 +1160,13 @@ export default {
   background: rgba(139, 92, 246, 0.1);
   border-radius: 12rpx;
   margin-bottom: 20rpx;
+  box-sizing: border-box;
 }
 
 .debug-summary-text {
   font-size: 24rpx;
   color: rgba(139, 92, 246, 0.9);
+  word-break: break-word;
 }
 
 /* 步骤样式 */
@@ -1173,6 +1176,8 @@ export default {
   padding: 20rpx;
   margin-bottom: 16rpx;
   border: 1rpx solid rgba(255, 255, 255, 0.06);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .debug-step-success {
@@ -1238,5 +1243,6 @@ export default {
   font-size: 24rpx;
   color: rgba(255, 255, 255, 0.7);
   line-height: 1.5;
+  word-break: break-word;
 }
 </style>

@@ -242,6 +242,8 @@ export default {
 .changelog-scroll {
   height: 360rpx;
   padding: 24rpx;
+  box-sizing: border-box;
+  overflow-wrap: break-word;
 }
 
 .changelog-empty {

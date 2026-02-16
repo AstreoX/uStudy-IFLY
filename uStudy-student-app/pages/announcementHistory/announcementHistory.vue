@@ -537,6 +537,8 @@ export default {
   flex: 1;
   padding: 0 36rpx 36rpx;
   max-height: 55vh;
+  box-sizing: border-box;
+  overflow-wrap: break-word;
 }
 
 .detail-loading {

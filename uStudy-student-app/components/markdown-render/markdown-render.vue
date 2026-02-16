@@ -70,15 +70,38 @@ function linkifyRawUrls(text) {
 	})
 }
 
+// 代码块内联样式（rich-text 不支持外部 CSS）
+const CODE_WRAPPER_STYLE = 'background:rgba(30,30,30,0.95); border-radius:12px; margin:16px 0; overflow:hidden;'
+const CODE_HEADER_STYLE = 'display:flex; justify-content:space-between; align-items:center; padding:8px 16px; background:rgba(255,255,255,0.05); border-bottom:1px solid rgba(255,255,255,0.1);'
+const CODE_LANG_STYLE = 'color:rgba(255,255,255,0.6); font-size:12px;'
+const CODE_COPY_STYLE = 'color:#5c90f7; font-size:12px; text-decoration:none;'
+const CODE_PRE_STYLE = 'overflow-x:auto; margin:0; padding:16px; white-space:pre; background:transparent;'
+const CODE_STYLE = 'font-family:SF Mono,Monaco,Consolas,monospace; font-size:13px; color:#e0e0e0;'
+
 function parseSimpleMarkdown(text) {
-	if (!text) return ''
+	if (!text) return { html: '', codeContents: [] }
 
 	const codeBlocks = []
+	const codeContents = []
 	let content = text.replace(/```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g, (match, lang, code) => {
 		const idx = codeBlocks.length
 		const safeLang = escapeHtml((lang || '').trim())
-		const safeCode = escapeHtml(code || '')
-		codeBlocks.push(`<pre class="hljs-code-block"><code class="code-lang-${safeLang}">${safeCode}</code></pre>`)
+		const rawCode = (code || '').replace(/^\n+|\n+$/g, '') // 去掉首尾空行
+		const safeCode = escapeHtml(rawCode)
+		const displayLang = safeLang || 'code'
+
+		// 保存原始代码供复制
+		codeContents.push(rawCode)
+
+		codeBlocks.push(
+			`<div style="${CODE_WRAPPER_STYLE}">` +
+				`<div style="${CODE_HEADER_STYLE}">` +
+					`<span style="${CODE_LANG_STYLE}">${displayLang}</span>` +
+					`<a href="copy:${idx}" style="${CODE_COPY_STYLE}">复制代码</a>` +
+				`</div>` +
+				`<pre style="${CODE_PRE_STYLE}"><code style="${CODE_STYLE}">${safeCode}</code></pre>` +
+			`</div>`
+		)
 		return `@@CODE_BLOCK_${idx}@@`
 	})
 
@@ -144,7 +167,7 @@ function parseSimpleMarkdown(text) {
 		content = content.split(`@@CODE_BLOCK_${i}@@`).join(codeBlocks[i])
 	}
 
-	return content
+	return { html: content, codeContents }
 }
 
 function renderLatex(formula, displayMode) {
@@ -168,10 +191,13 @@ function processLatex(text) {
 	const placeholders = []
 	let processed = text
 
+	// KaTeX 块级公式内联样式
+	const katexBlockStyle = 'display:block; text-align:center; margin:16px 0; padding:12px; overflow-x:auto; max-width:100%;'
+
 	processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
 		const rendered = renderLatex(formula.trim(), true)
 		const key = `@@LATEX_BLOCK_${placeholders.length}@@`
-		placeholders.push({ key, html: `<div class="katex-block">${rendered}</div>` })
+		placeholders.push({ key, html: `<div class="katex-block" style="${katexBlockStyle}">${rendered}</div>` })
 		return `\n${key}\n`
 	})
 
@@ -206,6 +232,11 @@ export default {
 			default: ''
 		}
 	},
+	data() {
+		return {
+			codeContents: []
+		}
+	},
 	methods: {
 		onRichTextItemClick(event) {
 			const detail = event && event.detail
@@ -213,10 +244,33 @@ export default {
 			const nodeName = node && node.name
 			const attrs = node && node.attrs
 			const href = attrs && attrs.href
-			if (nodeName !== 'a' || !isSafeHttpUrl(href)) {
+
+			if (nodeName !== 'a' || !href) {
 				return
 			}
-			this.openExternalLink(href)
+
+			// 处理复制代码操作
+			if (href.startsWith('copy:')) {
+				const index = parseInt(href.slice(5), 10)
+				this.copyCode(index)
+				return
+			}
+
+			// 处理外部链接
+			if (isSafeHttpUrl(href)) {
+				this.openExternalLink(href)
+			}
+		},
+		copyCode(index) {
+			const code = this.codeContents[index]
+			if (code === undefined) return
+
+			uni.setClipboardData({
+				data: code,
+				success: () => {
+					uni.showToast({ title: '已复制', icon: 'success' })
+				}
+			})
 		},
 		openExternalLink(url) {
 			// #ifdef APP-PLUS
@@ -242,8 +296,12 @@ export default {
 			if (!this.content) return ''
 			try {
 				const latexResult = processLatex(this.content)
-				const parsed = parseSimpleMarkdown(latexResult.text)
-				return restorePlaceholders(parsed, latexResult.placeholders)
+				const markdownResult = parseSimpleMarkdown(latexResult.text)
+
+				// 保存代码内容供复制使用
+				this.codeContents = markdownResult.codeContents
+
+				return restorePlaceholders(markdownResult.html, latexResult.placeholders)
 			} catch (e) {
 				console.error('Markdown parse error:', e)
 				return escapeHtml(this.content)
@@ -256,6 +314,7 @@ export default {
 <style scoped>
 .markdown-container {
 	width: 100%;
+	overflow: hidden;
 	/* 启用 APP 端长按选择复制 */
 	-webkit-user-select: text;
 	-moz-user-select: text;

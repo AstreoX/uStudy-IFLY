@@ -1970,6 +1970,7 @@ export default {
   flex: 1;
   padding: 24rpx 32rpx;
   overflow-y: auto;
+  box-sizing: border-box;
 }
 
 .debug-section {
@@ -2015,6 +2016,8 @@ export default {
   border-radius: 16rpx;
   padding: 16rpx 20rpx;
   overflow: hidden;
+  box-sizing: border-box;
+  max-width: 100%;
 }
 
 .debug-info-row {
