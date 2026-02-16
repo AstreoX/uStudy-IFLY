@@ -89,10 +89,19 @@ const ANNOUNCEMENT_PREFS_KEY = config.ANNOUNCEMENT_STORAGE_KEY
 
 export function getAnnouncementPrefs() {
   try {
+    const currentVersion = config.APP_VERSION_CODE
     const data = uni.getStorageSync(ANNOUNCEMENT_PREFS_KEY)
-    return data ? JSON.parse(data) : { dismissedIds: [] }
+    const prefs = data ? JSON.parse(data) : { dismissedIds: [], versionCode: 0 }
+
+    // 版本更新时重置 dismissedIds，确保用户能看到新版本公告
+    if (prefs.versionCode < currentVersion) {
+      const newPrefs = { dismissedIds: [], versionCode: currentVersion }
+      setAnnouncementPrefs(newPrefs)
+      return newPrefs
+    }
+    return prefs
   } catch (error) {
-    return { dismissedIds: [] }
+    return { dismissedIds: [], versionCode: config.APP_VERSION_CODE }
   }
 }
 

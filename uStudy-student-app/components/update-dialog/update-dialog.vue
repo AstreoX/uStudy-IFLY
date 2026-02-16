@@ -65,9 +65,6 @@
           </view>
         </template>
         <template v-else>
-          <view v-if="!isForced" class="btn btn-ghost" @click="$emit('skip')">
-            <text class="btn-text-ghost">跳过</text>
-          </view>
           <view v-if="!isForced" class="btn btn-secondary" @click="$emit('later')">
             <text class="btn-text-secondary">稍后</text>
           </view>
@@ -220,13 +217,13 @@ export default {
 }
 
 .update-title {
-  font-size: 38rpx;
+  font-size: 34rpx;
   font-weight: 600;
   color: #ffffff;
 }
 
 .update-size {
-  font-size: 26rpx;
+  font-size: 24rpx;
   color: rgba(255, 255, 255, 0.45);
 }
 
@@ -317,25 +314,14 @@ export default {
   width: 100%;
 }
 
-.btn-ghost {
-  flex: 0.6;
-  background: transparent;
-  border: 1rpx solid rgba(255, 255, 255, 0.1);
-}
-
-.btn-text-ghost {
-  font-size: 28rpx;
-  color: rgba(255, 255, 255, 0.45);
-}
-
 .btn-secondary {
-  flex: 0.8;
+  flex: 1;
   background: rgba(255, 255, 255, 0.08);
   border: 1rpx solid rgba(255, 255, 255, 0.12);
 }
 
 .btn-text-secondary {
-  font-size: 28rpx;
+  font-size: 26rpx;
   color: rgba(255, 255, 255, 0.7);
   font-weight: 500;
 }
@@ -346,7 +332,7 @@ export default {
 }
 
 .btn-text-primary {
-  font-size: 30rpx;
+  font-size: 28rpx;
   font-weight: 600;
   color: #ffffff;
 }

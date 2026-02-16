@@ -6,6 +6,7 @@ import {
   getAnnouncementPrefs,
   setAnnouncementPrefs
 } from '@/utils/storage'
+import config from '@/config'
 import {
   isUpdateAvailable,
   isForceUpdate,
@@ -122,7 +123,8 @@ export const useUpdateStore = defineStore('update', {
         ids.add(this.currentAnnouncement.id)
         setAnnouncementPrefs({
           ...prefs,
-          dismissedIds: [...ids].slice(-100)
+          dismissedIds: [...ids].slice(-100),
+          versionCode: config.APP_VERSION_CODE
         })
       }
 
