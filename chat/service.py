@@ -239,6 +239,53 @@ async def _extract_memories_background(
         )
 
 
+async def _evaluate_mastery_and_notify(
+    user_id: UUID,
+    space_id: UUID,
+    conversation: list[dict],
+) -> None:
+    """
+    后台评估掌握分并推送通知（每个节点一条通知）。
+
+    Args:
+        user_id: 用户 ID
+        space_id: 学习空间 ID
+        conversation: 对话历史列表
+    """
+    try:
+        from graph.mastery_evaluator import MasteryEvaluator
+        from notifications.queue import push_notification
+
+        evaluator = MasteryEvaluator(space_id=space_id)
+        result = await evaluator.evaluate_and_update(conversation)
+
+        for update in result.updates:
+            if update.change == 0:
+                continue
+            await push_notification(user_id, {
+                "type": "mastery_update",
+                "data": {
+                    "node_name": update.node_name,
+                    "change": update.change,
+                    "new_mastery": update.new_mastery,
+                },
+            })
+
+        if result.success_count > 0:
+            logger.info(
+                "Mastery evaluation for user %s: %d updates pushed",
+                user_id,
+                result.success_count,
+            )
+    except Exception as e:
+        logger.error(
+            "Mastery evaluation failed for user %s: %s",
+            user_id,
+            e,
+            exc_info=True,
+        )
+
+
 class ConversationNotFoundError(Exception):
     """Raised when conversation is not found"""
 
@@ -502,6 +549,20 @@ class ChatService:
                         space_id=space_id,
                         space_name=space_name,
                         conversation=conversation_for_extraction,
+                    )
+                )
+
+            # === Phase 3.6: 异步掌握分评估（不阻塞响应） ===
+            if settings.mastery_evaluation_enabled and space_id and full_response:
+                conversation_for_evaluation = llm_history + [
+                    {"role": "user", "content": content},
+                    {"role": "assistant", "content": full_response},
+                ]
+                asyncio.create_task(
+                    _evaluate_mastery_and_notify(
+                        user_id=user_id,
+                        space_id=space_id,
+                        conversation=conversation_for_evaluation,
                     )
                 )
 

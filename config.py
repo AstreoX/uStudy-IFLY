@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     memory_auto_extract_enabled: bool = True  # 是否启用自动记忆提取
     memory_extraction_model: str = ""  # 记忆提取用的 LLM 模型（空则使用默认模型）
 
+    # 掌握分评估配置
+    mastery_evaluation_enabled: bool = True
+    mastery_evaluation_model: str = ""  # 空则使用默认模型
+
     # 对话连续性配置
     conversation_continuity_enabled: bool = True  # 是否启用上一次对话上下文加载
     conversation_continuity_max_rounds: int = 2  # 加载上一次对话的最后几轮（1-5）

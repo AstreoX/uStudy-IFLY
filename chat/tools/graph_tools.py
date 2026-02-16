@@ -391,7 +391,7 @@ def _build_learning_path_chain(
     return "\n".join(paths)
 
 
-def _build_knowledge_tree_text(
+def build_knowledge_tree_text(
     nodes: list[dict],
     edges: list[dict],
 ) -> str:
@@ -551,7 +551,7 @@ class GraphToolExecutor:
                 message="知识图谱为空",
             )
 
-        overview_text = _build_knowledge_tree_text(graph["nodes"], graph["edges"])
+        overview_text = build_knowledge_tree_text(graph["nodes"], graph["edges"])
 
         format_explanation = """格式说明:
 - /basic_knowledge_tree: 知识树结构，*数量=层级深度，[分数]=掌握度(0-1)

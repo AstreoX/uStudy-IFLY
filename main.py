@@ -22,6 +22,7 @@ from chat.router import router as chat_router
 from config import get_settings
 from documents.router import router as documents_router
 from feedback.router import router as feedback_router
+from notifications.router import router as notifications_router
 from quizzes.router import router as quizzes_router
 from scheduler.core import get_scheduler_lifespan
 from usage.router import router as usage_router
@@ -151,6 +152,7 @@ app.include_router(chat_router)
 app.include_router(rag_router)
 app.include_router(feedback_router)
 app.include_router(usage_router)
+app.include_router(notifications_router)
 
 
 @app.get("/health")
