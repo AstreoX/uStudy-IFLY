@@ -89,6 +89,7 @@ export default {
 			const lines = buffer.split('\n')
 			const remaining = lines.pop()
 			let currentEvent = 'message'
+			let hasComment = false
 
 			for (const line of lines) {
 				if (line.startsWith('event: ')) {
@@ -101,8 +102,16 @@ export default {
 						console.warn('[SSE-Renderjs] Parse error:', e)
 					}
 					currentEvent = 'message'
+				} else if (line.startsWith(':')) {
+					hasComment = true
 				}
 			}
+
+			// 如果只有注释行（心跳），发送伪事件方便诊断
+			if (hasComment) {
+				onEvent('_heartbeat', null)
+			}
+
 			return remaining
 		},
 

@@ -428,10 +428,20 @@
 				let spaceRes = null
 
 				// 第一步：创建学习空间
+				// 构建 learning_preferences 对象
+				const learningPreferences = {
+					preset_preferences: this.selectedPreferences,
+					custom_preference: this.customPreference.trim() || null
+				}
+				const hasPreferences =
+					learningPreferences.preset_preferences.length > 0 ||
+					learningPreferences.custom_preference !== null
+
 				try {
 					spaceRes = await createSpace({
 						name: this.topicName.trim(),
-						color: colorMap[randomColor]
+						color: colorMap[randomColor],
+						...(hasPreferences && { learning_preferences: learningPreferences })
 					})
 				} catch (err) {
 					console.error('创建空间失败:', err)

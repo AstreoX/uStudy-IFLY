@@ -28,6 +28,7 @@ export function connectNotificationStream(callbacks) {
 
   function connect() {
     let reconnectScheduled = false
+    callbacks.onDebugLog?.(`connect() 第 ${retryCount + 1} 次`)
 
     function tryScheduleReconnect() {
       if (reconnectScheduled) return
@@ -42,15 +43,24 @@ export function connectNotificationStream(callbacks) {
         // Any successful event proves the connection is healthy
         retryCount = 0
 
+        if (eventType === '_heartbeat') {
+          callbacks.onDebugLog?.('♥ heartbeat')
+          return
+        }
+
+        callbacks.onDebugLog?.(`SSE event: ${eventType}`)
+
         if (eventType === 'mastery_update') {
           callbacks.onMasteryUpdate?.(data)
         }
       },
       onComplete: () => {
+        callbacks.onDebugLog?.('SSE stream closed')
         console.warn('[Notification] SSE stream closed')
         tryScheduleReconnect()
       },
       onConnectionError: (err) => {
+        callbacks.onDebugLog?.(`SSE error: ${err?.message || err}`)
         console.warn('[Notification] SSE connection error:', err)
         tryScheduleReconnect()
       }
@@ -60,11 +70,13 @@ export function connectNotificationStream(callbacks) {
   function scheduleReconnect() {
     if (intentionalAbort) return
     if (retryCount >= MAX_RETRIES) {
+      callbacks.onDebugLog?.(`放弃重连 (${MAX_RETRIES} 次已用尽)`)
       console.warn(`[Notification] Giving up after ${MAX_RETRIES} retries`)
       return
     }
 
     const delay = RETRY_DELAYS[retryCount]
+    callbacks.onDebugLog?.(`${delay}ms 后重连 (${retryCount + 1}/${MAX_RETRIES})`)
     console.warn(`[Notification] Reconnecting in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
     retryCount++
 

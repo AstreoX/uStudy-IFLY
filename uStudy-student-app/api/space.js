@@ -4,7 +4,15 @@ import { getTokens } from '@/utils/storage'
 
 /**
  * 创建学习空间
- * @param {Object} data - { name: string, description?: string, color: string }
+ * @param {Object} data - {
+ *   name: string,
+ *   description?: string,
+ *   color: string,
+ *   learning_preferences?: {
+ *     preset_preferences: string[],
+ *     custom_preference?: string
+ *   }
+ * }
  * @returns {Promise<Object>} SpaceResponse
  */
 export function createSpace(data) {

@@ -16,6 +16,7 @@
 			<view class="nav-left" @click="goBack">
 				<image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
 			</view>
+			<text class="debug-btn" @click="toggleSseDebugPanel">DBG</text>
 			<text class="nav-title">{{ spaceTitle }}</text>
 			<view class="nav-right" @click="openSettings">
 				<image class="nav-icon" src="/static/icons/phosphor-icons/PNGs/bold/clock-clockwise-bold.png" mode="aspectFit"></image>
@@ -339,6 +340,23 @@
 
 					<view id="debug-log-bottom"></view>
 				</scroll-view>
+			</view>
+		</view>
+
+		<!-- SSE 诊断面板 -->
+		<view v-if="showSseDebugPanel" class="sse-debug-panel">
+			<view class="sse-debug-header">
+				<text class="sse-debug-title">SSE Diag</text>
+				<text class="sse-debug-close" @click="showSseDebugPanel = false">X</text>
+			</view>
+			<scroll-view scroll-y class="sse-debug-body">
+				<text v-if="sseDebugLog.length === 0" class="sse-debug-empty">等待 SSE 事件...</text>
+				<text v-for="(log, i) in sseDebugLog" :key="i" class="sse-debug-line">{{ log }}</text>
+			</scroll-view>
+			<view class="sse-debug-actions">
+				<text class="sse-debug-action-btn" @click="debugTriggerNotification">触发假弹窗</text>
+				<text class="sse-debug-action-btn" @click="debugReconnectSse">重连SSE</text>
+				<text class="sse-debug-action-btn" @click="sseDebugLog = []">清空</text>
 			</view>
 		</view>
 
@@ -741,7 +759,11 @@
 				// 掌握分通知
 				masteryNotifications: [],
 				notificationAbort: null,
-				notificationIdCounter: 0
+				notificationIdCounter: 0,
+
+				// SSE 诊断面板
+				sseDebugLog: [],
+				showSseDebugPanel: false
 			}
 		},
 
@@ -887,20 +909,7 @@
 			// #endif
 
 			// 建立通知 SSE 连接
-			this.notificationAbort = connectNotificationStream({
-				onMasteryUpdate: (data) => {
-					this.notificationIdCounter++
-					this.masteryNotifications = [
-						...this.masteryNotifications,
-						{
-							id: this.notificationIdCounter,
-							visible: true,
-							nodeName: data.node_name,
-							change: data.change
-						}
-					]
-				}
-			})
+			this.setupNotificationStream()
 
 			this.$nextTick(() => {
 				this.adjustTextareaHeight()
@@ -1004,8 +1013,69 @@
 			},
 
 			// ==================== 掌握分通知 ====================
+			debugTriggerNotification() {
+				this.notificationIdCounter++
+				this.masteryNotifications = [
+					...this.masteryNotifications,
+					{
+						id: this.notificationIdCounter,
+						visible: true,
+						nodeName: '测试节点',
+						change: 5
+					}
+				]
+				this.addSseDebugLog('触发假弹窗')
+			},
+
 			removeMasteryNotification(id) {
 				this.masteryNotifications = this.masteryNotifications.filter(n => n.id !== id)
+			},
+
+			// ==================== SSE 诊断 ====================
+			addSseDebugLog(msg) {
+				const time = new Date().toLocaleTimeString()
+				this.sseDebugLog = [...this.sseDebugLog, `[${time}] ${msg}`]
+			},
+
+			toggleSseDebugPanel() {
+				this.showSseDebugPanel = !this.showSseDebugPanel
+			},
+
+			debugReconnectSse() {
+				this.addSseDebugLog('手动重连...')
+				if (this.notificationAbort) {
+					this.notificationAbort()
+					this.notificationAbort = null
+				}
+				this.setupNotificationStream()
+			},
+
+			setupNotificationStream() {
+				// #ifdef APP-PLUS
+				const hasBus = !!this.$refs.sseRenderjs
+				this.addSseDebugLog(`sseEventBus: ${hasBus ? 'YES' : 'NO'}`)
+				// #endif
+
+				this.addSseDebugLog('连接 notification SSE...')
+
+				this.notificationAbort = connectNotificationStream({
+					onMasteryUpdate: (data) => {
+						this.addSseDebugLog(`收到 mastery_update: ${data.node_name} ${data.change > 0 ? '+' : ''}${data.change}`)
+						this.notificationIdCounter++
+						this.masteryNotifications = [
+							...this.masteryNotifications,
+							{
+								id: this.notificationIdCounter,
+								visible: true,
+								nodeName: data.node_name,
+								change: data.change
+							}
+						]
+					},
+					onDebugLog: (msg) => {
+						this.addSseDebugLog(msg)
+					}
+				})
 			},
 
 			onTextareaInput() {
@@ -2965,6 +3035,12 @@
 		padding-right: calc(100vw / 24);
 	}
 
+	.debug-btn {
+		font-size: 22rpx;
+		color: #F59E0B;
+		padding: 8rpx 16rpx;
+	}
+
 	.nav-left {
 		width: 72rpx;
 		height: 72rpx;
@@ -4403,5 +4479,60 @@
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 		line-height: 1.4;
+	}
+
+	/* ========== SSE 诊断面板样式 ========== */
+	.sse-debug-panel {
+		position: fixed;
+		top: 160rpx;
+		left: 20rpx;
+		right: 20rpx;
+		max-height: 500rpx;
+		background: rgba(0, 0, 0, 0.92);
+		border-radius: 16rpx;
+		z-index: 9999;
+		padding: 16rpx;
+		border: 1rpx solid rgba(245, 158, 11, 0.3);
+	}
+	.sse-debug-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 8rpx;
+	}
+	.sse-debug-title {
+		color: #F59E0B;
+		font-size: 28rpx;
+		font-weight: bold;
+	}
+	.sse-debug-close {
+		color: #fff;
+		font-size: 28rpx;
+		padding: 8rpx 16rpx;
+	}
+	.sse-debug-body {
+		max-height: 300rpx;
+	}
+	.sse-debug-empty {
+		color: #666;
+		font-size: 22rpx;
+	}
+	.sse-debug-line {
+		color: #22D3EE;
+		font-size: 20rpx;
+		display: block;
+		margin-bottom: 4rpx;
+	}
+	.sse-debug-actions {
+		display: flex;
+		gap: 16rpx;
+		margin-top: 12rpx;
+	}
+	.sse-debug-action-btn {
+		color: #F59E0B;
+		font-size: 24rpx;
+		padding: 8rpx 20rpx;
+		border: 1px solid #F59E0B;
+		border-radius: 8rpx;
 	}
 </style>
