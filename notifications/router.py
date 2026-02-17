@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 
 from auth.dependencies import get_current_user
 from db.models import User
-from notifications.queue import get_notification, cleanup_user_queue
+from notifications.queue import get_notification, cleanup_user_queue, register_user_queue
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,7 @@ async def notification_stream(
 
     async def event_generator():
         user_id = current_user.id
+        register_user_queue(user_id)
         logger.info("Notification SSE connected: user=%s", user_id)
         try:
             while True:

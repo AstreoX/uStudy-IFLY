@@ -36,8 +36,14 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown events."""
+    from notifications.pg_notify import start_listener, stop_listener
+
     async with get_scheduler_lifespan():
-        yield
+        await start_listener()
+        try:
+            yield
+        finally:
+            await stop_listener()
 
 
 app = FastAPI(
