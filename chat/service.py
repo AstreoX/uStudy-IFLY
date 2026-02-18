@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from chat.orchestrator import LLMOrchestrator, QuickChatOrchestrator
+from chat.title_generator import generate_title, fallback_title
 from memory.extractor import MemoryExtractor
 from chat.schemas import (
     MessageResponse,
@@ -488,6 +489,12 @@ class ChatService:
                     )
         # === DB session released here ===
 
+        # === Start title generation concurrently (for new conversations) ===
+        title_task = None
+        settings = get_settings()
+        if is_new_conversation and settings.title_generation_enabled:
+            title_task = asyncio.create_task(generate_title(content))
+
         # === Phase 2: Stream (no DB connection held) ===
         orchestrator = LLMOrchestrator(
             user_id=user_id,
@@ -565,6 +572,41 @@ class ChatService:
                         conversation=conversation_for_evaluation,
                     )
                 )
+
+        # === Phase 3.7: Auto-generate title for new conversations ===
+        if title_task is not None:
+            try:
+                # Short residual timeout — task has been running since before Phase 2
+                title = await asyncio.wait_for(title_task, timeout=3.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.warning(f"Title generation failed for {conversation_id}: {e}")
+                title = fallback_title(content)
+                if not title_task.done():
+                    title_task.cancel()
+                    try:
+                        await title_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+
+            title_saved = False
+            try:
+                async with get_scoped_session() as db:
+                    result = await db.execute(
+                        select(Conversation).where(Conversation.id == conversation_id)
+                    )
+                    conv = result.scalar_one_or_none()
+                    if conv:
+                        conv.title = title[:200]
+                        await db.commit()
+                title_saved = True
+            except Exception:
+                logger.error(
+                    f"Failed to update title for conversation {conversation_id}",
+                    exc_info=True,
+                )
+
+            if title_saved:
+                yield {"event": "title", "data": {"title": title}}
 
         logger.info(
             f"Processed message in conversation {conversation_id}, "
@@ -955,6 +997,12 @@ class ChatService:
                     )
         # === DB session released here ===
 
+        # === Start title generation concurrently (for new conversations) ===
+        title_task = None
+        settings = get_settings()
+        if is_new_conversation and settings.title_generation_enabled:
+            title_task = asyncio.create_task(generate_title(content))
+
         # === Phase 2: Stream (no DB connection held) ===
         orchestrator = QuickChatOrchestrator(
             user_id=user_id,
@@ -999,6 +1047,41 @@ class ChatService:
                     f"response length: {len(full_response)}. Message was streamed to user but NOT persisted.",
                     exc_info=True,
                 )
+
+        # === Phase 3.7: Auto-generate title for new conversations ===
+        if title_task is not None:
+            try:
+                # Short residual timeout — task has been running since before Phase 2
+                title = await asyncio.wait_for(title_task, timeout=3.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.warning(f"Title generation failed for quick chat {conversation_id}: {e}")
+                title = fallback_title(content)
+                if not title_task.done():
+                    title_task.cancel()
+                    try:
+                        await title_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+
+            title_saved = False
+            try:
+                async with get_scoped_session() as db:
+                    result = await db.execute(
+                        select(Conversation).where(Conversation.id == conversation_id)
+                    )
+                    conv = result.scalar_one_or_none()
+                    if conv:
+                        conv.title = title[:200]
+                        await db.commit()
+                title_saved = True
+            except Exception:
+                logger.error(
+                    f"Failed to update title for quick chat {conversation_id}",
+                    exc_info=True,
+                )
+
+            if title_saved:
+                yield {"event": "title", "data": {"title": title}}
 
         logger.info(
             f"Processed quick chat message in conversation {conversation_id}, "

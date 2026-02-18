@@ -119,6 +119,11 @@ class Settings(BaseSettings):
     conversation_continuity_max_rounds: int = 2  # 加载上一次对话的最后几轮（1-5）
     conversation_continuity_max_content_length: int = 1000  # 单条消息最大截断长度
 
+    # 对话标题自动生成配置
+    title_generation_enabled: bool = True
+    title_generation_model: str = "qwen/qwen3-4b:free"
+    title_generation_timeout: int = 10  # 秒
+
 
 @lru_cache
 def get_settings() -> Settings:
