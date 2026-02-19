@@ -363,6 +363,21 @@ class PromptBuilder:
 以上为历史参考。本次对话从用户的第一条消息开始。
 """
 
+    # 待复习知识点注入模板
+    DUE_REVIEWS_SECTION = """
+# 待复习知识点
+
+以下是用户在当前学习空间中到期或逾期的复习项：
+
+{due_reviews}
+
+复习行为引导：
+- 自然地将待复习内容融入对话，不要机械列举或逼迫用户复习
+- 如果用户主动讨论了某个待复习知识点，可以围绕它展开对话
+- 只有在用户充分展示了理解（如正确回答、主动讲解）后，才调用 mark_review_completed 标记完成
+- 不要在用户未表现出复习意愿时强行引导复习
+"""
+
     # 旧版长期记忆段落模板（QuickChat 暂时保留）
     LONG_TERM_MEMORY_SECTION = """
 # 长期记忆
@@ -382,6 +397,7 @@ class PromptBuilder:
         space_name: str,
         relevant_memories: Optional[str] = None,
         previous_conversation_context: Optional[str] = None,
+        due_reviews: Optional[str] = None,
     ) -> str:
         """
         Build system prompt for learning space mode.
@@ -391,6 +407,7 @@ class PromptBuilder:
             space_name: Name of the learning space
             relevant_memories: Formatted relevant memories from vector search (optional)
             previous_conversation_context: Formatted previous conversation context (optional)
+            due_reviews: Formatted due review items for this space (optional)
 
         Returns:
             Formatted system prompt string
@@ -413,6 +430,13 @@ class PromptBuilder:
                 relevant_memories=relevant_memories
             )
             base_prompt = base_prompt + "\n" + memory_section
+
+        # 如果有到期复习项，拼接到提示词末尾（在记忆之后）
+        if due_reviews:
+            reviews_section = self.DUE_REVIEWS_SECTION.format(
+                due_reviews=due_reviews
+            )
+            base_prompt = base_prompt + "\n" + reviews_section
 
         return base_prompt
 

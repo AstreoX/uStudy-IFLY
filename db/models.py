@@ -1099,6 +1099,46 @@ class StudyActivityLog(Base):
     )
 
 
+class LearningPathEvent(Base):
+    """学习路径自动扩展事件记录"""
+
+    __tablename__ = "learning_path_events"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    # 扩展的新节点（不含衔接节点）
+    new_node_names: Mapped[list] = mapped_column(JSONB, nullable=False)
+
+    # 触发时的统计信息（调试用）
+    trigger_info: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    space: Mapped["Space"] = relationship()
+    user: Mapped["User"] = relationship()
+
+    # 索引
+    __table_args__ = (
+        Index("ix_learning_path_events_space_id", "space_id"),
+        Index("ix_learning_path_events_user_id", "user_id"),
+    )
+
+
 class ReviewSchedule(Base):
     """艾宾浩斯遗忘曲线复习计划"""
 

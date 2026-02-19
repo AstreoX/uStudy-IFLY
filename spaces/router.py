@@ -3,13 +3,15 @@
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import get_current_user, require_active_subscription
 from db.database import get_db
-from db.models import User
+from db.models import LearningPathEvent, User
 from spaces.schemas import (
+    LearningPathEventResponse,
     SpaceCreate,
     SpaceGraphResponse,
     SpaceResponse,
@@ -170,3 +172,40 @@ async def get_space_graph(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "SPACE_ACCESS_DENIED", "message": "无权访问该学习空间"},
         )
+
+
+@router.get(
+    "/{space_id}/path-events",
+    response_model=list[LearningPathEventResponse],
+    summary="获取学习路径扩展事件",
+)
+async def get_learning_path_events(
+    space_id: UUID,
+    limit: int = Query(default=10, ge=1, le=50),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[LearningPathEventResponse]:
+    """获取该空间的学习路径扩展事件历史"""
+    # Validate space ownership
+    service = SpaceService(db)
+    try:
+        await service.get_space(user.id, space_id)
+    except SpaceNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "SPACE_NOT_FOUND", "message": "学习空间不存在"},
+        )
+    except SpaceAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "SPACE_ACCESS_DENIED", "message": "无权访问该学习空间"},
+        )
+
+    result = await db.execute(
+        select(LearningPathEvent)
+        .where(LearningPathEvent.space_id == space_id)
+        .order_by(LearningPathEvent.created_at.desc())
+        .limit(limit)
+    )
+    events = result.scalars().all()
+    return [LearningPathEventResponse.model_validate(e) for e in events]

@@ -1,5 +1,6 @@
 """LLM Orchestrator - Multi-turn tool calling loop with SSE"""
 
+import asyncio
 import copy
 import json
 import logging
@@ -33,6 +34,8 @@ from chat.tools.client_tool_bridge import create_pending_request, wait_for_resul
 from chat.tools.schedule_tools import SCHEDULE_TOOLS
 from chat.tools.web_tools import WEB_TOOLS, WebToolExecutor
 from chat.tools.time_tools import TIME_TOOLS, TIME_TOOL_NAMES, TimeToolExecutor
+from chat.tools.review_tools import REVIEW_TOOLS, REVIEW_TOOL_NAMES, ReviewToolExecutor
+from review.service import get_due_reviews_by_space, format_due_reviews_for_prompt
 from db.database import get_scoped_session
 from db.models import LongTermMemory
 from config import get_settings
@@ -435,6 +438,7 @@ class LLMOrchestrator:
         self.web_tool_executor = WebToolExecutor()
         self.rag_tool_executor = RAGToolExecutor(space_id)
         self.time_tool_executor = TimeToolExecutor()
+        self.review_tool_executor = ReviewToolExecutor(user_id)
 
         # 新向量记忆系统（统一处理长期记忆和空间记忆）
         self.vector_memory_executor = VectorMemoryExecutor(user_id, space_id)
@@ -449,6 +453,7 @@ class LLMOrchestrator:
             + RAG_TOOLS
             + VECTOR_MEMORY_TOOLS
             + TIME_TOOLS
+            + REVIEW_TOOLS
         )
 
         # Tool name to executor mapping
@@ -458,6 +463,7 @@ class LLMOrchestrator:
         self._rag_tool_names = {"search_documents"}
         self._vector_memory_tool_names = VECTOR_MEMORY_TOOL_NAMES
         self._time_tool_names = TIME_TOOL_NAMES
+        self._review_tool_names = REVIEW_TOOL_NAMES
 
     async def process_message(
         self,
@@ -491,24 +497,29 @@ class LLMOrchestrator:
             else:
                 message_text = str(content)
 
-        # 2. 使用向量检索获取相关记忆（语义搜索）
-        relevant_memories = await self.memory_retriever.get_relevant_memories(
-            user_message=message_text,
-            max_long_term=5,
-            max_space=5,
+        # 2. 并行：语义检索记忆 + 查询到期复习项
+        relevant_memories, due_reviews_raw = await asyncio.gather(
+            self.memory_retriever.get_relevant_memories(
+                user_message=message_text,
+                max_long_term=5,
+                max_space=5,
+            ),
+            get_due_reviews_by_space(self.user_id, self.space_id, limit=10),
         )
 
         # 3. 格式化记忆用于 prompt 注入（标注本空间/共享来源）
         formatted_memories = format_memories_for_prompt(
             relevant_memories, current_space_id=self.space_id
         )
+        formatted_due_reviews = format_due_reviews_for_prompt(due_reviews_raw)
 
-        # 4. Build system prompt with relevant memories and previous conversation context
+        # 4. Build system prompt with relevant memories, previous conversation context, and due reviews
         system_prompt = self.prompt_builder.build_system_prompt(
             space_id=self.space_id,
             space_name=self.space_name,
             relevant_memories=formatted_memories,
             previous_conversation_context=self.previous_conversation_context,
+            due_reviews=formatted_due_reviews,
         )
 
         # Handle both string and dict formats for user message
@@ -660,6 +671,11 @@ class LLMOrchestrator:
                         )
                     elif tool_call.name in self._time_tool_names:
                         tool_result = await self.time_tool_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
+                    elif tool_call.name in self._review_tool_names:
+                        tool_result = await self.review_tool_executor.execute(
                             tool_call.name,
                             tool_call.arguments,
                         )

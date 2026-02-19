@@ -14,6 +14,7 @@ from chat.tools.memory_executor import MemoryToolExecutor, format_memory_for_pro
 from chat.tools.space_memory_tools import SPACE_MEMORY_TOOLS, SPACE_MEMORY_TOOL_NAMES
 from chat.tools.space_memory_executor import SpaceMemoryToolExecutor, format_space_memory_for_prompt
 from chat.tools.time_tools import TIME_TOOLS, TIME_TOOL_NAMES, TIME_TOOL_METADATA, TimeToolExecutor
+from chat.tools.review_tools import REVIEW_TOOLS, REVIEW_TOOL_NAMES, REVIEW_TOOL_METADATA, ReviewToolExecutor
 
 __all__ = [
     "ToolResult",
@@ -36,4 +37,8 @@ __all__ = [
     "TIME_TOOL_NAMES",
     "TIME_TOOL_METADATA",
     "TimeToolExecutor",
+    "REVIEW_TOOLS",
+    "REVIEW_TOOL_NAMES",
+    "REVIEW_TOOL_METADATA",
+    "ReviewToolExecutor",
 ]

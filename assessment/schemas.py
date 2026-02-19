@@ -61,6 +61,17 @@ class KnowledgeStructureScoreResponse(BaseModel):
     advanced_edge_count: int
 
 
+class ReviewScoreResponse(BaseModel):
+    score: float
+    completion_rate: float
+    punctuality_rate: float
+    overdue_penalty: float
+    completed_count: int
+    overdue_count: int
+    on_time_count: int
+    avg_overdue_days: float
+
+
 class ProfileStatsResponse(BaseModel):
     study_days: int
     total_study_hours: float

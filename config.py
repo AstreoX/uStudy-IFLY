@@ -114,6 +114,12 @@ class Settings(BaseSettings):
     mastery_evaluation_enabled: bool = True
     mastery_evaluation_model: str = ""  # 空则使用默认模型
 
+    # 学习路径自动扩展
+    learning_path_auto_expand_enabled: bool = True
+    learning_path_expand_model: str = ""  # 空则使用默认模型
+    learning_path_mastery_threshold: int = 80  # 掌握度阈值
+    learning_path_ratio_threshold: float = 0.6  # 高掌握节点占比阈值
+
     # 对话连续性配置
     conversation_continuity_enabled: bool = True  # 是否启用上一次对话上下文加载
     conversation_continuity_max_rounds: int = 2  # 加载上一次对话的最后几轮（1-5）

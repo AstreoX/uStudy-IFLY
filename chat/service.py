@@ -290,6 +290,53 @@ async def _evaluate_mastery_and_notify(
         )
 
 
+async def _evaluate_mastery_then_expand_path(
+    user_id: UUID,
+    space_id: UUID,
+    conversation: list[dict],
+) -> None:
+    """
+    后台链式任务：先评估掌握分，再检查是否需要扩展学习路径。
+
+    Args:
+        user_id: 用户 ID
+        space_id: 学习空间 ID
+        conversation: 对话历史列表
+    """
+    # Step 1: 掌握分评估（原有逻辑）
+    await _evaluate_mastery_and_notify(user_id, space_id, conversation)
+
+    # Step 2: 学习路径扩展检查
+    try:
+        settings = get_settings()
+        if not settings.learning_path_auto_expand_enabled:
+            return
+
+        from graph.path_expander import LearningPathExpander
+        from notifications.queue import push_notification
+
+        expander = LearningPathExpander(space_id=space_id, user_id=user_id)
+        result = await expander.check_and_expand()
+
+        if result.expanded:
+            await push_notification(user_id, {
+                "type": "learning_path_expanded",
+                "data": {
+                    "space_id": str(space_id),
+                    "new_nodes": result.new_path_nodes,
+                    "message": f"学习路径已自动扩展，新增 {len(result.new_path_nodes)} 个节点",
+                },
+            })
+    except Exception as e:
+        logger.error(
+            "Path expansion failed for user %s space %s: %s",
+            user_id,
+            space_id,
+            e,
+            exc_info=True,
+        )
+
+
 class ConversationNotFoundError(Exception):
     """Raised when conversation is not found"""
 
@@ -568,14 +615,14 @@ class ChatService:
                     )
                 )
 
-            # === Phase 3.6: 异步掌握分评估（不阻塞响应） ===
+            # === Phase 3.6: 异步掌握分评估 + 学习路径扩展（不阻塞响应） ===
             if settings.mastery_evaluation_enabled and space_id and full_response:
                 conversation_for_evaluation = llm_history + [
                     {"role": "user", "content": content},
                     {"role": "assistant", "content": full_response},
                 ]
                 asyncio.create_task(
-                    _evaluate_mastery_and_notify(
+                    _evaluate_mastery_then_expand_path(
                         user_id=user_id,
                         space_id=space_id,
                         conversation=conversation_for_evaluation,

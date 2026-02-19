@@ -94,3 +94,14 @@ class SpaceGraphResponse(BaseModel):
 
     nodes: List[NodeResponse]
     edges: List[EdgeResponse]
+
+
+class LearningPathEventResponse(BaseModel):
+    """学习路径扩展事件响应"""
+
+    id: UUID
+    new_node_names: list[str]
+    trigger_info: dict
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

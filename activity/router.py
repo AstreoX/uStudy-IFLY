@@ -6,7 +6,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from activity.schemas import ActivityTimelineItem, ActivityTimelineResponse
+from activity.schemas import (
+    ActivityTimelineItem,
+    ActivityTimelineResponse,
+    StudySuggestionResponse,
+)
+from activity.suggestion import get_ai_suggestion
 from auth.dependencies import CurrentUser
 from db.database import get_db
 from db.models import ReviewSchedule, StudyActivityLog
@@ -77,3 +82,14 @@ async def get_activity_timeline(
         page=page,
         limit=limit,
     )
+
+
+@router.get("/suggestion", response_model=StudySuggestionResponse)
+async def get_study_suggestion(
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+    refresh: bool = Query(False),
+):
+    """AI 驱动的学习建议：根据近期活动和待复习项生成"""
+    result = await get_ai_suggestion(user.id, db, force_refresh=refresh)
+    return StudySuggestionResponse(**result)

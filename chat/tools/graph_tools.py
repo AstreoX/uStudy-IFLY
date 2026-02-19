@@ -337,7 +337,7 @@ def _build_siblings_text(node_name: str, siblings: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _build_learning_path_chain(
+def build_learning_path_chain(
     edges: list[dict],
     node_by_id: dict[str, dict],
     with_index: bool = False,
@@ -461,7 +461,7 @@ def build_knowledge_tree_text(
 
     if learning_path_edges:
         result_parts.append("/learning_path")
-        path_text = _build_learning_path_chain(learning_path_edges, node_by_id)
+        path_text = build_learning_path_chain(learning_path_edges, node_by_id)
         if path_text:
             result_parts.append(path_text)
 
@@ -502,6 +502,7 @@ class GraphToolExecutor:
             "get_parent_nodes": self._get_parent_nodes,
             "get_sibling_nodes": self._get_sibling_nodes,
             "generate_learning_path": self._generate_learning_path,
+            "extend_learning_path": self._extend_learning_path,
             "get_learning_paths": self._get_learning_paths,
             "delete_all_learning_paths": self._delete_all_learning_paths,
             "get_postorder_traversal": self._get_postorder_traversal,
@@ -869,6 +870,77 @@ class GraphToolExecutor:
             message=f"成功创建学习路径，包含 {len(node_names)} 个节点，新增 {len(edges)} 条边",
         )
 
+    async def _extend_learning_path(self, args: dict, graph_service: GraphService) -> ToolResult:
+        """Extend existing learning path from its terminal node."""
+        node_sequence = args.get("node_sequence", "")
+
+        if not node_sequence:
+            return ToolResult(
+                success=False, data=None, message="节点序列不能为空"
+            )
+
+        node_names = [name.strip() for name in node_sequence.split(",")]
+
+        if len(node_names) < 2:
+            return ToolResult(
+                success=False, data=None, message="扩展路径至少需要 2 个节点（含衔接节点）"
+            )
+
+        # Resolve all node names to IDs
+        node_ids = []
+        for name in node_names:
+            node = await graph_service.get_node_by_label(self.space_id, name)
+            if not node:
+                return ToolResult(
+                    success=False, data=None, message=f"节点不存在: {name}"
+                )
+            node_ids.append(node.id)
+
+        # Validate first node is a terminal node of the current learning path
+        graph = await graph_service.get_graph(self.space_id)
+        lp_edges = [e for e in graph["edges"] if e.get("type") == "learning_path"]
+
+        if not lp_edges:
+            return ToolResult(
+                success=False, data=None,
+                message="当前没有学习路径，无法扩展。请先使用 generate_learning_path 创建路径。",
+            )
+
+        # Find terminal nodes (nodes that appear as from but not as to, or only as to with no outgoing)
+        from_ids = {e["from_node_id"] for e in lp_edges}
+        to_ids = {e["to_node_id"] for e in lp_edges}
+        # Terminal nodes: appear in the path but have no outgoing edge
+        all_path_node_ids = from_ids | to_ids
+        terminal_ids = all_path_node_ids - from_ids
+
+        node_by_id = {n["id"]: n for n in graph["nodes"]}
+        first_node_id = str(node_ids[0])
+
+        if first_node_id not in terminal_ids:
+            terminal_names = [
+                node_by_id[tid]["label"]
+                for tid in terminal_ids
+                if tid in node_by_id
+            ]
+            return ToolResult(
+                success=False, data=None,
+                message=(
+                    f"错误：序列的第一个节点 '{node_names[0]}' 不是当前路径末尾。"
+                    f"末尾节点为：{', '.join(terminal_names)}。请修正后重试。"
+                ),
+            )
+
+        edges = await graph_service.create_learning_path(self.space_id, node_ids)
+
+        return ToolResult(
+            success=True,
+            data={
+                "path": node_names,
+                "edges_created": len(edges),
+            },
+            message=f"成功扩展学习路径，新增 {len(node_names) - 1} 个节点，创建 {len(edges)} 条边",
+        )
+
     async def _get_learning_paths(self, args: dict, graph_service: GraphService) -> ToolResult:
         """Get all learning paths in the space"""
         graph = await graph_service.get_graph(self.space_id)
@@ -889,7 +961,7 @@ class GraphToolExecutor:
         node_by_id = {n["id"]: n for n in graph["nodes"]}
 
         # 使用带编号格式构建路径
-        paths_text = _build_learning_path_chain(
+        paths_text = build_learning_path_chain(
             learning_path_edges, node_by_id, with_index=True
         )
 

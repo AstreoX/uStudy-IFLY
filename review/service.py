@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 
 from db.database import get_scoped_session
-from db.models import ReviewSchedule
+from db.models import ReviewSchedule, StudyActivityLog
 
 logger = logging.getLogger(__name__)
 
@@ -207,3 +207,90 @@ async def complete_review(user_id: UUID, review_id: UUID) -> bool:
         await session.commit()
         logger.info(f"Manually completed review {review_id} for user {user_id}")
         return True
+
+
+async def get_due_reviews_by_space(
+    user_id: UUID, space_id: UUID, limit: int = 10
+) -> list[ReviewSchedule]:
+    """查询某学习空间到期/逾期待复习项。
+
+    ReviewSchedule 无直接 space_id，需 JOIN StudyActivityLog 按 space_id 过滤。
+    """
+    today = datetime.now(timezone.utc).date()
+    async with get_scoped_session() as session:
+        result = await session.execute(
+            select(ReviewSchedule)
+            .join(
+                StudyActivityLog,
+                ReviewSchedule.activity_id == StudyActivityLog.id,
+            )
+            .where(
+                ReviewSchedule.user_id == user_id,
+                ReviewSchedule.status == "pending",
+                ReviewSchedule.scheduled_date <= today,
+                StudyActivityLog.space_id == space_id,
+            )
+            .order_by(ReviewSchedule.scheduled_date.asc())
+            .limit(limit)
+        )
+        rows = result.scalars().all()
+        # Eagerly access attributes before session closes
+        for r in rows:
+            _ = (
+                r.id,
+                r.activity_id,
+                r.node_label,
+                r.review_number,
+                r.scheduled_date,
+                r.study_depth,
+            )
+        return list(rows)
+
+
+async def complete_reviews_by_node_label(user_id: UUID, node_label: str) -> int:
+    """按知识点名称批量标记到期 pending 复习为 completed。返回受影响行数。"""
+    today = datetime.now(timezone.utc).date()
+    async with get_scoped_session() as session:
+        result = await session.execute(
+            update(ReviewSchedule)
+            .where(
+                ReviewSchedule.user_id == user_id,
+                ReviewSchedule.node_label == node_label,
+                ReviewSchedule.status == "pending",
+                ReviewSchedule.scheduled_date <= today,
+            )
+            .values(
+                status="completed",
+                completed_at=datetime.now(timezone.utc),
+            )
+        )
+        count = result.rowcount
+        await session.commit()
+        if count > 0:
+            logger.info(
+                f"Completed {count} due reviews for node '{node_label}' (user={user_id})"
+            )
+        return count
+
+
+def format_due_reviews_for_prompt(reviews: list[ReviewSchedule]) -> str:
+    """将到期复习列表格式化为 prompt 注入文本。
+
+    每行格式: - {node_label} [{study_depth}] — 第N次复习（逾期X天/今日到期）
+    """
+    if not reviews:
+        return ""
+
+    today = datetime.now(timezone.utc).date()
+    lines = []
+    for r in reviews:
+        depth_tag = f" [{r.study_depth}]" if r.study_depth else ""
+        overdue_days = (today - r.scheduled_date).days
+        if overdue_days > 0:
+            urgency = f"逾期{overdue_days}天"
+        else:
+            urgency = "今日到期"
+        lines.append(
+            f"- {r.node_label}{depth_tag} — 第{r.review_number}次复习（{urgency}）"
+        )
+    return "\n".join(lines)

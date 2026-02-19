@@ -34,3 +34,13 @@ class ActivityTimelineResponse(BaseModel):
     total: int
     page: int
     limit: int
+
+
+class StudySuggestionResponse(BaseModel):
+    """AI 学习建议响应"""
+
+    decision: str  # "继续学习" or "开始复习"
+    subject: str  # e.g. "线性代数"
+    guidance: str  # e.g. "复习矩阵运算巩固基础"
+    title: str  # f"{decision}: {subject}"
+    source: str  # "ai" or "heuristic"

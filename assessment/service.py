@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Conversation, DailyStudyRecord, Edge, EdgeType, Message, MessageRole, Node, QuizAttempt, Space
+from db.models import Conversation, DailyStudyRecord, Edge, EdgeType, Message, MessageRole, Node, QuizAttempt, ReviewSchedule, Space
 
 
 # ============ Pure Functions (no DB, easy to test) ============
@@ -381,6 +381,54 @@ def compute_knowledge_structure_score(
     }
 
 
+def compute_review_score(
+    completed_count: int,
+    overdue_count: int,
+    on_time_count: int,
+    avg_overdue_days: float,
+) -> dict:
+    """
+    Compute review score (0-100) from completion rate, punctuality, and overdue penalty.
+
+    Args:
+        completed_count: Reviews with status='completed'.
+        overdue_count: Reviews with status='pending' and scheduled_date <= today.
+        on_time_count: Completed reviews where completed_at - scheduled_date <= 2 days.
+        avg_overdue_days: Average days overdue for pending reviews past due.
+
+    Returns:
+        Dict with score, completion_rate, punctuality_rate, overdue_penalty.
+    """
+    total_due = completed_count + overdue_count
+    if total_due == 0:
+        return {
+            "score": 0.0,
+            "completion_rate": 0.0,
+            "punctuality_rate": 0.0,
+            "overdue_penalty": 0.0,
+        }
+
+    completion_rate = completed_count / total_due * 100
+    punctuality_rate = (on_time_count / completed_count * 100) if completed_count > 0 else 0.0
+
+    base = 0.60 * completion_rate + 0.40 * punctuality_rate
+
+    if overdue_count > 0:
+        penalty = min(base, 30 * (1 - math.exp(-0.1 * avg_overdue_days)))
+    else:
+        penalty = 0.0
+
+    score = base - penalty
+    score = round(max(0.0, min(100.0, score)), 1)
+
+    return {
+        "score": score,
+        "completion_rate": round(completion_rate, 1),
+        "punctuality_rate": round(punctuality_rate, 1),
+        "overdue_penalty": round(penalty, 1),
+    }
+
+
 # ============ DB Query Service ============
 
 
@@ -707,6 +755,73 @@ class ComprehensionService:
             "quiz_total_score_sum": quiz_total_score_sum,
             "high_mastery_node_count": high_mastery_count,
             "total_node_count": total_node_count,
+        }
+
+
+class ReviewAssessmentService:
+    """Service for review score assessment."""
+
+    @staticmethod
+    async def get_review_score(db: AsyncSession, user_id: UUID) -> dict:
+        """
+        Compute review score from completed vs overdue reviews and punctuality.
+
+        Returns dict matching ReviewScoreResponse fields.
+        """
+        today = date.today()
+
+        # Query 1: COUNT completed + COUNT on-time (merged, both filter status='completed')
+        completed_result = await db.execute(
+            select(
+                func.count().label("completed_count"),
+                func.count().filter(
+                    ReviewSchedule.completed_at.isnot(None),
+                    func.date(ReviewSchedule.completed_at) - ReviewSchedule.scheduled_date <= 2,
+                ).label("on_time_count"),
+            )
+            .select_from(ReviewSchedule)
+            .where(
+                ReviewSchedule.user_id == user_id,
+                ReviewSchedule.status == "completed",
+            )
+        )
+        completed_row = completed_result.one()
+        completed_count = completed_row[0]
+        on_time_count = completed_row[1]
+
+        # Query 2: COUNT + AVG overdue days for pending reviews past due
+        # Use func.current_date() so subtraction stays in SQL (date - date = int in PostgreSQL)
+        overdue_result = await db.execute(
+            select(
+                func.count(),
+                func.coalesce(
+                    func.avg(func.current_date() - ReviewSchedule.scheduled_date), 0
+                ),
+            )
+            .select_from(ReviewSchedule)
+            .where(
+                ReviewSchedule.user_id == user_id,
+                ReviewSchedule.status == "pending",
+                ReviewSchedule.scheduled_date <= today,
+            )
+        )
+        overdue_row = overdue_result.one()
+        overdue_count = overdue_row[0]
+        avg_overdue_days = float(overdue_row[1])
+
+        review = compute_review_score(
+            completed_count, overdue_count, on_time_count, avg_overdue_days,
+        )
+
+        return {
+            "score": review["score"],
+            "completion_rate": review["completion_rate"],
+            "punctuality_rate": review["punctuality_rate"],
+            "overdue_penalty": review["overdue_penalty"],
+            "completed_count": completed_count,
+            "overdue_count": overdue_count,
+            "on_time_count": on_time_count,
+            "avg_overdue_days": round(avg_overdue_days, 1),
         }
 
 

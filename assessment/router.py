@@ -11,6 +11,7 @@ from assessment.schemas import (
     FocusScoreResponse,
     KnowledgeStructureScoreResponse,
     ProfileStatsResponse,
+    ReviewScoreResponse,
 )
 from assessment.service import (
     ComprehensionService,
@@ -19,6 +20,7 @@ from assessment.service import (
     FocusService,
     KnowledgeStructureService,
     ProfileStatsService,
+    ReviewAssessmentService,
 )
 from auth.dependencies import CurrentUser
 from db.database import get_db
@@ -86,6 +88,16 @@ async def get_knowledge_structure_score(
     """Get knowledge structure score for the current user (global snapshot)."""
     result = await KnowledgeStructureService.get_knowledge_structure_score(db, user.id)
     return KnowledgeStructureScoreResponse(**result)
+
+
+@router.get("/review", response_model=ReviewScoreResponse)
+async def get_review_score(
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+) -> ReviewScoreResponse:
+    """Get review score for the current user."""
+    result = await ReviewAssessmentService.get_review_score(db, user.id)
+    return ReviewScoreResponse(**result)
 
 
 @router.get("/continuity/calendar", response_model=ContinuityCalendarResponse)
