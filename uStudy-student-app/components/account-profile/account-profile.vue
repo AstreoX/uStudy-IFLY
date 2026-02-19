@@ -59,7 +59,10 @@
       <view class="analytics-card glass-card">
         <view class="analytics-row">
           <view class="analytics-left">
-            <learning-radar />
+            <learning-radar
+              :current-values="radarCurrentValues"
+              @dimension-click="onDimensionClick"
+            />
           </view>
           <view class="analytics-right">
             <view class="detail-grid">
@@ -90,13 +93,19 @@
         <!-- Learning activity timeline -->
         <view class="timeline-section">
           <text class="section-title">学习动态</text>
-          <learning-timeline :items="recentItems" />
+          <learning-timeline :items="recentItems" :loading="timelineLoading" />
         </view>
       </view>
 
       <!-- Bottom spacer for nav bar clearance -->
       <view class="bottom-spacer"></view>
     </scroll-view>
+
+    <!-- Continuity detail drawer -->
+    <continuity-drawer
+      :visible="continuityDrawerVisible"
+      @close="continuityDrawerVisible = false"
+    />
   </view>
 </template>
 
@@ -104,8 +113,11 @@
 import { useUserStore } from '@/store/user'
 import config from '@/config'
 import { getSpaces, getSpaceGraph } from '@/api/space'
+import { getActivityTimeline } from '@/api/activity'
+import { getContinuityScore, getFocusScore, getDepthScore, getComprehensionScore, getKnowledgeStructureScore } from '@/api/assessment'
 import LearningRadar from '@/components/learning-radar/learning-radar.vue'
 import LearningTimeline from '@/components/learning-timeline/learning-timeline.vue'
+import ContinuityDrawer from '@/components/continuity-drawer/continuity-drawer.vue'
 
 const AVATAR_GRADIENTS = [
   'linear-gradient(135deg, #0F6FFF 0%, #B1DD8B 100%)',
@@ -120,7 +132,8 @@ export default {
 
   components: {
     LearningRadar,
-    LearningTimeline
+    LearningTimeline,
+    ContinuityDrawer
   },
 
   created() {
@@ -132,13 +145,10 @@ export default {
       scrollHeight: 0,
       spaceCount: 0,
       studiedNodeCount: 0,
-      recentItems: [
-        { name: '线性代数 - 矩阵运算', time: '今天 14:30', type: 'study' },
-        { name: '高等数学 - 微分方程', time: '今天 10:15', type: 'study' },
-        { name: '概率论 - 贝叶斯定理', time: '昨天 21:00', type: 'review' },
-        { name: '离散数学 - 图论基础', time: '昨天 16:45', type: 'study' },
-        { name: '线性代数 - 特征值', time: '2天前', type: 'review' }
-      ]
+      continuityDrawerVisible: false,
+      radarCurrentValues: [0, 0, 0, 0, 0, 75],
+      recentItems: [],
+      timelineLoading: false
     }
   },
 
@@ -193,6 +203,12 @@ export default {
   mounted() {
     this.calculateScrollHeight()
     this.loadStats()
+    this.loadActivityTimeline()
+    this.loadContinuityScore()
+    this.loadFocusScore()
+    this.loadDepthScore()
+    this.loadComprehensionScore()
+    this.loadKnowledgeStructureScore()
   },
 
   methods: {
@@ -202,6 +218,18 @@ export default {
       const topBarHeight = systemInfo.windowHeight * (3.5 / 26)
       const navBarHeight = systemInfo.windowHeight * (3 / 26)
       this.scrollHeight = systemInfo.windowHeight - topBarHeight - navBarHeight
+    },
+
+    async loadActivityTimeline() {
+      this.timelineLoading = true
+      try {
+        const result = await getActivityTimeline(1, 20)
+        this.recentItems = result.items || []
+      } catch (_e) {
+        // Silently fail — show empty
+      } finally {
+        this.timelineLoading = false
+      }
     },
 
     async loadStats() {
@@ -224,6 +252,63 @@ export default {
         this.studiedNodeCount = totalStudied
       } catch (e) {
         // Silently fail — show 0/0
+      }
+    },
+
+    updateRadarValue(index, value) {
+      const updated = [...this.radarCurrentValues]
+      updated[index] = value
+      this.radarCurrentValues = updated
+    },
+
+    async loadContinuityScore() {
+      try {
+        const result = await getContinuityScore()
+        this.updateRadarValue(0, Math.round(result.score))
+      } catch (_e) {
+        // Keep default value
+      }
+    },
+
+    async loadFocusScore() {
+      try {
+        const result = await getFocusScore(0)
+        this.updateRadarValue(1, Math.round(result.score))
+      } catch (_e) {
+        // Keep default value
+      }
+    },
+
+    async loadDepthScore() {
+      try {
+        const result = await getDepthScore(0)
+        this.updateRadarValue(2, Math.round(result.score))
+      } catch (_e) {
+        // Keep default value
+      }
+    },
+
+    async loadComprehensionScore() {
+      try {
+        const result = await getComprehensionScore()
+        this.updateRadarValue(3, Math.round(result.score))
+      } catch (_e) {
+        // Keep default value
+      }
+    },
+
+    async loadKnowledgeStructureScore() {
+      try {
+        const result = await getKnowledgeStructureScore()
+        this.updateRadarValue(4, Math.round(result.score))
+      } catch (_e) {
+        // Keep default value
+      }
+    },
+
+    onDimensionClick({ index, label }) {
+      if (label === '连续性') {
+        this.continuityDrawerVisible = true
       }
     },
 

@@ -12,7 +12,7 @@
       <!-- Vertical line -->
       <view class="timeline-line"></view>
 
-      <!-- Suggested action card -->
+      <!-- Suggested action card (always visible) -->
       <view
         v-if="suggestion"
         class="timeline-entry timeline-entry-suggestion"
@@ -31,27 +31,63 @@
         </view>
       </view>
 
-      <!-- Each event -->
-      <view
-        v-for="(item, index) in items"
-        :key="index"
-        class="timeline-entry"
-      >
-        <view class="timeline-node">
-          <image
-            class="timeline-icon"
-            :src="getIcon(item.type)"
-            mode="aspectFit"
-          ></image>
-        </view>
-        <view class="timeline-content">
-          <view class="timeline-main-row">
-            <text class="timeline-title">{{ item.name }}</text>
-            <text class="timeline-date">{{ item.time }}</text>
-          </view>
-          <text class="timeline-subtitle">{{ getSubtitle(item) }}</text>
-        </view>
+      <!-- Loading state -->
+      <view v-if="loading" class="timeline-loading">
+        <text class="loading-text">加载中...</text>
       </view>
+
+      <!-- Empty state -->
+      <view v-else-if="!groupedItems.length" class="timeline-empty">
+        <text class="empty-text">暂无学习动态</text>
+      </view>
+
+      <!-- Date groups -->
+      <template v-else v-for="(group, gi) in groupedItems" :key="gi">
+        <view class="date-group-header">
+          <text class="date-group-label">{{ group.label }}</text>
+        </view>
+
+        <view
+          v-for="(item, index) in group.items"
+          :key="item.id || index"
+          class="timeline-entry"
+          @click="onItemTap(item)"
+        >
+          <view class="timeline-node">
+            <image
+              class="timeline-icon"
+              :src="getIcon(item.activity_type)"
+              mode="aspectFit"
+            ></image>
+          </view>
+          <view class="timeline-content">
+            <view class="timeline-main-row">
+              <text class="timeline-title">{{ item.title }}</text>
+              <text class="timeline-date">{{ formatTime(item.activity_time) }}</text>
+            </view>
+            <text class="timeline-subtitle">{{ getSubtitle(item) }}</text>
+            <!-- Summary (expandable) -->
+            <view
+              v-if="item.summary"
+              class="timeline-summary-row"
+              @click.stop="toggleSummary(item)"
+            >
+              <text
+                class="timeline-summary"
+                :class="{ 'summary-expanded': expandedIds[item.id] }"
+              >{{ item.summary }}</text>
+            </view>
+            <!-- Related nodes -->
+            <view v-if="item.related_node_labels && item.related_node_labels.length" class="node-tags">
+              <text
+                v-for="(label, li) in item.related_node_labels.slice(0, 3)"
+                :key="li"
+                class="node-tag"
+              >{{ label }}</text>
+            </view>
+          </view>
+        </view>
+      </template>
     </view>
     </scroll-view>
   </view>
@@ -59,17 +95,22 @@
 
 <script>
 const ICON_MAP = {
+  '学习新知识': '/static/icons/phosphor-icons/SVGs/regular/books.svg',
+  '复习': '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg',
+  '解题': '/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg',
+  '探讨': '/static/icons/phosphor-icons/SVGs/regular/chat-circle-dots.svg',
+  '测验': '/static/icons/phosphor-icons/SVGs/regular/exam.svg',
+  // Legacy keys
   study: '/static/icons/phosphor-icons/SVGs/regular/books.svg',
   review: '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg',
   exercise: '/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg',
   exam: '/static/icons/phosphor-icons/SVGs/regular/exam.svg'
 }
 
-const LABEL_MAP = {
-  study: '学习',
-  review: '复习',
-  exercise: '练习',
-  exam: '考试'
+const DEPTH_MAP = {
+  '浅层浏览': '浅',
+  '中等理解': '中',
+  '深入掌握': '深'
 }
 
 export default {
@@ -79,6 +120,16 @@ export default {
     items: {
       type: Array,
       default: () => []
+    },
+    loading: {
+      type: Boolean,
+      default: false
+    }
+  },
+
+  data() {
+    return {
+      expandedIds: {}
     }
   },
 
@@ -88,49 +139,107 @@ export default {
       return `${now.getMonth() + 1}月 ${now.getFullYear()}`
     },
 
-    suggestion() {
-      if (!this.items.length) return null
+    groupedItems() {
+      if (!this.items.length) return []
 
-      const reviewItem = this.items.find(i => i.type === 'review')
-      if (reviewItem) {
-        const subject = this.extractSubject(reviewItem.name)
+      const groups = {}
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const yesterday = new Date(today)
+      yesterday.setDate(yesterday.getDate() - 1)
+
+      for (const item of this.items) {
+        const d = new Date(item.activity_date || item.activity_time)
+        d.setHours(0, 0, 0, 0)
+
+        let label
+        const key = d.toISOString().slice(0, 10)
+        if (d.getTime() === today.getTime()) {
+          label = '今天'
+        } else if (d.getTime() === yesterday.getTime()) {
+          label = '昨天'
+        } else {
+          label = `${d.getMonth() + 1}月${d.getDate()}日`
+        }
+
+        if (!groups[key]) {
+          groups[key] = { label, items: [], sortKey: d.getTime() }
+        }
+        groups[key].items.push(item)
+      }
+
+      return Object.values(groups).sort((a, b) => b.sortKey - a.sortKey)
+    },
+
+    suggestion() {
+      // 优先从真实数据推导建议
+      if (this.items.length) {
+        const reviewItem = this.items.find(i =>
+          i.activity_type === '复习' || i.activity_type === 'review'
+        )
+        if (reviewItem) {
+          return {
+            title: `建议复习: ${reviewItem.subject_name || reviewItem.title}`,
+            reason: '巩固已学内容，提升长期记忆',
+            item: reviewItem
+          }
+        }
+        const first = this.items[0]
         return {
-          title: `建议复习: ${subject}`,
-          reason: '巩固已学内容，提升长期记忆',
-          item: reviewItem
+          title: `继续学习: ${first.subject_name || first.title}`,
+          reason: '保持学习节奏，完成今日目标',
+          item: first
         }
       }
 
-      const studyItem = this.items[0]
-      const subject = this.extractSubject(studyItem.name)
+      // 无数据时显示默认建议
       return {
-        title: `继续学习: ${subject}`,
-        reason: '保持学习节奏，完成今日目标',
-        item: studyItem
+        title: '开始今天的学习吧',
+        reason: '保持学习节奏，每天进步一点点',
+        item: null
       }
     }
   },
 
   methods: {
     getIcon(type) {
-      return ICON_MAP[type] || ICON_MAP.study
+      return ICON_MAP[type] || ICON_MAP['学习新知识']
     },
 
     getSubtitle(item) {
-      const typeLabel = LABEL_MAP[item.type] || '学习'
-      const subject = item.subject || this.extractSubject(item.name)
-      return `${typeLabel} · ${subject}`
+      const parts = []
+      if (item.activity_type) parts.push(item.activity_type)
+      if (item.subject_name) parts.push(item.subject_name)
+      if (item.study_depth && DEPTH_MAP[item.study_depth]) {
+        parts.push(DEPTH_MAP[item.study_depth])
+      }
+      return parts.join(' · ') || '学习'
     },
 
-    extractSubject(name) {
-      if (!name) return ''
-      const dashIndex = name.indexOf(' - ')
-      return dashIndex > 0 ? name.substring(0, dashIndex) : name
+    formatTime(timeStr) {
+      if (!timeStr) return ''
+      const d = new Date(timeStr)
+      const h = d.getHours().toString().padStart(2, '0')
+      const m = d.getMinutes().toString().padStart(2, '0')
+      return `${h}:${m}`
+    },
+
+    toggleSummary(item) {
+      this.expandedIds = {
+        ...this.expandedIds,
+        [item.id]: !this.expandedIds[item.id]
+      }
     },
 
     onSuggestionTap() {
       if (this.suggestion) {
         this.$emit('suggestion-tap', this.suggestion.item)
+      }
+    },
+
+    onItemTap(item) {
+      if (item.conversation_id) {
+        this.$emit('item-tap', item)
       }
     }
   }
@@ -168,6 +277,21 @@ export default {
   height: 520rpx;
 }
 
+/* Loading / Empty */
+.timeline-loading,
+.timeline-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200rpx;
+}
+
+.loading-text,
+.empty-text {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.35);
+}
+
 /* Timeline body */
 .timeline-body {
   position: relative;
@@ -181,6 +305,18 @@ export default {
   bottom: 0;
   width: 2rpx;
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* Date group */
+.date-group-header {
+  margin-bottom: 16rpx;
+  margin-top: 8rpx;
+}
+
+.date-group-label {
+  font-size: 22rpx;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 /* Each entry */
@@ -255,6 +391,43 @@ export default {
   font-size: 22rpx;
   color: rgba(255, 255, 255, 0.45);
   margin-top: 4rpx;
+}
+
+/* Summary */
+.timeline-summary-row {
+  margin-top: 8rpx;
+}
+
+.timeline-summary {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.35);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.summary-expanded {
+  white-space: normal;
+  overflow: visible;
+}
+
+/* Node tags */
+.node-tags {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 10rpx;
+}
+
+.node-tag {
+  font-size: 20rpx;
+  color: rgba(0, 122, 255, 0.8);
+  background: rgba(0, 122, 255, 0.1);
+  border: 1rpx solid rgba(0, 122, 255, 0.2);
+  border-radius: 8rpx;
+  padding: 4rpx 12rpx;
 }
 
 /* Suggestion card — highlighted */

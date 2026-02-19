@@ -1,6 +1,6 @@
 // ========== 环境配置 ==========
 // 切换这里来选择连接本地还是服务器
-const USE_PRODUCTION = true  // true = 连接服务器, false = 连接本地
+const USE_PRODUCTION = false  // true = 连接服务器, false = 连接本地
 
 const LOCAL_BASE_URL = 'http://localhost:8000'
 const PRODUCTION_BASE_URL = 'http://121.199.164.168:8000'

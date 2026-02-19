@@ -1,11 +1,21 @@
 <template>
   <view class="radar-container">
-    <canvas
-      :id="canvasId"
-      :canvas-id="canvasId"
-      class="radar-canvas"
-      :style="{ width: canvasSize + 'px', height: canvasSize + 'px' }"
-    />
+    <view class="radar-canvas-wrapper" :style="{ width: canvasSize + 'px', height: canvasSize + 'px' }">
+      <canvas
+        :id="canvasId"
+        :canvas-id="canvasId"
+        class="radar-canvas"
+        :style="{ width: canvasSize + 'px', height: canvasSize + 'px' }"
+      />
+      <!-- Transparent tap targets over each label -->
+      <view
+        v-for="anchor in labelAnchors"
+        :key="anchor.index"
+        class="label-tap-target"
+        :style="tapTargetStyle(anchor)"
+        @click.stop="onLabelTap(anchor)"
+      />
+    </view>
     <view class="radar-legend">
       <view class="legend-item">
         <view class="legend-dot legend-dot--current" />
@@ -24,6 +34,8 @@ const DIMENSIONS = ['连续性', '专注度', '深入程度', '理解程度', '�
 const CURRENT_DEFAULTS = [82, 65, 90, 55, 48, 75]
 const LAST_WEEK_DEFAULTS = [60, 55, 70, 45, 35, 65]
 const GRID_LEVELS = [20, 40, 60, 80, 100]
+
+const TAP_TARGET_SIZE = 40
 
 const COLORS = {
   grid: 'rgba(255, 255, 255, 0.08)',
@@ -63,7 +75,8 @@ export default {
       ctx: null,
       canvasSize: 0,
       isDestroyed: false,
-      _initRetryTimer: null
+      _initRetryTimer: null,
+      labelAnchors: []
     }
   },
 
@@ -87,7 +100,21 @@ export default {
   methods: {
     calculateSize() {
       const systemInfo = uni.getSystemInfoSync()
-      this.canvasSize = Math.min(Math.floor(systemInfo.windowWidth * 0.42), 200)
+      this.canvasSize = Math.min(Math.floor(systemInfo.windowWidth * 0.52), 240)
+    },
+
+    tapTargetStyle(anchor) {
+      const half = TAP_TARGET_SIZE / 2
+      return {
+        left: (anchor.x - half) + 'px',
+        top: (anchor.y - half) + 'px',
+        width: TAP_TARGET_SIZE + 'px',
+        height: TAP_TARGET_SIZE + 'px'
+      }
+    },
+
+    onLabelTap(anchor) {
+      this.$emit('dimension-click', { index: anchor.index, label: anchor.label })
     },
 
     initCanvas(retryCount = 0) {
@@ -119,7 +146,7 @@ export default {
       const size = this.canvasSize
       const cx = size / 2
       const cy = size / 2
-      const maxRadius = size * 0.30
+      const maxRadius = size * 0.25
       const sides = this.labels.length
 
       try {
@@ -244,6 +271,8 @@ export default {
       const anchorRadius = maxRadius + 12
       const gap = 1
 
+      const anchors = []
+
       const setHAlign = (point) => {
         if (typeof ctx.setTextAlign === 'function') {
           if (Math.abs(point.x - cx) < 2) ctx.setTextAlign('center')
@@ -254,6 +283,7 @@ export default {
 
       this.labels.forEach((label, i) => {
         const point = this.getHexPoint(cx, cy, anchorRadius, i, sides)
+        anchors.push({ x: point.x, y: point.y, index: i, label })
         setHAlign(point)
 
         // Score on top
@@ -268,6 +298,8 @@ export default {
         if (typeof ctx.setTextBaseline === 'function') ctx.setTextBaseline('top')
         ctx.fillText(label, point.x, point.y + gap)
       })
+
+      this.labelAnchors = anchors
     }
   }
 }
@@ -282,8 +314,18 @@ export default {
   padding: 12rpx 0;
 }
 
+.radar-canvas-wrapper {
+  position: relative;
+}
+
 .radar-canvas {
   display: block;
+}
+
+.label-tap-target {
+  position: absolute;
+  z-index: 1;
+  /* background: rgba(255,0,0,0.15); */ /* uncomment to debug hit areas */
 }
 
 .radar-legend {
