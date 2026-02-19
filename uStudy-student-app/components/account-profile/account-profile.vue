@@ -68,22 +68,22 @@
             <view class="detail-grid">
               <view class="detail-row">
                 <view class="detail-cell">
-                  <text class="detail-value">42</text>
+                  <text class="detail-value">{{ studyDays }}</text>
                   <text class="detail-label">学习天数</text>
                 </view>
                 <view class="detail-cell">
-                  <text class="detail-value">78%</text>
-                  <text class="detail-label">完成率</text>
+                  <text class="detail-value">{{ avgMastery }}</text>
+                  <text class="detail-label">平均掌握分</text>
                 </view>
               </view>
               <view class="detail-row">
                 <view class="detail-cell">
-                  <text class="detail-value">126h</text>
+                  <text class="detail-value">{{ formattedStudyHours }}</text>
                   <text class="detail-label">总学时</text>
                 </view>
                 <view class="detail-cell">
-                  <text class="detail-value">85%</text>
-                  <text class="detail-label">正确率</text>
+                  <text class="detail-value">{{ nodeCoverage }}%</text>
+                  <text class="detail-label">节点覆盖率</text>
                 </view>
               </view>
             </view>
@@ -118,7 +118,7 @@ import config from '@/config'
 import { getSpaces, getSpaceGraph } from '@/api/space'
 import { getActivityTimeline } from '@/api/activity'
 import { getDueReviews } from '@/api/review'
-import { getContinuityScore, getFocusScore, getDepthScore, getComprehensionScore, getKnowledgeStructureScore } from '@/api/assessment'
+import { getProfileStats, getContinuityScore, getFocusScore, getDepthScore, getComprehensionScore, getKnowledgeStructureScore } from '@/api/assessment'
 import LearningRadar from '@/components/learning-radar/learning-radar.vue'
 import LearningTimeline from '@/components/learning-timeline/learning-timeline.vue'
 import ContinuityDrawer from '@/components/continuity-drawer/continuity-drawer.vue'
@@ -151,6 +151,10 @@ export default {
       studiedNodeCount: 0,
       continuityDrawerVisible: false,
       radarCurrentValues: [0, 0, 0, 0, 0, 75],
+      studyDays: 0,
+      totalStudyHours: 0,
+      avgMastery: 0,
+      nodeCoverage: 0,
       recentItems: [],
       timelineLoading: false,
       dueReviewCount: 0
@@ -202,12 +206,20 @@ export default {
         ALPHA: 'Alpha'
       }
       return labels[tier] || tier
+    },
+
+    formattedStudyHours() {
+      const h = this.totalStudyHours
+      if (h <= 0) return '0h'
+      if (h < 1) return `${h}h`
+      return `${Math.round(h)}h`
     }
   },
 
   mounted() {
     this.calculateScrollHeight()
     this.loadStats()
+    this.loadProfileStats()
     this.loadActivityTimeline()
     this.loadDueReviews()
     this.loadContinuityScore()
@@ -224,6 +236,18 @@ export default {
       const topBarHeight = systemInfo.windowHeight * (3.5 / 26)
       const navBarHeight = systemInfo.windowHeight * (3 / 26)
       this.scrollHeight = systemInfo.windowHeight - topBarHeight - navBarHeight
+    },
+
+    async loadProfileStats() {
+      try {
+        const result = await getProfileStats()
+        this.studyDays = result.study_days || 0
+        this.totalStudyHours = result.total_study_hours || 0
+        this.avgMastery = result.avg_mastery || 0
+        this.nodeCoverage = result.node_coverage_percent || 0
+      } catch (_e) {
+        // Keep default values
+      }
     },
 
     async loadActivityTimeline() {

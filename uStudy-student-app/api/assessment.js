@@ -1,6 +1,17 @@
 import { request } from '@/utils/request'
 
 /**
+ * 获取个人资料统计数据
+ * @returns {Promise<Object>} { study_days, total_study_hours, avg_mastery, node_coverage_percent }
+ */
+export function getProfileStats() {
+  return request({
+    url: '/api/assessment/profile-stats',
+    method: 'GET'
+  })
+}
+
+/**
  * 获取连续性分数和状态
  * @returns {Promise<Object>} { score, cumulative_active_days, effective_gap_days, current_streak, last_gap, reset_threshold }
  */
