@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from datetime import date, datetime, timezone
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import UUID
 
 from sqlalchemy import select
@@ -16,6 +16,16 @@ from memory.schemas import ExtractionResult
 from memory.service import MemoryService
 
 logger = logging.getLogger(__name__)
+
+
+class ActivityResult(NamedTuple):
+    """_save_study_activity 的返回值"""
+    title: str
+    activity_id: UUID | None
+    related_node_labels: list[str] | None
+    study_depth: str | None
+    activity_date: date | None
+
 
 EXTRACTION_PROMPT = """分析以下对话，提取需要长期记住的信息。
 
@@ -209,7 +219,7 @@ class MemoryExtractor:
         activity_data = extracted.get("study_activity", {})
         if activity_data and not activity_data.get("should_skip", False):
             try:
-                activity_title = await self._save_study_activity(
+                activity_result = await self._save_study_activity(
                     user_id=user_id,
                     conversation_id=conversation_id,
                     space_id=space_id,
@@ -218,7 +228,20 @@ class MemoryExtractor:
                     message_count=len(conversation),
                     today_activities=today_activities,
                 )
+                activity_title = activity_result.title
                 activity_saved = True
+
+                # 触发复习计划生成
+                if activity_result.related_node_labels and activity_result.activity_id:
+                    from review.service import schedule_review_generation
+
+                    schedule_review_generation(
+                        user_id=user_id,
+                        activity_id=activity_result.activity_id,
+                        activity_date=activity_result.activity_date,
+                        study_depth=activity_result.study_depth,
+                        related_node_labels=activity_result.related_node_labels,
+                    )
             except Exception as e:
                 logger.error(f"Failed to save study activity: {e}", exc_info=True)
 
@@ -312,12 +335,12 @@ class MemoryExtractor:
         activity_data: dict[str, Any],
         message_count: int,
         today_activities: list[StudyActivityLog],
-    ) -> str:
+    ) -> ActivityResult:
         """
         保存学习活动记录。
 
         Returns:
-            活动标题
+            ActivityResult(title, activity_id, related_node_labels, study_depth, activity_date)
         """
         action = activity_data.get("action", "create")
         title = activity_data.get("title", "学习活动")[:300]
@@ -348,12 +371,19 @@ class MemoryExtractor:
                         existing.title = title
                         existing.summary = summary
                         existing.study_depth = study_depth
-                        existing.related_node_labels = related_nodes or existing.related_node_labels
+                        final_nodes = related_nodes or existing.related_node_labels
+                        existing.related_node_labels = final_nodes
                         existing.message_count = message_count
                         existing.activity_type = activity_type
                         await session.commit()
                         logger.info(f"Updated activity log {existing.id} for user {user_id}")
-                        return title
+                        return ActivityResult(
+                            title=title,
+                            activity_id=existing.id,
+                            related_node_labels=final_nodes,
+                            study_depth=study_depth,
+                            activity_date=existing.activity_date,
+                        )
 
             # 默认 create
             new_activity = StudyActivityLog(
@@ -374,7 +404,13 @@ class MemoryExtractor:
             session.add(new_activity)
             await session.commit()
             logger.info(f"Created activity log for user {user_id}: {title}")
-            return title
+            return ActivityResult(
+                title=title,
+                activity_id=new_activity.id,
+                related_node_labels=related_nodes if related_nodes else None,
+                study_depth=study_depth,
+                activity_date=now.date(),
+            )
 
     def _format_conversation(self, messages: list[dict[str, Any]]) -> str:
         """格式化对话为文本"""

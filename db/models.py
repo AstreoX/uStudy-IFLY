@@ -1097,3 +1097,57 @@ class StudyActivityLog(Base):
         Index("idx_activity_user_date", "user_id", "activity_date"),
         Index("idx_activity_conversation", "conversation_id"),
     )
+
+
+class ReviewSchedule(Base):
+    """艾宾浩斯遗忘曲线复习计划"""
+
+    __tablename__ = "review_schedules"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    activity_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("study_activity_logs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    node_label: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    review_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    scheduled_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending"
+    )  # pending / completed / skipped
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_by_activity_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("study_activity_logs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    study_depth: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    user: Mapped["User"] = relationship()
+    activity: Mapped["StudyActivityLog"] = relationship(
+        foreign_keys=[activity_id]
+    )
+
+    # 索引
+    __table_args__ = (
+        Index("idx_review_user_date", "user_id", "scheduled_date"),
+        Index("idx_review_user_node", "user_id", "node_label"),
+        Index("idx_review_activity", "activity_id"),
+        Index("idx_review_status_date", "user_id", "status", "scheduled_date"),
+    )

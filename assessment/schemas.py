@@ -61,6 +61,13 @@ class KnowledgeStructureScoreResponse(BaseModel):
     advanced_edge_count: int
 
 
+class ProfileStatsResponse(BaseModel):
+    study_days: int
+    total_study_hours: float
+    avg_mastery: float
+    node_coverage_percent: float
+
+
 class ContinuityCalendarResponse(BaseModel):
     start_date: date
     end_date: date

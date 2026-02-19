@@ -28,6 +28,7 @@ from quizzes.router import router as quizzes_router
 from scheduler.core import get_scheduler_lifespan
 from usage.router import router as usage_router
 from rag.router import router as rag_router
+from review.router import router as review_router
 from assessment.router import router as assessment_router
 from spaces.router import router as spaces_router
 from upload.router import router as upload_router
@@ -163,6 +164,7 @@ app.include_router(usage_router)
 app.include_router(notifications_router)
 app.include_router(assessment_router)
 app.include_router(activity_router)
+app.include_router(review_router)
 
 
 @app.get("/health")

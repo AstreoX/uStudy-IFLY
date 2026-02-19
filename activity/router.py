@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from activity.schemas import ActivityTimelineItem, ActivityTimelineResponse
 from auth.dependencies import CurrentUser
 from db.database import get_db
-from db.models import StudyActivityLog
+from db.models import ReviewSchedule, StudyActivityLog
 
 router = APIRouter(prefix="/api/activity", tags=["activity"])
 
@@ -48,8 +48,31 @@ async def get_activity_timeline(
     )
     activities = result.scalars().all()
 
+    # Batch query: next pending review date per activity
+    items = [ActivityTimelineItem.model_validate(a) for a in activities]
+    activity_ids = [a.id for a in activities]
+    review_date_map: dict = {}
+    if activity_ids:
+        review_result = await db.execute(
+            select(
+                ReviewSchedule.activity_id,
+                func.min(ReviewSchedule.scheduled_date).label("next_review_date"),
+            )
+            .where(
+                ReviewSchedule.activity_id.in_(activity_ids),
+                ReviewSchedule.status == "pending",
+            )
+            .group_by(ReviewSchedule.activity_id)
+        )
+        review_date_map = {
+            row.activity_id: row.next_review_date for row in review_result
+        }
+
+    for item in items:
+        item.next_review_date = review_date_map.get(item.id)
+
     return ActivityTimelineResponse(
-        items=[ActivityTimelineItem.model_validate(a) for a in activities],
+        items=items,
         total=total,
         page=page,
         limit=limit,

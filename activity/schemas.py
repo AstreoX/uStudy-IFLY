@@ -22,6 +22,7 @@ class ActivityTimelineItem(BaseModel):
     activity_time: datetime
     conversation_id: UUID | None = None
     space_id: UUID | None = None
+    next_review_date: date | None = None
 
     model_config = {"from_attributes": True}
 
