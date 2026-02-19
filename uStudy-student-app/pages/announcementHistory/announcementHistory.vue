@@ -239,28 +239,28 @@ export default {
 .aurora-blob-1 {
   width: 600rpx;
   height: 600rpx;
-  background: radial-gradient(circle, #0066FF 0%, transparent 70%);
+  background: radial-gradient(circle, #1A6AFF 0%, transparent 70%);
   top: -200rpx;
-  right: -100rpx;
-  opacity: 0.4;
+  left: -100rpx;
+  opacity: 0.35;
 }
 
 .aurora-blob-2 {
-  width: 500rpx;
-  height: 500rpx;
-  background: radial-gradient(circle, #8B5CF6 0%, transparent 70%);
-  top: 40%;
-  left: -150rpx;
+  width: 550rpx;
+  height: 550rpx;
+  background: radial-gradient(circle, #FF6A1A 0%, transparent 70%);
+  bottom: 10%;
+  right: -100rpx;
   opacity: 0.3;
 }
 
 .aurora-blob-3 {
   width: 400rpx;
   height: 400rpx;
-  background: radial-gradient(circle, #00FFFF 0%, transparent 70%);
-  bottom: 10%;
-  right: -100rpx;
-  opacity: 0.3;
+  background: radial-gradient(circle, #FF9F45 0%, transparent 70%);
+  top: 40%;
+  left: 20%;
+  opacity: 0.2;
 }
 
 /* Navigation Bar */

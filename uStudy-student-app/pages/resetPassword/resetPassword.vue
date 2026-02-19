@@ -4,7 +4,6 @@
       <view class="aurora-blob aurora-blob-1"></view>
       <view class="aurora-blob aurora-blob-2"></view>
       <view class="aurora-blob aurora-blob-3"></view>
-      <view class="aurora-blob aurora-blob-4"></view>
     </view>
 
     <view class="back-btn" @tap="handleBack">
@@ -218,6 +217,7 @@ export default {
   overflow: hidden;
 }
 
+/* Aurora Background (Blue-Orange) */
 .aurora-bg {
   position: absolute;
   top: 0;
@@ -236,96 +236,55 @@ export default {
   will-change: transform, opacity;
 }
 
+/* 蓝色光晕 - 左上 */
 .aurora-blob-1 {
-  width: 800rpx;
-  height: 800rpx;
-  background: radial-gradient(circle, #0066FF 0%, transparent 70%);
-  top: -200rpx;
-  right: -200rpx;
-  animation: aurora-flow-1 12s ease-in-out infinite;
-}
-
-.aurora-blob-2 {
-  width: 700rpx;
-  height: 700rpx;
-  background: radial-gradient(circle, #8B5CF6 0%, transparent 70%);
-  top: 20%;
+  width: 900rpx;
+  height: 900rpx;
+  background: radial-gradient(circle, #1A6AFF 0%, rgba(26, 106, 255, 0.3) 40%, transparent 70%);
+  top: -250rpx;
   left: -200rpx;
-  animation: aurora-flow-2 15s ease-in-out infinite;
+  animation: aurora-blue 14s ease-in-out infinite;
 }
 
+/* 橙色光晕 - 右下 */
+.aurora-blob-2 {
+  width: 850rpx;
+  height: 850rpx;
+  background: radial-gradient(circle, #FF6A1A 0%, rgba(255, 106, 26, 0.3) 40%, transparent 70%);
+  bottom: -200rpx;
+  right: -200rpx;
+  animation: aurora-orange 16s ease-in-out infinite;
+}
+
+/* 过渡融合 - 中部 */
 .aurora-blob-3 {
   width: 600rpx;
   height: 600rpx;
-  background: radial-gradient(circle, #00FFFF 0%, transparent 70%);
-  bottom: 10%;
-  right: -150rpx;
-  animation: aurora-flow-3 10s ease-in-out infinite;
+  background: radial-gradient(circle, #FF9F45 0%, rgba(255, 159, 69, 0.15) 40%, transparent 70%);
+  top: 40%;
+  left: 25%;
+  animation: aurora-blend 18s ease-in-out infinite;
 }
 
-.aurora-blob-4 {
-  width: 500rpx;
-  height: 500rpx;
-  background: radial-gradient(circle, #FF00FF 0%, transparent 70%);
-  bottom: 30%;
-  left: 30%;
-  animation: aurora-flow-4 14s ease-in-out infinite;
+@keyframes aurora-blue {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.55; }
+  33% { transform: translate(60rpx, 80rpx) scale(1.15); opacity: 0.7; }
+  66% { transform: translate(-30rpx, 40rpx) scale(1.05); opacity: 0.6; }
 }
 
-@keyframes aurora-flow-1 {
-  0%, 100% {
-    transform: translate(0, 0) scale(1);
-    opacity: 0.5;
-  }
-  25% {
-    transform: translate(150rpx, 100rpx) scale(1.4);
-    opacity: 0.7;
-  }
-  50% {
-    transform: translate(100rpx, 200rpx) scale(1.2);
-    opacity: 0.6;
-  }
-  75% {
-    transform: translate(-50rpx, 100rpx) scale(1.5);
-    opacity: 0.8;
-  }
+@keyframes aurora-orange {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.5; }
+  33% { transform: translate(-70rpx, -60rpx) scale(1.1); opacity: 0.65; }
+  66% { transform: translate(40rpx, -80rpx) scale(1.2); opacity: 0.55; }
 }
 
-@keyframes aurora-flow-2 {
-  0%, 100% {
-    transform: translate(0, 0) scale(1);
-    opacity: 0.4;
-  }
-  33% {
-    transform: translate(200rpx, -100rpx) scale(1.3);
-    opacity: 0.6;
-  }
-  66% {
-    transform: translate(100rpx, 150rpx) scale(1.5);
-    opacity: 0.7;
-  }
+@keyframes aurora-blend {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.2; }
+  50% { transform: translate(50rpx, -40rpx) scale(1.3); opacity: 0.35; }
 }
 
-@keyframes aurora-flow-3 {
-  0%, 100% {
-    transform: translate(0, 0) scale(1);
-    opacity: 0.5;
-  }
-  50% {
-    transform: translate(-100rpx, -150rpx) scale(1.6);
-    opacity: 0.8;
-  }
-}
-
-@keyframes aurora-flow-4 {
-  0%, 100% {
-    transform: translate(0, 0) scale(1);
-    opacity: 0.25;
-  }
-  50% {
-    transform: translate(-150rpx, -200rpx) scale(1.4);
-    opacity: 0.5;
-  }
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob { animation: none !important; }
 }
 
 .back-btn {

@@ -5,8 +5,10 @@
 			<view class="aurora-blob aurora-blob-1"></view>
 			<view class="aurora-blob aurora-blob-2"></view>
 			<view class="aurora-blob aurora-blob-3"></view>
-			<view class="aurora-blob aurora-blob-4"></view>
 		</view>
+
+		<!-- ========== Home Tab ========== -->
+		<view v-show="currentTab === 'home'" class="tab-content">
 
 		<!-- 选择模式背景遮罩 -->
 		<view
@@ -140,10 +142,15 @@
 			@close="toast.visible = false"
 		/>
 
+		</view><!-- End Home Tab -->
+
+		<!-- ========== Account Tab ========== -->
+		<account-profile v-if="currentTab === 'account'" />
+
 		<!-- 底部导航栏 -->
-		<view class="bottom-nav" :class="{ 'nav-hidden': isSelectionMode }">
-			<view class="nav-item">
-				<view class="nav-icon">
+		<view class="bottom-nav" :class="{ 'nav-hidden': isSelectionMode && currentTab === 'home' }">
+			<view class="nav-item" @click="switchTab('home')">
+				<view class="nav-icon" :class="{ 'nav-icon-active': currentTab === 'home' }">
 					<image class="icon-img" src="/static/icons/phosphor-icons/SVGs/fill/cards-three-fill.svg" mode="aspectFit"></image>
 				</view>
 			</view>
@@ -152,8 +159,8 @@
 					<image class="icon-img-active" src="/static/icons/phosphor-icons/SVGs/duotone/chat-centered-duotone.svg" mode="aspectFit"></image>
 				</view>
 			</view>
-			<view class="nav-item" @click="navigateToAccount">
-				<view class="nav-icon">
+			<view class="nav-item" @click="switchTab('account')">
+				<view class="nav-icon" :class="{ 'nav-icon-active': currentTab === 'account' }">
 					<image class="icon-img" src="/static/icons/phosphor-icons/SVGs/duotone/user-circle-duotone.svg" mode="aspectFit"></image>
 				</view>
 			</view>
@@ -222,6 +229,7 @@
 	import ActivationModal from '@/components/activation-modal/activation-modal.vue'
 	import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 	import AnnouncementDialog from '@/components/announcement-dialog/announcement-dialog.vue'
+	import AccountProfile from '@/components/account-profile/account-profile.vue'
 	import UModal from '@/components/u-modal/u-modal.vue'
 	import UToast from '@/components/u-toast/u-toast.vue'
 
@@ -231,12 +239,15 @@
 			ActivationModal,
 			UpdateDialog,
 			AnnouncementDialog,
+			AccountProfile,
 			UModal,
 			UToast
 		},
 
 		data() {
 			return {
+				// 当前活跃的 tab: 'home' | 'account'
+				currentTab: 'home',
 				// 所有学习主题（从后端加载）
 				learningTopics: [],
 				// 卡片顺序（栈结构，最近选择的在前）
@@ -1138,21 +1149,23 @@
 				// #endif
 			},
 
-			// 导航到账户页面
-			navigateToAccount() {
-				// #ifdef APP-PLUS
-				uni.navigateTo({
-					url: '/pages/account/account',
-					animationType: 'slide-in-right',
-					animationDuration: 300
-				})
-				// #endif
-
-				// #ifndef APP-PLUS
-				uni.navigateTo({
-					url: '/pages/account/account'
-				})
-				// #endif
+			// 切换 Tab（home / account）
+			switchTab(tab) {
+				if (this.currentTab === tab) return
+				// 如果在选择模式或退出动画中切换，重置状态
+				if (tab === 'account') {
+					if (this.isSelectionMode) {
+						this.isSelectionMode = false
+						this.selectionScrollY = 0
+						this.showArrow = true
+					}
+					if (this.isExitingSelection) {
+						this.isExitingSelection = false
+						this.exitingSelectedIndex = -1
+						this.keepContentVisible = false
+					}
+				}
+				this.currentTab = tab
 			},
 
 			// 导航到学习空间页面
@@ -1280,7 +1293,7 @@
 		color: #ffffff;
 	}
 
-	/* ========== Aurora Background ========== */
+	/* ========== Aurora Background (Blue-Orange) ========== */
 	.aurora-bg {
 		position: fixed;
 		top: 0;
@@ -1299,104 +1312,51 @@
 		will-change: transform, opacity;
 	}
 
-	/* 蓝色光斑 - 顺时针大范围流动 */
+	/* 蓝色光晕 - 左上 */
 	.aurora-blob-1 {
-		width: 800rpx;
-		height: 800rpx;
-		background: radial-gradient(circle, #0066FF 0%, transparent 70%);
-		top: -200rpx;
-		right: -200rpx;
-		animation: aurora-flow-1 12s ease-in-out infinite;
-	}
-
-	/* 紫色光斑 - 逆时针流动 */
-	.aurora-blob-2 {
-		width: 700rpx;
-		height: 700rpx;
-		background: radial-gradient(circle, #8B5CF6 0%, transparent 70%);
-		top: 20%;
+		width: 900rpx;
+		height: 900rpx;
+		background: radial-gradient(circle, #1A6AFF 0%, rgba(26, 106, 255, 0.3) 40%, transparent 70%);
+		top: -250rpx;
 		left: -200rpx;
-		animation: aurora-flow-2 15s ease-in-out infinite;
+		animation: aurora-blue 14s ease-in-out infinite;
 	}
 
-	/* 青色光斑 - 上下脉动 */
+	/* 橙色光晕 - 右下 */
+	.aurora-blob-2 {
+		width: 850rpx;
+		height: 850rpx;
+		background: radial-gradient(circle, #FF6A1A 0%, rgba(255, 106, 26, 0.3) 40%, transparent 70%);
+		bottom: -200rpx;
+		right: -200rpx;
+		animation: aurora-orange 16s ease-in-out infinite;
+	}
+
+	/* 过渡融合 - 中部 */
 	.aurora-blob-3 {
 		width: 600rpx;
 		height: 600rpx;
-		background: radial-gradient(circle, #00FFFF 0%, transparent 70%);
-		bottom: 10%;
-		right: -150rpx;
-		animation: aurora-flow-3 10s ease-in-out infinite;
+		background: radial-gradient(circle, #FF9F45 0%, rgba(255, 159, 69, 0.15) 40%, transparent 70%);
+		top: 40%;
+		left: 25%;
+		animation: aurora-blend 18s ease-in-out infinite;
 	}
 
-	/* 粉色光斑 - 对角穿梭 */
-	.aurora-blob-4 {
-		width: 500rpx;
-		height: 500rpx;
-		background: radial-gradient(circle, #FF00FF 0%, transparent 70%);
-		bottom: 30%;
-		left: 30%;
-		animation: aurora-flow-4 14s ease-in-out infinite;
+	@keyframes aurora-blue {
+		0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.55; }
+		33% { transform: translate(60rpx, 80rpx) scale(1.15); opacity: 0.7; }
+		66% { transform: translate(-30rpx, 40rpx) scale(1.05); opacity: 0.6; }
 	}
 
-	/* 蓝色光斑动画 - 顺时针大范围流动 */
-	@keyframes aurora-flow-1 {
-		0%, 100% {
-			transform: translate(0, 0) scale(1);
-			opacity: 0.5;
-		}
-		25% {
-			transform: translate(150rpx, 100rpx) scale(1.4);
-			opacity: 0.7;
-		}
-		50% {
-			transform: translate(100rpx, 200rpx) scale(1.2);
-			opacity: 0.6;
-		}
-		75% {
-			transform: translate(-50rpx, 100rpx) scale(1.5);
-			opacity: 0.8;
-		}
+	@keyframes aurora-orange {
+		0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.5; }
+		33% { transform: translate(-70rpx, -60rpx) scale(1.1); opacity: 0.65; }
+		66% { transform: translate(40rpx, -80rpx) scale(1.2); opacity: 0.55; }
 	}
 
-	/* 紫色光斑动画 - 逆时针流动 */
-	@keyframes aurora-flow-2 {
-		0%, 100% {
-			transform: translate(0, 0) scale(1);
-			opacity: 0.4;
-		}
-		33% {
-			transform: translate(200rpx, -100rpx) scale(1.3);
-			opacity: 0.6;
-		}
-		66% {
-			transform: translate(100rpx, 150rpx) scale(1.5);
-			opacity: 0.7;
-		}
-	}
-
-	/* 青色光斑动画 - 上下脉动 */
-	@keyframes aurora-flow-3 {
-		0%, 100% {
-			transform: translate(0, 0) scale(1);
-			opacity: 0.5;
-		}
-		50% {
-			transform: translate(-100rpx, -150rpx) scale(1.6);
-			opacity: 0.8;
-		}
-	}
-
-	/* 粉色光斑动画 - 对角穿梭 */
-	@keyframes aurora-flow-4 {
-		0%, 100% {
-			transform: translate(0, 0) scale(1);
-			opacity: 0.25;
-		}
-		50% {
-			transform: translate(-150rpx, -200rpx) scale(1.4);
-			opacity: 0.5;
-		}
+	@keyframes aurora-blend {
+		0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.2; }
+		50% { transform: translate(50rpx, -40rpx) scale(1.3); opacity: 0.35; }
 	}
 
 	/* 尊重用户减弱动画偏好 */
@@ -1834,12 +1794,23 @@
 		height: 100rpx;
 	}
 
+	.tab-content {
+		width: 100%;
+		height: 100%;
+	}
+
 	.nav-icon {
 		width: 75rpx;
 		height: 75rpx;
 		display: flex;
 		justify-content: center;
 		align-items: center;
+		opacity: 0.45;
+		transition: opacity 0.25s ease;
+	}
+
+	.nav-icon.nav-icon-active {
+		opacity: 1;
 	}
 
 	.icon-img {
