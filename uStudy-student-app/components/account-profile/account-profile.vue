@@ -92,7 +92,10 @@
 
         <!-- Learning activity timeline -->
         <view class="timeline-section">
-          <text class="section-title">学习动态</text>
+          <view class="section-title-row">
+            <text class="section-title">学习动态</text>
+            <text v-if="dueReviewCount > 0" class="due-review-badge">{{ dueReviewCount }}个待复习</text>
+          </view>
           <learning-timeline :items="recentItems" :loading="timelineLoading" />
         </view>
       </view>
@@ -114,6 +117,7 @@ import { useUserStore } from '@/store/user'
 import config from '@/config'
 import { getSpaces, getSpaceGraph } from '@/api/space'
 import { getActivityTimeline } from '@/api/activity'
+import { getDueReviews } from '@/api/review'
 import { getContinuityScore, getFocusScore, getDepthScore, getComprehensionScore, getKnowledgeStructureScore } from '@/api/assessment'
 import LearningRadar from '@/components/learning-radar/learning-radar.vue'
 import LearningTimeline from '@/components/learning-timeline/learning-timeline.vue'
@@ -148,7 +152,8 @@ export default {
       continuityDrawerVisible: false,
       radarCurrentValues: [0, 0, 0, 0, 0, 75],
       recentItems: [],
-      timelineLoading: false
+      timelineLoading: false,
+      dueReviewCount: 0
     }
   },
 
@@ -204,6 +209,7 @@ export default {
     this.calculateScrollHeight()
     this.loadStats()
     this.loadActivityTimeline()
+    this.loadDueReviews()
     this.loadContinuityScore()
     this.loadFocusScore()
     this.loadDepthScore()
@@ -229,6 +235,15 @@ export default {
         // Silently fail — show empty
       } finally {
         this.timelineLoading = false
+      }
+    },
+
+    async loadDueReviews() {
+      try {
+        const result = await getDueReviews(20)
+        this.dueReviewCount = result.total || 0
+      } catch (_e) {
+        // Silently fail
       }
     },
 
@@ -618,11 +633,27 @@ export default {
   margin-top: 4rpx;
 }
 
+.section-title-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
 .section-title {
   font-size: 28rpx;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.8);
-  margin-bottom: 16rpx;
+}
+
+.due-review-badge {
+  font-size: 22rpx;
+  font-weight: 500;
+  color: rgba(255, 149, 0, 0.9);
+  background: rgba(255, 149, 0, 0.12);
+  padding: 4rpx 16rpx;
+  border-radius: 12rpx;
 }
 
 /* Timeline section */

@@ -77,10 +77,11 @@
                 :class="{ 'summary-expanded': expandedIds[item.id] }"
               >{{ item.summary }}</text>
             </view>
-            <!-- Related nodes -->
-            <view v-if="item.related_node_labels && item.related_node_labels.length" class="node-tags">
+            <!-- Related nodes & review tag -->
+            <view v-if="(item.related_node_labels && item.related_node_labels.length) || item.next_review_date" class="node-tags">
+              <text v-if="item.next_review_date" class="node-tag review-tag">建议复习：{{ formatReviewDate(item.next_review_date) }}</text>
               <text
-                v-for="(label, li) in item.related_node_labels.slice(0, 3)"
+                v-for="(label, li) in (item.related_node_labels || []).slice(0, 3)"
                 :key="li"
                 class="node-tag"
               >{{ label }}</text>
@@ -90,6 +91,7 @@
       </template>
     </view>
     </scroll-view>
+
   </view>
 </template>
 
@@ -238,9 +240,13 @@ export default {
     },
 
     onItemTap(item) {
-      if (item.conversation_id) {
-        this.$emit('item-tap', item)
-      }
+      this.$emit('item-tap', item)
+    },
+
+    formatReviewDate(dateStr) {
+      if (!dateStr) return ''
+      const d = new Date(dateStr)
+      return `${d.getMonth() + 1}月${d.getDate()}日`
     }
   }
 }
@@ -274,7 +280,7 @@ export default {
 }
 
 .timeline-scroll {
-  height: 520rpx;
+  height: 1040rpx;
 }
 
 /* Loading / Empty */
@@ -428,6 +434,12 @@ export default {
   border: 1rpx solid rgba(0, 122, 255, 0.2);
   border-radius: 8rpx;
   padding: 4rpx 12rpx;
+}
+
+.review-tag {
+  color: rgba(255, 149, 0, 0.9);
+  background: rgba(255, 149, 0, 0.12);
+  border-color: rgba(255, 149, 0, 0.25);
 }
 
 /* Suggestion card — highlighted */

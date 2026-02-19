@@ -7,10 +7,19 @@
 			<view class="aurora-blob aurora-blob-3"></view>
 		</view>
 
-		<!-- ========== Home Tab ========== -->
-		<view v-show="currentTab === 'home'" class="tab-content">
+		<!-- ========== Tab Swiper ========== -->
+		<swiper
+			class="tab-swiper"
+			:current="swiperIndex"
+			:duration="300"
+			:disable-touch="isSelectionMode"
+			@change="onSwiperChange"
+		>
+			<!-- ========== Home Tab ========== -->
+			<swiper-item class="swiper-item-content">
+				<view class="tab-content">
 
-		<!-- 选择模式背景遮罩 -->
+				<!-- 选择模式背景遮罩 -->
 		<view
 			class="selection-backdrop"
 			:class="{ 'backdrop-active': isSelectionMode }"
@@ -142,10 +151,14 @@
 			@close="toast.visible = false"
 		/>
 
-		</view><!-- End Home Tab -->
+				</view><!-- End Home Tab Content -->
+			</swiper-item>
 
-		<!-- ========== Account Tab ========== -->
-		<account-profile v-if="currentTab === 'account'" />
+			<!-- ========== Account Tab ========== -->
+			<swiper-item class="swiper-item-content">
+				<account-profile v-if="hasVisitedAccount" />
+			</swiper-item>
+		</swiper>
 
 		<!-- 底部导航栏 -->
 		<view class="bottom-nav" :class="{ 'nav-hidden': isSelectionMode && currentTab === 'home' }">
@@ -248,6 +261,10 @@
 			return {
 				// 当前活跃的 tab: 'home' | 'account'
 				currentTab: 'home',
+				// swiper 索引: 0=home, 1=account
+				swiperIndex: 0,
+				// 账户页是否已访问过（用于懒加载）
+				hasVisitedAccount: false,
 				// 所有学习主题（从后端加载）
 				learningTopics: [],
 				// 卡片顺序（栈结构，最近选择的在前）
@@ -255,9 +272,12 @@
 				// 是否处于选择模式
 				isSelectionMode: false,
 				// 触摸相关
+				touchStartX: 0,
 				touchStartY: 0,
 				touchStartTime: 0,
 				lastTouchY: 0,
+				// 滑动方向锁定（null=未锁定, 'horizontal'=水平, 'vertical'=垂直）
+				swipeDirection: null,
 				// 选择模式滚动偏移
 				selectionScrollY: 0,
 				// 位置计算（像素值，在 mounted 中初始化）
@@ -878,9 +898,11 @@
 
 			// 触摸开始
 			handleTouchStart(e) {
+				this.touchStartX = e.touches[0].clientX
 				this.touchStartY = e.touches[0].clientY
 				this.touchStartTime = Date.now()
 				this.lastTouchY = e.touches[0].clientY
+				this.swipeDirection = null  // 重置方向锁定
 				// 选择模式下触摸开始，标记为正在滚动
 				if (this.isSelectionMode) {
 					this.isScrolling = true
@@ -896,8 +918,34 @@
 
 			// 触摸移动
 			handleTouchMove(e) {
+				const currentX = e.touches[0].clientX
+				const currentY = e.touches[0].clientY
+
+				// 方向锁定：首次移动时确定滑动方向
+				if (!this.swipeDirection) {
+					const deltaX = Math.abs(currentX - this.touchStartX)
+					const deltaY = Math.abs(currentY - this.touchStartY)
+					const threshold = 10  // 最小移动距离阈值
+
+					if (deltaX > threshold || deltaY > threshold) {
+						// 水平滑动：让 swiper 处理 Tab 切换
+						if (deltaX > deltaY && !this.isSelectionMode) {
+							this.swipeDirection = 'horizontal'
+							return
+						}
+						// 垂直滑动：本组件处理
+						this.swipeDirection = 'vertical'
+					} else {
+						return  // 移动距离太小，等待方向确定
+					}
+				}
+
+				// 水平滑动中，不处理
+				if (this.swipeDirection === 'horizontal') {
+					return
+				}
+
 				if (this.isSelectionMode) {
-					const currentY = e.touches[0].clientY
 					const currentTime = Date.now()
 					const deltaY = this.lastTouchY - currentY  // 正值=向上滑，负值=向下滑
 					const deltaTime = currentTime - this.lastMoveTime
@@ -933,6 +981,13 @@
 
 			// 触摸结束
 			handleTouchEnd(e) {
+				// 水平滑动时不处理，让 swiper 完成 Tab 切换
+				if (this.swipeDirection === 'horizontal') {
+					this.swipeDirection = null
+					return
+				}
+				this.swipeDirection = null
+
 				if (this.isSelectionMode) {
 					// 检测过度拉动是否触发退出（阈值 50px）
 					if (this.overPullDistance >= 50) {
@@ -970,6 +1025,20 @@
 				this.selectionScrollY = 0
 				this.isSelectionMode = true
 				this.showArrow = false  // 隐藏箭头
+			},
+
+			// 重置选择模式状态（切换 Tab 时调用）
+			resetSelectionState() {
+				if (this.isSelectionMode) {
+					this.isSelectionMode = false
+					this.selectionScrollY = 0
+					this.showArrow = true
+				}
+				if (this.isExitingSelection) {
+					this.isExitingSelection = false
+					this.exitingSelectedIndex = -1
+					this.keepContentVisible = false
+				}
 			},
 
 			// 退出选择模式
@@ -1149,23 +1218,33 @@
 				// #endif
 			},
 
-			// 切换 Tab（home / account）
-			switchTab(tab) {
+			// Swiper 滑动切换回调
+			onSwiperChange(e) {
+				const index = e.detail.current
+				const tab = index === 0 ? 'home' : 'account'
 				if (this.currentTab === tab) return
-				// 如果在选择模式或退出动画中切换，重置状态
+
+				// 切换到账户页时，标记已访问并重置选择模式
 				if (tab === 'account') {
-					if (this.isSelectionMode) {
-						this.isSelectionMode = false
-						this.selectionScrollY = 0
-						this.showArrow = true
-					}
-					if (this.isExitingSelection) {
-						this.isExitingSelection = false
-						this.exitingSelectedIndex = -1
-						this.keepContentVisible = false
-					}
+					this.hasVisitedAccount = true
+					this.resetSelectionState()
 				}
 				this.currentTab = tab
+				this.swiperIndex = index
+			},
+
+			// 切换 Tab（home / account）- 点击底部导航时调用
+			switchTab(tab) {
+				const index = tab === 'home' ? 0 : 1
+				if (this.swiperIndex === index) return
+
+				// 切换到账户页时，标记已访问并重置选择模式
+				if (tab === 'account') {
+					this.hasVisitedAccount = true
+					this.resetSelectionState()
+				}
+				this.currentTab = tab
+				this.swiperIndex = index
 			},
 
 			// 导航到学习空间页面
@@ -1792,6 +1871,22 @@
 		align-items: center;
 		width: 100rpx;
 		height: 100rpx;
+	}
+
+	/* ========== Tab Swiper ========== */
+	.tab-swiper {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100vh;  /* 显式设置高度，uni-app swiper 需要 */
+		z-index: 10;
+	}
+
+	.swiper-item-content {
+		width: 100%;
+		height: 100vh;  /* 匹配父容器高度 */
+		overflow: hidden;
 	}
 
 	.tab-content {
