@@ -10,6 +10,7 @@ from assessment.schemas import (
     DepthScoreResponse,
     FocusScoreResponse,
     KnowledgeStructureScoreResponse,
+    ProfileStatsResponse,
 )
 from assessment.service import (
     ComprehensionService,
@@ -17,11 +18,22 @@ from assessment.service import (
     DepthService,
     FocusService,
     KnowledgeStructureService,
+    ProfileStatsService,
 )
 from auth.dependencies import CurrentUser
 from db.database import get_db
 
 router = APIRouter(prefix="/api/assessment", tags=["assessment"])
+
+
+@router.get("/profile-stats", response_model=ProfileStatsResponse)
+async def get_profile_stats(
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+) -> ProfileStatsResponse:
+    """Get profile stats for the current user."""
+    result = await ProfileStatsService.get_profile_stats(db, user.id)
+    return ProfileStatsResponse(**result)
 
 
 @router.get("/continuity", response_model=ContinuityScoreResponse)

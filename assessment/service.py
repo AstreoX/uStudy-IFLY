@@ -384,6 +384,82 @@ def compute_knowledge_structure_score(
 # ============ DB Query Service ============
 
 
+class ProfileStatsService:
+    """Service for profile stats (study days, hours, mastery, coverage)."""
+
+    @staticmethod
+    async def get_profile_stats(db: AsyncSession, user_id: UUID) -> dict:
+        """
+        Compute profile stats: study_days, total_study_hours,
+        avg_mastery (non-zero nodes), node_coverage_percent.
+        """
+        # Query 1: Study days count
+        days_result = await db.execute(
+            select(func.count())
+            .select_from(DailyStudyRecord)
+            .where(DailyStudyRecord.user_id == user_id)
+        )
+        study_days = days_result.scalar_one()
+
+        # Query 2: All messages for session-based study hours
+        msg_result = await db.execute(
+            select(Message.role, Message.created_at)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .where(Conversation.user_id == user_id)
+            .order_by(Message.created_at.asc())
+        )
+        msg_rows = msg_result.all()
+
+        total_study_hours = 0.0
+        if msg_rows:
+            messages = [
+                {
+                    "role": row[0].value if hasattr(row[0], "value") else row[0],
+                    "created_at": row[1],
+                }
+                for row in msg_rows
+            ]
+            sessions = split_into_sessions(messages)
+            total_seconds = sum(
+                (s[-1]["created_at"] - s[0]["created_at"]).total_seconds()
+                for s in sessions
+                if len(s) > 1
+            )
+            total_study_hours = round(total_seconds / 3600, 1)
+
+        # Query 3: Mastery stats (single query)
+        mastery_result = await db.execute(
+            select(
+                func.avg(Node.mastery).filter(
+                    Node.mastery.isnot(None), Node.mastery > 0
+                ),
+                func.count(Node.id).filter(
+                    Node.mastery.isnot(None), Node.mastery > 0
+                ),
+                func.count(Node.id),
+            )
+            .join(Space, Node.space_id == Space.id)
+            .where(Space.user_id == user_id)
+        )
+        mastery_row = mastery_result.one()
+        avg_mastery = round(float(mastery_row[0]), 1) if mastery_row[0] is not None else 0.0
+        nodes_with_mastery = mastery_row[1]
+        total_nodes = mastery_row[2]
+
+        node_coverage_percent = (
+            round(nodes_with_mastery / total_nodes * 100, 1)
+            if total_nodes > 0
+            else 0.0
+        )
+
+        return {
+            "study_days": study_days,
+            "total_study_hours": total_study_hours,
+            "avg_mastery": avg_mastery,
+            "node_coverage_percent": node_coverage_percent,
+        }
+
+
 class ContinuityService:
     """Service for continuity assessment queries."""
 
