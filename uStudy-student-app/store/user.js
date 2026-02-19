@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { getUser, setUser as persistUser, clearAuth } from '@/utils/storage'
+import { startTracking, stopTracking } from '@/utils/appUsageTracker'
 
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -9,6 +10,9 @@ export const useUserStore = defineStore('user', {
     setUser(user) {
       this.user = user
       persistUser(user)
+      if (user) {
+        startTracking()
+      }
     },
     updateNickname(nickname) {
       if (this.user) {
@@ -33,6 +37,7 @@ export const useUserStore = defineStore('user', {
       }
     },
     clear() {
+      stopTracking()
       this.user = null
       clearAuth()
     }

@@ -1,6 +1,7 @@
 <script>
 	import { useUserStore } from '@/store/user'
 	import { useUpdateStore } from '@/store/update'
+	import { startTracking, stopTracking } from '@/utils/appUsageTracker'
 	import config from '@/config'
 
 	export default {
@@ -20,8 +21,10 @@
 			// #endif
 		},
 		onShow: function() {
+			startTracking()
 		},
 		onHide: function() {
+			stopTracking()
 		},
 		methods: {
 			clearCacheOnVersionChange() {

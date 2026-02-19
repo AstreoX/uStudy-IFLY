@@ -21,7 +21,7 @@
         <view class="legend-dot legend-dot--current" />
         <text class="legend-text">本周</text>
       </view>
-      <view class="legend-item">
+      <view v-if="lastWeekValues" class="legend-item">
         <view class="legend-dot legend-dot--last" />
         <text class="legend-text">上周</text>
       </view>
@@ -32,7 +32,6 @@
 <script>
 const DIMENSIONS = ['连续性', '专注度', '深入程度', '理解程度', '知识结构', '复习情况']
 const CURRENT_DEFAULTS = [82, 65, 90, 55, 48, 75]
-const LAST_WEEK_DEFAULTS = [60, 55, 70, 45, 35, 65]
 const GRID_LEVELS = [20, 40, 60, 80, 100]
 
 const TAP_TARGET_SIZE = 40
@@ -61,7 +60,7 @@ export default {
     },
     lastWeekValues: {
       type: Array,
-      default: () => LAST_WEEK_DEFAULTS
+      default: () => null
     },
     labels: {
       type: Array,
@@ -154,7 +153,9 @@ export default {
 
         this.drawHexGridLines(ctx, cx, cy, maxRadius, sides)
         this.drawAxisLines(ctx, cx, cy, maxRadius, sides)
-        this.drawDataPolygon(ctx, cx, cy, maxRadius, sides, this.lastWeekValues, COLORS.lastWeek, false)
+        if (this.lastWeekValues) {
+          this.drawDataPolygon(ctx, cx, cy, maxRadius, sides, this.lastWeekValues, COLORS.lastWeek, false)
+        }
         this.drawDataPolygon(ctx, cx, cy, maxRadius, sides, this.currentValues, COLORS.current, true)
         this.drawLabels(ctx, cx, cy, maxRadius, sides)
       } catch (_e) {

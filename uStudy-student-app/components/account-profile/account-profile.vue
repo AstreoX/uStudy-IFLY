@@ -61,6 +61,7 @@
           <view class="analytics-left">
             <learning-radar
               :current-values="radarCurrentValues"
+              :last-week-values="radarLastWeekValues"
               @dimension-click="onDimensionClick"
             />
           </view>
@@ -119,6 +120,7 @@ import { getSpaces, getSpaceGraph } from '@/api/space'
 import { getActivityTimeline } from '@/api/activity'
 import { getDueReviews } from '@/api/review'
 import { getProfileStats, getContinuityScore, getFocusScore, getDepthScore, getComprehensionScore, getKnowledgeStructureScore } from '@/api/assessment'
+import { saveRadarSnapshot, getLastWeekSnapshot } from '@/utils/radar-snapshot'
 import LearningRadar from '@/components/learning-radar/learning-radar.vue'
 import LearningTimeline from '@/components/learning-timeline/learning-timeline.vue'
 import ContinuityDrawer from '@/components/continuity-drawer/continuity-drawer.vue'
@@ -151,6 +153,7 @@ export default {
       studiedNodeCount: 0,
       continuityDrawerVisible: false,
       radarCurrentValues: [0, 0, 0, 0, 0, 75],
+      radarLastWeekValues: null,
       studyDays: 0,
       totalStudyHours: 0,
       avgMastery: 0,
@@ -218,15 +221,12 @@ export default {
 
   mounted() {
     this.calculateScrollHeight()
+    this.radarLastWeekValues = getLastWeekSnapshot()
     this.loadStats()
     this.loadProfileStats()
     this.loadActivityTimeline()
     this.loadDueReviews()
-    this.loadContinuityScore()
-    this.loadFocusScore()
-    this.loadDepthScore()
-    this.loadComprehensionScore()
-    this.loadKnowledgeStructureScore()
+    this.loadRadarScoresAndSnapshot()
   },
 
   methods: {
@@ -292,6 +292,17 @@ export default {
       } catch (e) {
         // Silently fail — show 0/0
       }
+    },
+
+    async loadRadarScoresAndSnapshot() {
+      await Promise.allSettled([
+        this.loadContinuityScore(),
+        this.loadFocusScore(),
+        this.loadDepthScore(),
+        this.loadComprehensionScore(),
+        this.loadKnowledgeStructureScore()
+      ])
+      saveRadarSnapshot(this.radarCurrentValues)
     },
 
     updateRadarValue(index, value) {
