@@ -1,10 +1,10 @@
 """API usage tracking data models."""
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, func
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -74,4 +74,29 @@ class ApiUsageLog(Base):
         Index("ix_api_usage_logs_user_created", "user_id", "created_at"),
         Index("ix_api_usage_logs_usage_type", "usage_type"),
         Index("ix_api_usage_logs_created_at", "created_at"),
+    )
+
+
+class AppUsageDaily(Base):
+    """每日 APP 使用时长记录（心跳累加）"""
+
+    __tablename__ = "app_usage_daily"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    usage_date: Mapped[date] = mapped_column(Date, nullable=False)
+    total_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "usage_date", name="uq_app_usage_daily_user_date"),
+        Index("ix_app_usage_daily_user_date", "user_id", "usage_date"),
     )

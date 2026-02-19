@@ -401,31 +401,15 @@ class ProfileStatsService:
         )
         study_days = days_result.scalar_one()
 
-        # Query 2: All messages for session-based study hours
-        msg_result = await db.execute(
-            select(Message.role, Message.created_at)
-            .join(Conversation, Message.conversation_id == Conversation.id)
-            .where(Conversation.user_id == user_id)
-            .order_by(Message.created_at.asc())
-        )
-        msg_rows = msg_result.all()
+        # Query 2: Real app usage time from heartbeat records
+        from usage.models import AppUsageDaily
 
-        total_study_hours = 0.0
-        if msg_rows:
-            messages = [
-                {
-                    "role": row[0].value if hasattr(row[0], "value") else row[0],
-                    "created_at": row[1],
-                }
-                for row in msg_rows
-            ]
-            sessions = split_into_sessions(messages)
-            total_seconds = sum(
-                (s[-1]["created_at"] - s[0]["created_at"]).total_seconds()
-                for s in sessions
-                if len(s) > 1
-            )
-            total_study_hours = round(total_seconds / 3600, 1)
+        usage_result = await db.execute(
+            select(func.coalesce(func.sum(AppUsageDaily.total_seconds), 0))
+            .where(AppUsageDaily.user_id == user_id)
+        )
+        total_seconds = usage_result.scalar_one()
+        total_study_hours = round(total_seconds / 3600, 1)
 
         # Query 3: Mastery stats (single query)
         mastery_result = await db.execute(

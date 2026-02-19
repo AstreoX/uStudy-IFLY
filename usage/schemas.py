@@ -2,9 +2,15 @@
 
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from usage.models import UsageType
+
+
+class HeartbeatRequest(BaseModel):
+    """心跳上报请求"""
+
+    seconds: int = Field(ge=1, le=120)
 
 
 class UsageSummaryResponse(BaseModel):

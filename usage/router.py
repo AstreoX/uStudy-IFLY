@@ -3,11 +3,13 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUser
 from db.database import get_db
 from usage.schemas import (
+    HeartbeatRequest,
     UsageBreakdownResponse,
     UsageHistoryResponse,
     UsageSummaryResponse,
@@ -15,6 +17,17 @@ from usage.schemas import (
 from usage.service import UsageService
 
 router = APIRouter(prefix="/api/usage", tags=["usage"])
+
+
+@router.post("/heartbeat", status_code=204)
+async def record_heartbeat(
+    body: HeartbeatRequest,
+    user: CurrentUser = ...,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """记录 APP 使用心跳（前端每 60s 上报一次）。"""
+    await UsageService.record_heartbeat(db, user.id, body.seconds)
+    return Response(status_code=204)
 
 
 @router.get("/summary", response_model=UsageSummaryResponse)

@@ -1,12 +1,13 @@
 """Usage service for aggregation queries."""
 
 from datetime import date, datetime, time, timedelta, timezone
-from uuid import UUID
+from uuid import uuid4, UUID
 
 from sqlalchemy import case, cast, Date, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from usage.models import ApiUsageLog, UsageType
+from usage.models import ApiUsageLog, AppUsageDaily, UsageType
 from usage.schemas import (
     DailyUsage,
     UsageBreakdownResponse,
@@ -61,6 +62,28 @@ def _get_previous_period_bounds(
 
 class UsageService:
     """Service for usage aggregation queries."""
+
+    @staticmethod
+    async def record_heartbeat(
+        db: AsyncSession, user_id: UUID, seconds: int
+    ) -> None:
+        """Record app usage heartbeat via atomic UPSERT."""
+        today = datetime.now(timezone.utc).date()
+        stmt = pg_insert(AppUsageDaily).values(
+            id=uuid4(),
+            user_id=user_id,
+            usage_date=today,
+            total_seconds=seconds,
+            updated_at=func.now(),
+        )
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_app_usage_daily_user_date",
+            set_={
+                "total_seconds": AppUsageDaily.total_seconds + seconds,
+                "updated_at": func.now(),
+            },
+        )
+        await db.execute(stmt)
 
     @staticmethod
     async def get_summary(
