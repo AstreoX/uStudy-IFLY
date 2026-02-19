@@ -209,6 +209,7 @@ async def _extract_memories_background(
     space_id: UUID | None,
     space_name: str,
     conversation: list[dict],
+    conversation_id: UUID | None = None,
 ) -> None:
     """
     后台异步提取记忆（不阻塞主响应流）。
@@ -218,6 +219,7 @@ async def _extract_memories_background(
         space_id: 学习空间 ID（可选）
         space_name: 学习空间名称
         conversation: 对话历史列表
+        conversation_id: 对话 ID（可选，用于关联活动记录）
     """
     try:
         extractor = MemoryExtractor()
@@ -226,6 +228,7 @@ async def _extract_memories_background(
             space_id=space_id,
             space_name=space_name,
             conversation=conversation,
+            conversation_id=conversation_id,
         )
         if result.long_term_count > 0 or result.space_count > 0:
             logger.info(
@@ -431,6 +434,11 @@ class ChatService:
 
             # Commit both user message and attachments in single transaction
             await db.commit()
+
+            # Record study activity (fire-and-forget)
+            from assessment.recorder import schedule_study_activity_recording
+            schedule_study_activity_recording(user_id)
+
             # Refresh and load attachments relationship
             await db.refresh(user_message, ["attachments"])
 
@@ -556,6 +564,7 @@ class ChatService:
                         space_id=space_id,
                         space_name=space_name,
                         conversation=conversation_for_extraction,
+                        conversation_id=conversation_id,
                     )
                 )
 
@@ -947,6 +956,11 @@ class ChatService:
 
             # Commit both user message and attachments in single transaction
             await db.commit()
+
+            # Record study activity (fire-and-forget)
+            from assessment.recorder import schedule_study_activity_recording
+            schedule_study_activity_recording(user_id)
+
             # Refresh and load attachments relationship
             await db.refresh(user_message, ["attachments"])
 
@@ -1046,6 +1060,23 @@ class ChatService:
                     f"Failed to save assistant response for quick chat {conversation_id}, "
                     f"response length: {len(full_response)}. Message was streamed to user but NOT persisted.",
                     exc_info=True,
+                )
+
+            # === Phase 3.5: 异步触发记忆提取（与 send_message 一致） ===
+            settings = get_settings()
+            if settings.memory_auto_extract_enabled and full_response:
+                conversation_for_extraction = llm_history + [
+                    {"role": "user", "content": content},
+                    {"role": "assistant", "content": full_response},
+                ]
+                asyncio.create_task(
+                    _extract_memories_background(
+                        user_id=user_id,
+                        space_id=None,
+                        space_name="快速对话",
+                        conversation=conversation_for_extraction,
+                        conversation_id=conversation_id,
+                    )
                 )
 
         # === Phase 3.7: Auto-generate title for new conversations ===

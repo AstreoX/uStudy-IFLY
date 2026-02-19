@@ -28,3 +28,5 @@ class ExtractionResult:
     space_count: int
     long_term_contents: list[str]
     space_contents: list[str]
+    activity_saved: bool = False
+    activity_title: str | None = None

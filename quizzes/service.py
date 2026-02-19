@@ -1,5 +1,6 @@
 """Quiz 服务层"""
 
+import asyncio
 import logging
 from uuid import UUID
 
@@ -24,6 +25,9 @@ from quizzes.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Prevent GC of fire-and-forget tasks
+_background_tasks: set[asyncio.Task] = set()
 
 
 class QuizNotFoundError(Exception):
@@ -244,6 +248,22 @@ class QuizService:
         )
         self.db.add(attempt)
         await self.db.commit()
+
+        # 记录测验活动（fire-and-forget）
+        from activity.service import record_quiz_activity
+
+        task = asyncio.create_task(
+            record_quiz_activity(
+                user_id=user_id,
+                quiz_topic=quiz.topic,
+                quiz_space_id=quiz.space_id,
+                quiz_space_name=quiz.space.name if quiz.space else None,
+                score=evaluation_result.score,
+                total_score=evaluation_result.total_score,
+            )
+        )
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
         return evaluation_result
 

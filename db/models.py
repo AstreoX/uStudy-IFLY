@@ -1,7 +1,7 @@
 """数据库表模型"""
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
 
@@ -992,4 +992,108 @@ class PendingClientToolRequest(Base):
         Index("ix_pending_client_tool_requests_conv_id", "conversation_id"),
         Index("ix_pending_client_tool_requests_tool_call_id", "tool_call_id", unique=True),
         Index("ix_pending_client_tool_requests_status", "status"),
+    )
+
+
+# ============ 学习评估相关表 ============
+
+
+class DailyStudyRecord(Base):
+    """每日学习活跃记录表"""
+
+    __tablename__ = "daily_study_records"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    study_date: Mapped[date] = mapped_column(Date, nullable=False)
+    activity_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    user: Mapped["User"] = relationship()
+
+    # 索引和约束
+    __table_args__ = (
+        UniqueConstraint("user_id", "study_date", name="uq_dsr_user_study_date"),
+        Index("ix_dsr_user_date", "user_id", "study_date"),
+    )
+
+
+class StudyActivityLog(Base):
+    """学习活动记录表 — 由 MemoryExtractor 每轮对话自动提取"""
+
+    __tablename__ = "study_activity_logs"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    conversation_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    space_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Agent 生成内容
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    summary: Mapped[str] = mapped_column(String(1000), nullable=False)
+    activity_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # "学习新知识" / "复习" / "解题" / "探讨" / "测验"
+    subject_name: Mapped[Optional[str]] = mapped_column(
+        String(200), nullable=True
+    )  # Space 名称或 Quick Chat 推断主题
+
+    # 知识图谱关联 — 存节点 label（不存 UUID，因为节点可能重建）
+    related_node_labels: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+
+    # 元数据
+    message_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    study_depth: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True
+    )  # "浅层浏览" / "中等理解" / "深入掌握"
+
+    # 来源标记
+    source: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="conversation"
+    )  # "conversation" / "quiz"
+
+    # 时间
+    activity_date: Mapped[date] = mapped_column(Date, nullable=False)
+    activity_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), onupdate=func.now(), nullable=True
+    )
+
+    # 关系
+    user: Mapped["User"] = relationship()
+    conversation: Mapped[Optional["Conversation"]] = relationship()
+    space: Mapped[Optional["Space"]] = relationship()
+
+    # 索引
+    __table_args__ = (
+        Index("idx_activity_user_date", "user_id", "activity_date"),
+        Index("idx_activity_conversation", "conversation_id"),
     )

@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from activation.router import router as activation_router
+from activity.router import router as activity_router
 from agents.router import router as agents_router
 from attachments.router import router as attachments_router
 from auth.router import router as auth_router
@@ -27,6 +28,7 @@ from quizzes.router import router as quizzes_router
 from scheduler.core import get_scheduler_lifespan
 from usage.router import router as usage_router
 from rag.router import router as rag_router
+from assessment.router import router as assessment_router
 from spaces.router import router as spaces_router
 from upload.router import router as upload_router
 
@@ -159,6 +161,8 @@ app.include_router(rag_router)
 app.include_router(feedback_router)
 app.include_router(usage_router)
 app.include_router(notifications_router)
+app.include_router(assessment_router)
+app.include_router(activity_router)
 
 
 @app.get("/health")
