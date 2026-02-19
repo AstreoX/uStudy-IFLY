@@ -126,6 +126,14 @@ export default {
     loading: {
       type: Boolean,
       default: false
+    },
+    aiSuggestion: {
+      type: Object,
+      default: null
+    },
+    suggestionLoading: {
+      type: Boolean,
+      default: false
     }
   },
 
@@ -174,7 +182,29 @@ export default {
     },
 
     suggestion() {
-      // 优先从真实数据推导建议
+      // Loading state while AI suggestion is being fetched
+      if (this.suggestionLoading && !this.aiSuggestion) {
+        return {
+          title: '正在思考建议...',
+          reason: '正在分析你的学习情况',
+          item: null
+        }
+      }
+
+      // Prefer AI suggestion when available
+      if (this.aiSuggestion) {
+        const matchingItem = this.items.find(i =>
+          i.subject_name === this.aiSuggestion.subject ||
+          i.title === this.aiSuggestion.subject
+        )
+        return {
+          title: this.aiSuggestion.title,
+          reason: this.aiSuggestion.guidance,
+          item: matchingItem || null
+        }
+      }
+
+      // Heuristic fallback: derive from real data
       if (this.items.length) {
         const reviewItem = this.items.find(i =>
           i.activity_type === '复习' || i.activity_type === 'review'
@@ -194,7 +224,7 @@ export default {
         }
       }
 
-      // 无数据时显示默认建议
+      // No data at all
       return {
         title: '开始今天的学习吧',
         reason: '保持学习节奏，每天进步一点点',

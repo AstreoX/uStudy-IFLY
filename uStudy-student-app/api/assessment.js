@@ -69,6 +69,17 @@ export function getKnowledgeStructureScore() {
 }
 
 /**
+ * 获取复习情况分数
+ * @returns {Promise<Object>} { score, completion_rate, punctuality_rate, overdue_penalty, completed_count, overdue_count, on_time_count, avg_overdue_days }
+ */
+export function getReviewScore() {
+  return request({
+    url: '/api/assessment/review',
+    method: 'GET'
+  })
+}
+
+/**
  * 获取学习日历热力图数据
  * @param {number} months - 查询月数 (1-12, 默认3)
  * @returns {Promise<Object>} { start_date, end_date, records: [{date, activity_count}] }

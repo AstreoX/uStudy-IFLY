@@ -97,7 +97,12 @@
             <text class="section-title">学习动态</text>
             <text v-if="dueReviewCount > 0" class="due-review-badge">{{ dueReviewCount }}个待复习</text>
           </view>
-          <learning-timeline :items="recentItems" :loading="timelineLoading" />
+          <learning-timeline
+            :items="recentItems"
+            :loading="timelineLoading"
+            :ai-suggestion="aiSuggestion"
+            :suggestion-loading="suggestionLoading"
+          />
         </view>
       </view>
 
@@ -117,9 +122,9 @@
 import { useUserStore } from '@/store/user'
 import config from '@/config'
 import { getSpaces, getSpaceGraph } from '@/api/space'
-import { getActivityTimeline } from '@/api/activity'
+import { getActivityTimeline, getStudySuggestion } from '@/api/activity'
 import { getDueReviews } from '@/api/review'
-import { getProfileStats, getContinuityScore, getFocusScore, getDepthScore, getComprehensionScore, getKnowledgeStructureScore } from '@/api/assessment'
+import { getProfileStats, getContinuityScore, getFocusScore, getDepthScore, getComprehensionScore, getKnowledgeStructureScore, getReviewScore } from '@/api/assessment'
 import { saveRadarSnapshot, getLastWeekSnapshot } from '@/utils/radar-snapshot'
 import LearningRadar from '@/components/learning-radar/learning-radar.vue'
 import LearningTimeline from '@/components/learning-timeline/learning-timeline.vue'
@@ -152,7 +157,7 @@ export default {
       spaceCount: 0,
       studiedNodeCount: 0,
       continuityDrawerVisible: false,
-      radarCurrentValues: [0, 0, 0, 0, 0, 75],
+      radarCurrentValues: [0, 0, 0, 0, 0, 0],
       radarLastWeekValues: null,
       studyDays: 0,
       totalStudyHours: 0,
@@ -160,7 +165,9 @@ export default {
       nodeCoverage: 0,
       recentItems: [],
       timelineLoading: false,
-      dueReviewCount: 0
+      dueReviewCount: 0,
+      aiSuggestion: null,
+      suggestionLoading: false
     }
   },
 
@@ -226,6 +233,7 @@ export default {
     this.loadProfileStats()
     this.loadActivityTimeline()
     this.loadDueReviews()
+    this.loadStudySuggestion()
     this.loadRadarScoresAndSnapshot()
   },
 
@@ -271,6 +279,17 @@ export default {
       }
     },
 
+    async loadStudySuggestion() {
+      this.suggestionLoading = true
+      try {
+        this.aiSuggestion = await getStudySuggestion()
+      } catch (_e) {
+        // Silently fail — timeline falls back to heuristic
+      } finally {
+        this.suggestionLoading = false
+      }
+    },
+
     async loadStats() {
       try {
         const spaces = await getSpaces()
@@ -300,7 +319,8 @@ export default {
         this.loadFocusScore(),
         this.loadDepthScore(),
         this.loadComprehensionScore(),
-        this.loadKnowledgeStructureScore()
+        this.loadKnowledgeStructureScore(),
+        this.loadReviewScore()
       ])
       saveRadarSnapshot(this.radarCurrentValues)
     },
@@ -351,6 +371,15 @@ export default {
       try {
         const result = await getKnowledgeStructureScore()
         this.updateRadarValue(4, Math.round(result.score))
+      } catch (_e) {
+        // Keep default value
+      }
+    },
+
+    async loadReviewScore() {
+      try {
+        const result = await getReviewScore()
+        this.updateRadarValue(5, Math.round(result.score))
       } catch (_e) {
         // Keep default value
       }

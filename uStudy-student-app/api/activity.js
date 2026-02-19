@@ -18,3 +18,18 @@ export function getActivityTimeline(page = 1, limit = 20, spaceId, activityType)
     data
   })
 }
+
+/**
+ * 获取 AI 学习建议
+ * @param {boolean} [refresh] - 是否绕过缓存强制刷新
+ * @returns {Promise<Object>} { decision, subject, guidance, title, source }
+ */
+export function getStudySuggestion(refresh = false) {
+  const data = {}
+  if (refresh) data.refresh = true
+  return request({
+    url: '/api/activity/suggestion',
+    method: 'GET',
+    data
+  })
+}
