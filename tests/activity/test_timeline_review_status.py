@@ -1,12 +1,11 @@
 """Tests for timeline review status tags."""
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import pytest
 
-import activity.router as activity_router_module
 from activity.router import get_activity_timeline
 
 
@@ -28,14 +27,17 @@ class _FakeActivity:
 
 
 @dataclass
-class _NextReviewRow:
+class _NextPendingRow:
     activity_id: object
-    next_review_date: date
+    scheduled_date: date
+    review_number: int
 
 
 @dataclass
-class _CompletedRow:
+class _LastCompletedRow:
     activity_id: object
+    completed_at: datetime
+    review_number: int
 
 
 class _DummyCountResult:
@@ -85,12 +87,13 @@ class _DummySession:
 
 class TestActivityTimelineReviewStatus:
     @pytest.mark.asyncio
-    async def test_timeline_marks_completed_today_and_keeps_next_review_date(self):
-        """`review_completed_today` and `next_review_date` should coexist."""
+    async def test_timeline_shows_both_completed_and_next_pending(self):
+        """Both last_completed and next_pending fields should coexist."""
         activity_id = uuid4()
         fake_user = type("FakeUser", (), {"id": uuid4()})()
         now_utc = datetime(2026, 2, 20, 12, 30, tzinfo=timezone.utc)
         next_review_date = date(2026, 2, 23)
+        completed_at = datetime(2026, 2, 21, 14, 30, tzinfo=timezone.utc)
 
         activity = _FakeActivity(
             id=activity_id,
@@ -111,9 +114,11 @@ class TestActivityTimelineReviewStatus:
                 _DummyCountResult(1),
                 _DummyActivitiesResult([activity]),
                 _DummyIterableResult(
-                    [_NextReviewRow(activity_id, next_review_date)]
+                    [_NextPendingRow(activity_id, next_review_date, 2)]
                 ),
-                _DummyIterableResult([_CompletedRow(activity_id)]),
+                _DummyIterableResult(
+                    [_LastCompletedRow(activity_id, completed_at, 1)]
+                ),
             ]
         )
 
@@ -128,12 +133,15 @@ class TestActivityTimelineReviewStatus:
 
         assert result.total == 1
         assert len(result.items) == 1
-        assert result.items[0].next_review_date == next_review_date
-        assert result.items[0].review_completed_today is True
+        item = result.items[0]
+        assert item.next_review_date == next_review_date
+        assert item.next_review_number == 2
+        assert item.last_completed_review_number == 1
+        assert item.last_completed_at == completed_at
 
     @pytest.mark.asyncio
-    async def test_timeline_defaults_review_completed_today_false(self):
-        """`review_completed_today` should be false when no completed row exists."""
+    async def test_timeline_defaults_to_none_when_no_reviews(self):
+        """All review fields should be None when no review records exist."""
         activity_id = uuid4()
         fake_user = type("FakeUser", (), {"id": uuid4()})()
         now_utc = datetime(2026, 2, 20, 13, 0, tzinfo=timezone.utc)
@@ -171,34 +179,19 @@ class TestActivityTimelineReviewStatus:
         )
 
         assert len(result.items) == 1
-        assert result.items[0].review_completed_today is False
+        item = result.items[0]
+        assert item.next_review_date is None
+        assert item.next_review_number is None
+        assert item.last_completed_review_number is None
+        assert item.last_completed_at is None
 
     @pytest.mark.asyncio
-    async def test_timeline_completed_window_uses_server_timezone_day_boundary(
-        self, monkeypatch
-    ):
-        """`completed_at` filter should use [start_utc, end_utc) of server-local day."""
-
-        class _FrozenDateTime(datetime):
-            @classmethod
-            def now(cls, tz=None):
-                local_now = cls(
-                    2026,
-                    2,
-                    20,
-                    23,
-                    30,
-                    tzinfo=timezone(timedelta(hours=8)),
-                )
-                if tz is None:
-                    return local_now
-                return local_now.astimezone(tz)
-
-        monkeypatch.setattr(activity_router_module, "datetime", _FrozenDateTime)
-
+    async def test_timeline_window_function_picks_latest_completed(self):
+        """The last_completed fields should reflect the most recent completed review."""
         activity_id = uuid4()
         fake_user = type("FakeUser", (), {"id": uuid4()})()
-        now_utc = datetime(2026, 2, 20, 12, 0, tzinfo=timezone.utc)
+        now_utc = datetime(2026, 2, 27, 9, 15, tzinfo=timezone.utc)
+
         activity = _FakeActivity(
             id=activity_id,
             title="系统设计",
@@ -213,16 +206,24 @@ class TestActivityTimelineReviewStatus:
             activity_time=now_utc,
         )
 
+        # Simulate window function already returning only the top-1 row
+        latest_completed_at = datetime(2026, 2, 27, 9, 15, tzinfo=timezone.utc)
+        next_review_date = date(2026, 3, 6)
+
         db = _DummySession(
             responses=[
                 _DummyCountResult(1),
                 _DummyActivitiesResult([activity]),
-                _DummyIterableResult([]),
-                _DummyIterableResult([]),
+                _DummyIterableResult(
+                    [_NextPendingRow(activity_id, next_review_date, 4)]
+                ),
+                _DummyIterableResult(
+                    [_LastCompletedRow(activity_id, latest_completed_at, 3)]
+                ),
             ]
         )
 
-        await get_activity_timeline(
+        result = await get_activity_timeline(
             user=fake_user,
             db=db,
             page=1,
@@ -231,29 +232,8 @@ class TestActivityTimelineReviewStatus:
             activity_type=None,
         )
 
-        completed_stmt = db._statements[3]
-        completed_where = list(completed_stmt._where_criteria)
-        completed_at_bounds = [
-            criterion.right.value
-            for criterion in completed_where
-            if getattr(getattr(criterion, "left", None), "name", None)
-            == "completed_at"
-        ]
-        status_values = [
-            criterion.right.value
-            for criterion in completed_where
-            if getattr(getattr(criterion, "left", None), "name", None) == "status"
-        ]
-        user_values = [
-            criterion.right.value
-            for criterion in completed_where
-            if getattr(getattr(criterion, "left", None), "name", None) == "user_id"
-        ]
-
-        expected_start_utc = datetime(2026, 2, 19, 16, 0, tzinfo=timezone.utc)
-        expected_end_utc = datetime(2026, 2, 20, 16, 0, tzinfo=timezone.utc)
-
-        assert expected_start_utc in completed_at_bounds
-        assert expected_end_utc in completed_at_bounds
-        assert status_values == ["completed"]
-        assert user_values == [fake_user.id]
+        item = result.items[0]
+        assert item.last_completed_review_number == 3
+        assert item.last_completed_at == latest_completed_at
+        assert item.next_review_number == 4
+        assert item.next_review_date == next_review_date

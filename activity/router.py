@@ -1,6 +1,5 @@
 """Activity API 路由"""
 
-from datetime import datetime, time, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -54,52 +53,86 @@ async def get_activity_timeline(
     )
     activities = result.scalars().all()
 
-    # Batch query: next pending review date per activity
+    # Batch query: review status per activity
     items = [ActivityTimelineItem.model_validate(a) for a in activities]
     activity_ids = [a.id for a in activities]
-    review_date_map: dict = {}
-    completed_today_activity_ids: set[UUID] = set()
+    next_pending_map: dict = {}
+    last_completed_map: dict = {}
     if activity_ids:
-        review_result = await db.execute(
+        # Query 1: next pending review (earliest scheduled_date per activity)
+        pending_ranked = (
             select(
                 ReviewSchedule.activity_id,
-                func.min(ReviewSchedule.scheduled_date).label("next_review_date"),
+                ReviewSchedule.scheduled_date,
+                ReviewSchedule.review_number,
+                func.row_number()
+                .over(
+                    partition_by=ReviewSchedule.activity_id,
+                    order_by=(
+                        ReviewSchedule.scheduled_date.asc(),
+                        ReviewSchedule.review_number.asc(),
+                    ),
+                )
+                .label("rn"),
             )
             .where(
                 ReviewSchedule.activity_id.in_(activity_ids),
                 ReviewSchedule.status == "pending",
             )
-            .group_by(ReviewSchedule.activity_id)
+            .subquery()
         )
-        review_date_map = {
-            row.activity_id: row.next_review_date for row in review_result
+        next_pending_result = await db.execute(
+            select(
+                pending_ranked.c.activity_id,
+                pending_ranked.c.scheduled_date,
+                pending_ranked.c.review_number,
+            ).where(pending_ranked.c.rn == 1)
+        )
+        next_pending_map = {
+            row.activity_id: (row.scheduled_date, row.review_number)
+            for row in next_pending_result
         }
 
-        now_local = datetime.now().astimezone()
-        start_local = datetime.combine(
-            now_local.date(), time.min, tzinfo=now_local.tzinfo
-        )
-        end_local = start_local + timedelta(days=1)
-        start_utc = start_local.astimezone(timezone.utc)
-        end_utc = end_local.astimezone(timezone.utc)
-        completed_result = await db.execute(
-            select(ReviewSchedule.activity_id)
+        # Query 2: most recently completed review per activity
+        completed_ranked = (
+            select(
+                ReviewSchedule.activity_id,
+                ReviewSchedule.completed_at,
+                ReviewSchedule.review_number,
+                func.row_number()
+                .over(
+                    partition_by=ReviewSchedule.activity_id,
+                    order_by=ReviewSchedule.completed_at.desc(),
+                )
+                .label("rn"),
+            )
             .where(
-                ReviewSchedule.user_id == user.id,
                 ReviewSchedule.activity_id.in_(activity_ids),
                 ReviewSchedule.status == "completed",
-                ReviewSchedule.completed_at >= start_utc,
-                ReviewSchedule.completed_at < end_utc,
+                ReviewSchedule.completed_at.isnot(None),
             )
-            .group_by(ReviewSchedule.activity_id)
+            .subquery()
         )
-        completed_today_activity_ids = {
-            row.activity_id for row in completed_result
+        last_completed_result = await db.execute(
+            select(
+                completed_ranked.c.activity_id,
+                completed_ranked.c.completed_at,
+                completed_ranked.c.review_number,
+            ).where(completed_ranked.c.rn == 1)
+        )
+        last_completed_map = {
+            row.activity_id: (row.completed_at, row.review_number)
+            for row in last_completed_result
         }
 
     for item in items:
-        item.next_review_date = review_date_map.get(item.id)
-        item.review_completed_today = item.id in completed_today_activity_ids
+        pending = next_pending_map.get(item.id)
+        if pending:
+            item.next_review_date, item.next_review_number = pending
+
+        completed = last_completed_map.get(item.id)
+        if completed:
+            item.last_completed_at, item.last_completed_review_number = completed
 
     return ActivityTimelineResponse(
         items=items,
