@@ -7,12 +7,12 @@ from pathlib import Path
 from typing import List
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from config import get_settings
-from db.models import DocumentType, Edge, Node, Space, SpaceDocument
+from db.models import DocumentType, Edge, Node, ReviewSchedule, Space, SpaceDocument, StudyActivityLog
 from spaces.schemas import (
     EdgeResponse,
     NodeResponse,
@@ -104,6 +104,19 @@ class SpaceService:
 
         # 先收集需要删除的文件路径（在删除数据库记录之前）
         file_paths = await self._collect_document_file_paths(space_id)
+
+        # 删除该空间关联的复习计划（必须在空间删除前执行，
+        # 因为空间删除会 SET NULL StudyActivityLog.space_id，之后无法关联）
+        activity_ids_subquery = (
+            select(StudyActivityLog.id)
+            .where(StudyActivityLog.space_id == space_id)
+            .scalar_subquery()
+        )
+        await self.db.execute(
+            delete(ReviewSchedule).where(
+                ReviewSchedule.activity_id.in_(activity_ids_subquery)
+            )
+        )
 
         # 删除数据库记录（级联删除 nodes, edges, conversations, documents 等）
         await self.db.delete(space)
