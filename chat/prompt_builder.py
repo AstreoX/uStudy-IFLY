@@ -15,11 +15,20 @@ class PromptBuilder:
 
 ---
 
+
 ## 当前处于 {{学习空间}} 模式
 
 当前学习空间：{space_name}  
 空间 ID：{space_id}
+# 待复习知识点
 
+用户在当前学习空间中到期或逾期的复习数目： {reviews_count}
+
+复习行为引导：
+- 如果用户想要复习，使用查看复习事件工具获取待复习项。
+- 如果用户主动讨论了某个待复习知识点，可以围绕它展开对话
+- 只有在用户充分展示了理解（如正确回答、主动讲解）后，才调用 mark_review_completed 标记完成
+- 不要在用户未表现出复习意愿时强行引导复习
 ###  知识图谱能力
 
 该学习空间拥有一套知识图谱，用于存储：
@@ -363,20 +372,6 @@ class PromptBuilder:
 以上为历史参考。本次对话从用户的第一条消息开始。
 """
 
-    # 待复习知识点注入模板
-    DUE_REVIEWS_SECTION = """
-# 待复习知识点
-
-以下是用户在当前学习空间中到期或逾期的复习项：
-
-{due_reviews}
-
-复习行为引导：
-- 自然地将待复习内容融入对话，不要机械列举或逼迫用户复习
-- 如果用户主动讨论了某个待复习知识点，可以围绕它展开对话
-- 只有在用户充分展示了理解（如正确回答、主动讲解）后，才调用 mark_review_completed 标记完成
-- 不要在用户未表现出复习意愿时强行引导复习
-"""
 
     # 旧版长期记忆段落模板（QuickChat 暂时保留）
     LONG_TERM_MEMORY_SECTION = """
@@ -397,7 +392,7 @@ class PromptBuilder:
         space_name: str,
         relevant_memories: Optional[str] = None,
         previous_conversation_context: Optional[str] = None,
-        due_reviews: Optional[str] = None,
+        reviews_count: int = 0,
     ) -> str:
         """
         Build system prompt for learning space mode.
@@ -407,7 +402,7 @@ class PromptBuilder:
             space_name: Name of the learning space
             relevant_memories: Formatted relevant memories from vector search (optional)
             previous_conversation_context: Formatted previous conversation context (optional)
-            due_reviews: Formatted due review items for this space (optional)
+            reviews_count: Number of due/overdue review items in this space
 
         Returns:
             Formatted system prompt string
@@ -415,6 +410,7 @@ class PromptBuilder:
         base_prompt = self.LEARNING_SPACE_PROMPT.format(
             space_id=str(space_id),
             space_name=space_name,
+            reviews_count=reviews_count,
         )
 
         # 如果有上一次对话上下文（新对话时加载），拼接到提示词
@@ -430,13 +426,6 @@ class PromptBuilder:
                 relevant_memories=relevant_memories
             )
             base_prompt = base_prompt + "\n" + memory_section
-
-        # 如果有到期复习项，拼接到提示词末尾（在记忆之后）
-        if due_reviews:
-            reviews_section = self.DUE_REVIEWS_SECTION.format(
-                due_reviews=due_reviews
-            )
-            base_prompt = base_prompt + "\n" + reviews_section
 
         return base_prompt
 

@@ -1,11 +1,16 @@
 """Review Tools - Tool definitions and Executor for marking reviews completed"""
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
 from chat.tools.base import ToolResult
-from review.service import complete_review, complete_reviews_by_node_label
+from review.service import (
+    complete_review,
+    complete_reviews_by_activity,
+    get_due_reviews_by_space,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,18 +21,16 @@ REVIEW_TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "mark_review_completed",
             "description": (
-                "标记用户的某个知识点复习为已完成。"
-                "仅在以下情况调用：用户在对话中已充分展示了对该知识点的理解（如正确回答问题、主动讲解概念等），"
-                "你确认其已完成有效复习后，才调用此工具。"
-                "禁止：未经讨论就直接调用；用户仅提到知识点名称就调用；用户明确表示不想复习时调用。"
-                "推荐使用 node_label 参数（知识点名称），会批量标记该知识点所有到期复习。"
+                "标记用户的某个学习事件的复习为已完成。"
+                "仅在用户已充分展示对该学习事件所涉知识点的理解后调用。"
+                "使用 activity_id 参数（从 get_review_events 结果中获取）。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "node_label": {
+                    "activity_id": {
                         "type": "string",
-                        "description": "知识点名称，批量标记该知识点所有到期待复习项为已完成",
+                        "description": "学习事件 ID（UUID），批量标记该事件所有到期待复习项为已完成",
                     },
                     "review_id": {
                         "type": "string",
@@ -37,9 +40,23 @@ REVIEW_TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_review_events",
+            "description": (
+                "查看当前学习空间中到期或逾期的待复习学习事件列表。"
+                "当用户表达复习意愿、询问有哪些需要复习的内容时调用此工具。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
 ]
 
-REVIEW_TOOL_NAMES: set[str] = {"mark_review_completed"}
+REVIEW_TOOL_NAMES: set[str] = {"mark_review_completed", "get_review_events"}
 
 # Metadata for tool card display
 REVIEW_TOOL_METADATA: dict[str, dict[str, Any]] = {
@@ -47,46 +64,55 @@ REVIEW_TOOL_METADATA: dict[str, dict[str, Any]] = {
         "requires_confirmation": False,
         "display_name": "标记复习完成",
     },
+    "get_review_events": {
+        "requires_confirmation": False,
+        "display_name": "查看复习事件",
+    },
 }
 
 
 class ReviewToolExecutor:
     """Executor for review tools - uses short-lived DB sessions per call"""
 
-    def __init__(self, user_id: UUID) -> None:
+    def __init__(self, user_id: UUID, space_id: UUID) -> None:
         self.user_id = user_id
+        self.space_id = space_id
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> ToolResult:
+        if tool_name == "get_review_events":
+            return await self._get_review_events()
+
         if tool_name != "mark_review_completed":
             return ToolResult(
                 success=False, data=None, message=f"未知的工具: {tool_name}"
             )
 
-        node_label = arguments.get("node_label")
+        activity_id = arguments.get("activity_id")
         review_id = arguments.get("review_id")
 
-        if not node_label and not review_id:
+        if not activity_id and not review_id:
             return ToolResult(
                 success=False,
                 data=None,
-                message="请提供 node_label（知识点名称）或 review_id（复习计划ID）",
+                message="请提供 activity_id（学习事件ID）或 review_id（复习计划ID）",
             )
 
         try:
-            if node_label:
-                count = await complete_reviews_by_node_label(
-                    self.user_id, node_label
+            if activity_id:
+                activity_uuid = UUID(activity_id)
+                count = await complete_reviews_by_activity(
+                    self.user_id, activity_uuid
                 )
                 if count == 0:
                     return ToolResult(
                         success=True,
-                        data={"node_label": node_label, "completed_count": 0},
-                        message=f"未找到知识点「{node_label}」的到期待复习项",
+                        data={"activity_id": activity_id, "completed_count": 0},
+                        message=f"未找到该学习事件的到期待复习项",
                     )
                 return ToolResult(
                     success=True,
-                    data={"node_label": node_label, "completed_count": count},
-                    message=f"已标记知识点「{node_label}」的 {count} 条到期复习为完成",
+                    data={"activity_id": activity_id, "completed_count": count},
+                    message=f"已标记该学习事件的 {count} 条到期复习为完成",
                 )
             else:
                 review_uuid = UUID(review_id)
@@ -106,10 +132,50 @@ class ReviewToolExecutor:
             return ToolResult(
                 success=False,
                 data=None,
-                message=f"无效的 review_id 格式: {review_id}",
+                message=f"无效的 ID 格式: {activity_id or review_id}",
             )
         except Exception as e:
             logger.error(f"Review tool execution failed: {e}", exc_info=True)
             return ToolResult(
                 success=False, data=None, message=f"标记复习完成失败: {str(e)}"
+            )
+
+    async def _get_review_events(self) -> ToolResult:
+        try:
+            rows = await get_due_reviews_by_space(
+                self.user_id, self.space_id, limit=10
+            )
+            if not rows:
+                return ToolResult(
+                    success=True,
+                    data={"message": "当前没有到期的复习项", "items": [], "total": 0},
+                    message="当前没有到期的复习项",
+                )
+            today = datetime.now(timezone.utc).date()
+            items = []
+            for r, activity in rows:
+                overdue_days = (today - r.scheduled_date).days
+                items.append({
+                    "activity_id": str(r.activity_id),
+                    "activity_title": activity.title,
+                    "related_node_labels": activity.related_node_labels or [],
+                    "study_depth": r.study_depth,
+                    "review_number": r.review_number,
+                    "scheduled_date": str(r.scheduled_date),
+                    "overdue_days": overdue_days,
+                    "urgency": f"逾期{overdue_days}天" if overdue_days > 0 else "今日到期",
+                })
+            return ToolResult(
+                success=True,
+                data={
+                    "message": f"找到 {len(items)} 条待复习学习事件",
+                    "items": items,
+                    "total": len(items),
+                },
+                message=f"找到 {len(items)} 条待复习学习事件",
+            )
+        except Exception as e:
+            logger.error(f"get_review_events failed: {e}", exc_info=True)
+            return ToolResult(
+                success=False, data=None, message=f"获取复习事件失败: {str(e)}"
             )

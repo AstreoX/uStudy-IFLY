@@ -232,7 +232,7 @@ class MemoryExtractor:
                 activity_saved = True
 
                 # 触发复习计划生成
-                if activity_result.related_node_labels and activity_result.activity_id:
+                if activity_result.activity_id:
                     from review.service import schedule_review_generation
 
                     schedule_review_generation(
@@ -240,7 +240,6 @@ class MemoryExtractor:
                         activity_id=activity_result.activity_id,
                         activity_date=activity_result.activity_date,
                         study_depth=activity_result.study_depth,
-                        related_node_labels=activity_result.related_node_labels,
                     )
             except Exception as e:
                 logger.error(f"Failed to save study activity: {e}", exc_info=True)

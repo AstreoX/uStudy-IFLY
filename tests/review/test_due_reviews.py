@@ -18,10 +18,16 @@ from review.service import get_due_reviews_by_space, get_due_reviews_total
 class _FakeReview:
     id: object
     activity_id: object
-    node_label: str
     review_number: int
     scheduled_date: object
+    node_label: str | None = None
     study_depth: str | None = None
+
+
+@dataclass
+class _FakeActivity:
+    title: str
+    related_node_labels: list[str] | None = None
 
 
 class _DummyResult:
@@ -67,6 +73,9 @@ class _DummyRowsResult:
 
     def scalars(self):
         return _DummyScalars(self._rows)
+
+    def all(self):
+        return self._rows
 
 
 class _DummyRowsSession:
@@ -143,7 +152,6 @@ class TestDueReviewTotals:
                 _FakeReview(
                     id=uuid4(),
                     activity_id=uuid4(),
-                    node_label="Python 控制流",
                     review_number=1,
                     scheduled_date=today,
                     study_depth="中等理解",
@@ -202,24 +210,30 @@ class TestDueReviewTotals:
 
     @pytest.mark.asyncio
     async def test_get_due_reviews_by_space_returns_rows(self, monkeypatch):
-        """Space query should return review rows as list."""
+        """Space query should return (review, activity) tuples."""
         today = datetime.now(timezone.utc).date()
-        fake_row = _FakeReview(
+        fake_review = _FakeReview(
             id=uuid4(),
             activity_id=uuid4(),
-            node_label="数据库索引",
             review_number=1,
             scheduled_date=today,
             study_depth="中等理解",
+        )
+        fake_activity = _FakeActivity(
+            title="数据库索引原理",
+            related_node_labels=["数据库索引"],
         )
         captured = {}
 
         monkeypatch.setattr(
             "review.service.get_scoped_session",
-            lambda: _DummyRowsSessionContext(rows=[fake_row], captured=captured),
+            lambda: _DummyRowsSessionContext(
+                rows=[(fake_review, fake_activity)], captured=captured
+            ),
         )
 
         rows = await get_due_reviews_by_space(uuid4(), uuid4(), limit=10)
         assert len(rows) == 1
-        assert rows[0].node_label == "数据库索引"
-        assert rows[0].review_number == 1
+        r, a = rows[0]
+        assert r.review_number == 1
+        assert a.title == "数据库索引原理"

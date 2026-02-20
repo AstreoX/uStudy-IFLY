@@ -10,7 +10,7 @@ class ReviewScheduleItem(BaseModel):
     """单条复习计划"""
 
     id: UUID
-    node_label: str
+    node_label: str | None = None
     review_number: int
     scheduled_date: date
     status: str
@@ -32,7 +32,7 @@ class DueReviewItem(BaseModel):
 
     id: UUID
     activity_id: UUID
-    node_label: str
+    node_label: str | None = None
     review_number: int
     scheduled_date: date
     study_depth: str | None = None

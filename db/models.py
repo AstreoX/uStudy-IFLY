@@ -1157,7 +1157,7 @@ class ReviewSchedule(Base):
         ForeignKey("study_activity_logs.id", ondelete="CASCADE"),
         nullable=False,
     )
-    node_label: Mapped[str] = mapped_column(String(200), nullable=False)
+    node_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     review_number: Mapped[int] = mapped_column(Integer, nullable=False)
     scheduled_date: Mapped[date] = mapped_column(Date, nullable=False)

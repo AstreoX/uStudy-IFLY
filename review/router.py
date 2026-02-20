@@ -52,7 +52,7 @@ async def get_due_reviews_endpoint(
             DueReviewItem(
                 id=r.id,
                 activity_id=r.activity_id,
-                node_label=r.node_label,
+                node_label=getattr(r, "node_label", None),
                 review_number=r.review_number,
                 scheduled_date=r.scheduled_date,
                 study_depth=r.study_depth,

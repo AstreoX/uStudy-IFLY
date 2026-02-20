@@ -50,7 +50,7 @@ SYSTEM_PROMPT = """\
 
 def _build_user_prompt(
     activities: list[StudyActivityLog],
-    due_reviews: list[tuple[ReviewSchedule, dict | None]],
+    due_reviews: list[tuple[ReviewSchedule, StudyActivityLog, dict | None]],
 ) -> str:
     """构建用户 prompt（动态部分）"""
     lines: list[str] = []
@@ -69,7 +69,7 @@ def _build_user_prompt(
 
     if due_reviews:
         lines.append("## 今日待复习项")
-        for i, (r, prefs) in enumerate(due_reviews, 1):
+        for i, (r, activity, prefs) in enumerate(due_reviews, 1):
             overdue_days = (today - r.scheduled_date).days
             overdue_str = (
                 f"逾期{overdue_days}天" if overdue_days > 0 else "今日到期"
@@ -93,7 +93,7 @@ def _build_user_prompt(
                     pref_str = f", 偏好: {'/'.join(labels)}"
 
             lines.append(
-                f"{i}. {r.node_label} "
+                f"{i}. {activity.title} "
                 f"(复习第{r.review_number}次, {overdue_str}{depth}{pref_str})"
             )
 
@@ -130,16 +130,16 @@ def _parse_suggestion_json(response: str) -> dict | None:
 
 def _heuristic_suggestion(
     activities: list[StudyActivityLog],
-    due_reviews: list[ReviewSchedule],
+    due_reviews: list[tuple[ReviewSchedule, StudyActivityLog]],
 ) -> dict:
     """Fallback: mirrors the existing Vue computed logic."""
     if due_reviews:
-        r = due_reviews[0]
+        _r, activity = due_reviews[0]
         return {
             "decision": "开始复习",
-            "subject": r.node_label,
+            "subject": activity.title,
             "guidance": "巩固已学内容，提升长期记忆",
-            "title": f"建议复习: {r.node_label}",
+            "title": f"建议复习: {activity.title}",
             "source": "heuristic",
         }
 
@@ -240,8 +240,12 @@ async def _fetch_recent_activities(
 
 async def _fetch_due_reviews(
     user_id: UUID, db: AsyncSession
-) -> list[tuple[ReviewSchedule, dict | None]]:
-    """Fetch due/overdue reviews deduped by activity_id, limit 10."""
+) -> list[tuple[ReviewSchedule, StudyActivityLog, dict | None]]:
+    """Fetch due/overdue reviews deduped by activity_id, limit 10.
+
+    Returns:
+        List of (ReviewSchedule, StudyActivityLog, learning_preferences) tuples.
+    """
     today = datetime.now(timezone.utc).date()
     ranked_due_reviews = (
         select(
@@ -266,7 +270,7 @@ async def _fetch_due_reviews(
     )
 
     result = await db.execute(
-        select(ReviewSchedule, Space.learning_preferences)
+        select(ReviewSchedule, StudyActivityLog, Space.learning_preferences)
         .join(ranked_due_reviews, ReviewSchedule.id == ranked_due_reviews.c.review_id)
         .join(StudyActivityLog, ReviewSchedule.activity_id == StudyActivityLog.id)
         .outerjoin(Space, StudyActivityLog.space_id == Space.id)
@@ -276,8 +280,8 @@ async def _fetch_due_reviews(
     )
     rows = result.all()
     # Eagerly load attributes to avoid lazy-load after session close
-    for r, _prefs in rows:
-        _ = (r.node_label, r.review_number, r.scheduled_date, r.study_depth)
+    for r, a, _prefs in rows:
+        _ = (r.review_number, r.scheduled_date, r.study_depth, a.title)
     return list(rows)
 
 
@@ -309,7 +313,7 @@ async def get_ai_suggestion(
     # Gather data
     activities = await _fetch_recent_activities(user_id, db)
     due_reviews = await _fetch_due_reviews(user_id, db)
-    plain_reviews = [r for r, _prefs in due_reviews]
+    plain_reviews = [(r, a) for r, a, _prefs in due_reviews]
 
     # No data at all → heuristic immediately
     if not activities and not plain_reviews:
