@@ -161,7 +161,7 @@ async def check_reply_status(
         )
 
     # Check for assistant message after timestamp
-    after_dt = datetime.fromtimestamp(after, tz=timezone.utc)
+    after_dt = datetime.fromtimestamp(after, tz=timezone.utc).replace(tzinfo=None)
     result = await db.execute(
         select(Message.content)
         .where(
