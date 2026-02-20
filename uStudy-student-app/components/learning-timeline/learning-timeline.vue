@@ -77,10 +77,14 @@
                 :class="{ 'summary-expanded': expandedIds[item.id] }"
               >{{ item.summary }}</text>
             </view>
-            <!-- Related nodes & review tag -->
-            <view v-if="item.review_completed_today || (item.related_node_labels && item.related_node_labels.length) || item.next_review_date" class="node-tags">
-              <text v-if="item.review_completed_today" class="node-tag review-done-tag">复习完成</text>
-              <text v-if="item.next_review_date" class="node-tag review-tag">建议复习：{{ formatReviewDate(item.next_review_date) }}</text>
+            <!-- Related nodes & review tags -->
+            <view v-if="item.last_completed_review_number || (item.related_node_labels && item.related_node_labels.length) || item.next_review_date" class="node-tags">
+              <text v-if="item.last_completed_review_number" class="node-tag review-done-tag">
+                第{{ item.last_completed_review_number }}轮已完成 · {{ formatCompletedAt(item.last_completed_at) }}
+              </text>
+              <text v-if="item.next_review_date" class="node-tag review-tag">
+                复习第{{ item.next_review_number }}轮：{{ formatReviewDate(item.next_review_date) }}
+              </text>
               <text
                 v-for="(label, li) in (item.related_node_labels || []).slice(0, 3)"
                 :key="li"
@@ -278,6 +282,16 @@ export default {
       if (!dateStr) return ''
       const d = new Date(dateStr)
       return `${d.getMonth() + 1}月${d.getDate()}日`
+    },
+
+    formatCompletedAt(datetimeStr) {
+      if (!datetimeStr) return ''
+      const d = new Date(datetimeStr)
+      const month = d.getMonth() + 1
+      const day = d.getDate()
+      const h = d.getHours().toString().padStart(2, '0')
+      const m = d.getMinutes().toString().padStart(2, '0')
+      return `${month}月${day}日 ${h}:${m}`
     }
   }
 }

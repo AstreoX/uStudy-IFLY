@@ -118,6 +118,57 @@
 							<text class="memory-tool-text">{{ getMemoryToolText(seg.toolCall.tool) }}</text>
 						</view>
 
+						<!-- 复习事件工具：自定义卡片渲染 -->
+						<view
+							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'get_review_events'"
+							:key="'review-tool-' + segIdx"
+							class="tool-call-card"
+							:class="{
+								'tool-call-running': seg.toolCall.status === 'running',
+								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
+								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+							}"
+						>
+							<!-- Header -->
+							<view class="tool-call-header">
+								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
+								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
+									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
+								<image v-else class="tool-call-status-icon tool-call-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- 复习事件列表 (done + success + 有 items) -->
+							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.items?.length"
+								class="review-events-list">
+								<view v-for="(item, idx) in seg.toolCall.result.items" :key="idx" class="review-event-item">
+									<view class="review-event-header">
+										<text class="review-event-label">{{ item.activity_title }}</text>
+										<text v-if="item.study_depth" class="review-event-depth">{{ item.study_depth }}</text>
+									</view>
+									<view class="review-event-meta">
+										<text class="review-event-round">第{{ item.review_number }}次复习</text>
+										<text class="review-event-urgency"
+											:class="{ 'urgency-overdue': item.overdue_days > 0 }">
+											{{ item.urgency }}
+										</text>
+									</view>
+								</view>
+							</view>
+
+							<!-- 无复习项 -->
+							<view v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" class="tool-call-result">
+								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '当前没有待复习项' }}</text>
+							</view>
+
+							<!-- 失败 -->
+							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
+								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '获取复习事件失败' }}</text>
+							</view>
+						</view>
+
 						<!-- 非记忆类工具：原有卡片样式 -->
 						<view
 							v-else-if="seg.type === 'tool'"
@@ -586,7 +637,10 @@
 		delete_from_long_term_memory: '删除长期记忆',
 		// 空间记忆工具
 		write_to_space_memory: '写入空间记忆',
-		delete_from_space_memory: '删除空间记忆'
+		delete_from_space_memory: '删除空间记忆',
+		// 复习事件工具
+		get_review_events: '查看复习事件',
+		mark_review_completed: '标记复习完成'
 	}
 
 	// 工具图标映射
@@ -622,7 +676,10 @@
 		delete_from_long_term_memory: '/static/icons/phosphor-icons/SVGs/regular/brain.svg',
 		// 空间记忆工具
 		write_to_space_memory: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
-		delete_from_space_memory: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg'
+		delete_from_space_memory: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
+		// 复习事件工具
+		get_review_events: '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg',
+		mark_review_completed: '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg'
 	}
 
 	// 记忆类工具集合（使用行内波浪文字而非卡片）
@@ -4358,6 +4415,63 @@
 
 	.tool-call-failed .tool-call-result-text {
 		color: rgba(239, 68, 68, 0.9);
+	}
+
+	/* ========== 复习事件列表 ========== */
+	.review-events-list {
+		margin-top: 12rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 8rpx;
+	}
+
+	.review-event-item {
+		background: rgba(255, 255, 255, 0.06);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 12rpx;
+		padding: 12rpx 16rpx;
+	}
+
+	.review-event-header {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+	}
+
+	.review-event-label {
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.9);
+		font-weight: 500;
+		flex: 1;
+	}
+
+	.review-event-depth {
+		font-size: 20rpx;
+		color: rgba(139, 92, 246, 0.9);
+		background: rgba(139, 92, 246, 0.15);
+		padding: 2rpx 10rpx;
+		border-radius: 6rpx;
+	}
+
+	.review-event-meta {
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+		margin-top: 6rpx;
+	}
+
+	.review-event-round {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.5);
+	}
+
+	.review-event-urgency {
+		font-size: 22rpx;
+		color: rgba(34, 197, 94, 0.9);
+	}
+
+	.review-event-urgency.urgency-overdue {
+		color: rgba(251, 191, 36, 0.9);
 	}
 
 	/* ========== 等待输出加载动画 ========== */
