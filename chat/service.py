@@ -32,6 +32,15 @@ logger = logging.getLogger(__name__)
 # DeepSeek V3 has 128K context window, so we can include more history
 MAX_HISTORY_MESSAGES = 50
 
+
+def _log_task_exception(task: asyncio.Task) -> None:
+    """Done callback to log unhandled exceptions in background tasks."""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc:
+        logger.error(f"Background chat task failed: {exc}", exc_info=exc)
+
 # Use base64 encoding for images by default (localhost URLs not accessible to OpenRouter)
 USE_BASE64_FOR_IMAGES = os.getenv("USE_BASE64_FOR_IMAGES", "true").lower() == "true"
 
@@ -550,7 +559,12 @@ class ChatService:
         if is_new_conversation and settings.title_generation_enabled:
             title_task = asyncio.create_task(generate_title(content))
 
-        # === Phase 2: Stream (no DB connection held) ===
+        # === Phase 2: Stream via Queue + Background Task ===
+        # Orchestrator runs in an independent background task so that client
+        # disconnect does NOT cancel LLM generation.  Events flow through an
+        # asyncio.Queue; the SSE generator reads from it.  When the client
+        # disconnects the generator stops, but the background task keeps running
+        # and always executes Phase 3 (save).
         orchestrator = LLMOrchestrator(
             user_id=user_id,
             conversation_id=conversation_id,
@@ -559,115 +573,127 @@ class ChatService:
             previous_conversation_context=previous_conversation_context,
         )
 
-        full_response = ""
-        llm_context = None
+        queue: asyncio.Queue = asyncio.Queue()
 
-        # Pass the message dict instead of plain content
-        async for event in orchestrator.process_message(
-            current_message_dict, llm_history
-        ):
-            if event["event"] == "text_delta":
-                full_response += event["data"].get("content", "")
-                yield event
-            elif event["event"] == "done":
-                full_response = event["data"].get("content", full_response)
-                llm_context = event["data"].get("llm_context")
-                # Strip llm_context from SSE payload (client doesn't need it,
-                # and it can be 50-100KB+ causing the done event to never arrive)
-                yield {"event": "done", "data": {"content": full_response}}
-            else:
-                yield event
-
-        # === Phase 3: Save (short-lived DB session) ===
-        if full_response:
+        async def _run_to_completion() -> None:
+            """Background task: runs orchestrator to completion, then saves result."""
+            full_response = ""
+            llm_context = None
             try:
-                async with get_scoped_session() as db:
-                    assistant_message = Message(
-                        conversation_id=conversation_id,
-                        role=MessageRole.ASSISTANT,
-                        content=full_response,
-                        llm_context=llm_context,
-                    )
-                    db.add(assistant_message)
-                    await db.commit()
-            except Exception:
-                logger.critical(
-                    f"Failed to save assistant response for conversation {conversation_id}, "
-                    f"response length: {len(full_response)}. Message was streamed to user but NOT persisted.",
-                    exc_info=True,
-                )
+                try:
+                    async for event in orchestrator.process_message(
+                        current_message_dict, llm_history
+                    ):
+                        if event["event"] == "text_delta":
+                            full_response += event["data"].get("content", "")
+                        elif event["event"] == "done":
+                            full_response = event["data"].get("content", full_response)
+                            llm_context = event["data"].get("llm_context")
+                            # Strip llm_context from SSE payload
+                            event = {"event": "done", "data": {"content": full_response}}
+                        await queue.put(event)
+                except Exception as e:
+                    logger.error(f"Orchestrator error: {e}", exc_info=True)
+                    await queue.put({"event": "error", "data": {"message": str(e)}})
 
-            # === Phase 3.5: 异步触发记忆提取（不阻塞响应） ===
-            settings = get_settings()
-            if settings.memory_auto_extract_enabled and full_response:
-                # 构建对话历史用于记忆提取
-                conversation_for_extraction = llm_history + [
-                    {"role": "user", "content": content},
-                    {"role": "assistant", "content": full_response},
-                ]
-                asyncio.create_task(
-                    _extract_memories_background(
-                        user_id=user_id,
-                        space_id=space_id,
-                        space_name=space_name,
-                        conversation=conversation_for_extraction,
-                        conversation_id=conversation_id,
-                    )
-                )
-
-            # === Phase 3.6: 异步掌握分评估 + 学习路径扩展（不阻塞响应） ===
-            if settings.mastery_evaluation_enabled and space_id and full_response:
-                conversation_for_evaluation = llm_history + [
-                    {"role": "user", "content": content},
-                    {"role": "assistant", "content": full_response},
-                ]
-                asyncio.create_task(
-                    _evaluate_mastery_then_expand_path(
-                        user_id=user_id,
-                        space_id=space_id,
-                        conversation=conversation_for_evaluation,
-                    )
-                )
-
-        # === Phase 3.7: Auto-generate title for new conversations ===
-        if title_task is not None:
-            try:
-                # Short residual timeout — task has been running since before Phase 2
-                title = await asyncio.wait_for(title_task, timeout=3.0)
-            except (asyncio.TimeoutError, Exception) as e:
-                logger.warning(f"Title generation failed for {conversation_id}: {e}")
-                title = fallback_title(content)
-                if not title_task.done():
-                    title_task.cancel()
+                # === Phase 3: Save (ALWAYS runs, even after client disconnect) ===
+                if full_response:
                     try:
-                        await title_task
-                    except (asyncio.CancelledError, Exception):
-                        pass
+                        async with get_scoped_session() as save_db:
+                            assistant_message = Message(
+                                conversation_id=conversation_id,
+                                role=MessageRole.ASSISTANT,
+                                content=full_response,
+                                llm_context=llm_context,
+                            )
+                            save_db.add(assistant_message)
+                            await save_db.commit()
+                    except Exception:
+                        logger.critical(
+                            f"Failed to save assistant response for conversation {conversation_id}, "
+                            f"response length: {len(full_response)}.",
+                            exc_info=True,
+                        )
 
-            title_saved = False
-            try:
-                async with get_scoped_session() as db:
-                    result = await db.execute(
-                        select(Conversation).where(Conversation.id == conversation_id)
-                    )
-                    conv = result.scalar_one_or_none()
-                    if conv:
-                        conv.title = title[:200]
-                        await db.commit()
-                title_saved = True
-            except Exception:
-                logger.error(
-                    f"Failed to update title for conversation {conversation_id}",
-                    exc_info=True,
+                    # Phase 3.5: 异步触发记忆提取
+                    _settings = get_settings()
+                    if _settings.memory_auto_extract_enabled:
+                        conversation_for_extraction = llm_history + [
+                            {"role": "user", "content": content},
+                            {"role": "assistant", "content": full_response},
+                        ]
+                        asyncio.create_task(
+                            _extract_memories_background(
+                                user_id=user_id,
+                                space_id=space_id,
+                                space_name=space_name,
+                                conversation=conversation_for_extraction,
+                                conversation_id=conversation_id,
+                            )
+                        )
+
+                    # Phase 3.6: 异步掌握分评估 + 学习路径扩展
+                    if _settings.mastery_evaluation_enabled and space_id:
+                        conversation_for_evaluation = llm_history + [
+                            {"role": "user", "content": content},
+                            {"role": "assistant", "content": full_response},
+                        ]
+                        asyncio.create_task(
+                            _evaluate_mastery_then_expand_path(
+                                user_id=user_id,
+                                space_id=space_id,
+                                conversation=conversation_for_evaluation,
+                            )
+                        )
+
+                # Phase 3.7: Auto-generate title for new conversations
+                if title_task is not None:
+                    try:
+                        title = await asyncio.wait_for(title_task, timeout=3.0)
+                    except (asyncio.TimeoutError, Exception) as e:
+                        logger.warning(f"Title generation failed for {conversation_id}: {e}")
+                        title = fallback_title(content)
+                        if not title_task.done():
+                            title_task.cancel()
+                            try:
+                                await title_task
+                            except (asyncio.CancelledError, Exception):
+                                pass
+
+                    try:
+                        async with get_scoped_session() as save_db:
+                            result = await save_db.execute(
+                                select(Conversation).where(Conversation.id == conversation_id)
+                            )
+                            conv = result.scalar_one_or_none()
+                            if conv:
+                                conv.title = title[:200]
+                                await save_db.commit()
+                        await queue.put({"event": "title", "data": {"title": title}})
+                    except Exception:
+                        logger.error(
+                            f"Failed to update title for conversation {conversation_id}",
+                            exc_info=True,
+                        )
+
+                logger.info(
+                    f"Processed message in conversation {conversation_id}, "
+                    f"response length: {len(full_response)}"
                 )
+            finally:
+                # Sentinel: signal consumer to stop (always sent)
+                await queue.put(None)
 
-            if title_saved:
-                yield {"event": "title", "data": {"title": title}}
+        # Start background task (fire-and-forget — survives client disconnect)
+        task = asyncio.create_task(_run_to_completion())
+        task.add_done_callback(_log_task_exception)
 
-        logger.info(
-            f"Processed message in conversation {conversation_id}, "
-            f"response length: {len(full_response)}"
-        )
+        # Yield events from queue to SSE client
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            yield event
 
     async def validate_conversation_access(
         self,
@@ -1064,104 +1090,116 @@ class ChatService:
         if is_new_conversation and settings.title_generation_enabled:
             title_task = asyncio.create_task(generate_title(content))
 
-        # === Phase 2: Stream (no DB connection held) ===
+        # === Phase 2: Stream via Queue + Background Task ===
         orchestrator = QuickChatOrchestrator(
             user_id=user_id,
             conversation_id=conversation_id,
             previous_conversation_context=previous_conversation_context,
         )
 
-        full_response = ""
-        llm_context = None
+        queue: asyncio.Queue = asyncio.Queue()
 
-        # Pass the message dict instead of plain content
-        async for event in orchestrator.process_message(
-            current_message_dict, llm_history
-        ):
-            if event["event"] == "text_delta":
-                full_response += event["data"].get("content", "")
-                yield event
-            elif event["event"] == "done":
-                full_response = event["data"].get("content", full_response)
-                llm_context = event["data"].get("llm_context")
-                # Strip llm_context from SSE payload (client doesn't need it,
-                # and it can be 50-100KB+ causing the done event to never arrive)
-                yield {"event": "done", "data": {"content": full_response}}
-            else:
-                yield event
-
-        # === Phase 3: Save (short-lived DB session) ===
-        if full_response:
+        async def _run_to_completion() -> None:
+            """Background task: runs orchestrator to completion, then saves result."""
+            full_response = ""
+            llm_context = None
             try:
-                async with get_scoped_session() as db:
-                    assistant_message = Message(
-                        conversation_id=conversation_id,
-                        role=MessageRole.ASSISTANT,
-                        content=full_response,
-                        llm_context=llm_context,
-                    )
-                    db.add(assistant_message)
-                    await db.commit()
-            except Exception:
-                logger.critical(
-                    f"Failed to save assistant response for quick chat {conversation_id}, "
-                    f"response length: {len(full_response)}. Message was streamed to user but NOT persisted.",
-                    exc_info=True,
-                )
+                try:
+                    async for event in orchestrator.process_message(
+                        current_message_dict, llm_history
+                    ):
+                        if event["event"] == "text_delta":
+                            full_response += event["data"].get("content", "")
+                        elif event["event"] == "done":
+                            full_response = event["data"].get("content", full_response)
+                            llm_context = event["data"].get("llm_context")
+                            event = {"event": "done", "data": {"content": full_response}}
+                        await queue.put(event)
+                except Exception as e:
+                    logger.error(f"Orchestrator error: {e}", exc_info=True)
+                    await queue.put({"event": "error", "data": {"message": str(e)}})
 
-            # === Phase 3.5: 异步触发记忆提取（与 send_message 一致） ===
-            settings = get_settings()
-            if settings.memory_auto_extract_enabled and full_response:
-                conversation_for_extraction = llm_history + [
-                    {"role": "user", "content": content},
-                    {"role": "assistant", "content": full_response},
-                ]
-                asyncio.create_task(
-                    _extract_memories_background(
-                        user_id=user_id,
-                        space_id=None,
-                        space_name="快速对话",
-                        conversation=conversation_for_extraction,
-                        conversation_id=conversation_id,
-                    )
-                )
-
-        # === Phase 3.7: Auto-generate title for new conversations ===
-        if title_task is not None:
-            try:
-                # Short residual timeout — task has been running since before Phase 2
-                title = await asyncio.wait_for(title_task, timeout=3.0)
-            except (asyncio.TimeoutError, Exception) as e:
-                logger.warning(f"Title generation failed for quick chat {conversation_id}: {e}")
-                title = fallback_title(content)
-                if not title_task.done():
-                    title_task.cancel()
+                # === Phase 3: Save (ALWAYS runs) ===
+                if full_response:
                     try:
-                        await title_task
-                    except (asyncio.CancelledError, Exception):
-                        pass
+                        async with get_scoped_session() as save_db:
+                            assistant_message = Message(
+                                conversation_id=conversation_id,
+                                role=MessageRole.ASSISTANT,
+                                content=full_response,
+                                llm_context=llm_context,
+                            )
+                            save_db.add(assistant_message)
+                            await save_db.commit()
+                    except Exception:
+                        logger.critical(
+                            f"Failed to save assistant response for quick chat {conversation_id}, "
+                            f"response length: {len(full_response)}.",
+                            exc_info=True,
+                        )
 
-            title_saved = False
-            try:
-                async with get_scoped_session() as db:
-                    result = await db.execute(
-                        select(Conversation).where(Conversation.id == conversation_id)
-                    )
-                    conv = result.scalar_one_or_none()
-                    if conv:
-                        conv.title = title[:200]
-                        await db.commit()
-                title_saved = True
-            except Exception:
-                logger.error(
-                    f"Failed to update title for quick chat {conversation_id}",
-                    exc_info=True,
+                    # Phase 3.5: 异步触发记忆提取
+                    _settings = get_settings()
+                    if _settings.memory_auto_extract_enabled:
+                        conversation_for_extraction = llm_history + [
+                            {"role": "user", "content": content},
+                            {"role": "assistant", "content": full_response},
+                        ]
+                        asyncio.create_task(
+                            _extract_memories_background(
+                                user_id=user_id,
+                                space_id=None,
+                                space_name="快速对话",
+                                conversation=conversation_for_extraction,
+                                conversation_id=conversation_id,
+                            )
+                        )
+
+                # Phase 3.7: Auto-generate title for new conversations
+                if title_task is not None:
+                    try:
+                        title = await asyncio.wait_for(title_task, timeout=3.0)
+                    except (asyncio.TimeoutError, Exception) as e:
+                        logger.warning(f"Title generation failed for quick chat {conversation_id}: {e}")
+                        title = fallback_title(content)
+                        if not title_task.done():
+                            title_task.cancel()
+                            try:
+                                await title_task
+                            except (asyncio.CancelledError, Exception):
+                                pass
+
+                    try:
+                        async with get_scoped_session() as save_db:
+                            result = await save_db.execute(
+                                select(Conversation).where(Conversation.id == conversation_id)
+                            )
+                            conv = result.scalar_one_or_none()
+                            if conv:
+                                conv.title = title[:200]
+                                await save_db.commit()
+                        await queue.put({"event": "title", "data": {"title": title}})
+                    except Exception:
+                        logger.error(
+                            f"Failed to update title for quick chat {conversation_id}",
+                            exc_info=True,
+                        )
+
+                logger.info(
+                    f"Processed quick chat message in conversation {conversation_id}, "
+                    f"response length: {len(full_response)}"
                 )
+            finally:
+                # Sentinel: signal consumer to stop (always sent)
+                await queue.put(None)
 
-            if title_saved:
-                yield {"event": "title", "data": {"title": title}}
+        # Start background task
+        task = asyncio.create_task(_run_to_completion())
+        task.add_done_callback(_log_task_exception)
 
-        logger.info(
-            f"Processed quick chat message in conversation {conversation_id}, "
-            f"response length: {len(full_response)}"
-        )
+        # Yield events from queue to SSE client
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            yield event

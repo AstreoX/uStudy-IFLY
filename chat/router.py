@@ -3,10 +3,12 @@
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import get_current_user, require_active_subscription
@@ -36,7 +38,7 @@ from chat.tools.graph_tools import GraphToolExecutor
 from chat.tools.learning_space_executor import LearningSpaceToolExecutor
 from chat.tools.learning_space_tools import get_allowed_tool_names
 from db.database import get_db, get_scoped_session
-from db.models import User
+from db.models import Conversation, Message, MessageRole, User
 from spaces.service import SpaceService, SpaceNotFoundError as SpaceServiceNotFoundError, SpaceAccessDeniedError as SpaceServiceAccessDeniedError
 
 logger = logging.getLogger(__name__)
@@ -133,6 +135,48 @@ async def get_conversation_detail(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "ACCESS_DENIED", "message": "无权访问该对话"},
         )
+
+
+@router.get(
+    "/conversations/{conversation_id}/reply-status",
+    summary="检查AI回复状态",
+    description="轻量级端点，供前端后台轮询检查 AI 是否已完成回复",
+)
+async def check_reply_status(
+    conversation_id: UUID,
+    after: float = Query(..., ge=0, le=4102444800.0, description="用户消息发送时间戳(Unix seconds)"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Check if AI has replied after a given timestamp. For background polling."""
+    # Validate ownership
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conversation_id)
+    )
+    conv = result.scalar_one_or_none()
+    if not conv or conv.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
+        )
+
+    # Check for assistant message after timestamp
+    after_dt = datetime.fromtimestamp(after, tz=timezone.utc)
+    result = await db.execute(
+        select(Message.content)
+        .where(
+            Message.conversation_id == conversation_id,
+            Message.role == MessageRole.ASSISTANT,
+            Message.created_at > after_dt,
+        )
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+    row = result.first()
+    if row:
+        preview = (row[0] or "")[:80]
+        return {"has_reply": True, "preview": preview}
+    return {"has_reply": False, "preview": ""}
 
 
 @router.post(
