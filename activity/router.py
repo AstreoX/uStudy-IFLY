@@ -1,5 +1,6 @@
 """Activity API 路由"""
 
+from datetime import datetime, time, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -57,6 +58,7 @@ async def get_activity_timeline(
     items = [ActivityTimelineItem.model_validate(a) for a in activities]
     activity_ids = [a.id for a in activities]
     review_date_map: dict = {}
+    completed_today_activity_ids: set[UUID] = set()
     if activity_ids:
         review_result = await db.execute(
             select(
@@ -73,8 +75,31 @@ async def get_activity_timeline(
             row.activity_id: row.next_review_date for row in review_result
         }
 
+        now_local = datetime.now().astimezone()
+        start_local = datetime.combine(
+            now_local.date(), time.min, tzinfo=now_local.tzinfo
+        )
+        end_local = start_local + timedelta(days=1)
+        start_utc = start_local.astimezone(timezone.utc)
+        end_utc = end_local.astimezone(timezone.utc)
+        completed_result = await db.execute(
+            select(ReviewSchedule.activity_id)
+            .where(
+                ReviewSchedule.user_id == user.id,
+                ReviewSchedule.activity_id.in_(activity_ids),
+                ReviewSchedule.status == "completed",
+                ReviewSchedule.completed_at >= start_utc,
+                ReviewSchedule.completed_at < end_utc,
+            )
+            .group_by(ReviewSchedule.activity_id)
+        )
+        completed_today_activity_ids = {
+            row.activity_id for row in completed_result
+        }
+
     for item in items:
         item.next_review_date = review_date_map.get(item.id)
+        item.review_completed_today = item.id in completed_today_activity_ids
 
     return ActivityTimelineResponse(
         items=items,

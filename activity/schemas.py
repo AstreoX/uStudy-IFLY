@@ -23,6 +23,7 @@ class ActivityTimelineItem(BaseModel):
     conversation_id: UUID | None = None
     space_id: UUID | None = None
     next_review_date: date | None = None
+    review_completed_today: bool = False
 
     model_config = {"from_attributes": True}
 
