@@ -13,7 +13,12 @@ from review.schemas import (
     DueReviewsResponse,
     ReviewScheduleItem,
 )
-from review.service import complete_review, get_due_reviews, get_reviews_for_activity
+from review.service import (
+    complete_review,
+    get_due_reviews,
+    get_due_reviews_total,
+    get_reviews_for_activity,
+)
 
 router = APIRouter(prefix="/api/review", tags=["review"])
 
@@ -36,8 +41,9 @@ async def get_due_reviews_endpoint(
     user: CurrentUser,
     limit: int = Query(20, ge=1, le=100),
 ):
-    """获取到期/逾期复习项（建议卡片用）"""
+    """获取到期/逾期复习项（items 受 limit 限制，total 为全量符合条件总数）。"""
     reviews = await get_due_reviews(user.id, limit)
+    total = await get_due_reviews_total(user.id)
     today = datetime.now(timezone.utc).date()
     items = []
     for r in reviews:
@@ -53,7 +59,7 @@ async def get_due_reviews_endpoint(
                 days_overdue=max(0, days_overdue),
             )
         )
-    return DueReviewsResponse(items=items, total=len(items))
+    return DueReviewsResponse(items=items, total=total)
 
 
 @router.post("/complete")

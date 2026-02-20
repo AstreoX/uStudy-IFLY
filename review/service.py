@@ -6,7 +6,7 @@ import math
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from db.database import get_scoped_session
 from db.models import ReviewSchedule, StudyActivityLog
@@ -185,6 +185,22 @@ async def get_due_reviews(user_id: UUID, limit: int = 20) -> list[ReviewSchedule
                 r.study_depth,
             )
         return list(rows)
+
+
+async def get_due_reviews_total(user_id: UUID) -> int:
+    """查询到期/逾期待复习项总数（scheduled_date <= today, status=pending）。"""
+    today = datetime.now(timezone.utc).date()
+    async with get_scoped_session() as session:
+        result = await session.execute(
+            select(func.count())
+            .select_from(ReviewSchedule)
+            .where(
+                ReviewSchedule.user_id == user_id,
+                ReviewSchedule.status == "pending",
+                ReviewSchedule.scheduled_date <= today,
+            )
+        )
+        return int(result.scalar() or 0)
 
 
 async def complete_review(user_id: UUID, review_id: UUID) -> bool:
