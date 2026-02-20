@@ -228,14 +228,23 @@ async def complete_review(user_id: UUID, review_id: UUID) -> bool:
 async def get_due_reviews_by_space(
     user_id: UUID, space_id: UUID, limit: int = 10
 ) -> list[ReviewSchedule]:
-    """查询某学习空间到期/逾期待复习项。
-
-    ReviewSchedule 无直接 space_id，需 JOIN StudyActivityLog 按 space_id 过滤。
-    """
+    """查询某学习空间到期/逾期待复习项，并按 activity_id 去重。"""
     today = datetime.now(timezone.utc).date()
     async with get_scoped_session() as session:
-        result = await session.execute(
-            select(ReviewSchedule)
+        ranked_due_reviews = (
+            select(
+                ReviewSchedule.id.label("review_id"),
+                func.row_number()
+                .over(
+                    partition_by=ReviewSchedule.activity_id,
+                    order_by=(
+                        ReviewSchedule.scheduled_date.asc(),
+                        ReviewSchedule.review_number.asc(),
+                        ReviewSchedule.id.asc(),
+                    ),
+                )
+                .label("rn"),
+            )
             .join(
                 StudyActivityLog,
                 ReviewSchedule.activity_id == StudyActivityLog.id,
@@ -246,6 +255,16 @@ async def get_due_reviews_by_space(
                 ReviewSchedule.scheduled_date <= today,
                 StudyActivityLog.space_id == space_id,
             )
+            .subquery()
+        )
+
+        result = await session.execute(
+            select(ReviewSchedule)
+            .join(
+                ranked_due_reviews,
+                ReviewSchedule.id == ranked_due_reviews.c.review_id,
+            )
+            .where(ranked_due_reviews.c.rn == 1)
             .order_by(ReviewSchedule.scheduled_date.asc())
             .limit(limit)
         )

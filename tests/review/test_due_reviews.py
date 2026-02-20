@@ -11,7 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from auth.dependencies import get_current_user
 from review import router as review_router_module
 from review.router import router
-from review.service import get_due_reviews_total
+from review.service import get_due_reviews_by_space, get_due_reviews_total
 
 
 @dataclass
@@ -45,6 +45,43 @@ class _DummySession:
 class _DummySessionContext:
     def __init__(self, value: int, captured: dict):
         self._session = _DummySession(value=value, captured=captured)
+
+    async def __aenter__(self):
+        return self._session
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _DummyScalars:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return self._rows
+
+
+class _DummyRowsResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def scalars(self):
+        return _DummyScalars(self._rows)
+
+
+class _DummyRowsSession:
+    def __init__(self, rows: list, captured: dict):
+        self._rows = rows
+        self._captured = captured
+
+    async def execute(self, stmt):
+        self._captured["stmt"] = stmt
+        return _DummyRowsResult(self._rows)
+
+
+class _DummyRowsSessionContext:
+    def __init__(self, rows: list, captured: dict):
+        self._session = _DummyRowsSession(rows=rows, captured=captured)
 
     async def __aenter__(self):
         return self._session
@@ -139,3 +176,50 @@ class TestDueReviewTotals:
         data = response.json()
         assert len(data["items"]) == 1
         assert data["total"] == 2
+
+    @pytest.mark.asyncio
+    async def test_get_due_reviews_by_space_uses_space_filter_and_activity_dedup(
+        self, monkeypatch
+    ):
+        """Space query should filter by space_id and dedupe by activity_id."""
+        captured = {}
+        user_id = uuid4()
+        space_id = uuid4()
+
+        monkeypatch.setattr(
+            "review.service.get_scoped_session",
+            lambda: _DummyRowsSessionContext(rows=[], captured=captured),
+        )
+
+        rows = await get_due_reviews_by_space(user_id, space_id, limit=10)
+        assert rows == []
+
+        stmt_sql = str(captured["stmt"]).lower().replace(" ", "")
+        assert "row_number()over(partitionbyreview_schedules.activity_id" in stmt_sql
+        assert "study_activity_logs.space_id" in stmt_sql
+        assert "review_schedules.status" in stmt_sql
+        assert "review_schedules.scheduled_date<=" in stmt_sql
+
+    @pytest.mark.asyncio
+    async def test_get_due_reviews_by_space_returns_rows(self, monkeypatch):
+        """Space query should return review rows as list."""
+        today = datetime.now(timezone.utc).date()
+        fake_row = _FakeReview(
+            id=uuid4(),
+            activity_id=uuid4(),
+            node_label="数据库索引",
+            review_number=1,
+            scheduled_date=today,
+            study_depth="中等理解",
+        )
+        captured = {}
+
+        monkeypatch.setattr(
+            "review.service.get_scoped_session",
+            lambda: _DummyRowsSessionContext(rows=[fake_row], captured=captured),
+        )
+
+        rows = await get_due_reviews_by_space(uuid4(), uuid4(), limit=10)
+        assert len(rows) == 1
+        assert rows[0].node_label == "数据库索引"
+        assert rows[0].review_number == 1

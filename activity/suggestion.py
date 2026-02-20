@@ -6,7 +6,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.llm.client import OpenRouterClient
@@ -241,17 +241,36 @@ async def _fetch_recent_activities(
 async def _fetch_due_reviews(
     user_id: UUID, db: AsyncSession
 ) -> list[tuple[ReviewSchedule, dict | None]]:
-    """Fetch today's due/overdue reviews with space learning preferences, limit 10."""
+    """Fetch due/overdue reviews deduped by activity_id, limit 10."""
     today = datetime.now(timezone.utc).date()
-    result = await db.execute(
-        select(ReviewSchedule, Space.learning_preferences)
-        .join(StudyActivityLog, ReviewSchedule.activity_id == StudyActivityLog.id)
-        .outerjoin(Space, StudyActivityLog.space_id == Space.id)
+    ranked_due_reviews = (
+        select(
+            ReviewSchedule.id.label("review_id"),
+            func.row_number()
+            .over(
+                partition_by=ReviewSchedule.activity_id,
+                order_by=(
+                    ReviewSchedule.scheduled_date.asc(),
+                    ReviewSchedule.review_number.asc(),
+                    ReviewSchedule.id.asc(),
+                ),
+            )
+            .label("rn"),
+        )
         .where(
             ReviewSchedule.user_id == user_id,
             ReviewSchedule.status == "pending",
             ReviewSchedule.scheduled_date <= today,
         )
+        .subquery()
+    )
+
+    result = await db.execute(
+        select(ReviewSchedule, Space.learning_preferences)
+        .join(ranked_due_reviews, ReviewSchedule.id == ranked_due_reviews.c.review_id)
+        .join(StudyActivityLog, ReviewSchedule.activity_id == StudyActivityLog.id)
+        .outerjoin(Space, StudyActivityLog.space_id == Space.id)
+        .where(ranked_due_reviews.c.rn == 1)
         .order_by(ReviewSchedule.scheduled_date.asc())
         .limit(10)
     )
