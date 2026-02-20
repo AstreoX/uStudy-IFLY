@@ -331,7 +331,8 @@
 	import { goBack } from '@/utils/navigation'
 	import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
 	import { setSseEventBus, clearSseEventBus, handleSseEvents, handleSseComplete, handleSseError } from '@/utils/sse'
-	import { savePendingMessage, getPendingMessages, removePendingMessage, savePendingMessagesFromArray } from '@/utils/messageDraft'
+	import { savePendingMessage, getPendingMessages, removePendingMessage, savePendingMessagesFromArray, clearPendingMessages } from '@/utils/messageDraft'
+	import { startBackgroundMonitor, stopBackgroundMonitor, getActiveMonitor } from '@/utils/backgroundChatMonitor'
 	// #ifdef APP-PLUS
 	import SseRenderjs from '@/components/sse-renderjs/sse-renderjs.vue'
 	// #endif
@@ -420,7 +421,10 @@
 
 				// 附件相关
 				pendingAttachments: [],  // 待发送的附件列表
-				uploadingFiles: []       // 上传中的文件列表
+				uploadingFiles: [],      // 上传中的文件列表
+
+				// 后台监控：最后一条用户消息的发送时间
+				lastUserMessageTimestamp: null
 			}
 		},
 
@@ -452,6 +456,19 @@
 		},
 
 		onShow() {
+			// 检查后台监控结果并恢复
+			const monitor = getActiveMonitor()
+			if (monitor && monitor.conversationId === this.conversationId) {
+				stopBackgroundMonitor()
+				// Scenario A: 同一页面实例（onHide → onShow），有 streaming AI 消息
+				if (this.messages.some(m => m.role === 'ai' && m.isStreaming)) {
+					this.recoverFromBackground()
+				} else {
+					// Scenario B: 新页面实例（页面销毁后重建），loadExistingConversation 已处理
+					clearPendingMessages(this.conversationId)
+				}
+			}
+
 			// 页面显示时，合并本地缓存的待同步消息（历史加载中不重复 merge）
 			if (this.conversationId && !this.isLoadingHistory) {
 				this.mergePendingMessages()
@@ -459,10 +476,18 @@
 		},
 
 		onHide() {
-			// 页面隐藏时，保存未同步的消息到本地存储
-			if (this.conversationId) {
-				savePendingMessagesFromArray(this.conversationId, this.messages)
-			}
+			console.log('[QuickChat] onHide triggered, isAiStreaming:', this.isAiStreaming,
+				'conversationId:', this.conversationId, 'cancelSSE:', !!this.cancelSSE,
+				'isSendingMessage:', this.isSendingMessage)
+			this._tryStartMonitorOrSave('onHide')
+		},
+
+		// navigateBack 时 onHide 不触发，onUnload 才触发
+		onUnload() {
+			console.log('[QuickChat] onUnload triggered, isAiStreaming:', this.isAiStreaming,
+				'conversationId:', this.conversationId, 'cancelSSE:', !!this.cancelSSE,
+				'isSendingMessage:', this.isSendingMessage)
+			this._tryStartMonitorOrSave('onUnload')
 		},
 
 		mounted() {
@@ -492,6 +517,10 @@
 		},
 
 		beforeDestroy() {
+			console.log('[QuickChat] beforeDestroy triggered, activeMonitor:', !!getActiveMonitor())
+			// onHide/onUnload 可能已经启动了监控，作为最后兜底
+			this._tryStartMonitorOrSave('beforeDestroy')
+
 			// #ifdef APP-PLUS
 			clearSseEventBus()
 			// #endif
@@ -528,6 +557,69 @@
 		},
 
 		methods: {
+			// ==================== 后台监控启动 ====================
+			_tryStartMonitorOrSave(source) {
+				// 已有监控则跳过
+				if (getActiveMonitor()) {
+					console.log(`[QuickChat] ${source}: monitor already active, skipping`)
+					return
+				}
+				if (!this.conversationId) return
+
+				const hasPendingUserMessage = this.messages.some(
+					m => m.role === 'user' && m.pendingId && !m.synced
+				)
+				const hasActiveRequest = this.isAiStreaming || hasPendingUserMessage ||
+					this.cancelSSE !== null || this.isSendingMessage
+
+				console.log(`[QuickChat] ${source}: hasActiveRequest=${hasActiveRequest}`,
+					`(streaming=${this.isAiStreaming}, pending=${hasPendingUserMessage},`,
+					`cancelSSE=${!!this.cancelSSE}, sending=${this.isSendingMessage})`,
+					`lastTs=${this.lastUserMessageTimestamp}`)
+
+				if (hasActiveRequest && this.lastUserMessageTimestamp) {
+					console.log(`[QuickChat] ${source}: starting background monitor`)
+					startBackgroundMonitor({
+						conversationId: this.conversationId,
+						userMessageTimestamp: this.lastUserMessageTimestamp,
+						chatMode: 'quick_chat',
+					})
+					clearPendingMessages(this.conversationId)
+				} else {
+					savePendingMessagesFromArray(this.conversationId, this.messages)
+				}
+			},
+
+			// ==================== 后台监控辅助 ====================
+			isBackgroundMonitorActive() {
+				const monitor = getActiveMonitor()
+				return monitor && monitor.conversationId === this.conversationId
+			},
+
+			async recoverFromBackground() {
+				if (!this.conversationId) return
+
+				try {
+					const result = await getConversation(this.conversationId)
+					this.messages = result.messages.map((m, i) => ({
+						id: i + 1,
+						role: m.role === 'user' ? 'user' : 'ai',
+						content: m.content,
+						attachments: m.attachments || [],
+						created_at: m.created_at
+					}))
+					this.nextId = this.messages.length + 1
+					clearPendingMessages(this.conversationId)
+					this.$nextTick(() => this.scrollToLatestMessage())
+				} catch (err) {
+					// Recovery failed — leave current messages as-is
+				} finally {
+					this.activeToolCalls = []
+					this.cancelSSE = null
+					this.stopHeightMonitor()
+				}
+			},
+
 			// ==================== Renderjs SSE 事件处理 ====================
 			onRenderjsSseEvents(data) {
 				handleSseEvents(data)
@@ -1211,7 +1303,13 @@
 						})
 					})
 
-					this.mergePendingMessages()
+					// 后台监控 active 时，服务器数据已包含完整回复，清空缓存避免重复
+					const monitor = getActiveMonitor()
+					if (monitor && monitor.conversationId === this.conversationId) {
+						clearPendingMessages(this.conversationId)
+					} else {
+						this.mergePendingMessages()
+					}
 					this.$nextTick(() => {
 						this.scrollToLatestMessage()
 					})
@@ -1261,6 +1359,8 @@
 			},
 
 			async sendRealMessage(userMessage, attachmentIds = null, pendingId = null) {
+				this.lastUserMessageTimestamp = Date.now()
+
 				// 记录是否是新对话（创建对话前 conversationId 为空）
 				const isNewConversation = !this.conversationId
 
@@ -1363,6 +1463,9 @@
 						},
 
 						onError: (message) => {
+							// 后台断连时不标记失败（后台监控会处理）
+							if (this.isBackgroundMonitorActive()) return
+
 							uni.showToast({ title: message || 'AI回复失败', icon: 'none' })
 							this.messages[msgIndex].isWaitingOutput = false
 							this.messages[msgIndex].isStreaming = false
@@ -1380,6 +1483,12 @@
 							// 兜底：如果 onDone 未触发，标记用户消息为失败
 							const aiMsg = this.messages[msgIndex]
 							if (aiMsg && aiMsg.isStreaming) {
+								// 后台断连时不标记失败（后台监控会处理）
+								if (this.isBackgroundMonitorActive()) {
+									this.cancelSSE = null
+									return
+								}
+
 								aiMsg.isStreaming = false
 								aiMsg.isWaitingOutput = false
 								aiMsg.content = aiMsg.content || '（连接中断）'

@@ -156,7 +156,7 @@
 
 			<!-- ========== Account Tab ========== -->
 			<swiper-item class="swiper-item-content">
-				<account-profile v-if="hasVisitedAccount" />
+				<account-profile ref="accountProfileRef" v-if="hasVisitedAccount" />
 			</swiper-item>
 		</swiper>
 
@@ -1218,6 +1218,18 @@
 				// #endif
 			},
 
+			refreshAccountProfileSection() {
+				this.$nextTick(() => {
+					const accountProfile = this.$refs.accountProfileRef
+					if (
+						accountProfile &&
+						typeof accountProfile.refreshTimelineSection === 'function'
+					) {
+						accountProfile.refreshTimelineSection()
+					}
+				})
+			},
+
 			// Swiper 滑动切换回调
 			onSwiperChange(e) {
 				const index = e.detail.current
@@ -1231,6 +1243,9 @@
 				}
 				this.currentTab = tab
 				this.swiperIndex = index
+				if (tab === 'account') {
+					this.refreshAccountProfileSection()
+				}
 			},
 
 			// 切换 Tab（home / account）- 点击底部导航时调用
@@ -1245,6 +1260,9 @@
 				}
 				this.currentTab = tab
 				this.swiperIndex = index
+				if (tab === 'account') {
+					this.refreshAccountProfileSection()
+				}
 			},
 
 			// 导航到学习空间页面

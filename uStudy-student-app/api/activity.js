@@ -7,6 +7,7 @@ import { request } from '@/utils/request'
  * @param {string} [spaceId] - 可选空间 ID 筛选
  * @param {string} [activityType] - 可选活动类型筛选
  * @returns {Promise<Object>} { items, total, page, limit }
+ * items[] 包含 `next_review_date` 与 `review_completed_today`
  */
 export function getActivityTimeline(page = 1, limit = 20, spaceId, activityType) {
   const data = { page, limit }

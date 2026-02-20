@@ -2,6 +2,7 @@
 	import { useUserStore } from '@/store/user'
 	import { useUpdateStore } from '@/store/update'
 	import { startTracking, stopTracking } from '@/utils/appUsageTracker'
+	import { stopBackgroundMonitor } from '@/utils/backgroundChatMonitor'
 	import config from '@/config'
 
 	export default {
@@ -9,6 +10,8 @@
 			// #ifdef APP-PLUS
 			this.clearCacheOnVersionChange()
 			this.setupSplashTimeout()
+			this.setupPushListener()
+			this.requestNotificationPermission()
 			// #endif
 
 			useUserStore()
@@ -27,6 +30,35 @@
 			stopTracking()
 		},
 		methods: {
+			setupPushListener() {
+				plus.push.addEventListener('click', (msg) => {
+					try {
+						const data = typeof msg.payload === 'string'
+							? JSON.parse(msg.payload)
+							: msg.payload
+						if (!data || !data.conversationId) return
+
+						stopBackgroundMonitor()
+
+						if (data.chatMode === 'quick_chat') {
+							uni.navigateTo({
+								url: `/pages/quickChat/quickChat?conversationId=${data.conversationId}`
+							})
+						} else {
+							const query = [
+								`conversationId=${data.conversationId}`,
+								data.spaceId ? `spaceId=${data.spaceId}` : '',
+								data.spaceTitle ? `spaceTitle=${encodeURIComponent(data.spaceTitle)}` : '',
+							].filter(Boolean).join('&')
+							uni.navigateTo({
+								url: `/pages/spaceChat/spaceChat?${query}`
+							})
+						}
+					} catch (e) {
+						// Push click handler error — ignore
+					}
+				}, false)
+			},
 			clearCacheOnVersionChange() {
 				try {
 					const versionKey = '__app_cached_version_code__'
@@ -55,6 +87,30 @@
 						}
 					}, 5000)
 				} catch (error) {}
+			},
+			requestNotificationPermission() {
+				try {
+					if (plus.os.name !== 'Android') return
+					const Build = plus.android.importClass('android.os.Build')
+					if (Build.VERSION.SDK_INT < 33) return
+					const main = plus.android.runtimeMainActivity()
+					const ContextCompat = plus.android.importClass('androidx.core.content.ContextCompat')
+					const PERMISSION = 'android.permission.POST_NOTIFICATIONS'
+					const granted = ContextCompat.checkSelfPermission(main, PERMISSION)
+					if (granted === 0) return
+					plus.android.requestPermissions(
+						[PERMISSION],
+						(result) => {
+							const ok = result && result.granted && result.granted.length > 0
+							console.log('[App] POST_NOTIFICATIONS permission:', ok ? 'granted' : 'denied')
+						},
+						(err) => {
+							console.warn('[App] Notification permission request failed:', err)
+						}
+					)
+				} catch (e) {
+					console.warn('[App] Notification permission check failed:', e)
+				}
 			}
 		}
 	}

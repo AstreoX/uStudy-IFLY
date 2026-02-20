@@ -222,15 +222,20 @@ export default {
 /* Body */
 .ann-body {
   margin: 0 40rpx;
-  max-height: 400rpx;
+  height: 400rpx;
   background: rgba(0, 0, 0, 0.25);
   border-radius: 16rpx;
   overflow: hidden;
 }
 
 .ann-scroll {
-  height: 400rpx;
+  width: 100%;
+  height: 100%;
   padding: 24rpx;
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .ann-empty {

@@ -547,7 +547,8 @@
 	import { PreKnowledgeTagParser } from '@/utils/preKnowledgeParser'
 	import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
 	import { setSseEventBus, clearSseEventBus, handleSseEvents, handleSseComplete, handleSseError } from '@/utils/sse'
-	import { savePendingMessage, getPendingMessages, removePendingMessage, savePendingMessagesFromArray } from '@/utils/messageDraft'
+	import { savePendingMessage, getPendingMessages, removePendingMessage, savePendingMessagesFromArray, clearPendingMessages } from '@/utils/messageDraft'
+	import { startBackgroundMonitor, stopBackgroundMonitor, getActiveMonitor } from '@/utils/backgroundChatMonitor'
 	// #ifdef APP-PLUS
 	import SseRenderjs from '@/components/sse-renderjs/sse-renderjs.vue'
 	// #endif
@@ -763,7 +764,10 @@
 
 				// SSE 诊断面板
 				sseDebugLog: [],
-				showSseDebugPanel: false
+				showSseDebugPanel: false,
+
+				// 后台监控：最后一条用户消息的发送时间
+				lastUserMessageTimestamp: null
 			}
 		},
 
@@ -888,6 +892,19 @@
 		},
 
 		onShow() {
+			// 检查后台监控结果并恢复
+			const monitor = getActiveMonitor()
+			if (monitor && monitor.conversationId === this.conversationId) {
+				stopBackgroundMonitor()
+				// Scenario A: 同一页面实例（onHide → onShow），有 streaming AI 消息
+				if (this.messages.some(m => m.role === 'ai' && m.isStreaming)) {
+					this.recoverFromBackground()
+				} else {
+					// Scenario B: 新页面实例（页面销毁后重建），loadConversationHistory 已处理
+					clearPendingMessages(this.conversationId)
+				}
+			}
+
 			// 页面显示时，合并本地缓存的待同步消息（历史加载中不重复 merge）
 			if (this.conversationId && !this.isLoadingHistory) {
 				this.mergePendingMessages()
@@ -895,10 +912,18 @@
 		},
 
 		onHide() {
-			// 页面隐藏时，保存未同步的消息到本地存储
-			if (this.conversationId) {
-				savePendingMessagesFromArray(this.conversationId, this.messages)
-			}
+			console.log('[SpaceChat] onHide triggered, isAiStreaming:', this.isAiStreaming,
+				'conversationId:', this.conversationId, 'cancelSSE:', !!this.cancelSSE,
+				'isSendingMessage:', this.isSendingMessage)
+			this._tryStartMonitorOrSave('onHide')
+		},
+
+		// navigateBack 时 onHide 不触发，onUnload 才触发
+		onUnload() {
+			console.log('[SpaceChat] onUnload triggered, isAiStreaming:', this.isAiStreaming,
+				'conversationId:', this.conversationId, 'cancelSSE:', !!this.cancelSSE,
+				'isSendingMessage:', this.isSendingMessage)
+			this._tryStartMonitorOrSave('onUnload')
 		},
 
 		mounted() {
@@ -945,6 +970,10 @@
 		},
 
 		beforeDestroy() {
+			console.log('[SpaceChat] beforeDestroy triggered, activeMonitor:', !!getActiveMonitor())
+			// onHide/onUnload 可能已经启动了监控，作为最后兜底
+			this._tryStartMonitorOrSave('beforeDestroy')
+
 			// #ifdef APP-PLUS
 			clearSseEventBus()
 			// #endif
@@ -1001,6 +1030,48 @@
 		},
 
 		methods: {
+			// ==================== 后台监控启动 ====================
+			_tryStartMonitorOrSave(source) {
+				// 已有监控则跳过
+				if (getActiveMonitor()) {
+					console.log(`[SpaceChat] ${source}: monitor already active, skipping`)
+					return
+				}
+				if (!this.conversationId) return
+
+				// 多重信号判断是否有未完成的 AI 请求：
+				// 1. isAiStreaming: AI 消息仍在流式（onError 可能已清除）
+				// 2. hasPendingUserMessage: 用户消息未同步（onError 不会修改 synced）
+				// 3. cancelSSE: SSE 连接仍存在（renderjs 错误时 onComplete 不触发，不会清 null）
+				// 4. isSendingMessage: 发送流程未结束（同上）
+				const hasPendingUserMessage = this.messages.some(
+					m => m.role === 'user' && m.pendingId && !m.synced
+				)
+				const hasActiveRequest = this.isAiStreaming || hasPendingUserMessage ||
+					this.cancelSSE !== null || this.isSendingMessage
+
+				console.log(`[SpaceChat] ${source}: hasActiveRequest=${hasActiveRequest}`,
+					`(streaming=${this.isAiStreaming}, pending=${hasPendingUserMessage},`,
+					`cancelSSE=${!!this.cancelSSE}, sending=${this.isSendingMessage})`,
+					`lastTs=${this.lastUserMessageTimestamp}`)
+
+				if (hasActiveRequest && this.lastUserMessageTimestamp) {
+					console.log(`[SpaceChat] ${source}: starting background monitor`)
+					startBackgroundMonitor({
+						conversationId: this.conversationId,
+						userMessageTimestamp: this.lastUserMessageTimestamp,
+						chatMode: 'space_chat',
+						spaceId: this.spaceId,
+						spaceTitle: this.spaceTitle,
+					})
+					// 服务器已收到消息，清除本地缓存避免重复
+					clearPendingMessages(this.conversationId)
+				} else {
+					// 无活跃请求时正常保存
+					savePendingMessagesFromArray(this.conversationId, this.messages)
+				}
+			},
+
 			// ==================== Renderjs SSE 事件处理 ====================
 			onRenderjsSseEvents(data) {
 				handleSseEvents(data)
@@ -1672,6 +1743,41 @@
 				}).exec()
 			},
 
+			// ========== 后台监控辅助 ==========
+
+			isBackgroundMonitorActive() {
+				const monitor = getActiveMonitor()
+				return monitor && monitor.conversationId === this.conversationId
+			},
+
+			async recoverFromBackground() {
+				if (!this.conversationId) return
+
+				this.flushTypewriter()
+				this.preKnowledgeParser = null
+
+				try {
+					const result = await getConversation(this.conversationId)
+					this.messages = result.messages.map((m, i) => ({
+						id: i + 1,
+						role: m.role === 'user' ? 'user' : 'ai',
+						content: m.content,
+						attachments: m.attachments || [],
+						created_at: m.created_at
+					}))
+					this.nextId = this.messages.length + 1
+					clearPendingMessages(this.conversationId)
+					this.$nextTick(() => this.scrollToLatestMessage())
+				} catch (err) {
+					// Recovery failed — leave current messages as-is
+				} finally {
+					this.activeToolCalls = []
+					this.isSendingMessage = false
+					this.cancelSSE = null
+					this.stopHeightMonitor()
+				}
+			},
+
 			// ========== 消息发送 ==========
 
 			async sendMessage() {
@@ -1682,6 +1788,7 @@
 				// 恢复自动滚动（用户主动发送消息时）
 				this.isAutoScrollEnabled = true
 				this.isSendingMessage = true
+				this.lastUserMessageTimestamp = Date.now()
 
 				// 收集附件IDs
 				const attachmentIds = this.pendingAttachments.map(att => att.id)
@@ -1858,6 +1965,9 @@
 					},
 
 					onError: (message) => {
+						// 后台断连时不标记失败（后台监控会处理）
+						if (this.isBackgroundMonitorActive()) return
+
 						// 出错时也要清理打字机
 						this.flushTypewriter()
 
@@ -1882,6 +1992,13 @@
 						// 安全兜底：如果 onDone 未触发，确保清理流式状态
 						const msg = this.messages.find(m => m.id === aiMsgId)
 						if (msg && msg.isStreaming) {
+							// 后台断连时不标记失败（后台监控会处理）
+							if (this.isBackgroundMonitorActive()) {
+								this.cancelSSE = null
+								this.isSendingMessage = false
+								return
+							}
+
 							console.warn('[SpaceChat] SSE connection closed but message still streaming, forcing end')
 							this.flushTypewriter()
 							if (this.showPreKnowledgeCard) {
@@ -2079,7 +2196,13 @@
 						created_at: m.created_at
 					}))
 					this.nextId = this.messages.length + 1
-					this.mergePendingMessages()
+					// 后台监控 active 时，服务器数据已包含完整回复，清空缓存避免重复
+					const monitor = getActiveMonitor()
+					if (monitor && monitor.conversationId === this.conversationId) {
+						clearPendingMessages(this.conversationId)
+					} else {
+						this.mergePendingMessages()
+					}
 					this.$nextTick(() => this.scrollToLatestMessage())
 				} catch (err) {
 					uni.showToast({ title: '加载对话失败', icon: 'none' })

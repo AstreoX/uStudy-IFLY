@@ -18,7 +18,8 @@
         },
         /* 模块配置 */
         "modules" : {
-            "Camera" : {}
+            "Camera" : {},
+            "Push" : {}
         },
         /* 应用发布信息 */
         "distribute" : {
@@ -45,7 +46,8 @@
                     "<uses-permission android:name=\"android.permission.READ_CALENDAR\"/>",
                     "<uses-permission android:name=\"android.permission.WRITE_CALENDAR\"/>",
                     "<uses-permission android:name=\"android.permission.REQUEST_INSTALL_PACKAGES\"/>",
-                    "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>"
+                    "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>",
+                    "<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\"/>"
                 ]
             },
             /* ios打包配置 */

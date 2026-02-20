@@ -78,7 +78,8 @@
               >{{ item.summary }}</text>
             </view>
             <!-- Related nodes & review tag -->
-            <view v-if="(item.related_node_labels && item.related_node_labels.length) || item.next_review_date" class="node-tags">
+            <view v-if="item.review_completed_today || (item.related_node_labels && item.related_node_labels.length) || item.next_review_date" class="node-tags">
+              <text v-if="item.review_completed_today" class="node-tag review-done-tag">复习完成</text>
               <text v-if="item.next_review_date" class="node-tag review-tag">建议复习：{{ formatReviewDate(item.next_review_date) }}</text>
               <text
                 v-for="(label, li) in (item.related_node_labels || []).slice(0, 3)"
@@ -470,6 +471,12 @@ export default {
   color: rgba(255, 149, 0, 0.9);
   background: rgba(255, 149, 0, 0.12);
   border-color: rgba(255, 149, 0, 0.25);
+}
+
+.review-done-tag {
+  color: rgba(52, 199, 89, 0.95);
+  background: rgba(52, 199, 89, 0.14);
+  border-color: rgba(52, 199, 89, 0.28);
 }
 
 /* Suggestion card — highlighted */

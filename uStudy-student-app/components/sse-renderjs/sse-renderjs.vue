@@ -70,7 +70,8 @@ export default {
 	data() {
 		return {
 			abortControllers: {},
-			retryTimers: {}
+			retryTimers: {},
+			abortedRequests: {}
 		}
 	},
 	beforeDestroy() {
@@ -207,20 +208,27 @@ export default {
 					}
 				}
 			} catch (err) {
-				if (err.name !== 'AbortError') {
-					console.error('[SSE-Renderjs] Error:', err)
+				if (err.name === 'AbortError' || this.abortedRequests[requestId]) {
+					return
+				}
+				console.error('[SSE-Renderjs] Error:', err)
+				try {
 					this.$ownerInstance.callMethod('onSseError', {
 						requestId,
 						error: err.message
 					})
+				} catch (e) {
+					// 组件已销毁，忽略
 				}
 			} finally {
 				delete this.abortControllers[requestId]
+				delete this.abortedRequests[requestId]
 			}
 		},
 
 		// 取消请求
 		abortFetch(requestId) {
+			this.abortedRequests[requestId] = true
 			if (this.retryTimers[requestId]) {
 				clearTimeout(this.retryTimers[requestId])
 				delete this.retryTimers[requestId]

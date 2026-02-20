@@ -231,9 +231,7 @@ export default {
     this.radarLastWeekValues = getLastWeekSnapshot()
     this.loadStats()
     this.loadProfileStats()
-    this.loadActivityTimeline()
-    this.loadDueReviews()
-    this.loadStudySuggestion()
+    this.refreshTimelineSection()
     this.loadRadarScoresAndSnapshot()
   },
 
@@ -258,6 +256,14 @@ export default {
       }
     },
 
+    async refreshTimelineSection() {
+      await Promise.allSettled([
+        this.loadActivityTimeline(),
+        this.loadDueReviews(),
+        this.loadStudySuggestion()
+      ])
+    },
+
     async loadActivityTimeline() {
       this.timelineLoading = true
       try {
@@ -265,6 +271,7 @@ export default {
         this.recentItems = result.items || []
       } catch (_e) {
         // Silently fail — show empty
+        this.recentItems = []
       } finally {
         this.timelineLoading = false
       }
@@ -272,10 +279,11 @@ export default {
 
     async loadDueReviews() {
       try {
-        const result = await getDueReviews(20)
+        const result = await getDueReviews(1)
         this.dueReviewCount = result.total || 0
       } catch (_e) {
         // Silently fail
+        this.dueReviewCount = 0
       }
     },
 
