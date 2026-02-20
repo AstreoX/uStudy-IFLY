@@ -60,7 +60,7 @@ class TestDueReviewTotals:
     async def test_get_due_reviews_total_uses_pending_and_due_date_filters(
         self, monkeypatch
     ):
-        """Service query should filter by user_id + pending + scheduled_date<=today."""
+        """Service query should use DISTINCT activity_id + pending + scheduled_date<=today."""
         captured = {}
         expected_total = 7
         user_id = uuid4()
@@ -74,6 +74,9 @@ class TestDueReviewTotals:
         assert total == expected_total
 
         stmt = captured["stmt"]
+        stmt_sql = str(stmt).lower().replace(" ", "")
+        assert "count(distinct(review_schedules.activity_id))" in stmt_sql
+
         where_sql = " ".join(str(c) for c in stmt._where_criteria)
         assert "review_schedules.user_id" in where_sql
         assert "review_schedules.status" in where_sql
@@ -89,7 +92,7 @@ class TestDueReviewTotals:
 
     @pytest.mark.asyncio
     async def test_due_endpoint_total_is_not_limited_by_items_limit(self, monkeypatch):
-        """`items` should obey limit, while `total` returns full due count."""
+        """`items` should obey limit, while `total` returns deduped event count."""
         fake_user = type("FakeUser", (), {"id": uuid4()})()
         today = datetime.now(timezone.utc).date()
 
@@ -112,7 +115,7 @@ class TestDueReviewTotals:
 
         async def mock_get_due_reviews_total(user_id):
             assert user_id == fake_user.id
-            return 25
+            return 2
 
         monkeypatch.setattr(
             review_router_module, "get_due_reviews", mock_get_due_reviews
@@ -135,4 +138,4 @@ class TestDueReviewTotals:
         assert response.status_code == 200
         data = response.json()
         assert len(data["items"]) == 1
-        assert data["total"] == 25
+        assert data["total"] == 2

@@ -188,11 +188,11 @@ async def get_due_reviews(user_id: UUID, limit: int = 20) -> list[ReviewSchedule
 
 
 async def get_due_reviews_total(user_id: UUID) -> int:
-    """查询到期/逾期待复习项总数（scheduled_date <= today, status=pending）。"""
+    """查询到期/逾期待复习学习事件总数（按 activity_id 去重）。"""
     today = datetime.now(timezone.utc).date()
     async with get_scoped_session() as session:
         result = await session.execute(
-            select(func.count())
+            select(func.count(func.distinct(ReviewSchedule.activity_id)))
             .select_from(ReviewSchedule)
             .where(
                 ReviewSchedule.user_id == user_id,

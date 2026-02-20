@@ -41,7 +41,7 @@ async def get_due_reviews_endpoint(
     user: CurrentUser,
     limit: int = Query(20, ge=1, le=100),
 ):
-    """获取到期/逾期复习项（items 受 limit 限制，total 为全量符合条件总数）。"""
+    """获取到期/逾期复习项（items 受 limit 限制，total 为去重后的学习事件总数）。"""
     reviews = await get_due_reviews(user.id, limit)
     total = await get_due_reviews_total(user.id)
     today = datetime.now(timezone.utc).date()
