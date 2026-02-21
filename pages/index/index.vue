@@ -37,7 +37,17 @@
               :class="{ active: editMode }"
               @tap="toggleEditMode"
             >
-              <text class="tools-btn-text">{{ editMode ? 'Done' : 'Tools' }}</text>
+              <template v-if="editMode">
+                <text class="tools-btn-text">Done</text>
+              </template>
+              <template v-else>
+                <image
+                  class="tools-pencil-icon"
+                  src="/static/icons/phosphor/regular/pencil-white.svg"
+                  mode="aspectFit"
+                />
+                <text class="tools-btn-label">编辑</text>
+              </template>
             </view>
           </view>
         </template>
@@ -142,7 +152,7 @@ export default {
       })
     },
     handleCreateSpace() {
-      uni.showToast({ title: '创建空间功能即将上线', icon: 'none' })
+      uni.navigateTo({ url: '/pages/createSpace/createSpace' })
     }
   }
 }
@@ -276,11 +286,15 @@ export default {
 
 /* Tools Button */
 .tools-btn {
-  padding: 8px 18px;
+  height: 36px;
+  padding: 0 14px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
@@ -289,6 +303,7 @@ export default {
 }
 
 .tools-btn.active {
+  padding: 0 18px;
   background: rgba(59, 130, 246, 0.15);
   border-color: rgba(59, 130, 246, 0.3);
 }
@@ -296,11 +311,31 @@ export default {
 .tools-btn-text {
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--color-accent-blue);
 }
 
-.tools-btn.active .tools-btn-text {
-  color: var(--color-accent-blue);
+/* Pencil Icon + Label */
+.tools-pencil-icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.8;
+  transition: opacity 0.15s ease;
+}
+
+.tools-btn:hover .tools-pencil-icon {
+  opacity: 1;
+}
+
+.tools-btn-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.8);
+  margin-left: 5px;
+  transition: color 0.15s ease;
+}
+
+.tools-btn:hover .tools-btn-label {
+  color: rgba(255, 255, 255, 1);
 }
 
 /* Widget Picker */

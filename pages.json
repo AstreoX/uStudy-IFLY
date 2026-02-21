@@ -31,6 +31,14 @@
 				"navigationBarTitleText": "快速对话",
 				"backgroundColor": "#0A0A12"
 			}
+		},
+		{
+			"path": "pages/createSpace/createSpace",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "新建学习空间",
+				"backgroundColor": "#0A0A12"
+			}
 		}
 	],
 	"globalStyle": {

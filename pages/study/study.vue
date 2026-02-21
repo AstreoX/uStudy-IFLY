@@ -437,11 +437,11 @@
                 <transition name="attach-menu-fade">
                   <view v-if="showAttachMenu" class="attach-menu">
                     <view class="attach-menu-item" @tap="pickImage">
-                      <text class="attach-menu-icon">🖼</text>
+                      <image class="attach-menu-icon" mode="aspectFit" src="/static/icons/phosphor/regular/attach-image-white.svg" />
                       <text class="attach-menu-label">图片</text>
                     </view>
                     <view class="attach-menu-item" @tap="pickFile">
-                      <text class="attach-menu-icon">📎</text>
+                      <image class="attach-menu-icon" mode="aspectFit" src="/static/icons/phosphor/flat-regular/attach-link-white.svg" />
                       <text class="attach-menu-label">文件</text>
                     </view>
                   </view>
@@ -480,6 +480,16 @@
       </view>
       <!-- History popup backdrop -->
       <view v-if="showHistoryPopup" class="history-backdrop" @tap="showHistoryPopup = false"></view>
+
+      <u-modal
+        :visible="showDeleteSpaceModal"
+        title="删除学习空间"
+        :content="deleteSpaceModalContent"
+        confirm-text="删除"
+        confirm-type="danger"
+        @confirm="confirmDeleteSpace"
+        @close="showDeleteSpaceModal = false"
+      />
     </view>
 
   </view>
@@ -492,6 +502,7 @@ import KnowledgeGraph from '@/components/graph/KnowledgeGraph.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 import StudyMaterialsPanel from '@/components/study/StudyMaterialsPanel.vue'
 import QuizPanel from '@/components/study/quiz/QuizPanel.vue'
+import UModal from '@/components/u-modal/u-modal.vue'
 import { getSpaces, deleteSpace, getTaskStatus } from '@/api/space'
 import { createConversation, getSpaceConversations, getConversation, sendMessage, uploadAttachment, deleteAttachment } from '@/api/chat'
 import { useUserStore } from '@/store/user'
@@ -584,7 +595,7 @@ const DEFAULT_BROWSER_URL = 'https://www.wikipedia.org'
 const BROWSER_LOAD_TIMEOUT_MS = 8000
 
 export default {
-  components: { HomeSidebar, KnowledgeGraph, MarkdownRender, StudyMaterialsPanel, QuizPanel },
+  components: { HomeSidebar, KnowledgeGraph, MarkdownRender, StudyMaterialsPanel, QuizPanel, UModal },
   data() {
     return {
       sidebarCollapsed: false,
@@ -643,6 +654,9 @@ export default {
 
       // Space delete
       isDeletingSpace: false,
+      showDeleteSpaceModal: false,
+      deleteTargetSpaceId: null,
+      deleteTargetSpaceName: '',
 
       // Quiz generation polling
       isGeneratingQuiz: false,
@@ -667,12 +681,16 @@ export default {
     },
     canSend() {
       return this.spaceId && this.inputText.trim().length > 0 && !this.isSending
+    },
+    deleteSpaceModalContent() {
+      const displayName = this.deleteTargetSpaceName || this.spaceName || '当前学习空间'
+      return `确定要删除「${displayName}」吗？该空间内的知识图谱、资料和测试会被永久删除。`
     }
   },
-  onLoad(options) {
+  async onLoad(options) {
     if (options.spaceId) {
       this.spaceId = options.spaceId
-      this.loadSpaceInfo()
+      await this.loadSpaceInfo()
       this.initConversation()
     }
   },
@@ -733,7 +751,7 @@ export default {
       }
     },
 
-    handleSelectSpace(spaceId) {
+    async handleSelectSpace(spaceId) {
       // Stop typewriter to prevent orphaned timers
       this.stopTypewriter()
 
@@ -755,14 +773,17 @@ export default {
       this.activeToolCalls = []
       this.inputText = ''
       this.cleanupPendingAttachments()
+      this.showDeleteSpaceModal = false
+      this.deleteTargetSpaceId = null
+      this.deleteTargetSpaceName = ''
 
       this.spaceId = spaceId
-      this.loadSpaceInfo()
+      await this.loadSpaceInfo()
       this.initConversation()
     },
 
     handleCreateSpace() {
-      uni.showToast({ title: 'Create space coming soon', icon: 'none' })
+      uni.navigateTo({ url: '/pages/createSpace/createSpace' })
     },
 
     resolveDeleteSpaceError(error) {
@@ -776,45 +797,46 @@ export default {
     handleDeleteSpace() {
       if (!this.spaceId || this.isDeletingSpace) return
 
-      const deletingSpaceId = this.spaceId
-      const deletingSpaceName = this.spaceName || '当前学习空间'
+      this.deleteTargetSpaceId = this.spaceId
+      this.deleteTargetSpaceName = this.spaceName || '当前学习空间'
+      this.showDeleteSpaceModal = true
+    },
 
-      uni.showModal({
-        title: '删除学习空间',
-        content: `确定要删除「${deletingSpaceName}」吗？该空间内的知识图谱、资料和测试会被永久删除。`,
-        confirmText: '删除',
-        confirmColor: '#EF4444',
-        success: async (res) => {
-          if (!res.confirm || this.isDeletingSpace) return
+    async confirmDeleteSpace() {
+      if (!this.deleteTargetSpaceId || this.isDeletingSpace) return
 
-          this.isDeletingSpace = true
-          uni.showLoading({ title: '删除中...', mask: true })
+      const deletingSpaceId = this.deleteTargetSpaceId
+      const deletingSpaceName = this.deleteTargetSpaceName || '当前学习空间'
+      this.showDeleteSpaceModal = false
 
-          try {
-            await deleteSpace(deletingSpaceId)
+      this.isDeletingSpace = true
+      uni.showLoading({ title: '删除中...', mask: true })
 
-            const spacesStore = useSpacesStore()
-            await spacesStore.loadSpaces(true)
-            const remainingSpaces = spacesStore.spaces || []
-            const nextSpace = remainingSpaces[0] || null
+      try {
+        await deleteSpace(deletingSpaceId)
 
-            uni.hideLoading()
-            uni.showToast({ title: '学习空间已删除', icon: 'success' })
+        const spacesStore = useSpacesStore()
+        await spacesStore.loadSpaces(true)
+        const remainingSpaces = spacesStore.spaces || []
+        const nextSpace = remainingSpaces[0] || null
 
-            if (nextSpace) {
-              this.handleSelectSpace(nextSpace.id)
-            } else {
-              this.handleSelectSpace(null)
-            }
-          } catch (error) {
-            console.error('[StudyPage] Failed to delete space:', error)
-            uni.hideLoading()
-            uni.showToast({ title: this.resolveDeleteSpaceError(error), icon: 'none' })
-          } finally {
-            this.isDeletingSpace = false
-          }
+        uni.hideLoading()
+        uni.showToast({ title: `学习空间「${deletingSpaceName}」已删除`, icon: 'success' })
+
+        if (nextSpace) {
+          this.handleSelectSpace(nextSpace.id)
+        } else {
+          this.handleSelectSpace(null)
         }
-      })
+      } catch (error) {
+        console.error('[StudyPage] Failed to delete space:', error)
+        uni.hideLoading()
+        uni.showToast({ title: this.resolveDeleteSpaceError(error), icon: 'none' })
+      } finally {
+        this.isDeletingSpace = false
+        this.deleteTargetSpaceId = null
+        this.deleteTargetSpaceName = ''
+      }
     },
 
     togglePathHighlight() {
@@ -954,12 +976,33 @@ export default {
 
     // ==================== Chat Methods ====================
 
+    getSpaceWelcomeMessage() {
+      const spaceTitle = this.spaceName || '学习空间'
+      return `你好！我是你的${spaceTitle}学习助手，这些是我能帮你做的事：
+
+📖 **知识问答** — 随时提问，我会优先从你的学习资料中查找答案
+🧠 **知识图谱** — 帮你梳理知识结构，追踪每个知识点的掌握程度
+🗺️ **学习路径** — 根据你的掌握情况，规划个性化的学习顺序
+📝 **练习测试** — 生成选择题、判断题、简答题，检验学习效果
+🔍 **联网搜索** — 查找最新资料和权威来源，补充学习内容
+📅 **学习日程** — 管理你的学习计划和时间安排
+💾 **学习记忆** — 记住你的学习偏好和进度，跨对话持续服务
+
+上传学习资料（PDF、Word等）后，我还能直接从你的资料中查找答案。有什么想学的，直接问我就好！`
+    },
+
     async initConversation() {
       // Always start with a fresh conversation
       // New conversation will be created lazily on first message send
       this.conversationId = null
       this.messages = []
       this.nextId = 1
+      if (!this.spaceId) return
+      this.messages.push({
+        id: this.nextId++,
+        role: 'ai',
+        content: this.getSpaceWelcomeMessage()
+      })
     },
 
     async loadConversationHistory() {
@@ -1648,6 +1691,7 @@ export default {
       this.conversationId = null
       this.nextId = 1
       this.inputText = ''
+      this.initConversation()
     },
 
     formatConvDate(dateStr) {
@@ -3010,7 +3054,7 @@ export default {
   transition: background 0.15s ease;
 }
 .attach-menu-item:hover { background: rgba(255, 255, 255, 0.08); }
-.attach-menu-icon { font-size: 16px; }
+.attach-menu-icon { width: 16px; height: 16px; flex-shrink: 0; opacity: 0.92; }
 .attach-menu-label { font-size: 13px; color: rgba(255, 255, 255, 0.85); }
 .attach-menu-backdrop {
   position: fixed;

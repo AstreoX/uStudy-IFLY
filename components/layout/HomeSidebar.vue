@@ -135,7 +135,7 @@
               <view class="account-menu-divider"></view>
               <view class="account-menu-item account-menu-item-danger" @tap="handleLogout">
                 <svg viewBox="0 0 256 256" class="account-menu-icon"><rect width="256" height="256" fill="none"/><polyline points="174 86 216 128 174 170" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="104" y1="128" x2="216" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><path d="M104,216H48a8,8,0,0,1-8-8V48a8,8,0,0,1,8-8h56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>
-                <text class="account-menu-item-text">Log out</text>
+                <text class="account-menu-item-text">退出登录</text>
               </view>
             </view>
           </transition>
@@ -148,6 +148,18 @@
       </view>
 
     </view>
+
+    <Teleport to="body">
+      <u-modal
+        :visible="showLogoutModal"
+        title="退出登录"
+        content="确定要退出当前账号吗？"
+        confirm-text="退出"
+        confirm-type="danger"
+        @confirm="confirmLogout"
+        @close="showLogoutModal = false"
+      />
+    </Teleport>
   </view>
 </template>
 
@@ -155,6 +167,7 @@
 import { useUserStore } from '@/store/user'
 import { useSpacesStore } from '@/store/spaces'
 import config from '@/config'
+import UModal from '@/components/u-modal/u-modal.vue'
 
 const AVATAR_GRADIENTS = [
   'linear-gradient(135deg, #0F6FFF 0%, #B1DD8B 100%)',
@@ -165,6 +178,9 @@ const AVATAR_GRADIENTS = [
 ]
 
 export default {
+  components: {
+    UModal
+  },
   props: {
     collapsed: {
       type: Boolean,
@@ -184,6 +200,7 @@ export default {
       selectedSpaceId: null,
       accountMenuOpen: false,
       menuStyle: {},
+      showLogoutModal: false,
       menuItems: [
         { id: 'home',    label: 'Home',    expandable: false, route: '/pages/index/index' },
         { id: 'study',   label: 'Study',   expandable: true },
@@ -338,17 +355,12 @@ export default {
     },
     handleLogout() {
       this.accountMenuOpen = false
-      uni.showModal({
-        title: 'Log out',
-        content: 'Are you sure you want to log out?',
-        confirmColor: '#EF4444',
-        success: (res) => {
-          if (res.confirm) {
-            this.userStore.clear()
-            uni.reLaunch({ url: '/pages/login/login' })
-          }
-        }
-      })
+      this.showLogoutModal = true
+    },
+    confirmLogout() {
+      this.showLogoutModal = false
+      this.userStore.clear()
+      uni.reLaunch({ url: '/pages/login/login' })
     },
     navigateToLogin() {
       uni.reLaunch({ url: '/pages/login/login' })

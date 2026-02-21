@@ -297,11 +297,11 @@
             <transition name="attach-menu-fade">
               <view v-if="showAttachMenu" class="attach-menu">
                 <view class="attach-menu-item" @tap="pickImage">
-                  <text class="attach-menu-icon">&#x1F5BC;</text>
+                  <image class="attach-menu-icon" mode="aspectFit" src="/static/icons/phosphor/regular/attach-image-white.svg" />
                   <text class="attach-menu-label">Image</text>
                 </view>
                 <view class="attach-menu-item" @tap="pickFile">
-                  <text class="attach-menu-icon">&#x1F4CE;</text>
+                  <image class="attach-menu-icon" mode="aspectFit" src="/static/icons/phosphor/flat-regular/attach-link-white.svg" />
                   <text class="attach-menu-label">File</text>
                 </view>
               </view>
@@ -438,13 +438,13 @@ export default {
     this.messages.push({
       id: this.nextId++,
       role: 'ai',
-      content: `Hi! I'm your learning assistant. Here's what I can help with:
+      content: `你好！我是你的学习助手，有什么我可以帮你的：
 
-**Chat freely** - Ask me any study-related question
-**Learning Spaces** - View, create, or jump into a learning space
-**Remember preferences** - I'll remember your habits for next time
+💬 **随便聊聊** — 任何学习上的问题都可以直接问我
+📚 **学习空间** — 帮你查看、创建或进入学习空间，开始系统化学习
+💾 **记住偏好** — 我会记住你的学习习惯和偏好，下次继续为你服务
 
-For deeper learning (knowledge graphs, quizzes, document search), enter a specific learning space. What would you like to ask?`,
+想要更深入的学习体验（知识图谱、练习测试、资料检索等），可以进入具体的学习空间。现在有什么想问的？`,
       isWelcome: true
     })
   },
@@ -476,7 +476,7 @@ For deeper learning (knowledge graphs, quizzes, document search), enter a specif
     },
 
     handleCreateSpace() {
-      uni.showToast({ title: 'Create space coming soon', icon: 'none' })
+      uni.navigateTo({ url: '/pages/createSpace/createSpace' })
     },
 
     // ==================== Chat Methods ====================
@@ -1160,13 +1160,13 @@ For deeper learning (knowledge graphs, quizzes, document search), enter a specif
       this.messages = [{
         id: this.nextId++,
         role: 'ai',
-        content: `Hi! I'm your learning assistant. Here's what I can help with:
+        content: `你好！我是你的学习助手，有什么我可以帮你的：
 
-**Chat freely** - Ask me any study-related question
-**Learning Spaces** - View, create, or jump into a learning space
-**Remember preferences** - I'll remember your habits for next time
+💬 **随便聊聊** — 任何学习上的问题都可以直接问我
+📚 **学习空间** — 帮你查看、创建或进入学习空间，开始系统化学习
+💾 **记住偏好** — 我会记住你的学习习惯和偏好，下次继续为你服务
 
-For deeper learning (knowledge graphs, quizzes, document search), enter a specific learning space. What would you like to ask?`,
+想要更深入的学习体验（知识图谱、练习测试、资料检索等），可以进入具体的学习空间。现在有什么想问的？`,
         isWelcome: true
       }]
     },
@@ -2340,7 +2340,7 @@ For deeper learning (knowledge graphs, quizzes, document search), enter a specif
   transition: background 0.15s ease;
 }
 .attach-menu-item:hover { background: rgba(255, 255, 255, 0.08); }
-.attach-menu-icon { font-size: 16px; }
+.attach-menu-icon { width: 16px; height: 16px; flex-shrink: 0; opacity: 0.92; }
 .attach-menu-label { font-size: 13px; color: rgba(255, 255, 255, 0.85); }
 
 .attach-menu-fade-enter-active,

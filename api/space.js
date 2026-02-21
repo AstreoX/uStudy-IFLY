@@ -20,6 +20,31 @@ export function deleteSpace(spaceId) {
   })
 }
 
+/**
+ * Create a learning space
+ * @param {Object} data - { name, color, learning_preferences? }
+ */
+export function createSpace(data) {
+  return request({
+    url: '/api/spaces',
+    method: 'POST',
+    data
+  })
+}
+
+/**
+ * Trigger async knowledge graph generation
+ * @param {string} spaceId
+ * @param {Object} data - { topic, user_preference? }
+ */
+export function generateKnowledgeGraph(spaceId, data) {
+  return request({
+    url: `/api/agents/knowledge-graph?space_id=${spaceId}`,
+    method: 'POST',
+    data
+  })
+}
+
 export function getSpaceGraph(spaceId) {
   return request({
     url: `/api/spaces/${spaceId}/graph?_t=${Date.now()}`,
