@@ -421,7 +421,7 @@
               <!-- Stop button during streaming -->
               <view v-if="isStreaming" class="chat-stop-btn" @tap="handleStop">
                 <svg viewBox="0 0 256 256" class="stop-icon">
-                  <rect x="88" y="88" width="80" height="80" rx="8" fill="currentColor"/>
+                  <rect x="72" y="72" width="112" height="112" rx="10" fill="currentColor"/>
                 </svg>
               </view>
               <!-- Send button -->
@@ -815,19 +815,11 @@ export default {
     // ==================== Chat Methods ====================
 
     async initConversation() {
-      if (!this.spaceId) return
-
-      try {
-        const result = await getSpaceConversations(this.spaceId)
-        const conversations = result.conversations || result || []
-        if (conversations.length > 0) {
-          // Use the most recent conversation
-          this.conversationId = conversations[0].id
-          await this.loadConversationHistory()
-        }
-      } catch (err) {
-        console.error('[StudyPage] Failed to load conversations:', err)
-      }
+      // Always start with a fresh conversation
+      // New conversation will be created lazily on first message send
+      this.conversationId = null
+      this.messages = []
+      this.nextId = 1
     },
 
     async loadConversationHistory() {
