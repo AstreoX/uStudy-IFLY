@@ -57,6 +57,7 @@
             <!-- Tab Content Area -->
             <view class="tab-content-area">
               <KnowledgeGraph
+                ref="knowledgeGraph"
                 v-if="activeTab === 'graph'"
                 :spaceId="spaceId"
                 :pathHighlight="isPathHighlightOn"
@@ -274,22 +275,32 @@
                 :class="msg.role === 'user' ? 'message-row-right' : 'message-row-left'"
               >
                 <!-- User message -->
-                <view v-if="msg.role === 'user'" class="message-bubble bubble-user">
-                  <view v-if="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
-                    <template v-for="att in msg.attachments" :key="att.id">
-                      <image
-                        v-if="att.attachment_type === 'image'"
-                        class="msg-attach-img"
-                        :src="att.thumbnail_url || att.file_url"
-                        mode="aspectFit"
-                        @tap="previewImage(att.file_url)"
-                      />
-                      <view v-else class="msg-attach-file" @tap="openFileUrl(att.file_url)">
-                        <text class="msg-attach-file-name">{{ att.original_filename }}</text>
-                      </view>
-                    </template>
+                <view v-if="msg.role === 'user'" class="user-bubble-row">
+                  <view v-if="msg.isFailed" class="msg-retry-btn" @tap="resendMessage(msg)">
+                    <svg viewBox="0 0 256 256" class="msg-retry-icon">
+                      <polyline points="176.17 99.71 224.17 99.71 224.17 51.71" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+                      <path d="M65.78,65.78a88,88,0,0,1,124.44,0l34,33.93" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+                      <polyline points="79.83 156.29 31.83 156.29 31.83 204.29" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+                      <path d="M190.22,190.22a88,88,0,0,1-124.44,0l-34-33.93" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+                    </svg>
                   </view>
-                  <text class="bubble-text">{{ msg.content }}</text>
+                  <view class="message-bubble bubble-user">
+                    <view v-if="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
+                      <template v-for="att in msg.attachments" :key="att.id">
+                        <image
+                          v-if="att.attachment_type === 'image'"
+                          class="msg-attach-img"
+                          :src="att.thumbnail_url || att.file_url"
+                          mode="aspectFit"
+                          @tap="previewImage(att.file_url)"
+                        />
+                        <view v-else class="msg-attach-file" @tap="openFileUrl(att.file_url)">
+                          <text class="msg-attach-file-name">{{ att.original_filename }}</text>
+                        </view>
+                      </template>
+                    </view>
+                    <text class="bubble-text">{{ msg.content }}</text>
+                  </view>
                 </view>
 
                 <!-- AI message -->
@@ -439,10 +450,9 @@
           </view>
         </view>
       </view>
+      <!-- History popup backdrop -->
+      <view v-if="showHistoryPopup" class="history-backdrop" @tap="showHistoryPopup = false"></view>
     </view>
-
-    <!-- History popup backdrop -->
-    <view v-if="showHistoryPopup" class="history-backdrop" @tap="showHistoryPopup = false"></view>
 
   </view>
 
@@ -488,6 +498,17 @@ const TOOL_DISPLAY_NAMES = {
   get_review_events: 'View Reviews',
   mark_review_completed: 'Mark Reviewed'
 }
+
+// Graph-mutating tools (trigger auto-refresh of knowledge graph)
+const GRAPH_MUTATING_TOOLS = new Set([
+  'add_node',
+  'add_edge',
+  'delete_node',
+  'delete_edge',
+  'update_mastery',
+  'generate_learning_path',
+  'delete_all_learning_paths'
+])
 
 // Memory tools (shown as inline shimmer text, not cards)
 const MEMORY_TOOLS = new Set([
@@ -542,6 +563,7 @@ export default {
       spaceName: 'Study',
       activeTab: 'graph',
       isPathHighlightOn: false,
+      graphDirty: false,
       tabs: [
         { id: 'graph', label: '知识图谱', placeholder: 'Knowledge Graph', sub: 'Canvas area for nodes and edges' },
         { id: 'materials', label: '学习资料', placeholder: 'Study Materials', sub: 'Upload and manage learning resources' },
@@ -621,6 +643,7 @@ export default {
     this.clearBrowserLoadTimeout()
   },
   mounted() {
+    this._graphRefreshTimer = null
     const inputEl = this.$refs.chatInput?.$el?.querySelector('input')
     if (inputEl) {
       inputEl.addEventListener('paste', this.handlePaste)
@@ -632,6 +655,10 @@ export default {
       inputEl.removeEventListener('paste', this.handlePaste)
     }
     this.cleanupPendingAttachments()
+    if (this._graphRefreshTimer) {
+      clearTimeout(this._graphRefreshTimer)
+      this._graphRefreshTimer = null
+    }
   },
   methods: {
     async loadSpaceInfo() {
@@ -649,6 +676,14 @@ export default {
 
     handleTabChange(tabId) {
       this.activeTab = tabId
+      if (tabId === 'graph' && this.graphDirty) {
+        this.graphDirty = false
+        this.$nextTick(() => {
+          if (this.$refs.knowledgeGraph) {
+            this.$refs.knowledgeGraph.loadAndRender()
+          }
+        })
+      }
       if (tabId === 'browser' && !this.browserInitialized) {
         this.browserInitialized = true
         this.browserLoading = true
@@ -701,6 +736,20 @@ export default {
 
     onGraphLoaded({ nodeCount, edgeCount }) {
       // Graph loaded
+    },
+
+    scheduleGraphRefresh() {
+      if (this.activeTab === 'graph' && this.$refs.knowledgeGraph) {
+        if (this._graphRefreshTimer) clearTimeout(this._graphRefreshTimer)
+        this._graphRefreshTimer = setTimeout(() => {
+          this._graphRefreshTimer = null
+          if (this.$refs.knowledgeGraph) {
+            this.$refs.knowledgeGraph.loadAndRender()
+          }
+        }, 800)
+      } else {
+        this.graphDirty = true
+      }
     },
 
     clearBrowserLoadTimeout() {
@@ -833,6 +882,7 @@ export default {
           id: i + 1,
           role: m.role === 'user' ? 'user' : 'ai',
           content: m.content,
+          isFailed: false,
           attachments: m.attachments || [],
           created_at: m.created_at
         }))
@@ -866,24 +916,13 @@ export default {
       this.pendingAttachments = []
       sentAttachments.forEach(a => { if (a.localPreview) URL.revokeObjectURL(a.localPreview) })
 
-      // Create conversation if needed
-      if (!this.conversationId) {
-        try {
-          const conv = await createConversation(this.spaceId, text.slice(0, 50))
-          this.conversationId = conv.id
-        } catch (err) {
-          this.isSending = false
-          uni.showToast({ title: 'Failed to create conversation', icon: 'none' })
-          return
-        }
-      }
-
-      // Add user message with attachments
+      // Add user message BEFORE conversation creation so it's visible even on failure
       const userMsgId = this.nextId++
       this.messages.push({
         id: userMsgId,
         role: 'user',
         content: text,
+        isFailed: false,
         attachments: sentAttachments.map(a => ({
           id: a.id,
           attachment_type: a.type,
@@ -892,6 +931,22 @@ export default {
           original_filename: a.original_filename
         }))
       })
+
+      this.$nextTick(() => this.scrollToBottom())
+
+      // Create conversation if needed
+      if (!this.conversationId) {
+        try {
+          const conv = await createConversation(this.spaceId, text.slice(0, 50))
+          this.conversationId = conv.id
+        } catch (err) {
+          this.isSending = false
+          const userMsg = this.messages.find(m => m.id === userMsgId)
+          if (userMsg) userMsg.isFailed = true
+          uni.showToast({ title: 'Failed to create conversation', icon: 'none' })
+          return
+        }
+      }
 
       // Add AI placeholder (declare all properties upfront for reactivity)
       const aiMsgId = this.nextId++
@@ -911,7 +966,13 @@ export default {
       this.isStreaming = true
       this.activeToolCalls = []
 
-      this.cancelSSE = sendMessage(this.conversationId, text, {
+      const callbacks = this._buildSSECallbacks(aiMsgId, userMsgId)
+      this.cancelSSE = sendMessage(this.conversationId, text, callbacks, attachmentIds.length > 0 ? attachmentIds : null)
+    },
+
+    _buildSSECallbacks(aiMsgId, userMsgId) {
+      let finalized = false
+      return {
         onTextDelta: (content) => {
           this.appendToTypewriter(aiMsgId, content)
         },
@@ -921,10 +982,11 @@ export default {
         },
 
         onDone: (fullContent) => {
+          if (finalized) return
+          finalized = true
           this.flushTypewriter()
           const aiMsg = this.messages.find(m => m.id === aiMsgId)
           if (aiMsg) {
-            // Finalize segments
             const finalSegments = []
             if (aiMsg.streamSegments && aiMsg.streamSegments.length > 0) {
               for (const seg of aiMsg.streamSegments) {
@@ -950,6 +1012,7 @@ export default {
             aiMsg.isWaitingOutput = false
             aiMsg.isStreaming = false
           }
+          this.cancelSSE = null
           this.isStreaming = false
           this.isSending = false
           this.activeToolCalls = []
@@ -957,6 +1020,8 @@ export default {
         },
 
         onError: (message) => {
+          if (finalized) return
+          finalized = true
           this.flushTypewriter()
           const aiMsg = this.messages.find(m => m.id === aiMsgId)
           if (aiMsg) {
@@ -965,11 +1030,18 @@ export default {
             aiMsg.isStreaming = false
             aiMsg.isError = true
           }
+          const userMsg = this.messages.find(m => m.id === userMsgId)
+          if (userMsg) userMsg.isFailed = true
+          this.cancelSSE = null
           this.isStreaming = false
+          this.isSending = false
+          this.activeToolCalls = []
           uni.showToast({ title: message || 'Request failed', icon: 'none' })
         },
 
         onComplete: () => {
+          if (finalized) return
+          finalized = true
           this.flushTypewriter()
           const aiMsg = this.messages.find(m => m.id === aiMsgId)
           if (aiMsg && aiMsg.isStreaming) {
@@ -979,12 +1051,71 @@ export default {
             if (!aiMsg.content || aiMsg.content.trim() === '') {
               aiMsg.content = 'Connection interrupted. Please resend your message.'
             }
+            const userMsg = this.messages.find(m => m.id === userMsgId)
+            if (userMsg) userMsg.isFailed = true
           }
           this.cancelSSE = null
           this.isSending = false
           this.isStreaming = false
         }
-      }, attachmentIds.length > 0 ? attachmentIds : null)
+      }
+    },
+
+    async resendMessage(msg) {
+      if (this.isStreaming || this.isSending) return
+
+      this.isSending = true
+      this.isAutoScrollEnabled = true
+      msg.isFailed = false
+
+      // Remove the failed AI response that follows this message
+      const msgIdx = this.messages.findIndex(m => m.id === msg.id)
+      if (msgIdx >= 0 && msgIdx + 1 < this.messages.length) {
+        const nextMsg = this.messages[msgIdx + 1]
+        if (nextMsg.role === 'ai' && !nextMsg.isStreaming) {
+          this.messages.splice(msgIdx + 1, 1)
+        }
+      }
+
+      const text = msg.content
+      const attachmentIds = (msg.attachments && msg.attachments.length > 0)
+        ? msg.attachments.map(att => att.id).filter(Boolean)
+        : []
+
+      // Create conversation if needed
+      if (!this.conversationId) {
+        try {
+          const conv = await createConversation(this.spaceId, text.slice(0, 50))
+          this.conversationId = conv.id
+        } catch {
+          msg.isFailed = true
+          this.isSending = false
+          uni.showToast({ title: 'Failed to create conversation', icon: 'none' })
+          return
+        }
+      }
+
+      this.isStreaming = true
+
+      // Add new AI placeholder
+      const aiMsgId = this.nextId++
+      this.messages.push({
+        id: aiMsgId,
+        role: 'ai',
+        content: '',
+        isStreaming: true,
+        isWaitingOutput: true,
+        isError: false,
+        segments: null,
+        streamSegments: null,
+        toolCalls: null
+      })
+
+      this.$nextTick(() => this.scrollToBottom())
+      this.activeToolCalls = []
+
+      const callbacks = this._buildSSECallbacks(aiMsgId, msg.id)
+      this.cancelSSE = sendMessage(this.conversationId, text, callbacks, attachmentIds.length > 0 ? attachmentIds : null)
     },
 
     handleToolCallEvent(aiMsgId, data) {
@@ -1049,6 +1180,10 @@ export default {
               this.memoryToolStartTimes = restStarts
             }
           }
+        }
+
+        if (success && GRAPH_MUTATING_TOOLS.has(tool)) {
+          this.scheduleGraphRefresh()
         }
 
         if (msg.streamSegments) {
@@ -1225,13 +1360,20 @@ export default {
       this.isStreaming = false
       this.isSending = false
 
-      // Finalize any streaming message
+      // Finalize any streaming message and mark user message for retry
       const streamingMsg = this.messages.find(m => m.isStreaming)
       if (streamingMsg) {
         streamingMsg.isStreaming = false
         streamingMsg.isWaitingOutput = false
         if (!streamingMsg.content || streamingMsg.content.trim() === '') {
           streamingMsg.content = 'Response stopped by user.'
+        }
+        const streamIdx = this.messages.indexOf(streamingMsg)
+        if (streamIdx > 0) {
+          const prevMsg = this.messages[streamIdx - 1]
+          if (prevMsg.role === 'user') {
+            prevMsg.isFailed = true
+          }
         }
       }
     },
@@ -2014,6 +2156,38 @@ export default {
   justify-content: flex-end;
 }
 
+/* User bubble row with retry button */
+.user-bubble-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  max-width: 85%;
+  margin-left: auto;
+}
+
+.msg-retry-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background-color: #FF3B30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.2s;
+}
+.msg-retry-btn:hover {
+  opacity: 0.8;
+}
+
+.msg-retry-icon {
+  width: 14px;
+  height: 14px;
+  color: white;
+}
+
 /* Message Bubbles */
 .message-bubble {
   max-width: 85%;
@@ -2026,6 +2200,10 @@ export default {
   background: rgba(59, 130, 246, 0.2);
   border: 1px solid rgba(59, 130, 246, 0.25);
   border-bottom-right-radius: 4px;
+}
+
+.user-bubble-row .bubble-user {
+  max-width: none;
 }
 
 .bubble-user .bubble-text {
@@ -2407,6 +2585,28 @@ export default {
   max-height: 360px;
   overflow-y: auto;
   padding: 4px 0;
+}
+
+.history-list :deep(.uni-scroll-view)::-webkit-scrollbar {
+  width: 6px;
+}
+
+.history-list :deep(.uni-scroll-view)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-list :deep(.uni-scroll-view)::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.history-list :deep(.uni-scroll-view)::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.history-list :deep(.uni-scroll-view) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
 .history-empty {

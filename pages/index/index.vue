@@ -393,11 +393,24 @@ export default {
   padding: 14px 28px 28px;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
 .grid-area::-webkit-scrollbar {
-  display: none;
+  width: 6px;
+}
+
+.grid-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.grid-area::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.grid-area::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 </style>

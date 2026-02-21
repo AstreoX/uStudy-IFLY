@@ -36,7 +36,7 @@
               cy="60"
               r="52"
               fill="none"
-              stroke="#60a5fa"
+              stroke="#0088FF"
               stroke-width="8"
               stroke-linecap="round"
               :stroke-dasharray="circumference"
@@ -45,15 +45,18 @@
             />
           </svg>
           <view class="score-center">
-            <text class="score-main">{{ safeResult.score }}/{{ safeResult.totalScore }}</text>
-            <text class="score-sub">总分</text>
+            <image class="trophy-icon" src="/static/icons/phosphor/regular/trophy-fill.svg" mode="aspectFit"></image>
+            <text class="score-main">{{ safeResult.score }}/{{ safeResult.totalScore }}分</text>
           </view>
         </view>
       </view>
 
       <view class="analysis-row">
-        <view class="analysis-card">
-          <text class="analysis-title">优点分析</text>
+        <view class="analysis-card strength-card">
+          <view class="card-header">
+            <image class="card-header-icon strength-icon" src="/static/icons/phosphor/regular/thumbs-up.svg" mode="aspectFit"></image>
+            <text class="analysis-title">优点分析</text>
+          </view>
           <view v-if="safeResult.strengths.length > 0" class="analysis-list">
             <text
               v-for="(item, index) in safeResult.strengths"
@@ -64,8 +67,11 @@
           <text v-else class="analysis-empty">暂无</text>
         </view>
 
-        <view class="analysis-card">
-          <text class="analysis-title">缺点分析</text>
+        <view class="analysis-card weakness-card">
+          <view class="card-header">
+            <image class="card-header-icon weakness-icon" src="/static/icons/phosphor/regular/warning-circle.svg" mode="aspectFit"></image>
+            <text class="analysis-title">缺点分析</text>
+          </view>
           <view v-if="safeResult.weaknesses.length > 0" class="analysis-list">
             <text
               v-for="(item, index) in safeResult.weaknesses"
@@ -78,19 +84,28 @@
       </view>
 
       <view class="suggest-card">
-        <text class="analysis-title">提升建议</text>
+        <view class="card-header">
+          <image class="card-header-icon suggest-icon" src="/static/icons/phosphor/regular/lightbulb.svg" mode="aspectFit"></image>
+          <text class="analysis-title">提升建议</text>
+        </view>
         <view v-if="safeResult.suggestions.length > 0" class="analysis-list">
-          <text
+          <view
             v-for="(item, index) in safeResult.suggestions"
             :key="`sg-${index}`"
-            class="analysis-item"
-          >{{ index + 1 }}. {{ item }}</text>
+            class="suggestion-item"
+          >
+            <text class="suggestion-number">{{ index + 1 }}.</text>
+            <text class="analysis-item">{{ item }}</text>
+          </view>
         </view>
         <text v-else class="analysis-empty">暂无</text>
       </view>
 
       <view class="questions-card">
-        <text class="analysis-title">逐题评估</text>
+        <view class="card-header">
+          <image class="card-header-icon" src="/static/icons/phosphor/regular/list-checks.svg" mode="aspectFit"></image>
+          <text class="analysis-title">逐题评估</text>
+        </view>
         <view v-if="safeResult.questionResults.length === 0" class="analysis-empty-wrap">
           <text class="analysis-empty">暂无评估详情</text>
         </view>
@@ -327,6 +342,30 @@ export default {
   min-height: 0;
 }
 
+/* Custom Scrollbar — matches dark glassmorphic theme */
+.result-scroll :deep(.uni-scroll-view)::-webkit-scrollbar {
+  width: 6px;
+}
+
+.result-scroll :deep(.uni-scroll-view)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.result-scroll :deep(.uni-scroll-view)::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.result-scroll :deep(.uni-scroll-view)::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Firefox */
+.result-scroll :deep(.uni-scroll-view) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
 .score-card,
 .analysis-card,
 .suggest-card,
@@ -362,18 +401,19 @@ export default {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 10rpx;
+}
+
+.trophy-icon {
+  width: 72rpx;
+  height: 72rpx;
+  filter: brightness(0) saturate(100%) invert(74%) sepia(46%) saturate(959%) hue-rotate(354deg) brightness(101%) contrast(96%);
 }
 
 .score-main {
   font-size: 36rpx;
   color: #ffffff;
   font-weight: 700;
-}
-
-.score-sub {
-  margin-top: 8rpx;
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.55);
 }
 
 .analysis-row {
@@ -384,15 +424,48 @@ export default {
 }
 
 .analysis-card {
-  padding: 18rpx;
+  padding: 20rpx;
+  border-width: 2rpx;
+}
+
+.strength-card {
+  border-color: rgba(134, 239, 172, 0.4);
+}
+
+.weakness-card {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-bottom: 14rpx;
+}
+
+.card-header-icon {
+  width: 36rpx;
+  height: 36rpx;
+  flex-shrink: 0;
+  filter: brightness(0) invert(1);
+}
+
+.strength-icon {
+  filter: brightness(0) saturate(100%) invert(85%) sepia(25%) saturate(556%) hue-rotate(85deg) brightness(96%) contrast(92%);
+}
+
+.weakness-icon {
+  filter: brightness(0) saturate(100%) invert(44%) sepia(78%) saturate(2349%) hue-rotate(337deg) brightness(97%) contrast(93%);
+}
+
+.suggest-icon {
+  filter: brightness(0) saturate(100%) invert(69%) sepia(67%) saturate(634%) hue-rotate(356deg) brightness(102%) contrast(93%);
 }
 
 .analysis-title {
-  display: block;
   font-size: 26rpx;
   color: #ffffff;
   font-weight: 600;
-  margin-bottom: 12rpx;
 }
 
 .analysis-list {
@@ -418,12 +491,28 @@ export default {
 
 .suggest-card {
   margin-bottom: 12rpx;
-  padding: 18rpx;
+  padding: 20rpx;
+  border-color: rgba(245, 158, 11, 0.4);
+  border-width: 2rpx;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6rpx;
+}
+
+.suggestion-number {
+  font-size: 23rpx;
+  color: rgba(245, 158, 11, 0.9);
+  font-weight: 500;
+  line-height: 1.45;
+  flex-shrink: 0;
 }
 
 .questions-card {
   margin-bottom: 12rpx;
-  padding: 18rpx;
+  padding: 20rpx;
 }
 
 .question-item {
@@ -475,28 +564,30 @@ export default {
 
 .question-score {
   font-size: 22rpx;
-  color: #93c5fd;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
 }
 
 .question-status {
   font-size: 20rpx;
-  padding: 4rpx 10rpx;
-  border-radius: 999rpx;
+  font-weight: 500;
+  padding: 6rpx 14rpx;
+  border-radius: 8rpx;
 }
 
 .question-status-correct {
-  color: #86efac;
-  background: rgba(134, 239, 172, 0.16);
+  color: #10B981;
+  background: rgba(16, 185, 129, 0.2);
 }
 
 .question-status-wrong {
-  color: #fca5a5;
-  background: rgba(252, 165, 165, 0.16);
+  color: #EF4444;
+  background: rgba(239, 68, 68, 0.2);
 }
 
 .question-status-partial {
-  color: #fcd34d;
-  background: rgba(252, 211, 77, 0.16);
+  color: #F59E0B;
+  background: rgba(245, 158, 11, 0.2);
 }
 
 .question-expanded {

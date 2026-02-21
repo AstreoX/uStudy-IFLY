@@ -42,7 +42,7 @@
 
       <view class="question-wrap">
         <view class="question-header">
-          <view class="question-type-tag">
+          <view class="question-type-tag" :class="`question-type-${currentQuestion.type}`">
             <text class="question-type-tag-text">{{ questionTypeLabel(currentQuestion.type) }}</text>
           </view>
           <text class="question-order">第 {{ currentIndex + 1 }} 题</text>
@@ -425,18 +425,49 @@ export default {
 }
 
 .question-type-tag {
-  height: 44rpx;
-  padding: 0 16rpx;
-  border-radius: 999rpx;
-  border: 1rpx solid rgba(96, 165, 250, 0.4);
-  background: rgba(96, 165, 250, 0.16);
+  padding: 8rpx 16rpx;
+  border-radius: 8rpx;
   display: flex;
   align-items: center;
+  background: rgba(96, 165, 250, 0.2);
 }
 
 .question-type-tag-text {
   font-size: 22rpx;
-  color: #93c5fd;
+  font-weight: 500;
+  color: #60a5fa;
+}
+
+.question-type-single {
+  background: rgba(0, 136, 255, 0.2);
+}
+
+.question-type-single .question-type-tag-text {
+  color: #0088FF;
+}
+
+.question-type-multiple {
+  background: rgba(139, 92, 246, 0.2);
+}
+
+.question-type-multiple .question-type-tag-text {
+  color: #8B5CF6;
+}
+
+.question-type-truefalse {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.question-type-truefalse .question-type-tag-text {
+  color: #10B981;
+}
+
+.question-type-shortanswer {
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.question-type-shortanswer .question-type-tag-text {
+  color: #F59E0B;
 }
 
 .question-order {

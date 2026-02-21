@@ -196,9 +196,27 @@ export default {
   overflow-y: auto;
 }
 
-/* Hide scrollbar */
-.prev-list::-webkit-scrollbar {
-  display: none;
+/* Custom Scrollbar — matches dark glassmorphic theme */
+.prev-list :deep(.uni-scroll-view)::-webkit-scrollbar {
+  width: 6px;
+}
+
+.prev-list :deep(.uni-scroll-view)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.prev-list :deep(.uni-scroll-view)::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.prev-list :deep(.uni-scroll-view)::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.prev-list :deep(.uni-scroll-view) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
 .prev-item {
