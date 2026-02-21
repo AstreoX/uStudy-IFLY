@@ -1,13 +1,20 @@
-const USE_PRODUCTION = true
 const LOCAL_BASE_URL = 'http://localhost:8000'
-const PRODUCTION_BASE_URL = 'http://121.199.164.168:8000'
+const PRODUCTION_BASE_URL = ''
 
-const DEFAULT_BASE_URL = USE_PRODUCTION ? PRODUCTION_BASE_URL : LOCAL_BASE_URL
+function isProduction() {
+  try {
+    return process.env.NODE_ENV === 'production'
+  } catch (error) {
+    return false
+  }
+}
 
 function resolveBaseUrl() {
-  if (USE_PRODUCTION) {
+  if (isProduction()) {
+    // Production uses same-origin API (e.g. https://ustudy.top/api) via Nginx reverse proxy.
     return PRODUCTION_BASE_URL
   }
+
   try {
     if (typeof window !== 'undefined' && window.location) {
       const host = window.location.hostname || 'localhost'
@@ -16,7 +23,8 @@ function resolveBaseUrl() {
   } catch (error) {
     // ignore
   }
-  return DEFAULT_BASE_URL
+
+  return LOCAL_BASE_URL
 }
 
 const API_BASE_URL = resolveBaseUrl()
