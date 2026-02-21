@@ -64,7 +64,7 @@
             class="picker-item"
             @tap="handleAddWidget(item)"
           >
-            <text class="picker-icon">{{ item.icon }}</text>
+            <image class="picker-icon" :src="item.icon" mode="aspectFit" />
             <view class="picker-item-info">
               <text class="picker-item-label">{{ item.label }}</text>
               <text class="picker-item-desc">{{ item.desc }}</text>
@@ -85,6 +85,13 @@
         />
       </view>
     </view>
+
+    <ActivationModal
+      :visible="showActivationModal"
+      :mandatory="true"
+      @success="handleActivationSuccess"
+      @close="handleActivationClose"
+    />
   </view>
 </template>
 
@@ -92,13 +99,18 @@
 import HomeSidebar from '@/components/layout/HomeSidebar.vue'
 import WidgetGrid from '@/components/widgets/WidgetGrid.vue'
 import DailyQuoteBar from '@/components/widgets/DailyQuoteBar.vue'
+import ActivationModal from '@/components/activation-modal/activation-modal.vue'
+import { getMe } from '@/api/auth'
+import { useUserStore } from '@/store/user'
 import { useWidgetStore, WIDGET_CATALOG } from '@/store/widgets'
+import { getTokens } from '@/utils/storage'
 
 export default {
   components: {
     HomeSidebar,
     WidgetGrid,
-    DailyQuoteBar
+    DailyQuoteBar,
+    ActivationModal
   },
   data() {
     return {
@@ -106,11 +118,47 @@ export default {
       selectedSpaceId: null,
       editMode: false,
       showPicker: false,
+      showActivationModal: false,
       widgetStore: useWidgetStore(),
       catalog: WIDGET_CATALOG
     }
   },
+  onShow() {
+    this.syncActivationState()
+  },
   methods: {
+    isActivatedTier(tier) {
+      return typeof tier === 'string' && tier.toUpperCase() === 'ALPHA'
+    },
+    async syncActivationState() {
+      const tokens = getTokens()
+      if (!tokens || !tokens.access_token) {
+        this.showActivationModal = false
+        return
+      }
+
+      try {
+        const user = await getMe()
+        const userStore = useUserStore()
+        userStore.setUser(user)
+        this.showActivationModal = !this.isActivatedTier(user.subscription_tier)
+      } catch (error) {
+        this.showActivationModal = false
+      }
+    },
+    handleActivationSuccess(response) {
+      const userStore = useUserStore()
+      userStore.updateSubscription(
+        response.subscription_tier,
+        response.subscription_expires_at
+      )
+      this.showActivationModal = false
+    },
+    handleActivationClose() {
+      const userStore = useUserStore()
+      const tier = userStore.user?.subscription_tier
+      this.showActivationModal = !this.isActivatedTier(tier)
+    },
     toggleEditMode() {
       this.editMode = !this.editMode
       if (!this.editMode) {
@@ -390,10 +438,11 @@ export default {
 }
 
 .picker-icon {
-  font-size: 20px;
-  width: 32px;
-  text-align: center;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
+  opacity: 0.92;
+  filter: brightness(0) invert(1);
 }
 
 .picker-item-info {

@@ -9,6 +9,22 @@
 			}
 		},
 		{
+			"path": "pages/register/register",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "注册",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/activation/activation",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "激活",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
 			"path": "pages/index/index",
 			"style": {
 				"navigationStyle": "custom",

@@ -18,15 +18,15 @@ const DEFAULT_LAYOUT = [
 ]
 
 export const WIDGET_CATALOG = [
-  { type: 'calendar',  variant: 'large',   w: 2, h: 2, label: 'Calendar',       icon: '\uD83D\uDCC5', desc: '2\u00D72 month view' },
-  { type: 'clock',     variant: 'digital', w: 2, h: 1, label: 'Digital Clock',   icon: '\uD83D\uDD70\uFE0F',  desc: '2\u00D71 time display' },
-  { type: 'clock',     variant: 'analog',  w: 2, h: 1, label: 'Analog Clock',    icon: '\uD83D\uDD50',  desc: '2\u00D71 clock face' },
-  { type: 'weather',   variant: 'small',   w: 2, h: 1, label: 'Weather',         icon: '\u26C5',  desc: '2\u00D71 compact' },
-  { type: 'weather',   variant: 'large',   w: 2, h: 1, label: 'Weather Detail',  icon: '\uD83C\uDF24\uFE0F',  desc: '2\u00D71 with link' },
-  { type: 'weather',   variant: 'mini',    w: 1, h: 1, label: 'Weather Mini',    icon: '\uD83C\uDF27\uFE0F',  desc: '1\u00D71 compact' },
-  { type: 'subject',   variant: 'default', w: 3, h: 2, label: 'Subject',         icon: '\uD83D\uDCDA',  desc: '3\u00D72 progress card' },
-  { type: 'previous',  variant: 'default', w: 2, h: 3, label: 'Previous',        icon: '\uD83D\uDCCB',  desc: '2\u00D73 history list' },
-  { type: 'updates',   variant: 'default', w: 3, h: 3, label: 'Updates',         icon: '\uD83D\uDD14',  desc: '3\u00D73 notifications' }
+  { type: 'calendar',  variant: 'large',   w: 2, h: 2, label: '日历',             icon: '/static/icons/phosphor/widget-picker/widget-calendar.svg',        desc: '2\u00D72 month view' },
+  { type: 'clock',     variant: 'digital', w: 2, h: 1, label: '数字时钟',         icon: '/static/icons/phosphor/widget-picker/widget-digital-clock.svg',   desc: '2\u00D71 time display' },
+  { type: 'clock',     variant: 'analog',  w: 2, h: 1, label: '模拟时钟',         icon: '/static/icons/phosphor/widget-picker/widget-analog-clock.svg',    desc: '2\u00D71 clock face' },
+  { type: 'weather',   variant: 'small',   w: 2, h: 1, label: '天气',             icon: '/static/icons/phosphor/widget-picker/widget-weather.svg',         desc: '2\u00D71 compact' },
+  { type: 'weather',   variant: 'large',   w: 2, h: 1, label: '详细天气',         icon: '/static/icons/phosphor/widget-picker/widget-weather-detail.svg',  desc: '2\u00D71 with link' },
+  { type: 'weather',   variant: 'mini',    w: 1, h: 1, label: '迷你天气',         icon: '/static/icons/phosphor/widget-picker/widget-weather-mini.svg',    desc: '1\u00D71 compact' },
+  { type: 'subject',   variant: 'default', w: 3, h: 2, label: '学习空间卡片',     icon: '/static/icons/phosphor/widget-picker/widget-space-card.svg',      desc: '3\u00D72 progress card' },
+  { type: 'previous',  variant: 'default', w: 2, h: 3, label: '学习空间（汇总）', icon: '/static/icons/phosphor/widget-picker/widget-space-summary.svg',   desc: '2\u00D73 history list' },
+  { type: 'updates',   variant: 'default', w: 3, h: 3, label: '学习动态',         icon: '/static/icons/phosphor/widget-picker/widget-updates.svg',         desc: '3\u00D73 notifications' }
 ]
 
 export const WIDGET_SIZES = {

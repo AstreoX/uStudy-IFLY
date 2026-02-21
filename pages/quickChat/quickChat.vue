@@ -298,11 +298,11 @@
               <view v-if="showAttachMenu" class="attach-menu">
                 <view class="attach-menu-item" @tap="pickImage">
                   <image class="attach-menu-icon" mode="aspectFit" src="/static/icons/phosphor/regular/attach-image-white.svg" />
-                  <text class="attach-menu-label">Image</text>
+                  <text class="attach-menu-label">图片</text>
                 </view>
                 <view class="attach-menu-item" @tap="pickFile">
                   <image class="attach-menu-icon" mode="aspectFit" src="/static/icons/phosphor/flat-regular/attach-link-white.svg" />
-                  <text class="attach-menu-label">File</text>
+                  <text class="attach-menu-label">文件</text>
                 </view>
               </view>
             </transition>

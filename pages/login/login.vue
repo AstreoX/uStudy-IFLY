@@ -75,7 +75,7 @@
           <text class="btn-text">{{ isSubmitting ? '登录中...' : '登 录' }}</text>
         </button>
 
-        <view class="register-link">
+        <view class="register-link" @tap="handleGoRegister">
           <text class="register-text">没有账户？</text>
           <text class="register-text-highlight">注册</text>
         </view>
@@ -218,6 +218,12 @@ export default {
 
     handleForgotPassword() {
       this.showToast('忘记密码功能即将推出')
+    },
+
+    handleGoRegister() {
+      uni.navigateTo({
+        url: '/pages/register/register'
+      })
     }
   }
 }
