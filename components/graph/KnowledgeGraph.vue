@@ -619,8 +619,6 @@ export default {
       this._onMmMove = this.onMinimapMouseMove.bind(this)
       this._onMmUp = this.onMinimapMouseUp.bind(this)
       canvas.addEventListener('mousedown', this._onMmDown)
-      window.addEventListener('mousemove', this._onMmMove)
-      window.addEventListener('mouseup', this._onMmUp)
     },
 
     getMinimapTransform() {
@@ -628,8 +626,8 @@ export default {
       const gw = bounds.maxX - bounds.minX
       const gh = bounds.maxY - bounds.minY
       const pad = Math.max(gw, gh) * 0.1
-      const tw = gw + pad * 2
-      const th = gh + pad * 2
+      const tw = Math.max(gw + pad * 2, 100)
+      const th = Math.max(gh + pad * 2, 100)
       const minimapScale = Math.min(this.minimapWidth / tw, this.minimapHeight / th)
       return {
         minimapScale,
@@ -654,16 +652,20 @@ export default {
 
     drawMinimap() {
       const ctx = this._minimapCtx
-      if (!ctx || this.nodes.length === 0) return
+      if (!ctx) return
+
+      // Always clear (removes stale content when graph becomes empty)
+      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
+      ctx.clearRect(0, 0, this.minimapWidth, this.minimapHeight)
+
+      if (this.nodes.length === 0) return
 
       const { centerX, centerY, graphCenterX, graphCenterY, minimapScale } = this.getMinimapTransform()
       if (!minimapScale || minimapScale <= 0) return
 
       const buckets = this.edgeBuckets || { nonPathEdges: [], pathEdges: [] }
 
-      // Clear
-      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
-      ctx.clearRect(0, 0, this.minimapWidth, this.minimapHeight)
+      ctx.save()
 
       // Draw non-path edges
       if (this.pathHighlight) {
@@ -722,7 +724,7 @@ export default {
         ctx.fill()
       })
 
-      ctx.globalAlpha = 1.0
+      ctx.restore()
 
       // Draw viewport indicator
       if (this.scale > 0 && isFinite(this.offsetX) && isFinite(this.offsetY)) {
@@ -757,6 +759,8 @@ export default {
       e.stopPropagation()
       e.preventDefault()
       this.isMinimapDragging = true
+      window.addEventListener('mousemove', this._onMmMove)
+      window.addEventListener('mouseup', this._onMmUp)
       this.navigateFromMinimap(e)
     },
 
@@ -768,9 +772,12 @@ export default {
 
     onMinimapMouseUp() {
       this.isMinimapDragging = false
+      window.removeEventListener('mousemove', this._onMmMove)
+      window.removeEventListener('mouseup', this._onMmUp)
     },
 
     navigateFromMinimap(e) {
+      if (!this._minimapEl) return
       const rect = this._minimapEl.getBoundingClientRect()
       const localX = e.clientX - rect.left
       const localY = e.clientY - rect.top

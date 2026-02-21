@@ -47,7 +47,7 @@
                 :key="tab.id"
                 class="chrome-tab"
                 :class="{ 'chrome-tab-active': activeTab === tab.id }"
-                @tap="activeTab = tab.id"
+                @tap="handleTabChange(tab.id)"
               >
                 <text class="chrome-tab-label">{{ tab.label }}</text>
               </view>
@@ -63,9 +63,87 @@
                 @node-selected="onNodeSelected"
                 @graph-loaded="onGraphLoaded"
               />
+              <StudyMaterialsPanel
+                v-else-if="activeTab === 'materials'"
+                class="materials-tab-panel"
+                :space-id="spaceId"
+                :user-tier="currentUserTier"
+                :visible="activeTab === 'materials'"
+              />
+              <QuizPanel
+                v-else-if="activeTab === 'quizzes'"
+                :space-id="spaceId"
+                :key="`quiz-panel-${spaceId || 'none'}`"
+              />
+              <template v-else-if="activeTab === 'browser'">
+                <!-- #ifdef H5 -->
+                <view class="browser-panel">
+                  <view class="browser-nav">
+                    <view
+                      class="browser-nav-btn"
+                      :class="{ 'browser-nav-btn-disabled': !canBrowserBack }"
+                      @tap="handleBrowserBack"
+                    >
+                      <image class="browser-nav-icon" mode="aspectFit" src="/static/icons/phosphor/regular/arrow-left-white.svg" />
+                    </view>
+                    <view
+                      class="browser-nav-btn"
+                      :class="{ 'browser-nav-btn-disabled': !canBrowserForward }"
+                      @tap="handleBrowserForward"
+                    >
+                      <image class="browser-nav-icon" mode="aspectFit" src="/static/icons/phosphor/regular/arrow-right-white.svg" />
+                    </view>
+                    <view class="browser-nav-btn" @tap="handleBrowserRefresh">
+                      <image class="browser-nav-icon" mode="aspectFit" src="/static/icons/phosphor/regular/arrow-clockwise-white.svg" />
+                    </view>
+                    <input
+                      class="browser-input"
+                      type="text"
+                      v-model="browserInputUrl"
+                      placeholder="输入网址，例如 example.com"
+                      @confirm="handleBrowserGo"
+                    />
+                    <view class="browser-go-btn" @tap="handleBrowserGo">
+                      <image class="browser-go-icon" mode="aspectFit" src="/static/icons/phosphor/regular/paper-plane-right-white.svg" />
+                    </view>
+                  </view>
+
+                  <view class="browser-frame-wrap">
+                    <iframe
+                      :key="browserFrameKey"
+                      class="browser-iframe"
+                      :src="browserCurrentUrl"
+                      @load="onBrowserFrameLoad"
+                    ></iframe>
+
+                    <view v-if="browserLoading" class="browser-status-overlay">
+                      <text class="browser-status-text">网页加载中...</text>
+                    </view>
+
+                    <view v-if="browserLoadError" class="browser-error-overlay">
+                      <view class="browser-error-card">
+                        <text class="browser-error-title">网页无法在面板内显示</text>
+                        <text class="browser-error-sub">{{ browserErrorMessage }}</text>
+                        <view class="browser-open-external-btn" @tap="openBrowserInNewTab">
+                          <text class="browser-open-external-btn-text">新窗口打开</text>
+                        </view>
+                      </view>
+                    </view>
+                  </view>
+                </view>
+                <!-- #endif -->
+                <!-- #ifndef H5 -->
+                <view class="browser-unsupported">
+                  <text class="placeholder-text">当前平台暂不支持内嵌网页</text>
+                  <text class="placeholder-sub">请在 H5 页面使用自由网页功能</text>
+                </view>
+                <!-- #endif -->
+              </template>
               <template v-else>
-                <text class="placeholder-text">{{ activeTabInfo.placeholder }}</text>
-                <text class="placeholder-sub">{{ activeTabInfo.sub }}</text>
+                <view class="placeholder-wrap">
+                  <text class="placeholder-text">{{ activeTabInfo.placeholder }}</text>
+                  <text class="placeholder-sub">{{ activeTabInfo.sub }}</text>
+                </view>
               </template>
             </view>
 
@@ -76,19 +154,18 @@
                 :class="{ 'graph-action-btn-active': isPathHighlightOn }"
                 @tap="togglePathHighlight"
               >
-                <svg viewBox="0 0 256 256" class="action-icon">
-                  <rect width="256" height="256" fill="none"/>
-                  <path d="M128,120a40,40,0,1,1-40-40A40,40,0,0,1,128,120Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-                  <path d="M96,160v24a8,8,0,0,0,8,8h48a8,8,0,0,0,8-8V131.37" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-                  <path d="M128,80V64a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v48a8,8,0,0,1-8,8H176" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-                </svg>
+                <image
+                  class="action-icon-img"
+                  mode="aspectFit"
+                  src="/static/icons/phosphor/regular/path-white.svg"
+                />
               </view>
               <view class="graph-action-btn">
-                <svg viewBox="0 0 256 256" class="action-icon">
-                  <rect width="256" height="256" fill="none"/>
-                  <line x1="128" y1="40" x2="128" y2="216" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-                  <line x1="40" y1="128" x2="216" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-                </svg>
+                <image
+                  class="action-icon-img"
+                  mode="aspectFit"
+                  src="/static/icons/phosphor/flat-regular/link-white.svg"
+                />
               </view>
             </view>
           </view>
@@ -97,6 +174,69 @@
         <!-- Right Panel: Chat -->
         <view class="panel-chat">
           <view class="panel-chat-inner">
+            <!-- Chat Panel Header -->
+            <view class="chat-panel-header">
+              <view
+                class="chat-header-btn-wrap"
+              >
+                <view
+                  class="chat-header-btn"
+                  :class="{ 'chat-header-btn-disabled': !spaceId }"
+                  @tap="openHistoryPopup"
+                >
+                  <image
+                    class="chat-header-icon"
+                    mode="aspectFit"
+                    src="/static/icons/phosphor/bold/clock-clockwise-white.svg"
+                  />
+                </view>
+
+                <!-- History popup anchored to button -->
+                <transition name="history-fade">
+                  <view v-if="showHistoryPopup" class="history-popup">
+                    <view class="history-popup-header">
+                      <text class="history-popup-title">对话记录</text>
+                      <view class="history-popup-close" @tap="showHistoryPopup = false">
+                        <text class="history-popup-close-text">✕</text>
+                      </view>
+                    </view>
+                    <view v-if="isLoadingConversations" class="history-loading">
+                      <view class="typing-indicator">
+                        <view class="typing-dot"></view>
+                        <view class="typing-dot"></view>
+                        <view class="typing-dot"></view>
+                      </view>
+                    </view>
+                    <scroll-view v-else class="history-list" scroll-y>
+                      <view v-if="historyConversations.length === 0" class="history-empty">
+                        <text class="history-empty-text">暂无对话记录</text>
+                      </view>
+                      <view
+                        v-for="conv in historyConversations"
+                        :key="conv.id"
+                        class="history-item"
+                        :class="{ 'history-item-active': conv.id === conversationId }"
+                        @tap="selectConversation(conv)"
+                      >
+                        <text class="history-item-title">{{ conv.title || 'Untitled' }}</text>
+                        <text class="history-item-date">{{ formatConvDate(conv.updated_at || conv.created_at) }}</text>
+                      </view>
+                    </scroll-view>
+                  </view>
+                </transition>
+              </view>
+              <view
+                class="chat-header-btn"
+                :class="{ 'chat-header-btn-disabled': !spaceId }"
+                @tap="handleNewConversation"
+              >
+                <svg viewBox="0 0 256 256" class="chat-header-icon">
+                  <line x1="40" y1="128" x2="216" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                  <line x1="128" y1="40" x2="128" y2="216" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                </svg>
+              </view>
+            </view>
+
             <!-- Messages Area -->
             <scroll-view
               class="chat-messages-list"
@@ -135,6 +275,20 @@
               >
                 <!-- User message -->
                 <view v-if="msg.role === 'user'" class="message-bubble bubble-user">
+                  <view v-if="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
+                    <template v-for="att in msg.attachments" :key="att.id">
+                      <image
+                        v-if="att.attachment_type === 'image'"
+                        class="msg-attach-img"
+                        :src="att.thumbnail_url || att.file_url"
+                        mode="aspectFit"
+                        @tap="previewImage(att.file_url)"
+                      />
+                      <view v-else class="msg-attach-file" @tap="openFileUrl(att.file_url)">
+                        <text class="msg-attach-file-name">{{ att.original_filename }}</text>
+                      </view>
+                    </template>
+                  </view>
                   <text class="bubble-text">{{ msg.content }}</text>
                 </view>
 
@@ -201,9 +355,62 @@
               <view style="height: 16px;"></view>
             </scroll-view>
 
+            <!-- Attachment Preview Area -->
+            <view v-if="pendingAttachments.length > 0" class="attach-preview-area">
+              <view class="attach-preview-scroll">
+                <view
+                  v-for="(att, idx) in pendingAttachments"
+                  :key="att.id"
+                  class="attach-preview-item"
+                >
+                  <image
+                    v-if="att.type === 'image'"
+                    class="attach-preview-img"
+                    :src="att.localPreview || att.thumbnail_url || att.file_url"
+                    mode="aspectFill"
+                  />
+                  <view v-else class="attach-preview-file">
+                    <text class="attach-preview-file-icon">📄</text>
+                    <text class="attach-preview-file-name">{{ att.original_filename }}</text>
+                  </view>
+                  <view class="attach-preview-remove" @tap="removeAttachment(idx)">✕</view>
+                  <view v-if="att.uploading" class="attach-preview-uploading">
+                    <view class="attach-upload-spinner"></view>
+                  </view>
+                </view>
+              </view>
+            </view>
+
             <!-- Input Bar -->
             <view class="chat-input-bar">
+              <!-- "+" button -->
+              <view class="attach-btn-wrap">
+                <view
+                  class="attach-btn"
+                  :class="{ 'attach-btn-disabled': !spaceId || isSending }"
+                  @tap="toggleAttachMenu"
+                >
+                  <svg viewBox="0 0 256 256" class="attach-btn-icon">
+                    <line x1="40" y1="128" x2="216" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="20"/>
+                    <line x1="128" y1="40" x2="128" y2="216" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="20"/>
+                  </svg>
+                </view>
+                <transition name="attach-menu-fade">
+                  <view v-if="showAttachMenu" class="attach-menu">
+                    <view class="attach-menu-item" @tap="pickImage">
+                      <text class="attach-menu-icon">🖼</text>
+                      <text class="attach-menu-label">图片</text>
+                    </view>
+                    <view class="attach-menu-item" @tap="pickFile">
+                      <text class="attach-menu-icon">📎</text>
+                      <text class="attach-menu-label">文件</text>
+                    </view>
+                  </view>
+                </transition>
+              </view>
+
               <input
+                ref="chatInput"
                 class="chat-input"
                 type="text"
                 placeholder="Ask anything..."
@@ -226,19 +433,30 @@
                 </svg>
               </view>
             </view>
+
+            <!-- Attach menu backdrop -->
+            <view v-if="showAttachMenu" class="attach-menu-backdrop" @tap="showAttachMenu = false"></view>
           </view>
         </view>
       </view>
     </view>
+
+    <!-- History popup backdrop -->
+    <view v-if="showHistoryPopup" class="history-backdrop" @tap="showHistoryPopup = false"></view>
+
   </view>
+
 </template>
 
 <script>
 import HomeSidebar from '@/components/layout/HomeSidebar.vue'
 import KnowledgeGraph from '@/components/graph/KnowledgeGraph.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
+import StudyMaterialsPanel from '@/components/study/StudyMaterialsPanel.vue'
+import QuizPanel from '@/components/study/quiz/QuizPanel.vue'
 import { getSpaces } from '@/api/space'
-import { createConversation, getSpaceConversations, getConversation, sendMessage } from '@/api/chat'
+import { createConversation, getSpaceConversations, getConversation, sendMessage, uploadAttachment, deleteAttachment } from '@/api/chat'
+import { useUserStore } from '@/store/user'
 
 // Tool display name mapping
 const TOOL_DISPLAY_NAMES = {
@@ -312,8 +530,11 @@ const TOOL_ICON_MAP = {
   get_review_events: 'review', mark_review_completed: 'review'
 }
 
+const DEFAULT_BROWSER_URL = 'https://www.wikipedia.org'
+const BROWSER_LOAD_TIMEOUT_MS = 8000
+
 export default {
-  components: { HomeSidebar, KnowledgeGraph, MarkdownRender },
+  components: { HomeSidebar, KnowledgeGraph, MarkdownRender, StudyMaterialsPanel, QuizPanel },
   data() {
     return {
       sidebarCollapsed: false,
@@ -328,6 +549,16 @@ export default {
         { id: 'notes', label: '笔记', placeholder: 'Notes', sub: 'Your study notes and highlights' },
         { id: 'browser', label: '自由网页', placeholder: 'Web Browser', sub: 'Browse the web freely' }
       ],
+      browserInputUrl: DEFAULT_BROWSER_URL,
+      browserCurrentUrl: DEFAULT_BROWSER_URL,
+      browserHistory: [DEFAULT_BROWSER_URL],
+      browserHistoryIndex: 0,
+      browserFrameKey: 1,
+      browserLoading: false,
+      browserLoadError: false,
+      browserErrorMessage: '',
+      browserLoadTimeoutId: null,
+      browserInitialized: false,
 
       // Chat state
       messages: [],
@@ -348,12 +579,32 @@ export default {
       typewriterBuffer: '',
       typewriterTimer: null,
       typewriterMsgId: null,
-      typewriterSpeed: 30
+      typewriterSpeed: 30,
+
+      // Conversation history popup
+      showHistoryPopup: false,
+      historyConversations: [],
+      isLoadingConversations: false,
+
+      // Attachment upload
+      pendingAttachments: [],
+      showAttachMenu: false
     }
   },
   computed: {
     activeTabInfo() {
       return this.tabs.find(t => t.id === this.activeTab) || this.tabs[0]
+    },
+    currentUserTier() {
+      const userStore = useUserStore()
+      const tier = userStore?.user?.subscription_tier
+      return typeof tier === 'string' ? tier.toUpperCase() : 'FREE'
+    },
+    canBrowserBack() {
+      return this.browserHistoryIndex > 0
+    },
+    canBrowserForward() {
+      return this.browserHistoryIndex < this.browserHistory.length - 1
     },
     canSend() {
       return this.spaceId && this.inputText.trim().length > 0 && !this.isSending
@@ -366,6 +617,22 @@ export default {
       this.initConversation()
     }
   },
+  onUnload() {
+    this.clearBrowserLoadTimeout()
+  },
+  mounted() {
+    const inputEl = this.$refs.chatInput?.$el?.querySelector('input')
+    if (inputEl) {
+      inputEl.addEventListener('paste', this.handlePaste)
+    }
+  },
+  beforeUnmount() {
+    const inputEl = this.$refs.chatInput?.$el?.querySelector('input')
+    if (inputEl) {
+      inputEl.removeEventListener('paste', this.handlePaste)
+    }
+    this.cleanupPendingAttachments()
+  },
   methods: {
     async loadSpaceInfo() {
       try {
@@ -377,6 +644,17 @@ export default {
         }
       } catch (error) {
         console.error('[StudyPage] Failed to load space info:', error)
+      }
+    },
+
+    handleTabChange(tabId) {
+      this.activeTab = tabId
+      if (tabId === 'browser' && !this.browserInitialized) {
+        this.browserInitialized = true
+        this.browserLoading = true
+        this.browserLoadError = false
+        this.browserErrorMessage = ''
+        this.scheduleBrowserLoadTimeout()
       }
     },
 
@@ -398,6 +676,7 @@ export default {
       this.isSending = false
       this.activeToolCalls = []
       this.inputText = ''
+      this.cleanupPendingAttachments()
 
       this.spaceId = spaceId
       this.loadSpaceInfo()
@@ -422,6 +701,115 @@ export default {
 
     onGraphLoaded({ nodeCount, edgeCount }) {
       // Graph loaded
+    },
+
+    clearBrowserLoadTimeout() {
+      if (this.browserLoadTimeoutId) {
+        clearTimeout(this.browserLoadTimeoutId)
+        this.browserLoadTimeoutId = null
+      }
+    },
+
+    scheduleBrowserLoadTimeout() {
+      this.clearBrowserLoadTimeout()
+      this.browserLoadTimeoutId = setTimeout(() => {
+        if (!this.browserLoading) return
+        this.browserLoading = false
+        this.browserLoadError = true
+        this.browserErrorMessage = '该网站可能禁止嵌入显示，请尝试在新窗口打开。'
+      }, BROWSER_LOAD_TIMEOUT_MS)
+    },
+
+    normalizeBrowserUrl(raw) {
+      const value = typeof raw === 'string' ? raw.trim() : String(raw || '').trim()
+      if (!value) return ''
+
+      let normalized = value
+      const hasScheme = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(normalized)
+      if (!hasScheme) {
+        normalized = `https://${normalized}`
+      }
+
+      try {
+        const parsed = new URL(normalized)
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return ''
+        }
+        return parsed.toString()
+      } catch (error) {
+        return ''
+      }
+    },
+
+    navigateBrowser(target, pushHistory = true) {
+      const normalized = this.normalizeBrowserUrl(target)
+      if (!normalized) return false
+
+      this.browserCurrentUrl = normalized
+      this.browserInputUrl = normalized
+      this.browserLoading = true
+      this.browserLoadError = false
+      this.browserErrorMessage = ''
+      this.browserFrameKey = this.browserFrameKey + 1
+
+      if (pushHistory) {
+        if (this.browserHistoryIndex < this.browserHistory.length - 1) {
+          this.browserHistory = this.browserHistory.slice(0, this.browserHistoryIndex + 1)
+        }
+
+        const lastUrl = this.browserHistory[this.browserHistory.length - 1]
+        if (lastUrl !== normalized) {
+          this.browserHistory = [...this.browserHistory, normalized]
+        }
+        this.browserHistoryIndex = this.browserHistory.length - 1
+      }
+
+      this.scheduleBrowserLoadTimeout()
+      return true
+    },
+
+    handleBrowserGo() {
+      const ok = this.navigateBrowser(this.browserInputUrl, true)
+      if (!ok) {
+        uni.showToast({ title: '请输入有效的网址', icon: 'none' })
+      }
+    },
+
+    handleBrowserBack() {
+      if (!this.canBrowserBack) return
+
+      const nextIndex = this.browserHistoryIndex - 1
+      this.browserHistoryIndex = nextIndex
+      this.navigateBrowser(this.browserHistory[nextIndex], false)
+    },
+
+    handleBrowserForward() {
+      if (!this.canBrowserForward) return
+
+      const nextIndex = this.browserHistoryIndex + 1
+      this.browserHistoryIndex = nextIndex
+      this.navigateBrowser(this.browserHistory[nextIndex], false)
+    },
+
+    handleBrowserRefresh() {
+      if (!this.browserCurrentUrl) return
+      this.browserLoading = true
+      this.browserLoadError = false
+      this.browserErrorMessage = ''
+      this.browserFrameKey = this.browserFrameKey + 1
+      this.scheduleBrowserLoadTimeout()
+    },
+
+    onBrowserFrameLoad() {
+      this.browserLoading = false
+      this.browserLoadError = false
+      this.browserErrorMessage = ''
+      this.clearBrowserLoadTimeout()
+    },
+
+    openBrowserInNewTab() {
+      if (!this.browserCurrentUrl) return
+      window.open(this.browserCurrentUrl, '_blank', 'noopener,noreferrer')
     },
 
     // ==================== Chat Methods ====================
@@ -453,6 +841,7 @@ export default {
           id: i + 1,
           role: m.role === 'user' ? 'user' : 'ai',
           content: m.content,
+          attachments: m.attachments || [],
           created_at: m.created_at
         }))
         this.nextId = this.messages.length + 1
@@ -468,9 +857,22 @@ export default {
       const text = this.inputText.trim()
       if (!text || !this.spaceId || this.isSending) return
 
+      if (this.pendingAttachments.some(a => a.uploading)) {
+        uni.showToast({ title: '附件上传中，请稍候', icon: 'none' })
+        return
+      }
+
       this.isSending = true
       this.isAutoScrollEnabled = true
       this.inputText = ''
+
+      // Collect attachment IDs and clear pending
+      const attachmentIds = this.pendingAttachments
+        .filter(a => a.id && !String(a.id).startsWith('temp_'))
+        .map(a => a.id)
+      const sentAttachments = [...this.pendingAttachments]
+      this.pendingAttachments = []
+      sentAttachments.forEach(a => { if (a.localPreview) URL.revokeObjectURL(a.localPreview) })
 
       // Create conversation if needed
       if (!this.conversationId) {
@@ -484,9 +886,20 @@ export default {
         }
       }
 
-      // Add user message
+      // Add user message with attachments
       const userMsgId = this.nextId++
-      this.messages.push({ id: userMsgId, role: 'user', content: text })
+      this.messages.push({
+        id: userMsgId,
+        role: 'user',
+        content: text,
+        attachments: sentAttachments.map(a => ({
+          id: a.id,
+          attachment_type: a.type,
+          file_url: a.file_url,
+          thumbnail_url: a.thumbnail_url,
+          original_filename: a.original_filename
+        }))
+      })
 
       // Add AI placeholder (declare all properties upfront for reactivity)
       const aiMsgId = this.nextId++
@@ -579,7 +992,7 @@ export default {
           this.isSending = false
           this.isStreaming = false
         }
-      })
+      }, attachmentIds.length > 0 ? attachmentIds : null)
     },
 
     handleToolCallEvent(aiMsgId, data) {
@@ -829,6 +1242,205 @@ export default {
           streamingMsg.content = 'Response stopped by user.'
         }
       }
+    },
+
+    // ==================== Conversation History ====================
+
+    openHistoryPopup() {
+      if (!this.spaceId) return
+      this.showHistoryPopup = true
+      this.loadConversations()
+    },
+
+    async loadConversations() {
+      this.isLoadingConversations = true
+      try {
+        const result = await getSpaceConversations(this.spaceId)
+        this.historyConversations = result.conversations || result || []
+      } catch (err) {
+        this.historyConversations = []
+        uni.showToast({ title: 'Failed to load history', icon: 'none' })
+      } finally {
+        this.isLoadingConversations = false
+      }
+    },
+
+    selectConversation(conv) {
+      if (conv.id === this.conversationId) {
+        this.showHistoryPopup = false
+        return
+      }
+
+      // Cancel any active streaming
+      this.flushTypewriter()
+      if (this.cancelSSE) {
+        this.cancelSSE()
+        this.cancelSSE = null
+      }
+      this.isStreaming = false
+      this.isSending = false
+      this.activeToolCalls = []
+
+      // Switch to selected conversation
+      this.conversationId = conv.id
+      this.messages = []
+      this.nextId = 1
+      this.showHistoryPopup = false
+      this.loadConversationHistory()
+    },
+
+    handleNewConversation() {
+      if (!this.spaceId) return
+
+      // Cancel any active streaming
+      this.flushTypewriter()
+      if (this.cancelSSE) {
+        this.cancelSSE()
+        this.cancelSSE = null
+      }
+      this.isStreaming = false
+      this.isSending = false
+      this.activeToolCalls = []
+      this.cleanupPendingAttachments()
+
+      // Reset to fresh state — next handleSend will create a new conversation
+      this.messages = []
+      this.conversationId = null
+      this.nextId = 1
+      this.inputText = ''
+    },
+
+    formatConvDate(dateStr) {
+      if (!dateStr) return ''
+      const date = new Date(dateStr)
+      if (isNaN(date.getTime())) return ''
+
+      const now = new Date()
+      const isToday = date.getFullYear() === now.getFullYear()
+        && date.getMonth() === now.getMonth()
+        && date.getDate() === now.getDate()
+
+      if (isToday) {
+        const hh = String(date.getHours()).padStart(2, '0')
+        const mm = String(date.getMinutes()).padStart(2, '0')
+        return `${hh}:${mm}`
+      }
+
+      const isSameYear = date.getFullYear() === now.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+
+      if (isSameYear) {
+        return `${month}/${day}`
+      }
+      return `${date.getFullYear()}/${month}/${day}`
+    },
+
+    // ==================== Attachment Methods ====================
+
+    toggleAttachMenu() {
+      if (!this.spaceId || this.isSending) return
+      this.showAttachMenu = !this.showAttachMenu
+    },
+
+    pickImage() {
+      this.showAttachMenu = false
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = 'image/jpeg,image/png,image/webp,image/gif'
+      input.multiple = true
+      input.onchange = (e) => this.handleFileSelected(e, 'image')
+      input.click()
+    },
+
+    pickFile() {
+      this.showAttachMenu = false
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt'
+      input.multiple = true
+      input.onchange = (e) => this.handleFileSelected(e, 'file')
+      input.click()
+    },
+
+    async handleFileSelected(event, type) {
+      const files = Array.from(event.target.files || [])
+      event.target.value = ''
+
+      const remaining = 9 - this.pendingAttachments.length
+      if (remaining <= 0) {
+        uni.showToast({ title: '最多添加9个附件', icon: 'none' })
+        return
+      }
+      const filesToUpload = files.slice(0, remaining)
+
+      for (const file of filesToUpload) {
+        if (file.size > 10 * 1024 * 1024) {
+          uni.showToast({ title: `${file.name} 超过10MB限制`, icon: 'none' })
+          continue
+        }
+
+        const localPreview = type === 'image' ? URL.createObjectURL(file) : null
+        const tempId = 'temp_' + Date.now() + '_' + Math.random()
+        const tempItem = {
+          id: tempId, type, original_filename: file.name,
+          file_size: file.size, localPreview, uploading: true
+        }
+        this.pendingAttachments = [...this.pendingAttachments, tempItem]
+
+        try {
+          const result = await uploadAttachment(file)
+          const att = result.attachment
+          this.pendingAttachments = this.pendingAttachments.map(a =>
+            a.id === tempId
+              ? { ...att, type: att.attachment_type, localPreview, uploading: false }
+              : a
+          )
+        } catch (err) {
+          this.pendingAttachments = this.pendingAttachments.filter(a => a.id !== tempId)
+          if (localPreview) URL.revokeObjectURL(localPreview)
+          uni.showToast({ title: err.message || '上传失败', icon: 'none' })
+        }
+      }
+    },
+
+    handlePaste(event) {
+      const items = event.clipboardData?.items
+      if (!items) return
+
+      const imageItems = Array.from(items).filter(item => item.type.startsWith('image/'))
+      if (imageItems.length === 0) return
+
+      event.preventDefault()
+      for (const item of imageItems) {
+        const file = item.getAsFile()
+        if (file) {
+          this.handleFileSelected({ target: { files: [file] } }, 'image')
+        }
+      }
+    },
+
+    removeAttachment(index) {
+      const att = this.pendingAttachments[index]
+      if (att.localPreview) URL.revokeObjectURL(att.localPreview)
+      if (att.id && !String(att.id).startsWith('temp_')) {
+        deleteAttachment(att.id).catch(() => {})
+      }
+      this.pendingAttachments = this.pendingAttachments.filter((_, i) => i !== index)
+    },
+
+    previewImage(url) {
+      uni.previewImage({ urls: [url], current: url })
+    },
+
+    openFileUrl(url) {
+      window.open(url, '_blank')
+    },
+
+    cleanupPendingAttachments() {
+      this.pendingAttachments.forEach(a => { if (a.localPreview) URL.revokeObjectURL(a.localPreview) })
+      this.pendingAttachments = []
+      this.showAttachMenu = false
     }
   }
 }
@@ -986,6 +1598,7 @@ export default {
   --tab-strip: #222238;
   --tab-active: #16162a;
   --tab-hover: #1c1c34;
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -1069,21 +1682,197 @@ export default {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+.materials-tab-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Browser Panel */
+.browser-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.browser-nav {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  flex-shrink: 0;
+}
+
+.browser-nav-btn,
+.browser-go-btn {
+  height: 32px;
+  min-width: 42px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.82);
+  transition: background 0.15s ease, border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.browser-nav-btn:hover,
+.browser-go-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.browser-nav-btn-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.browser-nav-icon,
+.browser-go-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.browser-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 8, 20, 0.7);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  padding: 0 10px;
+  box-sizing: border-box;
+}
+
+.browser-frame-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: rgba(8, 8, 20, 0.45);
+}
+
+.browser-iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #ffffff;
+}
+
+.browser-status-overlay,
+.browser-error-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.browser-status-overlay {
+  background: rgba(10, 10, 22, 0.45);
+}
+
+.browser-status-text {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+}
+
+.browser-error-overlay {
+  background: rgba(10, 10, 22, 0.7);
+}
+
+.browser-error-card {
+  width: 100%;
+  max-width: 380px;
+  border-radius: 12px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.08);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+}
+
+.browser-error-title {
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.browser-error-sub {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.browser-open-external-btn {
+  height: 32px;
+  width: fit-content;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.browser-open-external-btn-text {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+}
+
+.browser-unsupported {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 0;
+}
+
+.placeholder-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 /* Graph Actions */
 .graph-actions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
   display: flex;
   flex-direction: row;
   justify-content: space-between;
-  align-items: center;
-  padding: 10px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  flex-shrink: 0;
+  align-items: flex-end;
+  padding: 0 16px 16px;
+  pointer-events: none;
 }
 
 .graph-action-btn {
@@ -1096,6 +1885,8 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: auto;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
   transition: background 0.15s ease;
 }
 
@@ -1116,6 +1907,11 @@ export default {
   width: 18px;
   height: 18px;
   color: rgba(255, 255, 255, 0.6);
+}
+
+.action-icon-img {
+  width: 18px;
+  height: 18px;
 }
 
 /* Right Panel - 50% */
@@ -1497,5 +2293,365 @@ export default {
 .placeholder-sub {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.08);
+}
+
+/* Chat Panel Header */
+.chat-panel-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.chat-header-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.chat-header-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.chat-header-btn-disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.chat-header-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* History button wrapper — relative anchor for popup */
+.chat-header-btn-wrap {
+  position: relative;
+}
+
+/* History Backdrop */
+.history-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 90;
+}
+
+/* History Popup — anchored below button */
+.history-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 320px;
+  max-height: 420px;
+  background: rgba(22, 22, 42, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+}
+
+.history-popup-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.history-popup-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.history-popup-close {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.history-popup-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.history-popup-close-text {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1;
+}
+
+.history-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.history-list {
+  flex: 1;
+  min-height: 0;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.history-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.history-empty-text {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 16px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  border-left: 3px solid transparent;
+}
+
+.history-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.history-item-active {
+  background: rgba(59, 130, 246, 0.08);
+  border-left-color: rgba(59, 130, 246, 0.7);
+}
+
+.history-item-active:hover {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.history-item-title {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item-active .history-item-title {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.history-item-date {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+/* History popup transition */
+.history-fade-enter-active,
+.history-fade-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.history-fade-enter-from,
+.history-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* ==================== Attachment Styles ==================== */
+
+/* Attachment preview area */
+.attach-preview-area {
+  padding: 8px 16px 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+.attach-preview-scroll {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  overflow-x: auto;
+}
+.attach-preview-item {
+  position: relative;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.attach-preview-img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  display: block;
+}
+.attach-preview-file {
+  width: 120px;
+  height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px 8px;
+  box-sizing: border-box;
+}
+.attach-preview-file-icon { font-size: 20px; }
+.attach-preview-file-name {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attach-preview-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  line-height: 1;
+}
+.attach-preview-uploading {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.attach-upload-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: attach-spin 0.8s linear infinite;
+}
+@keyframes attach-spin { to { transform: rotate(360deg); } }
+
+/* "+" button */
+.attach-btn-wrap { position: relative; flex-shrink: 0; }
+.attach-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.attach-btn:hover { background: rgba(255, 255, 255, 0.1); }
+.attach-btn-disabled { opacity: 0.4; pointer-events: none; }
+.attach-btn-icon { width: 18px; height: 18px; color: rgba(255, 255, 255, 0.6); }
+
+/* Attach menu popover (pops UP from bottom) */
+.attach-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  background: rgba(30, 32, 40, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 4px;
+  min-width: 120px;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.attach-menu-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.attach-menu-item:hover { background: rgba(255, 255, 255, 0.08); }
+.attach-menu-icon { font-size: 16px; }
+.attach-menu-label { font-size: 13px; color: rgba(255, 255, 255, 0.85); }
+.attach-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+
+/* Attach menu transition */
+.attach-menu-fade-enter-active,
+.attach-menu-fade-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.attach-menu-fade-enter-from,
+.attach-menu-fade-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+/* Message attachments */
+.msg-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.msg-attach-img {
+  max-width: 200px;
+  max-height: 150px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.msg-attach-file {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.msg-attach-file-name {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
