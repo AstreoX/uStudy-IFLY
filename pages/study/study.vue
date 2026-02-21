@@ -21,15 +21,18 @@
       <view class="study-header">
         <text class="study-header-title">{{ spaceName }}</text>
         <view class="study-header-actions">
-          <view class="settings-btn" @tap="openSettings">
-            <svg viewBox="0 0 256 256" class="settings-icon">
+          <view
+            class="delete-space-btn"
+            :class="{ 'delete-space-btn-disabled': !spaceId || isDeletingSpace }"
+            @tap="handleDeleteSpace"
+          >
+            <svg viewBox="0 0 256 256" class="delete-space-icon">
               <rect width="256" height="256" fill="none"/>
-              <line x1="40" y1="128" x2="216" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-              <line x1="40" y1="64" x2="216" y2="64" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-              <line x1="40" y1="192" x2="216" y2="192" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-              <circle cx="128" cy="128" r="12" fill="currentColor"/>
-              <circle cx="176" cy="64" r="12" fill="currentColor"/>
-              <circle cx="80" cy="192" r="12" fill="currentColor"/>
+              <line x1="216" y1="56" x2="40" y2="56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+              <line x1="104" y1="104" x2="104" y2="168" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+              <line x1="152" y1="104" x2="152" y2="168" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+              <path d="M200,56V208a8,8,0,0,1-8,8H64a8,8,0,0,1-8-8V56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+              <path d="M168,56V40a16,16,0,0,0-16-16H104A16,16,0,0,0,88,40V56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
             </svg>
           </view>
         </view>
@@ -72,6 +75,7 @@
                 :visible="activeTab === 'materials'"
               />
               <QuizPanel
+                ref="quizPanel"
                 v-else-if="activeTab === 'quizzes'"
                 :space-id="spaceId"
                 :key="`quiz-panel-${spaceId || 'none'}`"
@@ -349,6 +353,30 @@
 
                         <!-- Tool arguments -->
                         <text v-if="seg.toolCall.arguments" class="tool-call-args">{{ formatToolArgs(seg.toolCall.arguments) }}</text>
+
+                        <!-- Quiz entry card -->
+                        <view
+                          v-if="seg.toolCall.tool === 'generate_test' && seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.quizId"
+                          class="quiz-entry-card"
+                          @click="handleQuizEntryClick(seg.toolCall.quizId)"
+                        >
+                          <view class="quiz-entry-content">
+                            <view class="quiz-entry-icon">
+                              <svg viewBox="0 0 256 256" width="20" height="20">
+                                <path d="M200,40H56A16,16,0,0,0,40,56V200a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V56A16,16,0,0,0,200,40Zm-36.69,77.49-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L101.65,156.5l50.34-50.34a8,8,0,0,1,11.32,11.32Z" fill="currentColor"/>
+                              </svg>
+                            </view>
+                            <view class="quiz-entry-text">
+                              <text class="quiz-entry-title">测试题已生成</text>
+                              <text class="quiz-entry-subtitle">点击进入测试</text>
+                            </view>
+                            <view class="quiz-entry-arrow">
+                              <svg viewBox="0 0 256 256" width="16" height="16">
+                                <polyline points="96 48 176 128 96 208" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                              </svg>
+                            </view>
+                          </view>
+                        </view>
                       </view>
                     </view>
                   </template>
@@ -432,7 +460,7 @@
               <!-- Stop button during streaming -->
               <view v-if="isStreaming" class="chat-stop-btn" @tap="handleStop">
                 <svg viewBox="0 0 256 256" class="stop-icon">
-                  <rect x="72" y="72" width="112" height="112" rx="10" fill="currentColor"/>
+                  <rect x="52" y="52" width="152" height="152" rx="12" fill="currentColor"/>
                 </svg>
               </view>
               <!-- Send button -->
@@ -464,9 +492,10 @@ import KnowledgeGraph from '@/components/graph/KnowledgeGraph.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 import StudyMaterialsPanel from '@/components/study/StudyMaterialsPanel.vue'
 import QuizPanel from '@/components/study/quiz/QuizPanel.vue'
-import { getSpaces } from '@/api/space'
+import { getSpaces, deleteSpace, getTaskStatus } from '@/api/space'
 import { createConversation, getSpaceConversations, getConversation, sendMessage, uploadAttachment, deleteAttachment } from '@/api/chat'
 import { useUserStore } from '@/store/user'
+import { useSpacesStore } from '@/store/spaces'
 
 // Tool display name mapping
 const TOOL_DISPLAY_NAMES = {
@@ -610,7 +639,15 @@ export default {
 
       // Attachment upload
       pendingAttachments: [],
-      showAttachMenu: false
+      showAttachMenu: false,
+
+      // Space delete
+      isDeletingSpace: false,
+
+      // Quiz generation polling
+      isGeneratingQuiz: false,
+      activeQuizId: null,
+      quizPollTimer: null
     }
   },
   computed: {
@@ -655,6 +692,7 @@ export default {
       inputEl.removeEventListener('paste', this.handlePaste)
     }
     this.cleanupPendingAttachments()
+    this.clearQuizPollState()
     if (this._graphRefreshTimer) {
       clearTimeout(this._graphRefreshTimer)
       this._graphRefreshTimer = null
@@ -662,13 +700,15 @@ export default {
   },
   methods: {
     async loadSpaceInfo() {
+      if (!this.spaceId) {
+        this.spaceName = 'Study'
+        return
+      }
       try {
         const res = await getSpaces()
         const spaces = res.data || res || []
         const space = spaces.find(s => String(s.id) === String(this.spaceId))
-        if (space) {
-          this.spaceName = space.name
-        }
+        this.spaceName = space ? space.name : 'Study'
       } catch (error) {
         console.error('[StudyPage] Failed to load space info:', error)
       }
@@ -703,6 +743,9 @@ export default {
         this.cancelSSE = null
       }
 
+      // Clear quiz polling state
+      this.clearQuizPollState()
+
       // Reset chat state
       this.messages = []
       this.conversationId = null
@@ -722,8 +765,56 @@ export default {
       uni.showToast({ title: 'Create space coming soon', icon: 'none' })
     },
 
-    openSettings() {
-      uni.showToast({ title: 'Space settings coming soon', icon: 'none' })
+    resolveDeleteSpaceError(error) {
+      const detail = error?.data?.detail
+      if (typeof detail === 'string') return detail
+      if (typeof detail?.message === 'string') return detail.message
+      if (typeof error?.message === 'string') return error.message
+      return '删除失败，请重试'
+    },
+
+    handleDeleteSpace() {
+      if (!this.spaceId || this.isDeletingSpace) return
+
+      const deletingSpaceId = this.spaceId
+      const deletingSpaceName = this.spaceName || '当前学习空间'
+
+      uni.showModal({
+        title: '删除学习空间',
+        content: `确定要删除「${deletingSpaceName}」吗？该空间内的知识图谱、资料和测试会被永久删除。`,
+        confirmText: '删除',
+        confirmColor: '#EF4444',
+        success: async (res) => {
+          if (!res.confirm || this.isDeletingSpace) return
+
+          this.isDeletingSpace = true
+          uni.showLoading({ title: '删除中...', mask: true })
+
+          try {
+            await deleteSpace(deletingSpaceId)
+
+            const spacesStore = useSpacesStore()
+            await spacesStore.loadSpaces(true)
+            const remainingSpaces = spacesStore.spaces || []
+            const nextSpace = remainingSpaces[0] || null
+
+            uni.hideLoading()
+            uni.showToast({ title: '学习空间已删除', icon: 'success' })
+
+            if (nextSpace) {
+              this.handleSelectSpace(nextSpace.id)
+            } else {
+              this.handleSelectSpace(null)
+            }
+          } catch (error) {
+            console.error('[StudyPage] Failed to delete space:', error)
+            uni.hideLoading()
+            uni.showToast({ title: this.resolveDeleteSpaceError(error), icon: 'none' })
+          } finally {
+            this.isDeletingSpace = false
+          }
+        }
+      })
     },
 
     togglePathHighlight() {
@@ -1144,7 +1235,7 @@ export default {
           msg.content = ''
         }
 
-        const toolCall = { id, tool, arguments: args, status: 'running' }
+        const toolCall = { id, tool, arguments: args, status: 'running', quizId: null }
 
         if (MEMORY_TOOLS.has(tool)) {
           this.memoryToolStartTimes[id] = Date.now()
@@ -1186,6 +1277,10 @@ export default {
           this.scheduleGraphRefresh()
         }
 
+        if (tool === 'generate_test' && success && result?.task_id) {
+          this.handleGenerateTestCompletion(aiMsgId, result.task_id, id)
+        }
+
         if (msg.streamSegments) {
           const seg = msg.streamSegments.find(s => s.type === 'tool' && s.toolCall && s.toolCall.id === id)
           if (seg && toolCall) {
@@ -1198,6 +1293,117 @@ export default {
       if (this.isAutoScrollEnabled) {
         this.$nextTick(() => this.scrollToBottom())
       }
+    },
+
+    async handleGenerateTestCompletion(aiMsgId, taskId, toolCallId) {
+      if (this.isGeneratingQuiz) return
+      this.isGeneratingQuiz = true
+
+      const maxAttempts = 150 // 150 * 2s = 5 min max
+      const pollInterval = 2000
+      let attempts = 0
+      let consecutiveErrors = 0
+
+      try {
+        while (attempts < maxAttempts) {
+          if (!this.isGeneratingQuiz) return
+
+          try {
+            const result = await getTaskStatus(taskId)
+            consecutiveErrors = 0
+
+            if (result.status === 'done' && result.quiz_id) {
+              this.activeQuizId = result.quiz_id
+              this.updateToolCallWithQuizId(aiMsgId, result.quiz_id, toolCallId)
+              return
+            }
+
+            if (result.status === 'failed') {
+              this.appendErrorToMessage(aiMsgId, `测试生成失败：${result.error_message || '未知错误'}`)
+              return
+            }
+          } catch (error) {
+            if (error.statusCode === 401 || error.statusCode === 403) {
+              this.appendErrorToMessage(aiMsgId, '认证失败，请重新登录')
+              return
+            }
+            consecutiveErrors++
+            if (consecutiveErrors >= 3) {
+              this.appendErrorToMessage(aiMsgId, `轮询失败：${error.message || '网络错误'}`)
+              return
+            }
+          }
+
+          await new Promise(resolve => {
+            this.quizPollTimer = setTimeout(resolve, pollInterval)
+          })
+          attempts++
+        }
+
+        this.appendErrorToMessage(aiMsgId, '测试生成超时，请稍后在测试题标签页查看')
+      } finally {
+        this.isGeneratingQuiz = false
+        this.quizPollTimer = null
+      }
+    },
+
+    updateToolCallWithQuizId(aiMsgId, quizId, toolCallId) {
+      const msg = this.messages.find(m => m.id === aiMsgId)
+      if (!msg) return
+
+      const updateSegments = (segments) => {
+        if (!Array.isArray(segments)) return
+        const seg = segments.find(s => s.type === 'tool' && s.toolCall?.id === toolCallId)
+        if (seg) {
+          seg.toolCall = { ...seg.toolCall, quizId }
+        }
+      }
+
+      updateSegments(msg.segments)
+      updateSegments(msg.streamSegments)
+      this.$forceUpdate()
+
+      if (this.isAutoScrollEnabled) {
+        this.$nextTick(() => this.scrollToBottom())
+      }
+    },
+
+    appendErrorToMessage(aiMsgId, errorMsg) {
+      const msg = this.messages.find(m => m.id === aiMsgId)
+      if (!msg) return
+
+      const segments = msg.segments || msg.streamSegments
+      if (Array.isArray(segments)) {
+        const lastText = [...segments].reverse().find(s => s.type === 'text')
+        if (lastText) {
+          lastText.content = (lastText.content || '') + `\n\n${errorMsg}`
+        } else {
+          segments.push({ type: 'text', content: `\n\n${errorMsg}` })
+        }
+      } else if (msg.content !== undefined) {
+        msg.content = (msg.content || '') + `\n\n${errorMsg}`
+      } else {
+        msg.content = errorMsg
+      }
+      this.$forceUpdate()
+    },
+
+    handleQuizEntryClick(quizId) {
+      this.activeTab = 'quizzes'
+      this.$nextTick(() => {
+        if (this.$refs.quizPanel) {
+          this.$refs.quizPanel.loadQuizzes()
+        }
+      })
+    },
+
+    clearQuizPollState() {
+      if (this.quizPollTimer) {
+        clearTimeout(this.quizPollTimer)
+        this.quizPollTimer = null
+      }
+      this.isGeneratingQuiz = false
+      this.activeQuizId = null
     },
 
     getMessageSegments(msg) {
@@ -1689,27 +1895,33 @@ export default {
   gap: 8px;
 }
 
-.settings-btn {
+.delete-space-btn {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.42);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
 }
 
-.settings-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+.delete-space-btn:hover {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.62);
 }
 
-.settings-icon {
+.delete-space-btn-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.delete-space-icon {
   width: 18px;
   height: 18px;
-  color: rgba(255, 255, 255, 0.7);
+  color: #F87171;
 }
 
 /* Two-Panel Split */
@@ -2448,8 +2660,8 @@ export default {
 }
 
 .stop-icon {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   color: rgba(239, 68, 68, 0.9);
 }
 
@@ -2845,5 +3057,73 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Quiz Entry Card */
+.quiz-entry-card {
+  margin-top: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(59, 130, 246, 0.08) 100%);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.quiz-entry-card:hover {
+  border-color: rgba(99, 102, 241, 0.6);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.18) 0%, rgba(59, 130, 246, 0.12) 100%);
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.15);
+}
+
+.quiz-entry-card:active {
+  transform: scale(0.98);
+}
+
+.quiz-entry-content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.quiz-entry-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(99, 102, 241, 0.9);
+  flex-shrink: 0;
+}
+
+.quiz-entry-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.quiz-entry-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.quiz-entry-subtitle {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.quiz-entry-arrow {
+  display: flex;
+  align-items: center;
+  color: rgba(255, 255, 255, 0.4);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.quiz-entry-card:hover .quiz-entry-arrow {
+  transform: translateX(3px);
+  color: rgba(255, 255, 255, 0.6);
 }
 </style>

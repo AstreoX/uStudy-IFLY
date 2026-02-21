@@ -9,6 +9,17 @@ export function getSpaces() {
   })
 }
 
+/**
+ * 删除学习空间
+ * @param {string|number} spaceId
+ */
+export function deleteSpace(spaceId) {
+  return request({
+    url: `/api/spaces/${spaceId}`,
+    method: 'DELETE'
+  })
+}
+
 export function getSpaceGraph(spaceId) {
   return request({
     url: `/api/spaces/${spaceId}/graph?_t=${Date.now()}`,
@@ -170,6 +181,18 @@ export async function uploadSpaceDocumentH5(spaceId, file, accessToken) {
 export function getDocumentProcessingStatus(spaceId, documentId) {
   return request({
     url: `/api/rag/spaces/${spaceId}/documents/${documentId}/processing`,
+    method: 'GET'
+  })
+}
+
+/**
+ * 查询异步任务状态
+ * @param {string} taskId - 任务 ID
+ * @returns {Promise<Object>} AgentTaskResultResponse
+ */
+export function getTaskStatus(taskId) {
+  return request({
+    url: `/api/agents/tasks/${taskId}`,
     method: 'GET'
   })
 }

@@ -83,6 +83,88 @@ export function deleteAttachment(attachmentId) {
   })
 }
 
+// ==================== Quick Chat API ====================
+
+/**
+ * Create a quick chat conversation (no learning space)
+ * @param {string} title - Conversation title
+ * @returns {Promise<Object>} ConversationResponse
+ */
+export function createQuickChatConversation(title) {
+  return request({
+    url: '/api/quick-chat/conversations',
+    method: 'POST',
+    data: { title }
+  })
+}
+
+/**
+ * Get quick chat conversations
+ * @returns {Promise<Object>} { conversations: [] }
+ */
+export function getQuickChatConversations() {
+  return request({
+    url: '/api/quick-chat/conversations',
+    method: 'GET'
+  })
+}
+
+/**
+ * Send a quick chat message (SSE streaming)
+ * @param {string} conversationId - Conversation ID
+ * @param {string} content - Message content
+ * @param {Object} callbacks - Event callbacks
+ * @param {Array<string>} attachmentIds - Attachment IDs (optional)
+ * @returns {Function} Cancel function
+ */
+export function sendQuickChatMessage(conversationId, content, callbacks, attachmentIds = null) {
+  const data = { content }
+  if (attachmentIds && attachmentIds.length > 0) {
+    data.attachment_ids = attachmentIds
+  }
+  return connectSSE({
+    url: `/api/quick-chat/conversations/${conversationId}/messages`,
+    method: 'POST',
+    data,
+    onEvent: (eventType, data) => {
+      switch (eventType) {
+        case 'text_delta':
+          callbacks.onTextDelta?.(data.content)
+          break
+        case 'tool_call':
+          callbacks.onToolCall?.(data)
+          break
+        case 'client_tool_request':
+          callbacks.onClientToolRequest?.(data)
+          break
+        case 'done':
+          callbacks.onDone?.(data.content)
+          break
+        case 'error':
+          callbacks.onError?.(data.message)
+          break
+      }
+    },
+    onComplete: () => callbacks.onComplete?.(),
+    onConnectionError: (err) => callbacks.onError?.(err.message || 'Connection failed')
+  })
+}
+
+/**
+ * Confirm or reject a tool execution
+ * @param {string} conversationId - Conversation ID
+ * @param {string} toolCallId - Tool call ID
+ * @param {Object} data - { tool_name, arguments, confirmed }
+ * @returns {Promise<Object>}
+ */
+export function confirmToolExecution(conversationId, toolCallId, data) {
+  return request({
+    url: `/api/quick-chat/conversations/${conversationId}/tools/${toolCallId}/confirm`,
+    method: 'POST',
+    data
+  })
+}
+
 export function sendMessage(conversationId, content, callbacks, attachmentIds = null) {
   const data = { content }
   if (attachmentIds && attachmentIds.length > 0) {

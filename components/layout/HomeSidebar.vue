@@ -187,7 +187,7 @@ export default {
       menuItems: [
         { id: 'home',    label: 'Home',    expandable: false, route: '/pages/index/index' },
         { id: 'study',   label: 'Study',   expandable: true },
-        { id: 'direct',  label: 'Direct',  expandable: false }
+        { id: 'direct',  label: 'Direct',  expandable: false, route: '/pages/quickChat/quickChat' }
       ]
     }
   },

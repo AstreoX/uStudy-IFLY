@@ -23,6 +23,14 @@
 				"navigationBarTitleText": "Study",
 				"backgroundColor": "#0A0A12"
 			}
+		},
+		{
+			"path": "pages/quickChat/quickChat",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "快速对话",
+				"backgroundColor": "#0A0A12"
+			}
 		}
 	],
 	"globalStyle": {
