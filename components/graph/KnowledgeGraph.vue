@@ -3,6 +3,9 @@
     <!-- Canvas container (native canvas created programmatically to bypass uni-app wrapper) -->
     <view ref="canvasWrap" class="kg-canvas"></view>
 
+    <!-- Minimap -->
+    <view ref="minimapWrap" class="kg-minimap"></view>
+
     <!-- Node popup -->
     <view
       v-if="selectedNode"
@@ -99,7 +102,14 @@ export default {
 
       // Render throttling
       renderPending: false,
-      ctx: null
+      ctx: null,
+
+      // Minimap
+      minimapWidth: 160,
+      minimapHeight: 120,
+      minimapPending: false,
+      lastMinimapRenderAt: 0,
+      isMinimapDragging: false
     }
   },
 
@@ -135,6 +145,7 @@ export default {
     },
     pathHighlight() {
       this.requestRender()
+      this.requestMinimapRender(true)
     }
   },
 
@@ -158,6 +169,14 @@ export default {
       this._canvasEl.remove()
       this._canvasEl = null
     }
+    if (this._minimapEl) {
+      this._minimapEl.removeEventListener('mousedown', this._onMmDown)
+      this._minimapEl.remove()
+      this._minimapEl = null
+    }
+    window.removeEventListener('mousemove', this._onMmMove)
+    window.removeEventListener('mouseup', this._onMmUp)
+    this._minimapCtx = null
   },
 
   methods: {
@@ -199,6 +218,8 @@ export default {
         this.requestRender()
       })
       this._resizeObserver.observe(parentEl)
+
+      this.initMinimap()
     },
 
     resizeCanvas() {
@@ -253,6 +274,7 @@ export default {
 
         // Render
         this.drawGraph()
+        this.requestMinimapRender(true)
 
         this.$emit('graph-loaded', { nodeCount: nodes.length, edgeCount: edges.length })
       } catch (err) {
@@ -450,6 +472,7 @@ export default {
       })
 
       ctx.restore()
+      this.requestMinimapRender()
     },
 
     // --- Mouse interactions ---
@@ -522,6 +545,7 @@ export default {
         node.collapsed = !node.collapsed
         this.updateVisibleNodesCache()
         this.requestRender()
+        this.requestMinimapRender(true)
       }
     },
 
@@ -571,6 +595,195 @@ export default {
       }
 
       return null
+    },
+
+    // --- Minimap ---
+    initMinimap() {
+      const wrap = this.$refs.minimapWrap
+      if (!wrap) return
+      const parentEl = wrap.$el || wrap
+
+      const canvas = document.createElement('canvas')
+      const dpr = this.dpr
+      canvas.width = this.minimapWidth * dpr
+      canvas.height = this.minimapHeight * dpr
+      canvas.style.display = 'block'
+      canvas.style.width = this.minimapWidth + 'px'
+      canvas.style.height = this.minimapHeight + 'px'
+      parentEl.appendChild(canvas)
+      this._minimapEl = canvas
+      this._minimapCtx = canvas.getContext('2d')
+      this._minimapCtx.scale(dpr, dpr)
+
+      this._onMmDown = this.onMinimapMouseDown.bind(this)
+      this._onMmMove = this.onMinimapMouseMove.bind(this)
+      this._onMmUp = this.onMinimapMouseUp.bind(this)
+      canvas.addEventListener('mousedown', this._onMmDown)
+      window.addEventListener('mousemove', this._onMmMove)
+      window.addEventListener('mouseup', this._onMmUp)
+    },
+
+    getMinimapTransform() {
+      const bounds = this.getGraphBounds()
+      const gw = bounds.maxX - bounds.minX
+      const gh = bounds.maxY - bounds.minY
+      const pad = Math.max(gw, gh) * 0.1
+      const tw = gw + pad * 2
+      const th = gh + pad * 2
+      const minimapScale = Math.min(this.minimapWidth / tw, this.minimapHeight / th)
+      return {
+        minimapScale,
+        centerX: this.minimapWidth / 2,
+        centerY: this.minimapHeight / 2,
+        graphCenterX: (bounds.minX + bounds.maxX) / 2,
+        graphCenterY: (bounds.minY + bounds.maxY) / 2
+      }
+    },
+
+    requestMinimapRender(force = false) {
+      const now = Date.now()
+      if (!force && (now - this.lastMinimapRenderAt < 100)) return
+      if (this.minimapPending) return
+      this.minimapPending = true
+      requestAnimationFrame(() => {
+        this.minimapPending = false
+        this.lastMinimapRenderAt = Date.now()
+        this.drawMinimap()
+      })
+    },
+
+    drawMinimap() {
+      const ctx = this._minimapCtx
+      if (!ctx || this.nodes.length === 0) return
+
+      const { centerX, centerY, graphCenterX, graphCenterY, minimapScale } = this.getMinimapTransform()
+      if (!minimapScale || minimapScale <= 0) return
+
+      const buckets = this.edgeBuckets || { nonPathEdges: [], pathEdges: [] }
+
+      // Clear
+      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
+      ctx.clearRect(0, 0, this.minimapWidth, this.minimapHeight)
+
+      // Draw non-path edges
+      if (this.pathHighlight) {
+        ctx.globalAlpha = 0.15
+      }
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'
+      ctx.lineWidth = 0.5
+      buckets.nonPathEdges.forEach(edge => {
+        const fromNode = edge.fromNode || this.nodeMap.get(edge.from)
+        const toNode = edge.toNode || this.nodeMap.get(edge.to)
+        if (!fromNode || !toNode) return
+        const x1 = centerX + (fromNode.x - graphCenterX) * minimapScale
+        const y1 = centerY + (fromNode.y - graphCenterY) * minimapScale
+        const x2 = centerX + (toNode.x - graphCenterX) * minimapScale
+        const y2 = centerY + (toNode.y - graphCenterY) * minimapScale
+        ctx.beginPath()
+        ctx.moveTo(x1, y1)
+        ctx.lineTo(x2, y2)
+        ctx.stroke()
+      })
+
+      // Draw path edges (highlighted)
+      if (this.pathHighlight) {
+        ctx.globalAlpha = 1.0
+        ctx.strokeStyle = '#0088FF'
+        ctx.lineWidth = 1
+        buckets.pathEdges.forEach(edge => {
+          const fromNode = edge.fromNode || this.nodeMap.get(edge.from)
+          const toNode = edge.toNode || this.nodeMap.get(edge.to)
+          if (!fromNode || !toNode) return
+          const x1 = centerX + (fromNode.x - graphCenterX) * minimapScale
+          const y1 = centerY + (fromNode.y - graphCenterY) * minimapScale
+          const x2 = centerX + (toNode.x - graphCenterX) * minimapScale
+          const y2 = centerY + (toNode.y - graphCenterY) * minimapScale
+          ctx.beginPath()
+          ctx.moveTo(x1, y1)
+          ctx.lineTo(x2, y2)
+          ctx.stroke()
+        })
+      }
+
+      // Draw nodes as dots
+      this.nodes.forEach(node => {
+        const x = centerX + (node.x - graphCenterX) * minimapScale
+        const y = centerY + (node.y - graphCenterY) * minimapScale
+        const isOnPath = this.pathHighlight && this.learningPathSet.has(node.id)
+        const isDimmed = this.pathHighlight && !isOnPath
+
+        ctx.globalAlpha = isDimmed ? 0.25 : 1.0
+        const dotColor = isOnPath ? '#0088FF' : (node.level === 0 ? '#9CA3AF' : '#6B7280')
+        const dotRadius = node.level === 0 ? 3 : (node.level === 1 ? 2.5 : 2)
+
+        ctx.beginPath()
+        ctx.arc(x, y, dotRadius, 0, Math.PI * 2)
+        ctx.fillStyle = dotColor
+        ctx.fill()
+      })
+
+      ctx.globalAlpha = 1.0
+
+      // Draw viewport indicator
+      if (this.scale > 0 && isFinite(this.offsetX) && isFinite(this.offsetY)) {
+        const viewportWidth = (this.canvasWidth / this.scale) * minimapScale
+        const viewportHeight = (this.canvasHeight / this.scale) * minimapScale
+        const viewportCenterX = centerX - ((this.offsetX - this.canvasWidth / 2) / this.scale + graphCenterX) * minimapScale
+        const viewportCenterY = centerY - ((this.offsetY - this.canvasHeight / 2) / this.scale + graphCenterY) * minimapScale
+
+        const vx = viewportCenterX - viewportWidth / 2
+        const vy = viewportCenterY - viewportHeight / 2
+        const vr = 4
+
+        ctx.beginPath()
+        ctx.moveTo(vx + vr, vy)
+        ctx.lineTo(vx + viewportWidth - vr, vy)
+        ctx.arcTo(vx + viewportWidth, vy, vx + viewportWidth, vy + vr, vr)
+        ctx.lineTo(vx + viewportWidth, vy + viewportHeight - vr)
+        ctx.arcTo(vx + viewportWidth, vy + viewportHeight, vx + viewportWidth - vr, vy + viewportHeight, vr)
+        ctx.lineTo(vx + vr, vy + viewportHeight)
+        ctx.arcTo(vx, vy + viewportHeight, vx, vy + viewportHeight - vr, vr)
+        ctx.lineTo(vx, vy + vr)
+        ctx.arcTo(vx, vy, vx + vr, vy, vr)
+        ctx.closePath()
+
+        ctx.strokeStyle = '#FFFFFF'
+        ctx.lineWidth = 1.5
+        ctx.stroke()
+      }
+    },
+
+    onMinimapMouseDown(e) {
+      e.stopPropagation()
+      e.preventDefault()
+      this.isMinimapDragging = true
+      this.navigateFromMinimap(e)
+    },
+
+    onMinimapMouseMove(e) {
+      if (!this.isMinimapDragging) return
+      e.preventDefault()
+      this.navigateFromMinimap(e)
+    },
+
+    onMinimapMouseUp() {
+      this.isMinimapDragging = false
+    },
+
+    navigateFromMinimap(e) {
+      const rect = this._minimapEl.getBoundingClientRect()
+      const localX = e.clientX - rect.left
+      const localY = e.clientY - rect.top
+      const { graphCenterX, graphCenterY, minimapScale } = this.getMinimapTransform()
+      if (!minimapScale || minimapScale <= 0) return
+
+      const targetX = graphCenterX + (localX - this.minimapWidth / 2) / minimapScale
+      const targetY = graphCenterY + (localY - this.minimapHeight / 2) / minimapScale
+
+      this.offsetX = this.canvasWidth / 2 - targetX * this.scale
+      this.offsetY = this.canvasHeight / 2 - targetY * this.scale
+      this.requestRender()
+      this.requestMinimapRender(true)
     }
   }
 }
@@ -717,5 +930,23 @@ export default {
 .kg-empty-sub {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.08);
+}
+
+/* Minimap */
+.kg-minimap {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 5;
+  width: 160px;
+  height: 120px;
+  background-color: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+  pointer-events: auto;
+  cursor: crosshair;
 }
 </style>

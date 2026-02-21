@@ -342,7 +342,13 @@ export default {
       scrollTopValue: 0,
       isAutoScrollEnabled: true,
       memoryToolDelayedDone: {},
-      memoryToolStartTimes: {}
+      memoryToolStartTimes: {},
+
+      // Typewriter buffer
+      typewriterBuffer: '',
+      typewriterTimer: null,
+      typewriterMsgId: null,
+      typewriterSpeed: 30
     }
   },
   computed: {
@@ -375,6 +381,9 @@ export default {
     },
 
     handleSelectSpace(spaceId) {
+      // Stop typewriter to prevent orphaned timers
+      this.stopTypewriter()
+
       // Cancel any ongoing SSE
       if (this.cancelSSE) {
         this.cancelSSE()
@@ -499,14 +508,7 @@ export default {
 
       this.cancelSSE = sendMessage(this.conversationId, text, {
         onTextDelta: (content) => {
-          const aiMsg = this.messages.find(m => m.id === aiMsgId)
-          if (aiMsg) {
-            aiMsg.isWaitingOutput = false
-            aiMsg.content = (aiMsg.content || '') + content
-            if (this.isAutoScrollEnabled) {
-              this.$nextTick(() => this.scrollToBottom())
-            }
-          }
+          this.appendToTypewriter(aiMsgId, content)
         },
 
         onToolCall: (data) => {
@@ -514,6 +516,7 @@ export default {
         },
 
         onDone: (fullContent) => {
+          this.flushTypewriter()
           const aiMsg = this.messages.find(m => m.id === aiMsgId)
           if (aiMsg) {
             // Finalize segments
@@ -549,6 +552,7 @@ export default {
         },
 
         onError: (message) => {
+          this.flushTypewriter()
           const aiMsg = this.messages.find(m => m.id === aiMsgId)
           if (aiMsg) {
             aiMsg.content = aiMsg.content || 'Request failed'
@@ -561,6 +565,7 @@ export default {
         },
 
         onComplete: () => {
+          this.flushTypewriter()
           const aiMsg = this.messages.find(m => m.id === aiMsgId)
           if (aiMsg && aiMsg.isStreaming) {
             aiMsg.isWaitingOutput = false
@@ -590,6 +595,9 @@ export default {
 
         const existing = this.activeToolCalls.find(tc => tc.id === id)
         if (existing) return
+
+        // Flush typewriter buffer before saving current content to streamSegments
+        this.flushTypewriter()
 
         if (!msg.streamSegments || msg.streamSegments === null) {
           msg.streamSegments = []
@@ -723,6 +731,72 @@ export default {
       return entries.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')
     },
 
+    // ==================== Typewriter Methods ====================
+
+    appendToTypewriter(msgId, text) {
+      const msg = this.messages.find(m => m.id === msgId)
+      if (msg && msg.isWaitingOutput) {
+        msg.isWaitingOutput = false
+      }
+
+      if (this.typewriterMsgId !== msgId) {
+        this.stopTypewriter()
+        this.typewriterMsgId = msgId
+        this.typewriterBuffer = ''
+      }
+
+      this.typewriterBuffer += text
+
+      if (!this.typewriterTimer) {
+        this.startTypewriter()
+      }
+    },
+
+    startTypewriter() {
+      if (this.typewriterTimer) return
+
+      this.typewriterTimer = setInterval(() => {
+        if (this.typewriterBuffer.length === 0) {
+          this.pauseTypewriter()
+          return
+        }
+
+        const char = this.typewriterBuffer.charAt(0)
+        this.typewriterBuffer = this.typewriterBuffer.slice(1)
+
+        const msg = this.messages.find(m => m.id === this.typewriterMsgId)
+        if (msg) {
+          msg.content = msg.content + char
+          if (this.isAutoScrollEnabled) {
+            this.$nextTick(() => this.scrollToBottom())
+          }
+        }
+      }, this.typewriterSpeed)
+    },
+
+    pauseTypewriter() {
+      if (this.typewriterTimer) {
+        clearInterval(this.typewriterTimer)
+        this.typewriterTimer = null
+      }
+    },
+
+    stopTypewriter() {
+      this.pauseTypewriter()
+      this.typewriterBuffer = ''
+      this.typewriterMsgId = null
+    },
+
+    flushTypewriter() {
+      if (this.typewriterBuffer.length > 0 && this.typewriterMsgId) {
+        const msg = this.messages.find(m => m.id === this.typewriterMsgId)
+        if (msg) {
+          msg.content = msg.content + this.typewriterBuffer
+        }
+      }
+      this.stopTypewriter()
+    },
+
     scrollToBottom() {
       this.scrollTopValue = this.scrollTopValue === 99999 ? 99998 : 99999
     },
@@ -736,6 +810,9 @@ export default {
     },
 
     handleStop() {
+      // Flush any buffered typewriter text before finalizing
+      this.flushTypewriter()
+
       if (this.cancelSSE) {
         this.cancelSSE()
         this.cancelSSE = null
@@ -1066,6 +1143,30 @@ export default {
   overflow-x: hidden;
   box-sizing: border-box;
   width: 100%;
+}
+
+/* Custom Scrollbar — matches dark glassmorphic theme */
+.chat-messages-list :deep(.uni-scroll-view)::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-messages-list :deep(.uni-scroll-view)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-messages-list :deep(.uni-scroll-view)::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.chat-messages-list :deep(.uni-scroll-view)::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Firefox */
+.chat-messages-list :deep(.uni-scroll-view) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
 /* Empty State */
