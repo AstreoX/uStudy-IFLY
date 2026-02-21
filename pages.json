@@ -1,0 +1,35 @@
+{
+	"pages": [
+		{
+			"path": "pages/login/login",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "登录",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "uStudy",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/study/study",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "Study",
+				"backgroundColor": "#0A0A12"
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "white",
+		"navigationBarTitleText": "uStudy",
+		"navigationBarBackgroundColor": "#0A0A12",
+		"backgroundColor": "#0A0A12"
+	},
+	"uniIdRouter": {}
+}
