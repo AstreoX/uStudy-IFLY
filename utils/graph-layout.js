@@ -198,7 +198,8 @@ export function getLabelBoxByPosition(node, layout, position) {
 // --- Tree building from API data ---
 
 export function buildTreeFromEdges(apiNodes, apiEdges) {
-  const treeEdges = apiEdges.filter(e => e.type === 'knowledge_tree')
+  const safeEdges = apiEdges || []
+  const treeEdges = safeEdges.filter(e => e.type === 'knowledge_tree')
   const parentMap = new Map()
   const childrenMap = new Map()
 
@@ -213,11 +214,15 @@ export function buildTreeFromEdges(apiNodes, apiEdges) {
   const levels = new Map()
   const queue = roots.map(r => ({ id: r.id, level: 0 }))
 
-  while (queue.length > 0) {
-    const { id, level } = queue.shift()
+  let head = 0
+  while (head < queue.length) {
+    const { id, level } = queue[head++]
+    if (levels.has(id)) continue
     levels.set(id, level)
     const children = childrenMap.get(id) || []
-    children.forEach(cid => queue.push({ id: cid, level: level + 1 }))
+    children.forEach(cid => {
+      if (!levels.has(cid)) queue.push({ id: cid, level: level + 1 })
+    })
   }
 
   // Convert to local node format
@@ -238,14 +243,14 @@ export function buildTreeFromEdges(apiNodes, apiEdges) {
     angle: 0, targetAngle: 0
   }))
 
-  const edges = apiEdges.map(e => ({
+  const edges = safeEdges.map(e => ({
     from: e.from_node_id,
     to: e.to_node_id,
     type: e.type
   }))
 
   // Build learning path
-  const pathEdges = apiEdges.filter(e => e.type === 'learning_path')
+  const pathEdges = safeEdges.filter(e => e.type === 'learning_path')
   const learningPath = []
   if (pathEdges.length > 0) {
     const pathNodeSet = new Set()
@@ -288,6 +293,17 @@ export function computeLayout(nodes, canvasWidth, canvasHeight) {
   // Build level radius map
   const levelRadiusMap = buildLevelRadiusMap(nodes, layoutCache, canvasWidth)
 
+  // Build childrenMap and nodeMap for efficient lookups
+  const childrenMap = new Map()
+  const nodeMap = new Map()
+  nodes.forEach(n => {
+    nodeMap.set(n.id, n)
+    if (n.parent != null) {
+      if (!childrenMap.has(n.parent)) childrenMap.set(n.parent, [])
+      childrenMap.get(n.parent).push(n.id)
+    }
+  })
+
   const root = nodes.find(n => n.level === 0)
   if (!root) return
 
@@ -298,7 +314,7 @@ export function computeLayout(nodes, canvasWidth, canvasHeight) {
   root.targetAngle = 0
 
   // Recursive subtree layout
-  layoutSubtree(nodes, root, 0, Math.PI * 2, levelRadiusMap)
+  layoutSubtree(nodes, root, 0, Math.PI * 2, levelRadiusMap, childrenMap, nodeMap)
 
   // Save target positions
   nodes.forEach(node => {
@@ -362,17 +378,18 @@ function getLevelRadius(level, levelRadiusMap) {
   return LAYOUT_CONFIG.baseRadius + (level - 1) * LAYOUT_CONFIG.levelSpacing
 }
 
-function getSubtreeSize(nodeId, nodes) {
-  const children = nodes.filter(n => n.parent === nodeId)
+function getSubtreeSize(nodeId, childrenMap) {
+  const children = childrenMap.get(nodeId) || []
   if (children.length === 0) return 1
-  return 1 + children.reduce((sum, c) => sum + getSubtreeSize(c.id, nodes), 0)
+  return 1 + children.reduce((sum, cid) => sum + getSubtreeSize(cid, childrenMap), 0)
 }
 
-function layoutSubtree(nodes, parent, angleStart, angleEnd, levelRadiusMap) {
-  const children = nodes.filter(n => n.parent === parent.id)
+function layoutSubtree(nodes, parent, angleStart, angleEnd, levelRadiusMap, childrenMap, nodeMap) {
+  const childIds = childrenMap.get(parent.id) || []
+  const children = childIds.map(cid => nodeMap.get(cid)).filter(Boolean)
   if (children.length === 0) return
 
-  const subtreeSizes = children.map(c => getSubtreeSize(c.id, nodes))
+  const subtreeSizes = children.map(c => getSubtreeSize(c.id, childrenMap))
   const totalSize = subtreeSizes.reduce((a, b) => a + b, 0)
   const radius = getLevelRadius(parent.level + 1, levelRadiusMap)
 
@@ -386,7 +403,7 @@ function layoutSubtree(nodes, parent, angleStart, angleEnd, levelRadiusMap) {
     child.angle = normalizeAnglePositive(childAngle)
     child.targetAngle = child.angle
 
-    layoutSubtree(nodes, child, currentAngle, currentAngle + angleRange, levelRadiusMap)
+    layoutSubtree(nodes, child, currentAngle, currentAngle + angleRange, levelRadiusMap, childrenMap, nodeMap)
     currentAngle += angleRange
   })
 }

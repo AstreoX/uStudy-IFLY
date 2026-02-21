@@ -1,15 +1,7 @@
 <template>
   <view class="kg-root">
-    <!-- Canvas -->
-    <canvas
-      ref="canvas"
-      class="kg-canvas"
-      @mousedown="onMouseDown"
-      @mousemove="onMouseMove"
-      @mouseup="onMouseUp"
-      @mouseleave="onMouseUp"
-      @dblclick="onDoubleClick"
-    ></canvas>
+    <!-- Canvas container (native canvas created programmatically to bypass uni-app wrapper) -->
+    <view ref="canvasWrap" class="kg-canvas"></view>
 
     <!-- Node popup -->
     <view
@@ -44,12 +36,12 @@
     </view>
 
     <!-- Error state -->
-    <view v-if="error" class="kg-error">
+    <view v-else-if="error" class="kg-error">
       <text class="kg-error-text">{{ error }}</text>
     </view>
 
     <!-- Empty state -->
-    <view v-if="!loading && !error && nodes.length === 0" class="kg-empty">
+    <view v-else-if="nodes.length === 0" class="kg-empty">
       <text class="kg-empty-text">No knowledge graph yet</text>
       <text class="kg-empty-sub">Start a conversation to generate one</text>
     </view>
@@ -156,39 +148,66 @@ export default {
       this._resizeObserver.disconnect()
       this._resizeObserver = null
     }
-    if (this._wheelHandler) {
-      const canvas = this.$refs.canvas
-      if (canvas) canvas.removeEventListener('wheel', this._wheelHandler)
+    if (this._canvasEl) {
+      this._canvasEl.removeEventListener('mousedown', this._onMouseDown)
+      this._canvasEl.removeEventListener('mousemove', this._onMouseMove)
+      this._canvasEl.removeEventListener('mouseup', this._onMouseUp)
+      this._canvasEl.removeEventListener('mouseleave', this._onMouseUp)
+      this._canvasEl.removeEventListener('dblclick', this._onDblClick)
+      this._canvasEl.removeEventListener('wheel', this._onWheel)
+      this._canvasEl.remove()
+      this._canvasEl = null
     }
   },
 
   methods: {
     // --- Canvas initialization ---
     initCanvas() {
-      const canvas = this.$refs.canvas
-      if (!canvas) return
+      const wrap = this.$refs.canvasWrap
+      if (!wrap) return
+      const parentEl = wrap.$el || wrap
+
+      // Create native canvas element to bypass uni-app's canvas component wrapper
+      const canvas = document.createElement('canvas')
+      canvas.style.display = 'block'
+      canvas.style.width = '100%'
+      canvas.style.height = '100%'
+      canvas.style.cursor = 'grab'
+      parentEl.appendChild(canvas)
+      this._canvasEl = canvas
+
+      // Attach mouse events directly on native canvas
+      this._onMouseDown = this.onMouseDown.bind(this)
+      this._onMouseMove = this.onMouseMove.bind(this)
+      this._onMouseUp = this.onMouseUp.bind(this)
+      this._onDblClick = this.onDoubleClick.bind(this)
+      this._onWheel = this.onWheel.bind(this)
+
+      canvas.addEventListener('mousedown', this._onMouseDown)
+      canvas.addEventListener('mousemove', this._onMouseMove)
+      canvas.addEventListener('mouseup', this._onMouseUp)
+      canvas.addEventListener('mouseleave', this._onMouseUp)
+      canvas.addEventListener('dblclick', this._onDblClick)
+      canvas.addEventListener('wheel', this._onWheel, { passive: false })
 
       this.dpr = window.devicePixelRatio || 1
       this.resizeCanvas()
 
-      // Wheel handler (needs { passive: false })
-      this._wheelHandler = this.onWheel.bind(this)
-      canvas.addEventListener('wheel', this._wheelHandler, { passive: false })
-
-      // ResizeObserver
+      // ResizeObserver on the container
       this._resizeObserver = new ResizeObserver(() => {
         this.resizeCanvas()
         this.requestRender()
       })
-      this._resizeObserver.observe(canvas.parentElement)
+      this._resizeObserver.observe(parentEl)
     },
 
     resizeCanvas() {
-      const canvas = this.$refs.canvas
+      const canvas = this._canvasEl
       if (!canvas) return
       const parent = canvas.parentElement
       if (!parent) return
 
+      this.dpr = window.devicePixelRatio || 1
       const rect = parent.getBoundingClientRect()
       this.canvasWidth = rect.width
       this.canvasHeight = rect.height
@@ -439,6 +458,7 @@ export default {
       this.dragDistance = 0
       this.lastMouseX = e.clientX
       this.lastMouseY = e.clientY
+      if (this._canvasEl) this._canvasEl.style.cursor = 'grabbing'
     },
 
     onMouseMove(e) {
@@ -459,6 +479,7 @@ export default {
     onMouseUp(e) {
       if (!this.isDragging) return
       this.isDragging = false
+      if (this._canvasEl) this._canvasEl.style.cursor = 'grab'
 
       // If drag distance is small, treat as click
       if (this.dragDistance < 10) {
@@ -467,7 +488,7 @@ export default {
     },
 
     handleClick(e) {
-      const canvas = this.$refs.canvas
+      const canvas = this._canvasEl
       if (!canvas) return
       const rect = canvas.getBoundingClientRect()
       const screenX = e.clientX - rect.left
@@ -490,7 +511,7 @@ export default {
     },
 
     onDoubleClick(e) {
-      const canvas = this.$refs.canvas
+      const canvas = this._canvasEl
       if (!canvas) return
       const rect = canvas.getBoundingClientRect()
       const screenX = e.clientX - rect.left
@@ -511,7 +532,7 @@ export default {
       const delta = -e.deltaY * zoomSensitivity
       const newScale = clamp(this.scale * (1 + delta), 0.3, 3)
 
-      const canvas = this.$refs.canvas
+      const canvas = this._canvasEl
       if (!canvas) return
       const rect = canvas.getBoundingClientRect()
       const mouseX = e.clientX - rect.left
@@ -567,11 +588,6 @@ export default {
   display: block;
   width: 100%;
   height: 100%;
-  cursor: grab;
-}
-
-.kg-canvas:active {
-  cursor: grabbing;
 }
 
 /* Node popup */
