@@ -1,5 +1,5 @@
 const LOCAL_BASE_URL = 'http://localhost:8000'
-const PRODUCTION_BASE_URL = ''
+const PRODUCTION_BASE_URL = 'https://api.ustudy.top'
 
 function isProduction() {
   try {
@@ -11,7 +11,7 @@ function isProduction() {
 
 function resolveBaseUrl() {
   if (isProduction()) {
-    // Production uses same-origin API (e.g. https://ustudy.top/api) via Nginx reverse proxy.
+    // Production uses dedicated API domain.
     return PRODUCTION_BASE_URL
   }
 
