@@ -3,7 +3,7 @@
 const USE_PRODUCTION = true  // true = 连接服务器, false = 连接本地
 
 const LOCAL_BASE_URL = 'http://localhost:8000'
-const PRODUCTION_BASE_URL = 'http://121.199.164.168:8000'
+const PRODUCTION_BASE_URL = 'https://api.ustudy.top'
 // ==============================
 
 const DEFAULT_BASE_URL = USE_PRODUCTION ? PRODUCTION_BASE_URL : LOCAL_BASE_URL
@@ -44,8 +44,8 @@ const API_BASE_URL = resolveBaseUrl()
 const TOKEN_KEY = 'ustudy_tokens'
 const USER_KEY = 'ustudy_user'
 const CARD_ORDER_KEY = 'ustudy_card_order'
-const APP_VERSION_NAME = '1.3.1'
-const APP_VERSION_CODE = 131
+const APP_VERSION_NAME = '1.3.2'
+const APP_VERSION_CODE = 132
 const GITEE_RAW_BASE = 'https://gitee.com/Gskyer/u-study-release/raw/master'
 const UPDATE_STORAGE_KEY = 'ustudy_update_prefs'
 const ANNOUNCEMENT_STORAGE_KEY = 'ustudy_announcement_prefs'
