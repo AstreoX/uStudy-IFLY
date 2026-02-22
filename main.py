@@ -122,9 +122,13 @@ PROD_ORIGINS = [
     "https://ustudy.app",
     "https://www.ustudy.app",
     "https://app.ustudy.app",
-    # 服务器 IP（Alpha 测试用）
-    "http://121.199.164.168",
-    "http://121.199.164.168:8000",
+    "https://ustudy.top",
+    "https://www.ustudy.top",
+    "https://api.ustudy.top",
+    # HTTP fallback during DNS/SSL cutover
+    "http://ustudy.top",
+    "http://www.ustudy.top",
+    "http://api.ustudy.top",
     # 本地开发
     "http://localhost:5173",
     "http://localhost:5174",
