@@ -155,6 +155,23 @@ class ProcessingStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class OrderStatus(str, enum.Enum):
+    """支付订单状态"""
+
+    PENDING = "pending"
+    PAID = "paid"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+class BillingCycle(str, enum.Enum):
+    """计费周期"""
+
+    MONTHLY = "monthly"
+    SEMESTER = "semester"
+    YEARLY = "yearly"
+
+
 # ============ 表模型 ============
 
 
@@ -1247,6 +1264,79 @@ class LearningPathEvent(Base):
     __table_args__ = (
         Index("ix_learning_path_events_space_id", "space_id"),
         Index("ix_learning_path_events_user_id", "user_id"),
+    )
+
+
+class PaymentOrder(Base):
+    """支付订单表"""
+
+    __tablename__ = "payment_orders"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    out_trade_no: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, comment="商户订单号"
+    )
+    target_tier: Mapped[SubscriptionTier] = mapped_column(
+        Enum(SubscriptionTier), nullable=False, comment="目标订阅等级"
+    )
+    billing_cycle: Mapped[BillingCycle] = mapped_column(
+        Enum(
+            BillingCycle,
+            name="billingcycle",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        nullable=False,
+        comment="计费周期",
+    )
+    amount_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="金额（分）"
+    )
+    subscription_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="订阅天数"
+    )
+    status: Mapped[OrderStatus] = mapped_column(
+        Enum(
+            OrderStatus,
+            name="orderstatus",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        default=OrderStatus.PENDING,
+        nullable=False,
+    )
+    alipay_trade_no: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, comment="支付宝交易号"
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, comment="订单过期时间（30分钟）"
+    )
+    paid_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # 关系
+    user: Mapped["User"] = relationship()
+
+    # 索引
+    __table_args__ = (
+        Index("ix_payment_orders_user_id", "user_id"),
+        Index("ix_payment_orders_out_trade_no", "out_trade_no", unique=True),
+        Index("ix_payment_orders_status", "status"),
+        Index("ix_payment_orders_expires_at", "expires_at"),
     )
 
 

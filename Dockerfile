@@ -25,8 +25,8 @@ RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com
 # 复制应用代码
 COPY . .
 
-# 创建上传目录
-RUN mkdir -p /app/uploads
+# 创建上传目录和证书挂载点
+RUN mkdir -p /app/uploads /app/certs
 RUN chmod +x /app/scripts/start.sh
 
 # 暴露端口

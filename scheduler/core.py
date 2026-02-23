@@ -72,6 +72,24 @@ def _register_jobs(sched: AsyncIOScheduler) -> None:
     )
     logger.info("Registered cleanup_expired_tool_requests job (every 5 min)")
 
+    # Expire stale payment orders every 5 minutes
+    async def _expire_stale_payment_orders():
+        from payment.service import expire_stale_orders
+
+        try:
+            await expire_stale_orders()
+        except Exception as e:
+            logger.error(f"Failed to expire stale payment orders: {e}")
+
+    sched.add_job(
+        _expire_stale_payment_orders,
+        trigger=IntervalTrigger(minutes=5),
+        id="expire_stale_payment_orders",
+        name="Expire Stale Payment Orders",
+        replace_existing=True,
+    )
+    logger.info("Registered expire_stale_payment_orders job (every 5 min)")
+
 
 @asynccontextmanager
 async def get_scheduler_lifespan() -> AsyncGenerator[None, None]:

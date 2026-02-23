@@ -134,6 +134,15 @@ class Settings(BaseSettings):
     title_generation_model: str = "qwen/qwen3-4b:free"
     title_generation_timeout: int = 10  # 秒
 
+    # 支付宝配置
+    alipay_app_id: str = ""
+    alipay_app_private_key_path: str = "./certs/alipay_app_private_key.pem"
+    alipay_public_key_path: str = "./certs/alipay_public_key.pem"
+    alipay_sign_type: str = "RSA2"
+    alipay_debug: bool = False  # True = sandbox gateway
+    alipay_notify_url: str = ""  # e.g. https://api.ustudy.top/api/payment/alipay/notify
+    alipay_return_url: str = ""  # e.g. https://ustudy.top/pages/activation/activation
+
 
 @lru_cache
 def get_settings() -> Settings:

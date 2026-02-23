@@ -34,3 +34,6 @@ Thumbs.db
 
 # 上传的聊天附件（运行时生成，不提交）
 uploads/attachments/
+
+# 支付宝证书密钥（绝对不要提交！）
+certs/

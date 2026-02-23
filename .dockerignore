@@ -32,6 +32,9 @@ uploads/
 *.log
 *.sqlite3
 
+# 支付宝证书（通过 volume 挂载，不打包进镜像）
+certs/
+
 # Git
 .git/
 .gitignore

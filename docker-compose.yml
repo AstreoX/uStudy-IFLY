@@ -46,6 +46,14 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@ustudy.app}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-uStudy}
+      # 支付宝
+      ALIPAY_APP_ID: ${ALIPAY_APP_ID:-}
+      ALIPAY_APP_PRIVATE_KEY_PATH: /app/certs/alipay_app_private_key.pem
+      ALIPAY_PUBLIC_KEY_PATH: /app/certs/alipay_public_key.pem
+      ALIPAY_SIGN_TYPE: ${ALIPAY_SIGN_TYPE:-RSA2}
+      ALIPAY_DEBUG: ${ALIPAY_DEBUG:-false}
+      ALIPAY_NOTIFY_URL: ${ALIPAY_NOTIFY_URL:-}
+      ALIPAY_RETURN_URL: ${ALIPAY_RETURN_URL:-}
       # Uvicorn 运行参数（4核8G 推荐）
       UVICORN_WORKERS: ${UVICORN_WORKERS:-6}
       UVICORN_LIMIT_CONCURRENCY: ${UVICORN_LIMIT_CONCURRENCY:-600}
@@ -58,6 +66,7 @@ services:
       DB_POOL_RECYCLE_SECONDS: ${DB_POOL_RECYCLE_SECONDS:-1800}
     volumes:
       - uploads:/app/uploads
+      - ./certs:/app/certs:ro
     ports:
       - "8000:8000"
 
