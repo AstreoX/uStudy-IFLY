@@ -16,16 +16,20 @@ from payment.exceptions import (
     OrderNotFoundError,
 )
 from payment.schemas import (
+    AdminConfirmRequest,
     CreateOrderRequest,
     CreateOrderResponse,
     OrderListItem,
     OrderStatusResponse,
 )
 from payment.service import (
+    admin_confirm_order,
     create_order,
     get_order_status,
     handle_alipay_notification,
+    list_pending_orders,
     list_user_orders,
+    ADMIN_EMAILS,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,13 +43,13 @@ async def create_payment_order(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """创建支付订单，返回支付宝支付页面 URL"""
+    """创建支付订单，发送管理员通知邮件"""
     try:
         return await create_order(db, current_user, request.tier, request.billing_cycle)
     except InvalidPlanError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except AlipayError as e:
-        logger.error(f"Alipay error creating order: {e}")
+        logger.error(f"Payment error creating order: {e}")
         raise HTTPException(status_code=502, detail="支付服务暂时不可用，请稍后重试")
 
 
@@ -73,6 +77,38 @@ async def list_payment_orders(
     return await list_user_orders(db, current_user.id)
 
 
+# ---- 管理员接口 ----
+
+
+@router.post("/admin/confirm", response_model=OrderStatusResponse)
+async def admin_confirm_payment(
+    request: AdminConfirmRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """管理员确认收款并激活订阅"""
+    if current_user.email not in ADMIN_EMAILS:
+        raise HTTPException(status_code=403, detail="无权限")
+    try:
+        return await admin_confirm_order(request.order_id, current_user)
+    except OrderNotFoundError:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    except OrderExpiredError as e:
+        raise HTTPException(status_code=410, detail=str(e))
+
+
+@router.get("/admin/pending", response_model=list[OrderListItem])
+async def admin_list_pending_orders(
+    current_user: User = Depends(get_current_user),
+):
+    """获取待确认订单列表（管理员用）"""
+    if current_user.email not in ADMIN_EMAILS:
+        raise HTTPException(status_code=403, detail="无权限")
+    return await list_pending_orders()
+
+
+# ---- 支付宝回调（保留以备将来使用）----
+
+
 @router.post("/alipay/notify")
 async def alipay_notify(request: Request):
     """支付宝异步通知回调（无需鉴权，由支付宝服务器调用）"""
@@ -87,5 +123,4 @@ async def alipay_notify(request: Request):
         logger.exception("Failed to handle Alipay notification")
         success = False
 
-    # 支付宝要求返回纯文本 "success" 或 "failure"
     return PlainTextResponse("success" if success else "failure")

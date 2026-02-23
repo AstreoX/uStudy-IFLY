@@ -20,10 +20,15 @@ class CreateOrderResponse(BaseModel):
 
     order_id: UUID
     out_trade_no: str
-    payment_url: str
     amount_cents: int
     amount_display: str  # e.g. "¥12.90"
     expires_at: datetime
+
+
+class AdminConfirmRequest(BaseModel):
+    """管理员确认订单请求"""
+
+    order_id: UUID
 
 
 class OrderStatusResponse(BaseModel):
