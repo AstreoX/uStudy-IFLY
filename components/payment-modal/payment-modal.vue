@@ -7,7 +7,7 @@
       </view>
 
       <!-- State 1: Confirm & Pay -->
-      <template v-if="!showSuccess">
+      <template v-if="!showSuccess && !showQrCode">
         <view class="pm-header">
           <text class="pm-title">确认订阅</text>
         </view>
@@ -35,19 +35,75 @@
           @tap="handlePay"
         >
           <text v-if="loading" class="pm-loading-text">正在创建订单...</text>
-          <template v-else>
-            <image class="pm-alipay-icon" src="/static/icons/alipay.svg" mode="aspectFit" />
-            <text class="pm-pay-text">支付宝支付</text>
-          </template>
+          <text v-else class="pm-pay-text">去支付</text>
         </button>
-
-        <text class="pm-hint">支付完成后请返回此页面，系统将自动确认</text>
 
         <text v-if="errorMsg" class="pm-error">{{ errorMsg }}</text>
       </template>
 
-      <!-- State 2: Success -->
-      <template v-else>
+      <!-- State 2: Show QR Code -->
+      <template v-if="showQrCode && !showSuccess">
+        <view class="pm-header">
+          <text class="pm-title">扫码支付</text>
+        </view>
+
+        <!-- Payment method tabs -->
+        <view class="pm-tabs">
+          <view
+            class="pm-tab"
+            :class="{ 'pm-tab-active': payMethod === 'alipay' }"
+            @tap="payMethod = 'alipay'"
+          >
+            <image class="pm-tab-icon" src="/static/icons/alipay.svg" mode="aspectFit" />
+            <text class="pm-tab-text">支付宝</text>
+          </view>
+          <view
+            class="pm-tab"
+            :class="{ 'pm-tab-active': payMethod === 'wechat' }"
+            @tap="payMethod = 'wechat'"
+          >
+            <text class="pm-tab-text">微信支付</text>
+          </view>
+        </view>
+
+        <!-- QR Code -->
+        <view class="pm-qr-section">
+          <image
+            v-if="payMethod === 'alipay'"
+            class="pm-qr-img"
+            src="/static/payment/alipay-qr.png"
+            mode="aspectFit"
+          />
+          <image
+            v-else
+            class="pm-qr-img"
+            src="/static/payment/wechat-qr.png"
+            mode="aspectFit"
+          />
+        </view>
+
+        <!-- Amount -->
+        <view class="pm-amount-section">
+          <text class="pm-amount-label">请支付</text>
+          <text class="pm-amount-value">{{ orderAmount }}</text>
+        </view>
+
+        <text class="pm-hint">请使用{{ payMethod === 'alipay' ? '支付宝' : '微信' }}扫描上方二维码完成支付</text>
+
+        <!-- Confirm button -->
+        <button class="pm-confirm-btn" @tap="handleConfirmPaid">
+          <text class="pm-confirm-text">{{ polling ? '等待管理员确认中...' : '我已支付' }}</text>
+        </button>
+
+        <text v-if="polling" class="pm-waiting-hint">
+          管理员收到通知后会尽快确认，请稍候
+        </text>
+
+        <text v-if="errorMsg" class="pm-error">{{ errorMsg }}</text>
+      </template>
+
+      <!-- State 3: Success -->
+      <template v-if="showSuccess">
         <view class="pm-success-content">
           <view class="pm-success-icon-wrap">
             <text class="pm-success-check">✓</text>
@@ -68,7 +124,6 @@ import { createOrder, getOrderStatus } from '@/api/payment'
 import { getMe } from '@/api/auth'
 import { useUserStore } from '@/store/user'
 
-// Frontend tier → backend tier mapping
 const TIER_MAP = {
   PLUS: 'BASIC',
   ULTRA: 'PREMIUM'
@@ -96,11 +151,15 @@ export default {
     return {
       loading: false,
       showSuccess: false,
+      showQrCode: false,
+      polling: false,
       errorMsg: '',
       orderId: null,
+      orderAmount: '',
       pollTimer: null,
       pollCount: 0,
-      successData: null
+      successData: null,
+      payMethod: 'alipay'
     }
   },
   computed: {
@@ -144,10 +203,14 @@ export default {
     reset() {
       this.loading = false
       this.showSuccess = false
+      this.showQrCode = false
+      this.polling = false
       this.errorMsg = ''
       this.orderId = null
+      this.orderAmount = ''
       this.successData = null
       this.pollCount = 0
+      this.payMethod = 'alipay'
       this.stopPolling()
     },
     handleClose() {
@@ -166,19 +229,19 @@ export default {
         })
 
         this.orderId = resp.order_id
-
-        // Open Alipay payment page
-        // #ifdef H5
-        window.open(resp.payment_url, '_blank')
-        // #endif
-
-        // Start polling for payment completion
-        this.startPolling()
+        this.orderAmount = resp.amount_display
+        this.showQrCode = true
       } catch (err) {
         this.errorMsg = err?.message || err?.detail || '创建订单失败，请稍后重试'
       } finally {
         this.loading = false
       }
+    },
+    handleConfirmPaid() {
+      if (this.polling) return
+      this.polling = true
+      this.errorMsg = ''
+      this.startPolling()
     },
     startPolling() {
       this.pollCount = 0
@@ -197,10 +260,11 @@ export default {
       if (!this.orderId) return
       this.pollCount++
 
-      // Stop after 10 minutes (200 polls * 3s)
+      // Stop after 10 minutes
       if (this.pollCount > 200) {
         this.stopPolling()
-        this.errorMsg = '等待支付超时，请刷新页面查看订单状态'
+        this.polling = false
+        this.errorMsg = '等待确认超时，请联系管理员'
         return
       }
 
@@ -209,7 +273,7 @@ export default {
 
         if (order.status === 'paid') {
           this.stopPolling()
-          // Refresh user data
+          this.polling = false
           const user = await getMe()
           const userStore = useUserStore()
           userStore.setUser(user)
@@ -219,12 +283,14 @@ export default {
             subscription_expires_at: user.subscription_expires_at
           }
           this.showSuccess = true
+          this.showQrCode = false
           this.$emit('success', {
             subscription_tier: user.subscription_tier,
             subscription_expires_at: user.subscription_expires_at
           })
         } else if (order.status === 'expired' || order.status === 'cancelled') {
           this.stopPolling()
+          this.polling = false
           this.errorMsg = '订单已过期，请重新下单'
         }
       } catch {
@@ -366,11 +432,6 @@ export default {
   cursor: not-allowed;
 }
 
-.pm-alipay-icon {
-  width: 20px;
-  height: 20px;
-}
-
 .pm-pay-text {
   font-size: 15px;
   font-weight: 600;
@@ -382,12 +443,123 @@ export default {
   color: rgba(255, 255, 255, 0.8);
 }
 
+/* Tabs */
+.pm-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.pm-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pm-tab-active {
+  background: rgba(22, 119, 255, 0.12);
+  border-color: rgba(22, 119, 255, 0.4);
+}
+
+.pm-tab-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.pm-tab-text {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+
+.pm-tab-active .pm-tab-text {
+  color: #60a5fa;
+}
+
+/* QR Code */
+.pm-qr-section {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+}
+
+.pm-qr-img {
+  width: 200px;
+  height: 200px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+/* Amount */
+.pm-amount-section {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.pm-amount-label {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.pm-amount-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: #f59e0b;
+}
+
 .pm-hint {
   display: block;
   text-align: center;
-  margin-top: 12px;
+  margin-top: 4px;
+  margin-bottom: 16px;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.35);
+}
+
+.pm-confirm-btn {
+  width: 100%;
+  height: 48px;
+  border-radius: 12px;
+  border: none;
+  background: #10b981;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pm-confirm-btn::after {
+  border: none;
+}
+
+.pm-confirm-btn:hover {
+  background: #059669;
+}
+
+.pm-confirm-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.pm-waiting-hint {
+  display: block;
+  text-align: center;
+  margin-top: 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .pm-error {
