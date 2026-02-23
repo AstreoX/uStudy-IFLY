@@ -448,13 +448,18 @@
                 </transition>
               </view>
 
-              <input
+              <textarea
                 ref="chatInput"
-                class="chat-input"
-                type="text"
+                class="chat-input chat-input-textarea"
                 placeholder="Ask anything..."
+                maxlength="-1"
+                confirm-type="send"
+                :auto-height="false"
                 :disabled="!spaceId"
+                :style="chatInputDynamicStyle"
                 v-model="inputText"
+                @input="handleChatInput"
+                @keydown="handleChatKeydown"
                 @confirm="handleSend"
               />
               <!-- Stop button during streaming -->
@@ -626,6 +631,11 @@ export default {
       messages: [],
       conversationId: null,
       inputText: '',
+      chatInputHeight: 36,
+      chatInputLineHeight: 20,
+      chatInputVerticalPadding: 16,
+      chatInputMaxLines: 6,
+      chatInputMinHeight: 36,
       nextId: 1,
       isStreaming: false,
       isSending: false,
@@ -682,6 +692,17 @@ export default {
     canSend() {
       return this.spaceId && this.inputText.trim().length > 0 && !this.isSending
     },
+    chatInputMaxHeight() {
+      return this.chatInputLineHeight * this.chatInputMaxLines + this.chatInputVerticalPadding
+    },
+    chatInputDynamicStyle() {
+      const height = Math.max(this.chatInputMinHeight, Math.min(this.chatInputHeight, this.chatInputMaxHeight))
+      return {
+        height: `${height}px`,
+        maxHeight: `${this.chatInputMaxHeight}px`,
+        overflowY: height >= this.chatInputMaxHeight ? 'auto' : 'hidden'
+      }
+    },
     deleteSpaceModalContent() {
       const displayName = this.deleteTargetSpaceName || this.spaceName || '当前学习空间'
       return `确定要删除「${displayName}」吗？该空间内的知识图谱、资料和测试会被永久删除。`
@@ -699,14 +720,17 @@ export default {
   },
   mounted() {
     this._graphRefreshTimer = null
-    const inputEl = this.$refs.chatInput?.$el?.querySelector('input')
-    if (inputEl) {
+    const inputEl = this.getChatInputElement()
+    if (inputEl && typeof inputEl.addEventListener === 'function') {
       inputEl.addEventListener('paste', this.handlePaste)
     }
+    this.$nextTick(() => {
+      this.recalcChatInputHeight()
+    })
   },
   beforeUnmount() {
-    const inputEl = this.$refs.chatInput?.$el?.querySelector('input')
-    if (inputEl) {
+    const inputEl = this.getChatInputElement()
+    if (inputEl && typeof inputEl.removeEventListener === 'function') {
       inputEl.removeEventListener('paste', this.handlePaste)
     }
     this.cleanupPendingAttachments()
@@ -717,6 +741,59 @@ export default {
     }
   },
   methods: {
+    getChatInputElement() {
+      const ref = this.$refs.chatInput
+      if (!ref) return null
+      if (ref.$el) {
+        return ref.$el.querySelector('textarea') || ref.$el.querySelector('input')
+      }
+      return ref
+    },
+
+    handleChatInput(event) {
+      const value = event?.detail?.value
+      if (typeof value === 'string' && value !== this.inputText) {
+        this.inputText = value
+      }
+      this.$nextTick(() => {
+        this.recalcChatInputHeight()
+      })
+    },
+
+    handleChatKeydown(event) {
+      if (!event) return
+      if (event.isComposing || event.keyCode === 229) return
+      const isEnter = event.key === 'Enter' || event.keyCode === 13
+      if (isEnter && !event.shiftKey) {
+        event.preventDefault()
+        this.handleSend()
+      }
+    },
+
+    recalcChatInputHeight() {
+      const minHeight = this.chatInputMinHeight
+      const maxHeight = this.chatInputMaxHeight
+      if (!this.inputText) {
+        this.chatInputHeight = minHeight
+        return
+      }
+
+      const inputEl = this.getChatInputElement()
+      if (!inputEl || typeof inputEl.scrollHeight !== 'number') {
+        this.chatInputHeight = minHeight
+        return
+      }
+
+      inputEl.style.height = 'auto'
+      const measured = Math.ceil(inputEl.scrollHeight || minHeight)
+      const nextHeight = Math.min(maxHeight, Math.max(minHeight, measured))
+      this.chatInputHeight = nextHeight
+    },
+
+    resetChatInputHeight() {
+      this.chatInputHeight = this.chatInputMinHeight
+    },
+
     async loadSpaceInfo() {
       if (!this.spaceId) {
         this.spaceName = 'Study'
@@ -772,6 +849,7 @@ export default {
       this.isSending = false
       this.activeToolCalls = []
       this.inputText = ''
+      this.resetChatInputHeight()
       this.cleanupPendingAttachments()
       this.showDeleteSpaceModal = false
       this.deleteTargetSpaceId = null
@@ -1041,6 +1119,7 @@ export default {
       this.isSending = true
       this.isAutoScrollEnabled = true
       this.inputText = ''
+      this.resetChatInputHeight()
 
       // Collect attachment IDs and clear pending
       const attachmentIds = this.pendingAttachments
@@ -1691,6 +1770,7 @@ export default {
       this.conversationId = null
       this.nextId = 1
       this.inputText = ''
+      this.resetChatInputHeight()
       this.initConversation()
     },
 
@@ -2631,7 +2711,7 @@ export default {
 .chat-input-bar {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   padding: 10px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -2640,14 +2720,23 @@ export default {
 
 .chat-input {
   flex: 1;
-  height: 36px;
-  padding: 0 12px;
+  min-height: 36px;
+  padding: 8px 12px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   color: #FFFFFF;
   font-size: 14px;
+  line-height: 20px;
+  box-sizing: border-box;
+  overflow-y: hidden;
   outline: none;
+}
+
+.chat-input-textarea {
+  resize: none;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .chat-input:disabled {

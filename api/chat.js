@@ -165,6 +165,44 @@ export function confirmToolExecution(conversationId, toolCallId, data) {
   })
 }
 
+/**
+ * Get async quick-chat tool task status
+ * @param {string} conversationId - Conversation ID
+ * @param {string} toolCallId - Tool call ID
+ * @returns {Promise<Object>}
+ */
+export function getQuickChatToolTaskStatus(conversationId, toolCallId) {
+  return request({
+    url: `/api/quick-chat/conversations/${conversationId}/tools/${toolCallId}/status`,
+    method: 'GET'
+  })
+}
+
+/**
+ * List async quick-chat tool tasks for recovery
+ * @param {string} conversationId - Conversation ID
+ * @returns {Promise<Object>}
+ */
+export function listQuickChatToolTasks(conversationId) {
+  return request({
+    url: `/api/quick-chat/conversations/${conversationId}/tools/tasks`,
+    method: 'GET'
+  })
+}
+
+/**
+ * Bind quick-chat async create-space task after KG is done
+ * @param {string} conversationId - Conversation ID
+ * @param {string} toolCallId - Tool call ID
+ * @returns {Promise<Object>}
+ */
+export function bindQuickChatToolTask(conversationId, toolCallId) {
+  return request({
+    url: `/api/quick-chat/conversations/${conversationId}/tools/${toolCallId}/bind`,
+    method: 'POST'
+  })
+}
+
 export function sendMessage(conversationId, content, callbacks, attachmentIds = null) {
   const data = { content }
   if (attachmentIds && attachmentIds.length > 0) {

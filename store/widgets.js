@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 
 const STORAGE_KEY = 'ustudy_widget_layout'
+const MIGRATIONS_KEY = 'ustudy_widget_layout_migrations'
+const MIGRATION_ADD_RADAR_V1 = 'add_radar_widget_v1'
 
 const GRID_COLS = 10
 const GRID_ROWS = 7
@@ -12,6 +14,7 @@ const DEFAULT_LAYOUT = [
   { id: 'weather-lg', type: 'weather',   variant: 'large',   col: 3,  row: 2, w: 2, h: 1 },
   { id: 'clock-ana',  type: 'clock',     variant: 'analog',  col: 5,  row: 2, w: 2, h: 1 },
   { id: 'subject-1',  type: 'subject',   variant: 'default', col: 1,  row: 3, w: 4, h: 2 },
+  { id: 'radar-profile', type: 'radar',  variant: 'default', col: 1,  row: 5, w: 3, h: 2 },
   { id: 'previous',   type: 'previous',  variant: 'default', col: 5,  row: 3, w: 2, h: 3 },
   { id: 'subject-2',  type: 'subject',   variant: 'default', col: 7,  row: 1, w: 4, h: 2 },
   { id: 'updates',    type: 'updates',   variant: 'default', col: 8,  row: 3, w: 3, h: 3 }
@@ -25,11 +28,16 @@ export const WIDGET_CATALOG = [
   { type: 'weather',   variant: 'large',   w: 2, h: 1, label: '详细天气',         icon: '/static/icons/phosphor/widget-picker/widget-weather-detail.svg',  desc: '2\u00D71 with link' },
   { type: 'weather',   variant: 'mini',    w: 1, h: 1, label: '迷你天气',         icon: '/static/icons/phosphor/widget-picker/widget-weather-mini.svg',    desc: '1\u00D71 compact' },
   { type: 'subject',   variant: 'default', w: 3, h: 2, label: '学习空间卡片',     icon: '/static/icons/phosphor/widget-picker/widget-space-card.svg',      desc: '3\u00D72 progress card' },
+  { type: 'radar',     variant: 'default', w: 3, h: 2, label: '学习雷达',         icon: '/static/icons/phosphor/widget-picker/widget-radar.svg',           desc: '3\u00D72 radar + stats' },
   { type: 'previous',  variant: 'default', w: 2, h: 3, label: '学习空间（汇总）', icon: '/static/icons/phosphor/widget-picker/widget-space-summary.svg',   desc: '2\u00D73 history list' },
   { type: 'updates',   variant: 'default', w: 3, h: 3, label: '学习动态',         icon: '/static/icons/phosphor/widget-picker/widget-updates.svg',         desc: '3\u00D73 notifications' }
 ]
 
 export const WIDGET_SIZES = {
+  radar: [
+    { w: 2, h: 2 },
+    { w: 3, h: 2 }
+  ],
   subject: [
     { w: 2, h: 2 },
     { w: 3, h: 2 },
@@ -43,11 +51,78 @@ function generateId(type) {
   return `${type}-${Date.now()}-${_nextId++}`
 }
 
+function loadMigrations() {
+  try {
+    const saved = uni.getStorageSync(MIGRATIONS_KEY)
+    if (!saved) return new Set()
+    const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter(item => typeof item === 'string'))
+    }
+  } catch {
+    // ignore
+  }
+  return new Set()
+}
+
+function saveMigrations(migrations) {
+  try {
+    uni.setStorageSync(MIGRATIONS_KEY, JSON.stringify([...migrations]))
+  } catch {
+    // ignore
+  }
+}
+
+function buildRadarWidget(widgets, col, row) {
+  const baseId = 'radar-profile'
+  const usedIds = new Set((widgets || []).map(w => w.id))
+  let id = baseId
+  let suffix = 1
+  while (usedIds.has(id)) {
+    id = `${baseId}-${suffix++}`
+  }
+  return {
+    id,
+    type: 'radar',
+    variant: 'default',
+    col,
+    row,
+    w: 3,
+    h: 2
+  }
+}
+
+function migrateLayout(layout) {
+  if (!Array.isArray(layout)) return layout
+
+  const applied = loadMigrations()
+  if (applied.has(MIGRATION_ADD_RADAR_V1)) return layout
+
+  let nextLayout = layout
+  const hasRadar = layout.some(w => w.type === 'radar')
+  if (!hasRadar) {
+    const spot = findEmptySpot(layout, 3, 2)
+    if (spot) {
+      const migratedRadar = buildRadarWidget(layout, spot.col, spot.row)
+      nextLayout = [...layout, migratedRadar]
+      saveLayout(nextLayout)
+    }
+  }
+
+  applied.add(MIGRATION_ADD_RADAR_V1)
+  saveMigrations(applied)
+  return nextLayout
+}
+
 function loadLayout() {
   try {
     const saved = uni.getStorageSync(STORAGE_KEY)
     if (saved) {
-      return JSON.parse(saved)
+      const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved
+      const migrated = migrateLayout(parsed)
+      if (Array.isArray(migrated)) {
+        return migrated
+      }
     }
   } catch {
     // ignore

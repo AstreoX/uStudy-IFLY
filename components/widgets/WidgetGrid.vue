@@ -45,6 +45,12 @@
         <SubjectWidget v-else-if="widget.type === 'subject'" :widget-id="widget.id" :subject="getSubjectData(widget.id)" :spaces="spaces" :editMode="editMode" @select-subject="selectSubject(widget.id, $event)" />
         <PreviousWidget v-else-if="widget.type === 'previous'" :spaces="spaces" :graph-cache="graphCache" />
         <UpdatesWidget v-else-if="widget.type === 'updates'" />
+        <RadarSummaryWidget
+          v-else-if="widget.type === 'radar'"
+          :widget-id="widget.id"
+          :widget-w="widget.w"
+          :widget-h="widget.h"
+        />
       </view>
     </view>
 
@@ -66,6 +72,7 @@ import WeatherWidget from './WeatherWidget.vue'
 import SubjectWidget from './SubjectWidget.vue'
 import PreviousWidget from './PreviousWidget.vue'
 import UpdatesWidget from './UpdatesWidget.vue'
+import RadarSummaryWidget from './RadarSummaryWidget.vue'
 import { getSpaces, getSpaceGraph } from '@/api/space'
 import { WIDGET_SIZES } from '@/store/widgets'
 
@@ -80,7 +87,8 @@ export default {
     WeatherWidget,
     SubjectWidget,
     PreviousWidget,
-    UpdatesWidget
+    UpdatesWidget,
+    RadarSummaryWidget
   },
   props: {
     widgets: {

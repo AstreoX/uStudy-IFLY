@@ -196,7 +196,23 @@
 
                       <!-- Confirmation area -->
                       <view v-if="seg.toolCall.status === 'pending_confirmation'" class="tool-confirm-actions">
-                        <view class="tool-confirm-info">
+                        <view
+                          v-if="isCreateLearningSpaceTool(seg.toolCall)"
+                          class="tool-confirm-info"
+                        >
+                          <view class="tool-confirm-row">
+                            <text class="tool-confirm-label">名称</text>
+                            <text class="tool-confirm-value">{{ getCreateSpaceConfirmName(seg.toolCall) }}</text>
+                          </view>
+                          <view class="tool-confirm-row">
+                            <text class="tool-confirm-label">学习偏好</text>
+                            <text class="tool-confirm-value">{{ getCreateSpacePreferenceText(seg.toolCall) }}</text>
+                          </view>
+                        </view>
+                        <view
+                          v-else
+                          class="tool-confirm-info"
+                        >
                           <text class="tool-confirm-text">{{ getConfirmationText(seg.toolCall) }}</text>
                         </view>
                         <view class="tool-confirm-buttons">
@@ -308,12 +324,17 @@
             </transition>
           </view>
 
-          <input
+          <textarea
             ref="chatInput"
-            class="chat-input"
-            type="text"
+            class="chat-input chat-input-textarea"
             placeholder="Ask anything..."
+            maxlength="-1"
+            confirm-type="send"
+            :auto-height="false"
+            :style="chatInputDynamicStyle"
             v-model="inputText"
+            @input="handleChatInput"
+            @keydown="handleChatKeydown"
             @confirm="handleSend"
           />
 
@@ -346,11 +367,15 @@
 <script>
 import HomeSidebar from '@/components/layout/HomeSidebar.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
+import { useSpacesStore } from '@/store/spaces'
 import {
   createQuickChatConversation,
   getQuickChatConversations,
   sendQuickChatMessage,
   confirmToolExecution,
+  getQuickChatToolTaskStatus,
+  listQuickChatToolTasks,
+  bindQuickChatToolTask,
   getConversation,
   uploadAttachment,
   deleteAttachment
@@ -391,6 +416,26 @@ const MEMORY_TOOL_TEXT = {
   delete_from_space_memory: 'Deleting space preferences...'
 }
 
+const CREATE_SPACE_RUNNING_STAGE_TEXT = {
+  queued: '创建任务排队中…',
+  space_created: '学习空间已创建，正在生成知识图谱…',
+  kg_running: '正在生成知识图谱…',
+  kg_done: '知识图谱已生成，正在绑定学习空间…',
+  binding: '正在绑定学习空间…'
+}
+
+const CREATE_SPACE_SUCCESS_TEXT = '学习空间已创建并绑定，正在跳转…'
+const LEARNING_PREFERENCE_LABELS = {
+  university: '大学课程',
+  quick: '快速入门',
+  solid: '系统深学',
+  hobby: '兴趣自学',
+  exam: '备考冲刺',
+  work: '工作技能',
+  research: '学术研究',
+  practice: '实战项目'
+}
+
 export default {
   components: { HomeSidebar, MarkdownRender },
   data() {
@@ -401,6 +446,11 @@ export default {
       messages: [],
       conversationId: null,
       inputText: '',
+      chatInputHeight: 36,
+      chatInputLineHeight: 20,
+      chatInputVerticalPadding: 16,
+      chatInputMaxLines: 6,
+      chatInputMinHeight: 36,
       nextId: 1,
       isStreaming: false,
       isSending: false,
@@ -425,12 +475,29 @@ export default {
 
       // Attachment upload
       pendingAttachments: [],
-      showAttachMenu: false
+      showAttachMenu: false,
+
+      // Async create_learning_space task tracking
+      taskPollTimers: {},
+      taskBindingLocks: {},
+      taskNavigated: {},
+      taskSidebarSyncPhases: {}
     }
   },
   computed: {
     canSend() {
       return this.inputText.trim().length > 0 && !this.isSending
+    },
+    chatInputMaxHeight() {
+      return this.chatInputLineHeight * this.chatInputMaxLines + this.chatInputVerticalPadding
+    },
+    chatInputDynamicStyle() {
+      const height = Math.max(this.chatInputMinHeight, Math.min(this.chatInputHeight, this.chatInputMaxHeight))
+      return {
+        height: `${height}px`,
+        maxHeight: `${this.chatInputMaxHeight}px`,
+        overflowY: height >= this.chatInputMaxHeight ? 'auto' : 'hidden'
+      }
     }
   },
   onLoad() {
@@ -449,14 +516,17 @@ export default {
     })
   },
   mounted() {
-    const inputEl = this.$refs.chatInput?.$el?.querySelector('input')
-    if (inputEl) {
+    const inputEl = this.getChatInputElement()
+    if (inputEl && typeof inputEl.addEventListener === 'function') {
       inputEl.addEventListener('paste', this.handlePaste)
     }
+    this.$nextTick(() => {
+      this.recalcChatInputHeight()
+    })
   },
   beforeUnmount() {
-    const inputEl = this.$refs.chatInput?.$el?.querySelector('input')
-    if (inputEl) {
+    const inputEl = this.getChatInputElement()
+    if (inputEl && typeof inputEl.removeEventListener === 'function') {
       inputEl.removeEventListener('paste', this.handlePaste)
     }
     this.cleanupPendingAttachments()
@@ -465,6 +535,7 @@ export default {
       this.cancelSSE()
       this.cancelSSE = null
     }
+    this.stopAllTaskPolling()
   },
   methods: {
     navigateToIndex() {
@@ -481,6 +552,59 @@ export default {
 
     // ==================== Chat Methods ====================
 
+    getChatInputElement() {
+      const ref = this.$refs.chatInput
+      if (!ref) return null
+      if (ref.$el) {
+        return ref.$el.querySelector('textarea') || ref.$el.querySelector('input')
+      }
+      return ref
+    },
+
+    handleChatInput(event) {
+      const value = event?.detail?.value
+      if (typeof value === 'string' && value !== this.inputText) {
+        this.inputText = value
+      }
+      this.$nextTick(() => {
+        this.recalcChatInputHeight()
+      })
+    },
+
+    handleChatKeydown(event) {
+      if (!event) return
+      if (event.isComposing || event.keyCode === 229) return
+      const isEnter = event.key === 'Enter' || event.keyCode === 13
+      if (isEnter && !event.shiftKey) {
+        event.preventDefault()
+        this.handleSend()
+      }
+    },
+
+    recalcChatInputHeight() {
+      const minHeight = this.chatInputMinHeight
+      const maxHeight = this.chatInputMaxHeight
+      if (!this.inputText) {
+        this.chatInputHeight = minHeight
+        return
+      }
+
+      const inputEl = this.getChatInputElement()
+      if (!inputEl || typeof inputEl.scrollHeight !== 'number') {
+        this.chatInputHeight = minHeight
+        return
+      }
+
+      inputEl.style.height = 'auto'
+      const measured = Math.ceil(inputEl.scrollHeight || minHeight)
+      const nextHeight = Math.min(maxHeight, Math.max(minHeight, measured))
+      this.chatInputHeight = nextHeight
+    },
+
+    resetChatInputHeight() {
+      this.chatInputHeight = this.chatInputMinHeight
+    },
+
     async handleSend() {
       const text = this.inputText.trim()
       if (!text || this.isSending) return
@@ -493,6 +617,7 @@ export default {
       this.isSending = true
       this.isAutoScrollEnabled = true
       this.inputText = ''
+      this.resetChatInputHeight()
 
       // Collect attachment IDs and clear pending
       const attachmentIds = this.pendingAttachments
@@ -757,24 +882,18 @@ export default {
           confirmed: true
         })
 
+        if (toolCall.tool === 'create_learning_space') {
+          await this.handleCreateLearningSpaceConfirmResult(msgId, toolCall, result)
+          return
+        }
+
         toolCall.status = 'done'
         toolCall.success = result.success
         toolCall.message = result.message
         toolCall.result = result.data
 
         const msg = this.messages.find(m => m.id === msgId)
-        if (msg && msg.streamSegments) {
-          const seg = msg.streamSegments.find(s => s.type === 'tool' && s.toolCall && s.toolCall.id === toolCall.id)
-          if (seg) {
-            seg.toolCall = { ...toolCall }
-          }
-        }
-        if (msg && msg.segments) {
-          const seg = msg.segments.find(s => s.type === 'tool' && s.toolCall && s.toolCall.id === toolCall.id)
-          if (seg) {
-            seg.toolCall = { ...toolCall }
-          }
-        }
+        this.syncToolCallInMessage(msg, toolCall)
 
         this.$forceUpdate()
 
@@ -788,7 +907,443 @@ export default {
         toolCall.status = 'done'
         toolCall.success = false
         toolCall.message = 'Operation failed'
+        const msg = this.messages.find(m => m.id === msgId)
+        this.syncToolCallInMessage(msg, toolCall)
         this.$forceUpdate()
+      }
+    },
+
+    async handleCreateLearningSpaceConfirmResult(msgId, toolCall, result) {
+      const action = result?.data?.action
+
+      if (result?.status === 'accepted' && action === 'async_create_learning_space') {
+        toolCall.status = 'running'
+        toolCall.success = null
+        toolCall.result = result.data || {}
+        toolCall.message = this.getCreateSpaceRunningText(result?.data?.stage || 'kg_running')
+
+        const msg = this.messages.find(m => m.id === msgId)
+        this.syncToolCallInMessage(msg, toolCall)
+        this.$forceUpdate()
+
+        this.syncSidebarSpacesForTask(toolCall.id, 'created')
+        this.startCreateSpaceTaskPolling(toolCall.id)
+        return
+      }
+
+      if (result?.status === 'accepted' && action === 'existing_running_task') {
+        const existingStage = result?.data?.existing_stage
+        toolCall.status = 'done'
+        toolCall.success = false
+        toolCall.result = result.data || {}
+        toolCall.message = `已有任务进行中（${this.getCreateSpaceStageLabel(existingStage)}）`
+
+        const msg = this.messages.find(m => m.id === msgId)
+        this.syncToolCallInMessage(msg, toolCall)
+        this.$forceUpdate()
+
+        const existingToolCallId = result?.data?.existing_tool_call_id
+        if (existingToolCallId) {
+          this.syncSidebarSpacesForTask(existingToolCallId, 'created')
+          const holder = this.ensureCreateSpaceToolCard(existingToolCallId, {
+            message: this.getCreateSpaceRunningText(existingStage)
+          })
+          holder.toolCall.status = 'running'
+          holder.toolCall.success = null
+          holder.toolCall.message = this.getCreateSpaceRunningText(existingStage)
+          this.syncToolCallInMessage(holder.msg, holder.toolCall)
+          this.$forceUpdate()
+          this.startCreateSpaceTaskPolling(existingToolCallId)
+        }
+        return
+      }
+
+      toolCall.status = 'done'
+      toolCall.success = !!result?.success
+      toolCall.message = result?.message || '创建学习空间失败'
+      toolCall.result = result?.data || null
+
+      const msg = this.messages.find(m => m.id === msgId)
+      this.syncToolCallInMessage(msg, toolCall)
+      this.$forceUpdate()
+
+      if (result?.success) {
+        this.refreshSidebarSpaces(true)
+      }
+
+      if (result?.data?.action === 'navigate_to_space_chat' && result?.data?.space_id) {
+        setTimeout(() => {
+          uni.reLaunch({ url: `/pages/study/study?spaceId=${result.data.space_id}` })
+        }, 1200)
+      }
+    },
+
+    startCreateSpaceTaskPolling(toolCallId) {
+      if (!this.conversationId || !toolCallId) return
+      if (this.taskPollTimers[toolCallId]) return
+
+      const poll = async () => {
+        await this.pollCreateSpaceTaskStatus(toolCallId)
+      }
+
+      const timerId = setInterval(poll, 2000)
+      this.taskPollTimers = { ...this.taskPollTimers, [toolCallId]: timerId }
+      poll()
+    },
+
+    stopCreateSpaceTaskPolling(toolCallId) {
+      const timerId = this.taskPollTimers[toolCallId]
+      if (timerId) {
+        clearInterval(timerId)
+      }
+      const { [toolCallId]: _timer, ...restTimers } = this.taskPollTimers
+      this.taskPollTimers = restTimers
+      const { [toolCallId]: _lock, ...restLocks } = this.taskBindingLocks
+      this.taskBindingLocks = restLocks
+    },
+
+    stopAllTaskPolling() {
+      Object.values(this.taskPollTimers).forEach(timerId => clearInterval(timerId))
+      this.taskPollTimers = {}
+      this.taskBindingLocks = {}
+      this.taskNavigated = {}
+      this.taskSidebarSyncPhases = {}
+    },
+
+    async refreshSidebarSpaces(force = true) {
+      try {
+        const spacesStore = useSpacesStore()
+        await spacesStore.loadSpaces(force)
+      } catch (error) {
+        // Sidebar refresh is best-effort.
+      }
+    },
+
+    syncSidebarSpacesForTask(toolCallId, phase) {
+      if (!toolCallId || !phase) return
+
+      const currentPhases = this.taskSidebarSyncPhases[toolCallId] || {}
+      if (currentPhases[phase]) return
+
+      this.taskSidebarSyncPhases = {
+        ...this.taskSidebarSyncPhases,
+        [toolCallId]: {
+          ...currentPhases,
+          [phase]: true
+        }
+      }
+
+      this.refreshSidebarSpaces(true)
+    },
+
+    async pollCreateSpaceTaskStatus(toolCallId) {
+      try {
+        const response = await getQuickChatToolTaskStatus(this.conversationId, toolCallId)
+        if (!response) {
+          return
+        }
+
+        if (!response.success) {
+          const holder = this.ensureCreateSpaceToolCard(toolCallId, {
+            message: response?.message || '任务状态获取失败'
+          })
+          this.applyCreateSpaceTaskToCard(holder.msg, holder.toolCall, {
+            status: 'failed',
+            stage: 'kg_failed',
+            error_stage: 'kg_generation',
+            error_message: response?.message || '任务状态获取失败'
+          })
+          this.stopCreateSpaceTaskPolling(toolCallId)
+          return
+        }
+
+        if (!response.data) {
+          return
+        }
+
+        const task = response.data
+        const holder = this.ensureCreateSpaceToolCard(toolCallId, {
+          message: this.getCreateSpaceRunningText(task.stage)
+        })
+
+        this.applyCreateSpaceTaskToCard(holder.msg, holder.toolCall, task)
+
+        if (task.status === 'running' && (task.can_bind || task.stage === 'kg_done')) {
+          await this.tryBindCreateSpaceTask(toolCallId)
+          return
+        }
+
+        if (task.status === 'failed') {
+          this.stopCreateSpaceTaskPolling(toolCallId)
+          return
+        }
+
+        if (task.status === 'done' && task.stage === 'binding_done') {
+          this.stopCreateSpaceTaskPolling(toolCallId)
+          if (!this.taskNavigated[toolCallId] && task.space_id) {
+            this.taskNavigated = { ...this.taskNavigated, [toolCallId]: true }
+            setTimeout(() => {
+              uni.reLaunch({ url: `/pages/study/study?spaceId=${task.space_id}` })
+            }, 900)
+          }
+        }
+      } catch (err) {
+        // Ignore transient polling errors and continue polling.
+      }
+    },
+
+    async tryBindCreateSpaceTask(toolCallId) {
+      if (!this.conversationId || !toolCallId) return
+      if (this.taskBindingLocks[toolCallId]) return
+
+      this.taskBindingLocks = { ...this.taskBindingLocks, [toolCallId]: true }
+
+      const holder = this.ensureCreateSpaceToolCard(toolCallId, {
+        message: CREATE_SPACE_RUNNING_STAGE_TEXT.binding
+      })
+      holder.toolCall.status = 'running'
+      holder.toolCall.success = null
+      holder.toolCall.message = CREATE_SPACE_RUNNING_STAGE_TEXT.binding
+      this.syncToolCallInMessage(holder.msg, holder.toolCall)
+      this.$forceUpdate()
+
+      try {
+        const response = await bindQuickChatToolTask(this.conversationId, toolCallId)
+        if (!response?.success) {
+          const task = response?.data
+          if (task?.stage === 'kg_done' || String(response?.message || '').includes('尚未生成完成')) {
+            return
+          }
+
+          this.applyCreateSpaceTaskToCard(holder.msg, holder.toolCall, task || {
+            status: 'failed',
+            stage: 'binding_failed',
+            error_stage: 'binding',
+            error_message: response?.message || '学习空间绑定失败'
+          })
+          this.stopCreateSpaceTaskPolling(toolCallId)
+          return
+        }
+
+        const task = response?.data || {}
+        this.applyCreateSpaceTaskToCard(holder.msg, holder.toolCall, {
+          ...task,
+          status: task.status || 'done',
+          stage: task.stage || 'binding_done'
+        })
+        this.stopCreateSpaceTaskPolling(toolCallId)
+
+        const spaceId = task.space_id
+        if (spaceId && !this.taskNavigated[toolCallId]) {
+          this.taskNavigated = { ...this.taskNavigated, [toolCallId]: true }
+          setTimeout(() => {
+            uni.reLaunch({ url: `/pages/study/study?spaceId=${spaceId}` })
+          }, 900)
+        }
+      } catch (err) {
+        this.applyCreateSpaceTaskToCard(holder.msg, holder.toolCall, {
+          status: 'failed',
+          stage: 'binding_failed',
+          error_stage: 'binding',
+          error_message: err?.message || '学习空间绑定失败'
+        })
+        this.stopCreateSpaceTaskPolling(toolCallId)
+      } finally {
+        const { [toolCallId]: _lock, ...restLocks } = this.taskBindingLocks
+        this.taskBindingLocks = restLocks
+      }
+    },
+
+    async restoreQuickChatToolTasks() {
+      if (!this.conversationId) return
+
+      try {
+        const response = await listQuickChatToolTasks(this.conversationId)
+        if (!response?.success || !response?.data?.tasks) {
+          return
+        }
+
+        const tasks = response.data.tasks || []
+        for (const task of tasks) {
+          if (task.tool_name !== 'create_learning_space' || !task.tool_call_id) {
+            continue
+          }
+
+          const holder = this.ensureCreateSpaceToolCard(task.tool_call_id, {
+            message: this.getCreateSpaceRunningText(task.stage)
+          })
+          this.applyCreateSpaceTaskToCard(holder.msg, holder.toolCall, task, { syncSidebar: false })
+
+          if (task.status === 'running') {
+            this.startCreateSpaceTaskPolling(task.tool_call_id)
+          }
+        }
+      } catch (err) {
+        // Recovery is best-effort; ignore errors.
+      }
+    },
+
+    applyCreateSpaceTaskToCard(msg, toolCall, task, options = {}) {
+      if (!toolCall || !task) return
+      const shouldSyncSidebar = options.syncSidebar !== false
+
+      toolCall.result = task
+
+      if (task.status === 'running') {
+        toolCall.status = 'running'
+        toolCall.success = null
+        toolCall.message = this.getCreateSpaceRunningText(task.stage)
+      } else if (task.status === 'failed') {
+        toolCall.status = 'done'
+        toolCall.success = false
+        toolCall.message = this.getCreateSpaceFailedText(task)
+        if (shouldSyncSidebar) {
+          this.syncSidebarSpacesForTask(toolCall.id, 'finalized')
+        }
+      } else if (task.status === 'done') {
+        toolCall.status = 'done'
+        toolCall.success = true
+        toolCall.message = CREATE_SPACE_SUCCESS_TEXT
+        if (shouldSyncSidebar) {
+          this.syncSidebarSpacesForTask(toolCall.id, 'finalized')
+        }
+      }
+
+      this.syncToolCallInMessage(msg, toolCall)
+      this.$forceUpdate()
+    },
+
+    getCreateSpaceRunningText(stage) {
+      return CREATE_SPACE_RUNNING_STAGE_TEXT[stage] || '正在处理学习空间创建任务…'
+    },
+
+    getCreateSpaceStageLabel(stage) {
+      const mapping = {
+        queued: '排队中',
+        space_created: '空间已创建',
+        kg_running: '知识图谱生成中',
+        kg_done: '知识图谱已完成',
+        binding: '绑定中',
+        binding_done: '绑定完成',
+        kg_failed: '知识图谱失败',
+        binding_failed: '绑定失败',
+        timeout: '任务超时',
+        cleanup_done: '清理完成',
+        cleanup_failed: '清理失败'
+      }
+      return mapping[stage] || '处理中'
+    },
+
+    getCreateSpaceFailedText(task) {
+      if (!task) return '学习空间创建失败'
+
+      const errorStage = task.error_stage
+      const errorMessage = task.error_message || '未知错误'
+
+      let mainText = ''
+      if (errorStage === 'kg_generation') {
+        mainText = `知识图谱生成失败：${errorMessage}`
+      } else if (errorStage === 'binding') {
+        mainText = `学习空间绑定失败：${errorMessage}`
+      } else if (errorStage === 'kg_generation_timeout') {
+        mainText = '知识图谱生成超时（2分钟）'
+      } else if (errorStage === 'cleanup') {
+        mainText = `失败后清理空间失败：${errorMessage}`
+      } else {
+        mainText = `学习空间创建失败：${errorMessage}`
+      }
+
+      const cleanupStage = task?.result_payload?.cleanup_stage
+      if (cleanupStage === 'cleanup_failed') {
+        const cleanupError = task?.result_payload?.cleanup_error || '未知错误'
+        const cleanupText = `失败后清理空间失败：${cleanupError}`
+        if (!mainText.includes(cleanupText)) {
+          mainText = `${mainText}\n${cleanupText}`
+        }
+      }
+
+      return mainText
+    },
+
+    ensureCreateSpaceToolCard(toolCallId, options = {}) {
+      const existing = this.findToolCallCard(toolCallId)
+      if (existing) return existing
+
+      const toolCall = {
+        id: toolCallId,
+        tool: 'create_learning_space',
+        status: 'running',
+        success: null,
+        display_name: TOOL_DISPLAY_NAMES.create_learning_space,
+        requires_confirmation: false,
+        arguments: {},
+        result: null,
+        message: options.message || CREATE_SPACE_RUNNING_STAGE_TEXT.kg_running
+      }
+
+      const msg = {
+        id: this.nextId++,
+        role: 'ai',
+        content: '',
+        isStreaming: false,
+        isWaitingOutput: false,
+        isError: false,
+        segments: [{ type: 'tool', toolCall: { ...toolCall } }],
+        streamSegments: null,
+        toolCalls: [{ ...toolCall }],
+        isSystemToolStatus: true
+      }
+
+      this.messages = [...this.messages, msg]
+      this.$nextTick(() => this.scrollToBottom())
+
+      return this.findToolCallCard(toolCallId)
+    },
+
+    findToolCallCard(toolCallId) {
+      if (!toolCallId) return null
+
+      for (let i = this.messages.length - 1; i >= 0; i -= 1) {
+        const msg = this.messages[i]
+        const segmentSources = [msg?.segments, msg?.streamSegments]
+
+        for (const source of segmentSources) {
+          if (!Array.isArray(source)) continue
+          const seg = source.find(s => s?.type === 'tool' && s?.toolCall?.id === toolCallId)
+          if (seg?.toolCall) {
+            return { msg, toolCall: seg.toolCall }
+          }
+        }
+
+        if (Array.isArray(msg?.toolCalls)) {
+          const tc = msg.toolCalls.find(t => t?.id === toolCallId)
+          if (tc) {
+            return { msg, toolCall: tc }
+          }
+        }
+      }
+
+      return null
+    },
+
+    syncToolCallInMessage(msg, toolCall) {
+      if (!msg || !toolCall) return
+
+      const syncSegmentCollection = (segments) => {
+        if (!Array.isArray(segments)) return
+        for (let i = 0; i < segments.length; i += 1) {
+          const seg = segments[i]
+          if (seg?.type === 'tool' && seg?.toolCall?.id === toolCall.id) {
+            segments[i] = { ...seg, toolCall: { ...toolCall } }
+          }
+        }
+      }
+
+      syncSegmentCollection(msg.streamSegments)
+      syncSegmentCollection(msg.segments)
+
+      if (Array.isArray(msg.toolCalls)) {
+        msg.toolCalls = msg.toolCalls.map(tc => (tc?.id === toolCall.id ? { ...toolCall } : tc))
       }
     },
 
@@ -808,18 +1363,7 @@ export default {
       toolCall.message = 'User cancelled the operation'
 
       const msg = this.messages.find(m => m.id === msgId)
-      if (msg && msg.streamSegments) {
-        const seg = msg.streamSegments.find(s => s.type === 'tool' && s.toolCall && s.toolCall.id === toolCall.id)
-        if (seg) {
-          seg.toolCall = { ...toolCall }
-        }
-      }
-      if (msg && msg.segments) {
-        const seg = msg.segments.find(s => s.type === 'tool' && s.toolCall && s.toolCall.id === toolCall.id)
-        if (seg) {
-          seg.toolCall = { ...toolCall }
-        }
-      }
+      this.syncToolCallInMessage(msg, toolCall)
 
       this.$forceUpdate()
     },
@@ -896,12 +1440,79 @@ export default {
       return toolCall.status
     },
 
+    getToolName(toolCall) {
+      return String(toolCall?.tool || '').trim().toLowerCase()
+    },
+
+    isCreateLearningSpaceTool(toolCall) {
+      const toolName = this.getToolName(toolCall)
+      if (toolName === 'create_learning_space') return true
+
+      const displayName = String(toolCall?.display_name || '').trim().toLowerCase()
+      if (displayName === '创建学习空间') return true
+      if (displayName.includes('create') && displayName.includes('space')) return true
+
+      return false
+    },
+
+    normalizeToolArguments(toolCall) {
+      const args = toolCall?.arguments
+      if (!args) return {}
+      if (typeof args === 'object') return args
+      if (typeof args === 'string') {
+        try {
+          const parsed = JSON.parse(args)
+          return parsed && typeof parsed === 'object' ? parsed : {}
+        } catch {
+          return {}
+        }
+      }
+      return {}
+    },
+
+    getCreateSpaceConfirmName(toolCall) {
+      const args = this.normalizeToolArguments(toolCall)
+      const name = typeof args?.name === 'string' ? args.name.trim() : ''
+      return name || '未命名学习空间'
+    },
+
+    getCreateSpacePreferenceText(toolCall) {
+      const args = this.normalizeToolArguments(toolCall)
+      const preferences = args?.learning_preferences
+      if (!preferences || typeof preferences !== 'object') {
+        return '未提供'
+      }
+
+      const presetPreferences = Array.isArray(preferences.preset_preferences)
+        ? preferences.preset_preferences
+        : []
+      const presetLabels = presetPreferences
+        .map((key) => LEARNING_PREFERENCE_LABELS[key] || key)
+        .filter(Boolean)
+
+      const customPreference = typeof preferences.custom_preference === 'string'
+        ? preferences.custom_preference.trim()
+        : ''
+
+      const parts = []
+      if (presetLabels.length > 0) {
+        parts.push(presetLabels.join(', '))
+      }
+      if (customPreference) {
+        parts.push(`自定义：${customPreference}`)
+      }
+
+      return parts.length > 0 ? parts.join(' | ') : '未提供'
+    },
+
     getConfirmationText(toolCall) {
-      if (toolCall.tool === 'rebind_to_learning_space') {
+      if (this.getToolName(toolCall) === 'rebind_to_learning_space') {
         return `Bind conversation to "${toolCall.arguments?.space_name || 'learning space'}"?`
       }
-      if (toolCall.tool === 'create_learning_space') {
-        return `Create learning space "${toolCall.arguments?.name || 'new space'}"?`
+      if (this.isCreateLearningSpaceTool(toolCall)) {
+        const name = this.getCreateSpaceConfirmName(toolCall)
+        const preferenceText = this.getCreateSpacePreferenceText(toolCall)
+        return `创建学习空间「${name}」？\n学习偏好：${preferenceText}`
       }
       return 'Confirm this operation?'
     },
@@ -1108,6 +1719,7 @@ export default {
       this.isStreaming = false
       this.isSending = false
       this.activeToolCalls = []
+      this.stopAllTaskPolling()
 
       this.conversationId = conv.id
       this.messages = []
@@ -1132,6 +1744,7 @@ export default {
           created_at: m.created_at
         }))
         this.nextId = this.messages.length + 1
+        await this.restoreQuickChatToolTasks()
         this.$nextTick(() => this.scrollToBottom())
       } catch (err) {
         uni.showToast({ title: 'Failed to load history', icon: 'none' })
@@ -1149,12 +1762,14 @@ export default {
       this.isStreaming = false
       this.isSending = false
       this.activeToolCalls = []
+      this.stopAllTaskPolling()
       this.cleanupPendingAttachments()
 
       this.messages = []
       this.conversationId = null
       this.nextId = 1
       this.inputText = ''
+      this.resetChatInputHeight()
 
       // Re-add welcome message
       this.messages = [{
@@ -1757,10 +2372,34 @@ export default {
   margin-bottom: 8px;
 }
 
+.tool-confirm-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.tool-confirm-label {
+  width: 66px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.tool-confirm-value {
+  flex: 1;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .tool-confirm-text {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.6);
   line-height: 1.4;
+  white-space: pre-line;
 }
 
 .tool-confirm-buttons {
@@ -1818,6 +2457,7 @@ export default {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.5);
   line-height: 1.4;
+  white-space: pre-line;
 }
 
 /* Tool spaces list */
@@ -1950,7 +2590,7 @@ export default {
 .chat-input-bar {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   padding: 10px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -1959,14 +2599,23 @@ export default {
 
 .chat-input {
   flex: 1;
-  height: 36px;
-  padding: 0 12px;
+  min-height: 36px;
+  padding: 8px 12px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   color: #FFFFFF;
   font-size: 14px;
+  line-height: 20px;
+  box-sizing: border-box;
+  overflow-y: hidden;
   outline: none;
+}
+
+.chat-input-textarea {
+  resize: none;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .chat-send-btn {
