@@ -29,6 +29,7 @@ from payment.service import (
     handle_alipay_notification,
     list_pending_orders,
     list_user_orders,
+    notify_user_paid,
     ADMIN_EMAILS,
 )
 
@@ -43,7 +44,7 @@ async def create_payment_order(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """创建支付订单，发送管理员通知邮件"""
+    """创建支付订单"""
     try:
         return await create_order(db, current_user, request.tier, request.billing_cycle)
     except InvalidPlanError as e:
@@ -51,6 +52,20 @@ async def create_payment_order(
     except AlipayError as e:
         logger.error(f"Payment error creating order: {e}")
         raise HTTPException(status_code=502, detail="支付服务暂时不可用，请稍后重试")
+
+
+@router.post("/orders/{order_id}/notify")
+async def notify_paid(
+    order_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """用户点击'我已支付'，发送管理员通知邮件"""
+    try:
+        await notify_user_paid(db, order_id, current_user)
+        return {"ok": True}
+    except OrderNotFoundError:
+        raise HTTPException(status_code=404, detail="订单不存在")
 
 
 @router.get("/orders/{order_id}", response_model=OrderStatusResponse)

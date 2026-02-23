@@ -110,7 +110,36 @@ async def create_order(
     await db.commit()
     await db.refresh(order)
 
-    # 异步发送管理员通知邮件（不阻塞响应）
+    return CreateOrderResponse(
+        order_id=order.id,
+        out_trade_no=out_trade_no,
+        amount_cents=amount_cents,
+        amount_display=f"¥{total_amount}",
+        expires_at=order.expires_at,
+    )
+
+
+async def notify_user_paid(
+    db: AsyncSession,
+    order_id,
+    user: User,
+) -> None:
+    """用户点击'我已支付'时，发送管理员通知邮件"""
+    result = await db.execute(
+        select(PaymentOrder).where(
+            PaymentOrder.id == order_id,
+            PaymentOrder.user_id == user.id,
+            PaymentOrder.status == OrderStatus.PENDING,
+        )
+    )
+    order = result.scalar_one_or_none()
+    if order is None:
+        raise OrderNotFoundError("Order not found or not pending")
+
+    tier_name = _TIER_NAMES.get(order.target_tier, order.target_tier.value)
+    cycle_name = _CYCLE_NAMES.get(order.billing_cycle, order.billing_cycle.value)
+    total_amount = _cents_to_yuan(order.amount_cents)
+
     settings = get_settings()
     try:
         await send_payment_notification(
@@ -121,18 +150,10 @@ async def create_order(
             cycle_name=cycle_name,
             amount_display=f"¥{total_amount}",
             order_id=str(order.id),
-            out_trade_no=out_trade_no,
+            out_trade_no=order.out_trade_no,
         )
     except Exception:
         logger.exception("Failed to send payment notification email")
-
-    return CreateOrderResponse(
-        order_id=order.id,
-        out_trade_no=out_trade_no,
-        amount_cents=amount_cents,
-        amount_display=f"¥{total_amount}",
-        expires_at=order.expires_at,
-    )
 
 
 async def admin_confirm_order(order_id, admin_user: User) -> OrderStatusResponse:
