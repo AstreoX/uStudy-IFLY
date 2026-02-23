@@ -70,6 +70,10 @@ export default {
     showLegend: {
       type: Boolean,
       default: true
+    },
+    layoutKey: {
+      type: String,
+      default: ''
     }
   },
 
@@ -108,6 +112,12 @@ export default {
     showLegend() {
       this.measureSize()
       this.scheduleDraw()
+    },
+    layoutKey() {
+      this.$nextTick(() => {
+        this.measureSize()
+        this.scheduleDraw()
+      })
     }
   },
 

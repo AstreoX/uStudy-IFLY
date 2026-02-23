@@ -6,6 +6,7 @@
           :current-values="radarCurrentValues"
           :last-week-values="radarLastWeekValues"
           :show-legend="!isCompactRadar"
+          :layout-key="radarLayoutKey"
         />
       </view>
       <view v-if="!isCompactRadar" class="analytics-right">
@@ -104,6 +105,9 @@ export default {
     },
     isCompactRadar() {
       return this.widgetW === 2 && this.widgetH === 2
+    },
+    radarLayoutKey() {
+      return `${this.widgetW}x${this.widgetH}-${this.isCompactRadar ? 'c' : 'f'}`
     }
   },
   mounted() {

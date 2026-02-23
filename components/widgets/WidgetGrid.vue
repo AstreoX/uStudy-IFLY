@@ -28,7 +28,10 @@
           <text class="drag-dots">:::</text>
         </view>
         <view v-if="editMode" class="delete-btn" @pointerdown.stop @tap="$emit('remove:widget', widget.id)">
-          <text class="delete-x">&times;</text>
+          <svg viewBox="0 0 256 256" class="delete-x-icon" aria-hidden="true">
+            <line x1="72" y1="72" x2="184" y2="184" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="22"/>
+            <line x1="184" y1="72" x2="72" y2="184" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="22"/>
+          </svg>
         </view>
         <view
           v-if="editMode && isResizable(widget)"
@@ -41,15 +44,20 @@
         </view>
         <CalendarWidget v-if="widget.type === 'calendar'" :variant="widget.variant" />
         <ClockWidget v-else-if="widget.type === 'clock'" :variant="widget.variant" />
-        <WeatherWidget v-else-if="widget.type === 'weather'" :variant="widget.variant" />
+        <WeatherWidget
+          v-else-if="widget.type === 'weather'"
+          :variant="widget.variant"
+          :widget-w="getRenderW(widget)"
+          :widget-h="getRenderH(widget)"
+        />
         <SubjectWidget v-else-if="widget.type === 'subject'" :widget-id="widget.id" :subject="getSubjectData(widget.id)" :spaces="spaces" :editMode="editMode" @select-subject="selectSubject(widget.id, $event)" />
         <PreviousWidget v-else-if="widget.type === 'previous'" :spaces="spaces" :graph-cache="graphCache" />
         <UpdatesWidget v-else-if="widget.type === 'updates'" />
         <RadarSummaryWidget
           v-else-if="widget.type === 'radar'"
           :widget-id="widget.id"
-          :widget-w="widget.w"
-          :widget-h="widget.h"
+          :widget-w="getRenderW(widget)"
+          :widget-h="getRenderH(widget)"
         />
       </view>
     </view>
@@ -183,9 +191,15 @@ export default {
       const width = dom.clientWidth
       this.cellSize = (width - GAP * (GRID_COLS - 1)) / GRID_COLS
     },
+    getRenderW(widget) {
+      return (this.resizingId === widget.id) ? this.highlightW : widget.w
+    },
+    getRenderH(widget) {
+      return (this.resizingId === widget.id) ? this.highlightH : widget.h
+    },
     getWidgetStyle(widget) {
-      const w = (this.resizingId === widget.id) ? this.highlightW : widget.w
-      const h = (this.resizingId === widget.id) ? this.highlightH : widget.h
+      const w = this.getRenderW(widget)
+      const h = this.getRenderH(widget)
       return {
         'grid-column': `${widget.col} / span ${w}`,
         'grid-row': `${widget.row} / span ${h}`
@@ -541,9 +555,7 @@ export default {
   height: 20px;
   border-radius: 50%;
   background: rgba(239, 68, 68, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   cursor: pointer;
   transition: background 0.15s, transform 0.15s;
 }
@@ -553,11 +565,15 @@ export default {
   transform: scale(1.15);
 }
 
-.delete-x {
-  font-size: 14px;
+.delete-x-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
   color: #FFFFFF;
-  line-height: 1;
-  font-weight: 600;
+  pointer-events: none;
 }
 
 /* Grid overlay for edit mode */

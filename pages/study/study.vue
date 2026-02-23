@@ -452,13 +452,15 @@
                 ref="chatInput"
                 class="chat-input chat-input-textarea"
                 placeholder="Ask anything..."
-                maxlength="-1"
+                :rows="1"
+                :maxlength="100000"
                 confirm-type="send"
                 :auto-height="false"
                 :disabled="!spaceId"
                 :style="chatInputDynamicStyle"
                 v-model="inputText"
                 @input="handleChatInput"
+                @linechange="handleChatLineChange"
                 @keydown="handleChatKeydown"
                 @confirm="handleSend"
               />
@@ -633,7 +635,9 @@ export default {
       inputText: '',
       chatInputHeight: 36,
       chatInputLineHeight: 20,
-      chatInputVerticalPadding: 16,
+      chatInputVerticalPadding: 14,
+      chatInputExtraPerWrappedLine: 0,
+      chatInputMultiLineCompensation: 2,
       chatInputMaxLines: 6,
       chatInputMinHeight: 36,
       nextId: 1,
@@ -693,7 +697,9 @@ export default {
       return this.spaceId && this.inputText.trim().length > 0 && !this.isSending
     },
     chatInputMaxHeight() {
-      return this.chatInputLineHeight * this.chatInputMaxLines + this.chatInputVerticalPadding
+      const base = this.chatInputLineHeight * this.chatInputMaxLines + this.chatInputVerticalPadding
+      const extra = this.chatInputExtraPerWrappedLine * Math.max(0, this.chatInputMaxLines - 1)
+      return base + extra + this.chatInputMultiLineCompensation
     },
     chatInputDynamicStyle() {
       const height = Math.max(this.chatInputMinHeight, Math.min(this.chatInputHeight, this.chatInputMaxHeight))
@@ -725,7 +731,7 @@ export default {
       inputEl.addEventListener('paste', this.handlePaste)
     }
     this.$nextTick(() => {
-      this.recalcChatInputHeight()
+      this.resetChatInputHeight()
     })
   },
   beforeUnmount() {
@@ -741,13 +747,29 @@ export default {
     }
   },
   methods: {
-    getChatInputElement() {
+    getChatInputHostElement() {
       const ref = this.$refs.chatInput
       if (!ref) return null
-      if (ref.$el) {
-        return ref.$el.querySelector('textarea') || ref.$el.querySelector('input')
+      if (ref.$el && ref.$el.nodeType === 1) return ref.$el
+      if (ref.nodeType === 1) return ref
+      return null
+    },
+
+    getChatInputElement() {
+      const host = this.getChatInputHostElement()
+      if (host && typeof host.querySelector === 'function') {
+        const inner = host.querySelector('textarea, .uni-textarea-textarea, input')
+        if (inner) return inner
       }
-      return ref
+
+      if (this.$el && typeof this.$el.querySelector === 'function') {
+        const fallback = this.$el.querySelector(
+          '.chat-input-textarea textarea, .chat-input-textarea .uni-textarea-textarea, textarea.chat-input-textarea'
+        )
+        if (fallback) return fallback
+      }
+
+      return host
     },
 
     handleChatInput(event) {
@@ -755,9 +777,42 @@ export default {
       if (typeof value === 'string' && value !== this.inputText) {
         this.inputText = value
       }
-      this.$nextTick(() => {
+      if (!this.inputText) {
+        this.resetChatInputHeight()
+      }
+    },
+
+    handleChatLineChange(event) {
+      const rawLineCount = Number(event?.detail?.lineCount)
+      if (!Number.isFinite(rawLineCount)) {
         this.recalcChatInputHeight()
-      })
+        return
+      }
+      const lineCount = Math.max(1, Math.floor(rawLineCount))
+
+      if (lineCount <= 1) {
+        this.resetChatInputHeight()
+        return
+      }
+
+      const clampedLineCount = Math.min(lineCount, this.chatInputMaxLines)
+      const perLineGrowth = this.chatInputLineHeight
+      const lineBasedHeight = Math.min(
+        this.chatInputMaxHeight,
+        this.chatInputMinHeight + (clampedLineCount - 1) * perLineGrowth + this.chatInputMultiLineCompensation
+      )
+      let nextHeight = lineBasedHeight
+      const inputEl = this.getChatInputElement()
+      if (inputEl && typeof inputEl.scrollHeight === 'number') {
+        inputEl.style.height = 'auto'
+        const hostEl = this.getChatInputHostElement()
+        const structuralPadding = inputEl !== hostEl ? this.chatInputVerticalPadding : 0
+        const measuredNeeded = Math.ceil(inputEl.scrollHeight) + structuralPadding + this.chatInputMultiLineCompensation
+        nextHeight = Math.max(nextHeight, measuredNeeded)
+      }
+      nextHeight = Math.max(this.chatInputMinHeight, Math.min(this.chatInputMaxHeight, nextHeight))
+      this.chatInputHeight = nextHeight
+      this.applyChatInputDomStyle(nextHeight)
     },
 
     handleChatKeydown(event) {
@@ -775,23 +830,60 @@ export default {
       const maxHeight = this.chatInputMaxHeight
       if (!this.inputText) {
         this.chatInputHeight = minHeight
+        this.applyChatInputDomStyle(minHeight)
         return
       }
 
       const inputEl = this.getChatInputElement()
       if (!inputEl || typeof inputEl.scrollHeight !== 'number') {
         this.chatInputHeight = minHeight
+        this.applyChatInputDomStyle(minHeight)
         return
       }
 
       inputEl.style.height = 'auto'
       const measured = Math.ceil(inputEl.scrollHeight || minHeight)
-      const nextHeight = Math.min(maxHeight, Math.max(minHeight, measured))
+      const hostEl = this.getChatInputHostElement()
+      const structuralPadding = inputEl !== hostEl ? this.chatInputVerticalPadding : 0
+      const measuredHeight = Math.max(minHeight, measured + structuralPadding + this.chatInputMultiLineCompensation)
+      const wrapTriggerHeight = minHeight + this.chatInputLineHeight * 0.7
+      if (measuredHeight <= wrapTriggerHeight) {
+        this.chatInputHeight = minHeight
+        this.applyChatInputDomStyle(minHeight)
+        return
+      }
+
+      const nextHeight = Math.min(maxHeight, measuredHeight)
       this.chatInputHeight = nextHeight
+      this.applyChatInputDomStyle(nextHeight)
+    },
+
+    applyChatInputDomStyle(height) {
+      const hostEl = this.getChatInputHostElement()
+      const inputEl = this.getChatInputElement()
+      const maxHeight = this.chatInputMaxHeight
+
+      const frameEl = hostEl && hostEl.style ? hostEl : (inputEl && inputEl.style ? inputEl : null)
+      if (!frameEl) return
+
+      frameEl.style.height = `${height}px`
+      frameEl.style.maxHeight = `${maxHeight}px`
+      frameEl.style.overflowY = height >= maxHeight ? 'auto' : 'hidden'
+
+      if (inputEl && inputEl !== frameEl && inputEl.style) {
+        inputEl.style.height = '100%'
+        inputEl.style.maxHeight = '100%'
+        inputEl.style.overflowY = height >= maxHeight ? 'auto' : 'hidden'
+      }
+
+      if (inputEl && typeof inputEl.scrollTop === 'number' && height < maxHeight) {
+        inputEl.scrollTop = 0
+      }
     },
 
     resetChatInputHeight() {
       this.chatInputHeight = this.chatInputMinHeight
+      this.applyChatInputDomStyle(this.chatInputMinHeight)
     },
 
     async loadSpaceInfo() {
@@ -2720,8 +2812,9 @@ export default {
 
 .chat-input {
   flex: 1;
+  height: 36px;
   min-height: 36px;
-  padding: 8px 12px;
+  padding: 7px 12px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
@@ -2737,6 +2830,75 @@ export default {
   resize: none;
   white-space: pre-wrap;
   word-break: break-word;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+textarea.chat-input-textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.chat-input-textarea :deep(.uni-textarea-wrapper),
+.chat-input-textarea :deep(.uni-textarea-placeholder) {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+.chat-input-textarea :deep(textarea),
+.chat-input-textarea :deep(.uni-textarea-textarea) {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  line-height: 20px;
+  font-size: 14px;
+  color: #FFFFFF;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.chat-input-textarea::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-input-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-input-textarea::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.chat-input-textarea::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.chat-input-textarea :deep(textarea::-webkit-scrollbar),
+.chat-input-textarea :deep(.uni-textarea-textarea::-webkit-scrollbar) {
+  width: 6px;
+}
+
+.chat-input-textarea :deep(textarea::-webkit-scrollbar-track),
+.chat-input-textarea :deep(.uni-textarea-textarea::-webkit-scrollbar-track) {
+  background: transparent;
+}
+
+.chat-input-textarea :deep(textarea::-webkit-scrollbar-thumb),
+.chat-input-textarea :deep(.uni-textarea-textarea::-webkit-scrollbar-thumb) {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.chat-input-textarea :deep(textarea::-webkit-scrollbar-thumb:hover),
+.chat-input-textarea :deep(.uni-textarea-textarea::-webkit-scrollbar-thumb:hover) {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .chat-input:disabled {
