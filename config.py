@@ -14,6 +14,10 @@ class Settings(BaseSettings):
 
     # 数据库
     database_url: str = "postgresql+asyncpg://user:password@localhost:5432/ustudy"
+    db_pool_size: int = 5
+    db_max_overflow: int = 5
+    db_pool_timeout_seconds: int = 15
+    db_pool_recycle_seconds: int = 1800
 
     # 应用
     app_env: str = "development"
