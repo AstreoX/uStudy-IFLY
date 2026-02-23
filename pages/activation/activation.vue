@@ -114,7 +114,8 @@
               <button
                 class="plan-btn"
                 :class="[`plan-btn-${plan.id.toLowerCase()}`, { 'plan-btn-current': isCurrentPlan(plan.id) }]"
-                :disabled="isCurrentPlan(plan.id)"
+                :disabled="isCurrentPlan(plan.id) || plan.id === 'FREE'"
+                @tap="handleSelectPlan(plan)"
               >
                 {{ isCurrentPlan(plan.id) ? '当前方案' : plan.buttonText }}
               </button>
@@ -163,26 +164,39 @@
       @cancel="showActivationModal = false"
       @close="showActivationModal = false"
     />
+
+    <PaymentModal
+      :visible="showPaymentModal"
+      :plan="selectedPlan"
+      :billing-cycle="billingCycle"
+      @close="showPaymentModal = false"
+      @success="handlePaymentSuccess"
+    />
   </view>
 </template>
 
 <script>
 import HomeSidebar from '@/components/layout/HomeSidebar.vue'
 import ActivationModal from '@/components/activation-modal/activation-modal.vue'
+import PaymentModal from '@/components/payment-modal/payment-modal.vue'
 import { getMe } from '@/api/auth'
+import { getOrderStatus } from '@/api/payment'
 import { useUserStore } from '@/store/user'
 import { getTokens } from '@/utils/storage'
 
 export default {
   components: {
     HomeSidebar,
-    ActivationModal
+    ActivationModal,
+    PaymentModal
   },
   data() {
     return {
       sidebarCollapsed: false,
       user: null,
       showActivationModal: false,
+      showPaymentModal: false,
+      selectedPlan: null,
       billingCycle: 'semester',
       billingCycles: [
         { id: 'monthly', label: '月付' },
@@ -290,6 +304,7 @@ export default {
   },
   onShow() {
     this.loadUser()
+    this.checkAlipayReturn()
   },
   methods: {
     async loadUser() {
@@ -353,6 +368,47 @@ export default {
         ...item,
         open: i === index ? !item.open : item.open
       }))
+    },
+    handleSelectPlan(plan) {
+      if (this.isCurrentPlan(plan.id) || plan.id === 'FREE') return
+      this.selectedPlan = plan
+      this.showPaymentModal = true
+    },
+    handlePaymentSuccess(response) {
+      const userStore = useUserStore()
+      userStore.updateSubscription(
+        response.subscription_tier,
+        response.subscription_expires_at
+      )
+      this.user = {
+        ...(this.user || {}),
+        subscription_tier: response.subscription_tier,
+        subscription_expires_at: response.subscription_expires_at
+      }
+    },
+    async checkAlipayReturn() {
+      // #ifdef H5
+      const params = new URLSearchParams(window.location.search)
+      const outTradeNo = params.get('out_trade_no')
+      if (!outTradeNo) return
+
+      // Clean URL params without reloading
+      const cleanUrl = window.location.pathname + window.location.hash
+      window.history.replaceState({}, '', cleanUrl)
+
+      // Refresh user data to get updated subscription
+      try {
+        const user = await getMe()
+        this.user = user
+        useUserStore().setUser(user)
+
+        if (user.subscription_tier !== 'FREE') {
+          uni.showToast({ title: '订阅已激活', icon: 'none' })
+        }
+      } catch {
+        // Silently ignore
+      }
+      // #endif
     },
     handleSelectSpace(spaceId) {
       uni.reLaunch({ url: `/pages/study/study?spaceId=${spaceId}` })
