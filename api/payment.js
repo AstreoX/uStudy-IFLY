@@ -8,6 +8,13 @@ export function createOrder({ tier, billing_cycle }) {
   })
 }
 
+export function notifyPaid(orderId) {
+  return request({
+    url: `/api/payment/orders/${orderId}/notify`,
+    method: 'POST'
+  })
+}
+
 export function getOrderStatus(orderId) {
   return request({
     url: `/api/payment/orders/${orderId}`,

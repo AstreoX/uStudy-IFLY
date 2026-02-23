@@ -120,7 +120,7 @@
 </template>
 
 <script>
-import { createOrder, getOrderStatus } from '@/api/payment'
+import { createOrder, notifyPaid, getOrderStatus } from '@/api/payment'
 import { getMe } from '@/api/auth'
 import { useUserStore } from '@/store/user'
 
@@ -237,10 +237,17 @@ export default {
         this.loading = false
       }
     },
-    handleConfirmPaid() {
+    async handleConfirmPaid() {
       if (this.polling) return
       this.polling = true
       this.errorMsg = ''
+
+      try {
+        await notifyPaid(this.orderId)
+      } catch {
+        // 通知失败不阻塞轮询
+      }
+
       this.startPolling()
     },
     startPolling() {
