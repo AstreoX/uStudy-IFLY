@@ -23,6 +23,9 @@ from chat.schemas import (
     ToolCallExecuteResponse,
     ToolConfirmRequest,
     ToolConfirmResponse,
+    QuickChatToolTaskStatusResponse,
+    QuickChatToolTaskListResponse,
+    QuickChatToolTaskBindResponse,
     ClientToolResultRequest,
     ClientToolResultResponse,
 )
@@ -639,7 +642,7 @@ async def send_quick_chat_message(
 
     ## 响应
 
-    - `status`: "executed" 已执行 / "rejected" 已拒绝
+    - `status`: "executed" 已执行 / "rejected" 已拒绝 / "accepted" 异步受理
     - `success`: 执行是否成功（仅当 status=executed）
     - `data`: 执行结果数据
     - `message`: 结果消息
@@ -690,10 +693,148 @@ async def confirm_tool_execution(
 
     # Execute the tool
     executor = LearningSpaceToolExecutor(user.id, conversation_id)
-    tool_result = await executor.execute(request.tool_name, request.arguments)
+    tool_result = await executor.execute(
+        request.tool_name,
+        request.arguments,
+        tool_call_id=tool_call_id,
+    )
+
+    response_status = "executed"
+    action = (
+        tool_result.data.get("action")
+        if isinstance(tool_result.data, dict)
+        else None
+    )
+    if (
+        request.tool_name == "create_learning_space"
+        and action in {"async_create_learning_space", "existing_running_task"}
+    ):
+        response_status = "accepted"
 
     return ToolConfirmResponse(
-        status="executed",
+        status=response_status,
+        success=tool_result.success,
+        data=tool_result.data,
+        message=tool_result.message,
+    )
+
+
+@router.get(
+    "/quick-chat/conversations/{conversation_id}/tools/tasks",
+    response_model=QuickChatToolTaskListResponse,
+    summary="获取快速对话工具任务列表",
+    description="用于页面刷新/重开后恢复 create_learning_space 异步任务跟踪。",
+)
+async def list_quick_chat_tool_tasks(
+    conversation_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> QuickChatToolTaskListResponse:
+    """List async quick-chat create_learning_space tasks for current conversation."""
+    service = ChatService(db)
+
+    # Validate conversation access
+    try:
+        await service.validate_conversation_access(
+            user.id, conversation_id, require_space=False
+        )
+    except ConversationNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
+        )
+    except ConversationAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "ACCESS_DENIED", "message": "无权访问该对话"},
+        )
+
+    executor = LearningSpaceToolExecutor(user.id, conversation_id)
+    tool_result = await executor.list_tool_tasks()
+
+    return QuickChatToolTaskListResponse(
+        success=tool_result.success,
+        data=tool_result.data or {"tasks": [], "count": 0},
+        message=tool_result.message,
+    )
+
+
+@router.get(
+    "/quick-chat/conversations/{conversation_id}/tools/{tool_call_id}/status",
+    response_model=QuickChatToolTaskStatusResponse,
+    summary="获取快速对话工具任务状态",
+    description="查询并同步指定 create_learning_space 异步任务状态（含阶段推进与失败原因）。",
+)
+async def get_quick_chat_tool_task_status(
+    conversation_id: UUID,
+    tool_call_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> QuickChatToolTaskStatusResponse:
+    """Get async create-space task status by tool_call_id."""
+    service = ChatService(db)
+
+    # Validate conversation access
+    try:
+        await service.validate_conversation_access(
+            user.id, conversation_id, require_space=False
+        )
+    except ConversationNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
+        )
+    except ConversationAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "ACCESS_DENIED", "message": "无权访问该对话"},
+        )
+
+    executor = LearningSpaceToolExecutor(user.id, conversation_id)
+    tool_result = await executor.get_tool_task_status(tool_call_id)
+
+    return QuickChatToolTaskStatusResponse(
+        success=tool_result.success,
+        data=tool_result.data,
+        message=tool_result.message,
+    )
+
+
+@router.post(
+    "/quick-chat/conversations/{conversation_id}/tools/{tool_call_id}/bind",
+    response_model=QuickChatToolTaskBindResponse,
+    summary="绑定快速对话异步创建的学习空间",
+    description="在知识图谱完成后执行会话绑定；失败时返回阶段化错误信息。",
+)
+async def bind_quick_chat_tool_task(
+    conversation_id: UUID,
+    tool_call_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> QuickChatToolTaskBindResponse:
+    """Bind conversation to the space created by async create_learning_space task."""
+    service = ChatService(db)
+
+    # Validate conversation access
+    try:
+        await service.validate_conversation_access(
+            user.id, conversation_id, require_space=False
+        )
+    except ConversationNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
+        )
+    except ConversationAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "ACCESS_DENIED", "message": "无权访问该对话"},
+        )
+
+    executor = LearningSpaceToolExecutor(user.id, conversation_id)
+    tool_result = await executor.bind_tool_task(tool_call_id)
+
+    return QuickChatToolTaskBindResponse(
         success=tool_result.success,
         data=tool_result.data,
         message=tool_result.message,

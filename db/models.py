@@ -77,6 +77,30 @@ class AgentTaskType(str, enum.Enum):
     GENERATE_QUIZ = "generate_quiz"
 
 
+class QuickChatToolTaskStatus(str, enum.Enum):
+    """快速对话工具任务状态"""
+
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class QuickChatToolTaskStage(str, enum.Enum):
+    """快速对话创建学习空间任务阶段"""
+
+    QUEUED = "queued"
+    SPACE_CREATED = "space_created"
+    KG_RUNNING = "kg_running"
+    KG_DONE = "kg_done"
+    BINDING = "binding"
+    BINDING_DONE = "binding_done"
+    KG_FAILED = "kg_failed"
+    BINDING_FAILED = "binding_failed"
+    TIMEOUT = "timeout"
+    CLEANUP_DONE = "cleanup_done"
+    CLEANUP_FAILED = "cleanup_failed"
+
+
 class QuestionType(str, enum.Enum):
     """题目类型"""
 
@@ -992,6 +1016,93 @@ class PendingClientToolRequest(Base):
         Index("ix_pending_client_tool_requests_conv_id", "conversation_id"),
         Index("ix_pending_client_tool_requests_tool_call_id", "tool_call_id", unique=True),
         Index("ix_pending_client_tool_requests_status", "status"),
+    )
+
+
+class QuickChatToolTask(Base):
+    """快速对话工具异步任务表（主要用于 create_learning_space）"""
+
+    __tablename__ = "quick_chat_tool_tasks"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    conversation_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    tool_call_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    tool_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[QuickChatToolTaskStatus] = mapped_column(
+        Enum(
+            QuickChatToolTaskStatus,
+            name="quickchattooltaskstatus",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        default=QuickChatToolTaskStatus.RUNNING,
+        nullable=False,
+    )
+    stage: Mapped[QuickChatToolTaskStage] = mapped_column(
+        Enum(
+            QuickChatToolTaskStage,
+            name="quickchattooltaskstage",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        default=QuickChatToolTaskStage.QUEUED,
+        nullable=False,
+    )
+    space_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    kg_task_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_tasks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_message_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("messages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    request_payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    result_payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    error_stage: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    error_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    user: Mapped["User"] = relationship()
+    conversation: Mapped["Conversation"] = relationship()
+    space: Mapped[Optional["Space"]] = relationship()
+    kg_task: Mapped[Optional["AgentTask"]] = relationship()
+    source_message: Mapped[Optional["Message"]] = relationship()
+
+    __table_args__ = (
+        Index(
+            "ix_quick_chat_tool_tasks_conversation_status",
+            "conversation_id",
+            "status",
+        ),
+        Index("ix_quick_chat_tool_tasks_tool_call_id", "tool_call_id", unique=True),
+        Index("ix_quick_chat_tool_tasks_user_status", "user_id", "status"),
     )
 
 

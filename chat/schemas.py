@@ -131,7 +131,31 @@ class ToolConfirmRequest(BaseModel):
 class ToolConfirmResponse(BaseModel):
     """Response for tool confirmation"""
 
-    status: str = Field(..., description="状态: executed, rejected")
+    status: str = Field(..., description="状态: executed, rejected, accepted")
     success: Optional[bool] = Field(None, description="执行是否成功（仅当 executed）")
     data: Optional[dict[str, Any]] = Field(None, description="执行结果数据")
+    message: str = Field(..., description="结果消息")
+
+
+class QuickChatToolTaskStatusResponse(BaseModel):
+    """Response for quick chat async tool task status"""
+
+    success: bool = Field(..., description="请求是否成功")
+    data: Optional[dict[str, Any]] = Field(None, description="任务状态数据")
+    message: str = Field(..., description="结果消息")
+
+
+class QuickChatToolTaskListResponse(BaseModel):
+    """Response for quick chat async tool task list"""
+
+    success: bool = Field(..., description="请求是否成功")
+    data: dict[str, Any] = Field(..., description="任务列表数据")
+    message: str = Field(..., description="结果消息")
+
+
+class QuickChatToolTaskBindResponse(BaseModel):
+    """Response for binding quick chat async tool task"""
+
+    success: bool = Field(..., description="绑定是否成功")
+    data: Optional[dict[str, Any]] = Field(None, description="绑定结果数据")
     message: str = Field(..., description="结果消息")

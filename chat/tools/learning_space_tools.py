@@ -44,7 +44,7 @@ LEARNING_SPACE_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "create_learning_space",
-            "description": "创建新学习空间并绑定当前对话。当用户想要创建新的学习空间、开始学习新的主题时调用此工具。根据用户对话中表达的学习目标和风格，推断并设置学习偏好。",
+            "description": "创建新学习空间并在后台异步生成知识图谱。完成后再绑定当前对话。当用户想创建新的学习主题时调用此工具。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -52,18 +52,9 @@ LEARNING_SPACE_TOOLS: list[dict[str, Any]] = [
                         "type": "string",
                         "description": "学习空间名称",
                     },
-                    "description": {
-                        "type": "string",
-                        "description": "学习空间描述（可选）",
-                    },
-                    "color": {
-                        "type": "string",
-                        "description": "颜色代码（可选，默认 #3B82F6）",
-                        "default": "#3B82F6",
-                    },
                     "learning_preferences": {
                         "type": "object",
-                        "description": "学习偏好设置。根据用户表达的学习目标和风格推断。",
+                        "description": "学习偏好设置（必填）。根据用户表达的学习目标和风格推断。",
                         "properties": {
                             "preset_preferences": {
                                 "type": "array",
@@ -89,7 +80,7 @@ LEARNING_SPACE_TOOLS: list[dict[str, Any]] = [
                         },
                     },
                 },
-                "required": ["name"],
+                "required": ["name", "learning_preferences"],
             },
         },
     },

@@ -32,5 +32,5 @@ Thumbs.db
 # 日志
 *.log
 
-# 上传的文件（如果不想同步）
-# uploads/
+# 上传的聊天附件（运行时生成，不提交）
+uploads/attachments/
