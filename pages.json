@@ -20,7 +20,7 @@
 			"path": "pages/activation/activation",
 			"style": {
 				"navigationStyle": "custom",
-				"navigationBarTitleText": "激活",
+				"navigationBarTitleText": "订阅",
 				"backgroundColor": "#0A0A12"
 			}
 		},

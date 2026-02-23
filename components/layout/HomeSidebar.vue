@@ -244,18 +244,28 @@ export default {
       return { background: this.avatarGradient }
     },
     subscriptionClass() {
-      const tier = this.user?.subscription_tier || 'FREE'
-      return `badge-${tier.toLowerCase()}`
+      const tier = (this.user?.subscription_tier || 'FREE').toUpperCase()
+      const alias = {
+        BASIC: 'PLUS',
+        PREMIUM: 'ULTRA'
+      }
+      const normalized = alias[tier] || tier
+      return `badge-${normalized.toLowerCase()}`
     },
     subscriptionLabel() {
-      const tier = this.user?.subscription_tier || 'FREE'
+      const tier = (this.user?.subscription_tier || 'FREE').toUpperCase()
       const labels = {
         FREE: 'Free',
-        BASIC: 'Basic',
-        PREMIUM: 'Premium',
+        PLUS: 'Plus',
+        ULTRA: 'Ultra',
         ALPHA: 'Alpha'
       }
-      return labels[tier] || tier
+      const alias = {
+        BASIC: 'PLUS',
+        PREMIUM: 'ULTRA'
+      }
+      const normalized = alias[tier] || tier
+      return labels[normalized] || normalized
     },
     userDisplayName() {
       return this.user?.nickname || 'User'
@@ -786,11 +796,25 @@ export default {
   color: #007AFF;
 }
 
+.badge-plus {
+  background: rgba(59, 130, 246, 0.2);
+}
+.badge-plus .account-badge-text {
+  color: #60A5FA;
+}
+
 .badge-premium {
   background: rgba(255, 215, 0, 0.2);
 }
 .badge-premium .account-badge-text {
   color: #FFD700;
+}
+
+.badge-ultra {
+  background: rgba(139, 92, 246, 0.22);
+}
+.badge-ultra .account-badge-text {
+  color: #C4B5FD;
 }
 
 .badge-alpha {

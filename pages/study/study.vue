@@ -462,7 +462,7 @@
                 @input="handleChatInput"
                 @linechange="handleChatLineChange"
                 @keydown="handleChatKeydown"
-                @confirm="handleSend"
+                @confirm="handleChatConfirm"
               />
               <!-- Stop button during streaming -->
               <view v-if="isStreaming" class="chat-stop-btn" @tap="handleStop">
@@ -675,7 +675,8 @@ export default {
       // Quiz generation polling
       isGeneratingQuiz: false,
       activeQuizId: null,
-      quizPollTimer: null
+      quizPollTimer: null,
+      lastChatEnterMeta: null
     }
   },
   computed: {
@@ -729,6 +730,7 @@ export default {
     const inputEl = this.getChatInputElement()
     if (inputEl && typeof inputEl.addEventListener === 'function') {
       inputEl.addEventListener('paste', this.handlePaste)
+      inputEl.addEventListener('keydown', this.handleNativeChatKeydown)
     }
     this.$nextTick(() => {
       this.resetChatInputHeight()
@@ -738,6 +740,7 @@ export default {
     const inputEl = this.getChatInputElement()
     if (inputEl && typeof inputEl.removeEventListener === 'function') {
       inputEl.removeEventListener('paste', this.handlePaste)
+      inputEl.removeEventListener('keydown', this.handleNativeChatKeydown)
     }
     this.cleanupPendingAttachments()
     this.clearQuizPollState()
@@ -815,13 +818,84 @@ export default {
       this.applyChatInputDomStyle(nextHeight)
     },
 
-    handleChatKeydown(event) {
+    handleNativeChatKeydown(event) {
       if (!event) return
       if (event.isComposing || event.keyCode === 229) return
-      const isEnter = event.key === 'Enter' || event.keyCode === 13
-      if (isEnter && !event.shiftKey) {
-        event.preventDefault()
-        this.handleSend()
+
+      const keyCodeRaw = event.keyCode ?? event?.detail?.keyCode
+      const keyCode = Number.isFinite(Number(keyCodeRaw)) ? Number(keyCodeRaw) : null
+      const key = typeof event.key === 'string'
+        ? event.key
+        : (typeof event?.detail?.key === 'string' ? event.detail.key : '')
+      const isEnter = key === 'Enter' || keyCode === 13
+      if (!isEnter) return
+
+      const shiftFromEvent = event.shiftKey ?? event?.detail?.shiftKey
+      const shiftFromModifier = typeof event.getModifierState === 'function'
+        ? event.getModifierState('Shift')
+        : false
+      const shiftFromOriginalModifier = typeof event?.originalEvent?.getModifierState === 'function'
+        ? event.originalEvent.getModifierState('Shift')
+        : false
+      const isShiftEnter = Boolean(shiftFromEvent || shiftFromModifier || shiftFromOriginalModifier) || keyCode === 10
+      this.lastChatEnterMeta = { at: Date.now(), shift: isShiftEnter }
+      if (isShiftEnter) {
+        if (typeof event.preventDefault === 'function') event.preventDefault()
+        if (typeof event.stopPropagation === 'function') event.stopPropagation()
+        this.insertChatNewlineAtCursor()
+        return
+      }
+
+      if (typeof event.preventDefault === 'function') event.preventDefault()
+      if (typeof event.stopPropagation === 'function') event.stopPropagation()
+      this.handleSend()
+    },
+
+    insertChatNewlineAtCursor() {
+      const inputEl = this.getChatInputElement()
+      const currentValue = typeof this.inputText === 'string' ? this.inputText : ''
+      let start = currentValue.length
+      let end = currentValue.length
+      if (inputEl && typeof inputEl.selectionStart === 'number' && typeof inputEl.selectionEnd === 'number') {
+        start = inputEl.selectionStart
+        end = inputEl.selectionEnd
+      }
+
+      this.inputText = `${currentValue.slice(0, start)}\n${currentValue.slice(end)}`
+      this.$nextTick(() => {
+        const latestInput = this.getChatInputElement()
+        if (latestInput) {
+          if (typeof latestInput.focus === 'function') latestInput.focus()
+          if (typeof latestInput.setSelectionRange === 'function') {
+            const cursor = start + 1
+            latestInput.setSelectionRange(cursor, cursor)
+          }
+        }
+        this.recalcChatInputHeight()
+      })
+    },
+
+    handleChatConfirm() {
+      const meta = this.lastChatEnterMeta
+      this.lastChatEnterMeta = null
+      if (meta && Date.now() - meta.at < 600) {
+        if (meta.shift) {
+          this.$nextTick(() => {
+            const inputEl = this.getChatInputElement()
+            if (inputEl && typeof inputEl.focus === 'function') {
+              inputEl.focus()
+            }
+          })
+        }
+        return
+      }
+      this.handleSend()
+    },
+
+    handleChatKeydown(event) {
+      const nativeEvent = event?.originalEvent
+      if (nativeEvent) {
+        this.handleNativeChatKeydown(nativeEvent)
       }
     },
 
