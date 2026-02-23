@@ -186,8 +186,8 @@ export default {
       billingCycle: 'semester',
       billingCycles: [
         { id: 'monthly', label: '月付' },
-        { id: 'semester', label: '学期包（4个月）', tag: '省 24%' },
-        { id: 'yearly', label: '年付', tag: '省 7%' }
+        { id: 'semester', label: '学期包（4个月）', tag: '省 25%' },
+        { id: 'yearly', label: '年付', tag: '省 40%' }
       ],
       plans: [
         {
@@ -202,9 +202,9 @@ export default {
           },
           features: [
             '最多创建 1 个学习空间',
-            '每日 AI 对话上限 25 次',
-            '模型限制：Gemini 3 Flash',
-            '每个学习空间知识库上限 50MB'
+            '每日 AI 对话上限 20 次',
+            '模型：Gemini 3 Flash',
+            '每个学习空间知识库上限 30MB'
           ],
           limitations: [
             '不支持高级模型',
@@ -214,44 +214,48 @@ export default {
         {
           id: 'PLUS',
           name: 'Plus',
-          desc: '主力学习方案，适合长期稳定使用',
+          desc: '主力学习方案，覆盖日常学习全场景',
           buttonText: '选择 Plus',
           recommended: true,
           pricing: {
-            monthly: { main: '¥9.9', suffix: '/月', label: '月付' },
-            semester: { main: '¥30', suffix: '/4个月', label: '学期包（4个月）', hint: '折合 ¥7.5/月', monthlyUnitPrice: '¥9.9/月' },
-            yearly: { main: '¥110', suffix: '/年', label: '年付', hint: '折合 ¥9.2/月', monthlyUnitPrice: '¥9.9/月' }
+            monthly: { main: '¥12.9', suffix: '/月', label: '月付' },
+            semester: { main: '¥38', suffix: '/4个月', label: '学期包（4个月）', hint: '折合 ¥9.5/月', monthlyUnitPrice: '¥12.9/月' },
+            yearly: { main: '¥92', suffix: '/年', label: '年付', hint: '折合 ¥7.7/月', monthlyUnitPrice: '¥12.9/月' }
           },
           features: [
-            '最多创建 3 个学习空间',
-            '每日 AI 对话上限 100 次',
-            '模型限制：Gemini 3 Flash',
-            '每个学习空间知识库上限 100MB'
+            '最多创建 5 个学习空间',
+            '每日 AI 对话上限 150 次',
+            '模型：Gemini 3 Flash + Gemini 3 Pro',
+            '每个学习空间知识库上限 200MB',
+            '优先客服响应'
           ]
         },
         {
           id: 'ULTRA',
           name: 'Ultra',
-          desc: '顶配模型能力，适合重度学习者',
+          desc: '顶尖模型 + 无限额度，为重度学习者打造',
           buttonText: '选择 Ultra',
           pricing: {
-            monthly: { main: '¥29.9', suffix: '/月', label: '月付' },
-            semester: { main: '¥99', suffix: '/4个月', label: '学期包（4个月）', hint: '折合 ¥24.8/月', monthlyUnitPrice: '¥29.9/月' },
-            yearly: { main: '¥299', suffix: '/年', label: '年付', hint: '折合 ¥24.9/月', monthlyUnitPrice: '¥29.9/月' }
+            monthly: { main: '¥36.9', suffix: '/月', label: '月付' },
+            semester: { main: '¥108', suffix: '/4个月', label: '学期包（4个月）', hint: '折合 ¥27/月', monthlyUnitPrice: '¥36.9/月' },
+            yearly: { main: '¥268', suffix: '/年', label: '年付', hint: '折合 ¥22.3/月', monthlyUnitPrice: '¥36.9/月' }
           },
           features: [
             '学习空间数量不限',
-            '可切换 Gemini 3 Pro / GPT5.2 / Grok 等顶尖模型',
-            '每个学习空间知识库上限 300MB',
-            '适合多任务并行和高强度学习场景'
+            '每日 AI 对话不限',
+            '全部模型：GPT5.2 / Gemini 3 Pro / Grok 等',
+            '每个学习空间知识库上限 500MB',
+            '优先客服 + 新功能抢先体验'
           ]
         }
       ],
       compareRows: [
-        { metric: '学习空间数量', free: '1', plus: '3', ultra: '不限' },
-        { metric: '每日 AI 对话', free: '25 次', plus: '100 次', ultra: '不限' },
-        { metric: '模型能力', free: 'Gemini 3 Flash', plus: 'Gemini 3 Flash', ultra: 'Gemini 3 Pro / GPT5.2 / Grok' },
-        { metric: '单空间知识库', free: '50MB', plus: '100MB', ultra: '300MB' }
+        { metric: '学习空间数量', free: '1', plus: '5', ultra: '不限' },
+        { metric: '每日 AI 对话', free: '20 次', plus: '150 次', ultra: '不限' },
+        { metric: '模型能力', free: 'Gemini 3 Flash', plus: 'Flash + Pro', ultra: 'GPT5.2 / Pro / Grok' },
+        { metric: '单空间知识库', free: '30MB', plus: '200MB', ultra: '500MB' },
+        { metric: '优先客服', free: '—', plus: '✓', ultra: '✓' },
+        { metric: '新功能抢先体验', free: '—', plus: '—', ultra: '✓' }
       ],
       faqItems: [
         { q: '可以随时升级或降级吗？', a: '可以。升级立即生效，按剩余时长折算差价；降级在当前周期结束后生效。', open: false },
