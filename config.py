@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     smtp_from_email: str = "noreply@ustudy.app"
     smtp_from_name: str = "uStudy"
     smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False  # True for implicit SSL (port 465), e.g. Aliyun DM
 
     # 验证码配置
     verification_code_expire_minutes: int = 10

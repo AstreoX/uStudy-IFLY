@@ -109,6 +109,7 @@ class SMTPEmailProvider:
         from_email: str,
         from_name: str,
         use_tls: bool = True,
+        use_ssl: bool = False,
     ):
         if aiosmtplib is None:
             raise RuntimeError("aiosmtplib package not installed")
@@ -119,6 +120,7 @@ class SMTPEmailProvider:
         self.from_email = from_email
         self.from_name = from_name
         self.use_tls = use_tls
+        self.use_ssl = use_ssl
 
     @retry(
         stop=stop_after_attempt(3),
@@ -133,13 +135,14 @@ class SMTPEmailProvider:
         message.set_content(f"您的验证码是: {code}，10分钟内有效。")
         message.add_alternative(self._get_verification_email_html(code), subtype="html")
 
+        tls_kwargs = {"use_tls": True} if self.use_ssl else {"start_tls": self.use_tls}
         await aiosmtplib.send(
             message,
             hostname=self.host,
             port=self.port,
             username=self.username,
             password=self.password,
-            start_tls=self.use_tls,
+            **tls_kwargs,
         )
         return True
 
@@ -164,4 +167,5 @@ def get_email_provider(settings) -> EmailProvider:
         from_email=settings.smtp_from_email,
         from_name=settings.smtp_from_name,
         use_tls=settings.smtp_use_tls,
+        use_ssl=settings.smtp_use_ssl,
     )

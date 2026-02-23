@@ -119,13 +119,14 @@ async def _send_via_smtp(settings, subject: str, html_content: str) -> bool:
     message.set_content("Please view this email in an HTML-capable email client.")
     message.add_alternative(html_content, subtype="html")
 
+    tls_kwargs = {"use_tls": True} if settings.smtp_use_ssl else {"start_tls": settings.smtp_use_tls}
     await aiosmtplib.send(
         message,
         hostname=settings.smtp_host,
         port=settings.smtp_port,
         username=settings.smtp_username,
         password=settings.smtp_password,
-        start_tls=settings.smtp_use_tls,
+        **tls_kwargs,
     )
     return True
 

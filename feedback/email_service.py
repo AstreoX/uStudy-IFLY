@@ -410,12 +410,13 @@ class FeedbackEmailService:
         message.set_content("Please view this email in an HTML-capable email client.")
         message.add_alternative(html_content, subtype="html")
 
+        tls_kwargs = {"use_tls": True} if self.settings.smtp_use_ssl else {"start_tls": self.settings.smtp_use_tls}
         await aiosmtplib.send(
             message,
             hostname=self.settings.smtp_host,
             port=self.settings.smtp_port,
             username=self.settings.smtp_username,
             password=self.settings.smtp_password,
-            start_tls=self.settings.smtp_use_tls,
+            **tls_kwargs,
         )
         return True
