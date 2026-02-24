@@ -178,14 +178,6 @@
 				</view>
 			</view>
 		</view>
-		<!-- Alpha 激活码弹窗 -->
-		<activation-modal
-			:visible="showActivationModal"
-			@success="onActivationSuccess"
-			@cancel="onActivationCancel"
-			@close="showActivationModal = false"
-		/>
-
 		<!-- 更新弹窗 -->
 		<update-dialog
 			:visible="updateStore.showUpdateDialog"
@@ -239,8 +231,7 @@
 	import { useUserStore } from '@/store/user'
 	import { useUpdateStore } from '@/store/update'
 	import KnowledgeTreeMini from '@/components/knowledge-tree-mini/knowledge-tree-mini.vue'
-	import ActivationModal from '@/components/activation-modal/activation-modal.vue'
-	import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
+import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 	import AnnouncementDialog from '@/components/announcement-dialog/announcement-dialog.vue'
 	import AccountProfile from '@/components/account-profile/account-profile.vue'
 	import UModal from '@/components/u-modal/u-modal.vue'
@@ -249,7 +240,6 @@
 	export default {
 		components: {
 			KnowledgeTreeMini,
-			ActivationModal,
 			UpdateDialog,
 			AnnouncementDialog,
 			AccountProfile,
@@ -306,8 +296,6 @@
 				// 画布尺寸
 				treeCanvasWidth: 0,
 				treeCanvasHeight: 0,
-				// Alpha 激活码弹窗
-				showActivationModal: false,
 				// 删除学习空间
 				showDeleteModal: false,
 				deletingSpace: null,
@@ -409,8 +397,6 @@
 					const authed = await this.ensureAuth()
 					if (!authed) return
 
-					this.checkAlphaActivation()
-
 					const loaded = await this.loadSpaces()
 					if (!loaded) return
 
@@ -475,26 +461,6 @@
 					})
 					return false
 				}
-			},
-
-			// 检查用户是否需要激活 Alpha
-			checkAlphaActivation() {
-				const userStore = useUserStore()
-				const tier = userStore.user?.subscription_tier
-				// 非 ALPHA 用户显示激活弹窗
-				if (tier !== 'ALPHA' && tier !== 'alpha') {
-					this.showActivationModal = true
-				}
-			},
-
-			// 激活成功回调
-			onActivationSuccess(response) {
-				this.showActivationModal = false
-			},
-
-			// 用户取消激活（稍后再说）
-			onActivationCancel() {
-				this.showActivationModal = false
 			},
 
 			// 公告关闭
