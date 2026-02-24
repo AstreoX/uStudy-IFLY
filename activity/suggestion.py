@@ -324,7 +324,9 @@ async def get_ai_suggestion(
     # Build prompt and call LLM
     user_prompt = _build_user_prompt(activities, due_reviews)
     try:
-        client = OpenRouterClient()
+        from config import get_settings
+        _settings = get_settings()
+        client = OpenRouterClient(model_override=_settings.suggestion_model or None)
         raw = await client.complete(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},

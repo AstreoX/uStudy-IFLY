@@ -113,7 +113,7 @@ class Settings(BaseSettings):
     memory_search_top_k_space: int = 5  # 空间记忆语义检索数量
     memory_search_score_threshold: float = 0.3  # 最低相似度阈值
     memory_auto_extract_enabled: bool = True  # 是否启用自动记忆提取
-    memory_extraction_model: str = ""  # 记忆提取用的 LLM 模型（空则使用默认模型）
+    memory_extraction_model: str = "z-ai/glm-4.7-flash"  # 记忆提取用的 LLM 模型（空则使用默认模型）
 
     # 掌握分评估配置
     mastery_evaluation_enabled: bool = True
@@ -125,6 +125,9 @@ class Settings(BaseSettings):
     learning_path_mastery_threshold: int = 80  # 掌握度阈值
     learning_path_ratio_threshold: float = 0.6  # 高掌握节点占比阈值
 
+    # 学习建议配置
+    suggestion_model: str = "z-ai/glm-4.7-flash"  # 学习建议生成用的 LLM 模型（空则使用默认模型）
+
     # 对话连续性配置
     conversation_continuity_enabled: bool = True  # 是否启用上一次对话上下文加载
     conversation_continuity_max_rounds: int = 2  # 加载上一次对话的最后几轮（1-5）
@@ -132,7 +135,7 @@ class Settings(BaseSettings):
 
     # 对话标题自动生成配置
     title_generation_enabled: bool = True
-    title_generation_model: str = "qwen/qwen3-4b:free"
+    title_generation_model: str = "z-ai/glm-4.7-flash"
     title_generation_timeout: int = 10  # 秒
 
     # 支付宝配置

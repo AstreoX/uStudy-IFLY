@@ -98,7 +98,10 @@ class MemoryExtractor:
     """自动从对话中提取记忆"""
 
     def __init__(self) -> None:
-        self.llm_client = OpenRouterClient()
+        from config import get_settings
+        settings = get_settings()
+        model_override = settings.memory_extraction_model or None
+        self.llm_client = OpenRouterClient(model_override=model_override)
         self.memory_service = MemoryService()
 
     async def extract_and_save(
