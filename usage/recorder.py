@@ -21,6 +21,8 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
     "minimax/minimax-m2.5": (0.30, 1.20),
     "google/gemini-3-pro-preview": (1.25, 10.00),
     "openai/gpt-5.2": (2.00, 8.00),
+    "z-ai/glm-5": (0.95, 2.55),
+    "qwen/qwen3-max-thinking": (1.20, 6.00),
     "openai/text-embedding-3-small": (0.02, 0),
     "openai/text-embedding-3-large": (0.13, 0),
 }

@@ -9,15 +9,15 @@ ALLOWED_MODELS: dict[str, dict[str, Any]] = {
         "description": "快速响应，适合日常对话",
         "is_default": True,
     },
-    "gemini-3-pro": {
-        "openrouter_id": "google/gemini-3-pro-preview",
-        "display_name": "Gemini 3 Pro",
+    "qwen3-max-thinking": {
+        "openrouter_id": "qwen/qwen3-max-thinking",
+        "display_name": "Qwen3 Max Thinking",
         "description": "更强推理能力，适合复杂问题",
     },
-    "gpt-5.2": {
-        "openrouter_id": "openai/gpt-5.2",
-        "display_name": "GPT 5.2",
-        "description": "OpenAI 最新模型",
+    "glm-5": {
+        "openrouter_id": "z-ai/glm-5",
+        "display_name": "GLM 5",
+        "description": "智谱最新模型，低幻觉率",
     },
 }
 
