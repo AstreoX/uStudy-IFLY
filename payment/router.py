@@ -22,6 +22,7 @@ from payment.schemas import (
     OrderListItem,
     OrderStatusResponse,
 )
+from core.admin import ADMIN_EMAILS
 from payment.service import (
     admin_confirm_order,
     create_order,
@@ -30,7 +31,6 @@ from payment.service import (
     list_pending_orders,
     list_user_orders,
     notify_user_paid,
-    ADMIN_EMAILS,
 )
 
 logger = logging.getLogger(__name__)

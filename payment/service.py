@@ -22,6 +22,7 @@ from payment.exceptions import (
     OrderNotFoundError,
 )
 from payment.notification import send_payment_notification
+from core.admin import ADMIN_EMAILS
 from payment.pricing import PRICING
 from payment.schemas import (
     CreateOrderResponse,
@@ -32,9 +33,6 @@ from payment.schemas import (
 logger = logging.getLogger(__name__)
 
 ORDER_EXPIRY_MINUTES = 30
-
-# 管理员邮箱列表（可确认订单）
-ADMIN_EMAILS = {"tom_cat_gsk@163.com"}
 
 # 定价方案名称映射
 _TIER_NAMES = {

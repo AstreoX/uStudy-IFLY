@@ -32,6 +32,7 @@ from review.router import router as review_router
 from assessment.router import router as assessment_router
 from spaces.router import router as spaces_router
 from payment.router import router as payment_router
+from admin.router import router as admin_router
 from upload.router import router as upload_router
 
 settings = get_settings()
@@ -171,6 +172,7 @@ app.include_router(assessment_router)
 app.include_router(activity_router)
 app.include_router(review_router)
 app.include_router(payment_router)
+app.include_router(admin_router)
 
 
 @app.get("/health")
