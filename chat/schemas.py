@@ -19,6 +19,9 @@ class SendMessageRequest(BaseModel):
     attachment_ids: Optional[list[UUID]] = Field(
         default=None, max_length=9, description="附件ID列表（最多9个）"
     )
+    model_id: Optional[str] = Field(
+        default=None, max_length=50, description="模型ID，不指定则使用默认模型"
+    )
 
 
 class CreateConversationRequest(BaseModel):

@@ -29,6 +29,7 @@ from chat.schemas import (
     ClientToolResultRequest,
     ClientToolResultResponse,
 )
+from chat.models_config import get_available_models, validate_model_id
 from chat.service import (
     ChatService,
     ConversationNotFoundError,
@@ -51,6 +52,16 @@ router = APIRouter(
     tags=["chat"],
     dependencies=[Depends(require_active_subscription)],
 )
+
+
+@router.get(
+    "/models",
+    summary="获取可用模型列表",
+    description="返回当前支持的 AI 模型列表",
+)
+async def list_models() -> list[dict]:
+    """Return available AI models."""
+    return get_available_models()
 
 
 _STOP = object()
@@ -236,6 +247,17 @@ async def send_message(
     Does NOT hold a DB session during SSE streaming.
     Validation uses a short-lived session; the streaming method manages its own sessions.
     """
+    # Validate model_id early (before entering SSE stream)
+    if request.model_id is not None and not validate_model_id(request.model_id):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "INVALID_MODEL",
+                "message": f"无效的模型ID: {request.model_id}",
+                "available_models": [m["id"] for m in get_available_models()],
+            },
+        )
+
     # Validate conversation AND space binding with a short-lived session
     async with get_scoped_session() as db:
         service = ChatService(db)
@@ -266,6 +288,7 @@ async def send_message(
         conversation_id,
         request.content,
         request.attachment_ids,
+        model_id=request.model_id,
     )
 
     return StreamingResponse(
@@ -589,6 +612,17 @@ async def send_quick_chat_message(
     Send message in quick chat mode (SSE streaming).
     Does NOT hold a DB session during streaming.
     """
+    # Validate model_id early (before entering SSE stream)
+    if request.model_id is not None and not validate_model_id(request.model_id):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "INVALID_MODEL",
+                "message": f"无效的模型ID: {request.model_id}",
+                "available_models": [m["id"] for m in get_available_models()],
+            },
+        )
+
     # Validate conversation access with a short-lived session
     async with get_scoped_session() as db:
         service = ChatService(db)
@@ -614,6 +648,7 @@ async def send_quick_chat_message(
         conversation_id,
         request.content,
         request.attachment_ids,
+        model_id=request.model_id,
     )
 
     return StreamingResponse(

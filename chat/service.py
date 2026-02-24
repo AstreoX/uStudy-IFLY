@@ -12,6 +12,7 @@ from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from chat.models_config import get_openrouter_model
 from chat.orchestrator import LLMOrchestrator, QuickChatOrchestrator
 from chat.title_generator import generate_title, fallback_title
 from memory.extractor import MemoryExtractor
@@ -423,6 +424,7 @@ class ChatService:
         conversation_id: UUID,
         content: str,
         attachment_ids: list[UUID] | None = None,
+        model_id: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Send a message in a conversation and get SSE response stream.
@@ -439,6 +441,8 @@ class ChatService:
             user_id: Current user ID
             conversation_id: Conversation ID
             content: Message content
+            attachment_ids: Optional attachment IDs
+            model_id: Optional model ID for per-message model selection
 
         Yields:
             SSE events for streaming response
@@ -565,12 +569,16 @@ class ChatService:
         # asyncio.Queue; the SSE generator reads from it.  When the client
         # disconnects the generator stops, but the background task keeps running
         # and always executes Phase 3 (save).
+        # Resolve model_id to OpenRouter model string
+        openrouter_model = get_openrouter_model(model_id)
+
         orchestrator = LLMOrchestrator(
             user_id=user_id,
             conversation_id=conversation_id,
             space_id=space_id,
             space_name=space_name,
             previous_conversation_context=previous_conversation_context,
+            openrouter_model=openrouter_model,
         )
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -969,6 +977,7 @@ class ChatService:
         conversation_id: UUID,
         content: str,
         attachment_ids: list[UUID] | None = None,
+        model_id: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Send message in quick chat mode (no space required).
@@ -985,6 +994,8 @@ class ChatService:
             user_id: Current user ID
             conversation_id: Conversation ID
             content: Message content
+            attachment_ids: Optional attachment IDs
+            model_id: Optional model ID for per-message model selection
 
         Yields:
             SSE events for streaming response
@@ -1091,10 +1102,14 @@ class ChatService:
             title_task = asyncio.create_task(generate_title(content))
 
         # === Phase 2: Stream via Queue + Background Task ===
+        # Resolve model_id to OpenRouter model string
+        openrouter_model = get_openrouter_model(model_id)
+
         orchestrator = QuickChatOrchestrator(
             user_id=user_id,
             conversation_id=conversation_id,
             previous_conversation_context=previous_conversation_context,
+            openrouter_model=openrouter_model,
         )
 
         queue: asyncio.Queue = asyncio.Queue()

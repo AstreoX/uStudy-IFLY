@@ -74,6 +74,7 @@ class QuickChatOrchestrator:
         user_id: UUID,
         conversation_id: UUID,
         previous_conversation_context: str | None = None,
+        openrouter_model: str | None = None,
     ) -> None:
         """
         Initialize the quick chat orchestrator.
@@ -82,6 +83,7 @@ class QuickChatOrchestrator:
             user_id: Current user ID
             conversation_id: Current conversation ID
             previous_conversation_context: Previous conversation context for continuity (optional)
+            openrouter_model: OpenRouter model ID override (resolved from model_id)
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
@@ -89,7 +91,7 @@ class QuickChatOrchestrator:
 
         self.settings = get_settings()
         self.llm_client = OpenRouterClient(
-            model_override=self.settings.openrouter_model
+            model_override=openrouter_model or self.settings.openrouter_model
         )
         self.prompt_builder = PromptBuilder()
         self.tool_executor = LearningSpaceToolExecutor(
@@ -408,6 +410,7 @@ class LLMOrchestrator:
         space_id: UUID,
         space_name: str,
         previous_conversation_context: str | None = None,
+        openrouter_model: str | None = None,
     ) -> None:
         """
         Initialize the orchestrator.
@@ -418,6 +421,7 @@ class LLMOrchestrator:
             space_id: Learning space ID
             space_name: Learning space name
             previous_conversation_context: Previous conversation context for continuity (optional)
+            openrouter_model: OpenRouter model ID override (resolved from model_id)
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
@@ -428,7 +432,7 @@ class LLMOrchestrator:
         # Initialize components
         self.settings = get_settings()
         self.llm_client = OpenRouterClient(
-            model_override=self.settings.openrouter_model
+            model_override=openrouter_model or self.settings.openrouter_model
         )
         self.prompt_builder = PromptBuilder()
         self.graph_tool_executor = GraphToolExecutor(space_id)
