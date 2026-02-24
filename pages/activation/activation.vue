@@ -217,7 +217,7 @@ export default {
           features: [
             '最多创建 1 个学习空间',
             '每日 AI 对话上限 20 次',
-            '模型：MiniMax M2.5',
+            '模型：Grok 4 Fast',
             '每个学习空间知识库上限 30MB'
           ],
           limitations: [
@@ -239,7 +239,7 @@ export default {
           features: [
             '最多创建 5 个学习空间',
             '每日 AI 对话上限 150 次',
-            '模型：MiniMax M2.5 + Qwen3 Max Thinking',
+            '模型：Grok 4 Fast + Kimi K2.5',
             '每个学习空间知识库上限 200MB',
             '优先客服响应'
           ]
@@ -257,7 +257,7 @@ export default {
           features: [
             '学习空间数量不限',
             '每日 AI 对话不限',
-            '全部模型：GLM 5 / Qwen3 Max Thinking / MiniMax 等',
+            '全部模型：Grok 4 Fast / Kimi K2.5 / Qwen3.5 Plus',
             '每个学习空间知识库上限 500MB',
             '优先客服 + 新功能抢先体验'
           ]
@@ -266,7 +266,7 @@ export default {
       compareRows: [
         { metric: '学习空间数量', free: '1', plus: '5', ultra: '不限' },
         { metric: '每日 AI 对话', free: '20 次', plus: '150 次', ultra: '不限' },
-        { metric: '模型能力', free: 'MiniMax M2.5', plus: 'M2.5 + Qwen3', ultra: 'GLM 5 / Qwen3 / M2.5' },
+        { metric: '模型能力', free: 'Grok 4 Fast', plus: 'Grok + Kimi', ultra: 'Grok / Kimi / Qwen' },
         { metric: '单空间知识库', free: '30MB', plus: '200MB', ultra: '500MB' },
         { metric: '优先客服', free: '—', plus: '✓', ultra: '✓' },
         { metric: '新功能抢先体验', free: '—', plus: '—', ultra: '✓' }
@@ -280,7 +280,7 @@ export default {
       notes: [
         '对话次数按自然日重置。',
         '每个学习空间的知识库存储独立计算。',
-        'Ultra 支持 GLM 5 / Qwen3 Max Thinking / MiniMax 等全部模型。'
+        'Ultra 支持 Grok 4 Fast / Kimi K2.5 / Qwen3.5 Plus 全部模型。'
       ]
     }
   },

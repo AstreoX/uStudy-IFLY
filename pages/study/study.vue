@@ -334,9 +334,9 @@
                         <image
                           v-if="att.attachment_type === 'image'"
                           class="msg-attach-img"
-                          :src="att.thumbnail_url || att.file_url"
+                          :src="resolveUrl(att.thumbnail_url || att.file_url)"
                           mode="aspectFit"
-                          @tap="previewImage(att.file_url)"
+                          @tap="previewImage(resolveUrl(att.file_url))"
                         />
                         <view v-else class="msg-attach-file" @tap="openFileUrl(att.file_url)">
                           <text class="msg-attach-file-name">{{ att.original_filename }}</text>
@@ -570,6 +570,7 @@ import { getSpaces, deleteSpace, getTaskStatus } from '@/api/space'
 import { createConversation, getSpaceConversations, getConversation, sendMessage, uploadAttachment, deleteAttachment, getModels } from '@/api/chat'
 import { useUserStore } from '@/store/user'
 import { useSpacesStore } from '@/store/spaces'
+import config from '@/config'
 
 // Tool display name mapping
 const TOOL_DISPLAY_NAMES = {
@@ -820,6 +821,12 @@ export default {
     }
   },
   methods: {
+    resolveUrl(url) {
+      if (!url) return ''
+      if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) return url
+      return config.API_BASE_URL + url
+    },
+
     // ==================== Model Selection ====================
     toggleModelMenu() {
       this.showModelMenu = !this.showModelMenu
@@ -2003,13 +2010,6 @@ export default {
         if (!streamingMsg.content || streamingMsg.content.trim() === '') {
           streamingMsg.content = 'Response stopped by user.'
         }
-        const streamIdx = this.messages.indexOf(streamingMsg)
-        if (streamIdx > 0) {
-          const prevMsg = this.messages[streamIdx - 1]
-          if (prevMsg.role === 'user') {
-            prevMsg.isFailed = true
-          }
-        }
       }
     },
 
@@ -2205,7 +2205,7 @@ export default {
     },
 
     openFileUrl(url) {
-      window.open(url, '_blank')
+      window.open(this.resolveUrl(url), '_blank')
     },
 
     cleanupPendingAttachments() {
@@ -3545,13 +3545,14 @@ textarea.chat-input-textarea {
 .msg-attachments {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-start;
   gap: 6px;
   margin-bottom: 6px;
 }
 .msg-attach-img {
   max-width: 200px;
   max-height: 150px;
-  border-radius: 8px;
+  border-radius: 12px;
   cursor: pointer;
 }
 .msg-attach-file {

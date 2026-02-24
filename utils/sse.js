@@ -99,7 +99,9 @@ export function connectSSE(options) {
       function read() {
         reader.read().then(({ done, value }) => {
           if (done || aborted) {
-            onComplete?.()
+            if (!aborted) {
+              onComplete?.()
+            }
             return
           }
 

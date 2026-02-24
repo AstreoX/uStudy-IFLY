@@ -170,9 +170,9 @@
                     <image
                       v-if="att.attachment_type === 'image'"
                       class="msg-attach-img"
-                      :src="att.thumbnail_url || att.file_url"
+                      :src="resolveUrl(att.thumbnail_url || att.file_url)"
                       mode="aspectFit"
-                      @tap="previewImage(att.file_url)"
+                      @tap="previewImage(resolveUrl(att.file_url))"
                     />
                     <view v-else class="msg-attach-file" @tap="openFileUrl(att.file_url)">
                       <text class="msg-attach-file-name">{{ att.original_filename }}</text>
@@ -424,6 +424,7 @@
 <script>
 import HomeSidebar from '@/components/layout/HomeSidebar.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
+import config from '@/config'
 import { useSpacesStore } from '@/store/spaces'
 import {
   createQuickChatConversation,
@@ -617,6 +618,12 @@ export default {
     this.stopAllTaskPolling()
   },
   methods: {
+    resolveUrl(url) {
+      if (!url) return ''
+      if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) return url
+      return config.API_BASE_URL + url
+    },
+
     navigateToIndex() {
       uni.reLaunch({ url: '/pages/index/index' })
     },
@@ -918,6 +925,7 @@ export default {
           const userMsg = msgs.find(m => m.id === userMsgId)
           if (userMsg) userMsg.isFailed = true
           this.messages = msgs
+          this._persistFailedMessages()
           uni.showToast({ title: 'Failed to create conversation', icon: 'none' })
           return
         }
@@ -1029,6 +1037,7 @@ export default {
           this.isStreaming = false
           this.isSending = false
           this.activeToolCalls = []
+          this._persistFailedMessages()
           this.$nextTick(() => this.scrollToBottom())
         },
 
@@ -1045,6 +1054,7 @@ export default {
           }
           const userMsg = this.messages.find(m => m.id === userMsgId)
           if (userMsg) userMsg.isFailed = true
+          this._persistFailedMessages()
           this.cancelSSE = null
           this.isStreaming = false
           this.isSending = false
@@ -1067,6 +1077,7 @@ export default {
             const userMsg = this.messages.find(m => m.id === userMsgId)
             if (userMsg) userMsg.isFailed = true
           }
+          this._persistFailedMessages()
           this.cancelSSE = null
           this.isSending = false
           this.isStreaming = false
@@ -1919,14 +1930,47 @@ export default {
         if (!streamingMsg.content || streamingMsg.content.trim() === '') {
           streamingMsg.content = 'Response stopped by user.'
         }
-        const streamIdx = this.messages.indexOf(streamingMsg)
-        if (streamIdx > 0) {
-          const prevMsg = this.messages[streamIdx - 1]
-          if (prevMsg.role === 'user') {
-            prevMsg.isFailed = true
-          }
+      }
+    },
+
+    // ==================== Failed Message Persistence ====================
+
+    _persistFailedMessages() {
+      if (!this.conversationId) return
+      const key = `uStudy_failedMsgs_${this.conversationId}`
+      const failed = this.messages
+        .filter(m => m.role === 'user' && m.isFailed)
+        .map(m => ({ content: m.content, attachments: m.attachments || [] }))
+      if (failed.length > 0) {
+        localStorage.setItem(key, JSON.stringify(failed))
+      } else {
+        localStorage.removeItem(key)
+      }
+    },
+
+    _restoreFailedMessages() {
+      if (!this.conversationId) return
+      const key = `uStudy_failedMsgs_${this.conversationId}`
+      const raw = localStorage.getItem(key)
+      if (!raw) return
+      const failedMsgs = JSON.parse(raw)
+      for (const fm of failedMsgs) {
+        const match = this.messages.find(m =>
+          m.role === 'user' && m.content === fm.content && !m.isFailed
+        )
+        if (match) {
+          match.isFailed = true
+        } else {
+          this.messages = [...this.messages, {
+            id: this.nextId++,
+            role: 'user',
+            content: fm.content,
+            isFailed: true,
+            attachments: fm.attachments || []
+          }]
         }
       }
+      this.nextId = this.messages.length + 1
     },
 
     // ==================== Resend ====================
@@ -1959,6 +2003,7 @@ export default {
           this.conversationId = conv.id
         } catch {
           msg.isFailed = true
+          this._persistFailedMessages()
           this.isSending = false
           uni.showToast({ title: 'Failed to create conversation', icon: 'none' })
           return
@@ -2030,6 +2075,7 @@ export default {
       this.activeToolCalls = []
       this.stopAllTaskPolling()
 
+      this._persistFailedMessages()
       this.conversationId = conv.id
       this.messages = []
       this.nextId = 1
@@ -2053,6 +2099,7 @@ export default {
           created_at: m.created_at
         }))
         this.nextId = this.messages.length + 1
+        this._restoreFailedMessages()
         await this.restoreQuickChatToolTasks()
         this.$nextTick(() => this.scrollToBottom())
       } catch (err) {
@@ -2074,6 +2121,7 @@ export default {
       this.stopAllTaskPolling()
       this.cleanupPendingAttachments()
 
+      this._persistFailedMessages()
       this.messages = []
       this.conversationId = null
       this.nextId = 1
@@ -2239,7 +2287,7 @@ export default {
     },
 
     openFileUrl(url) {
-      window.open(url, '_blank')
+      window.open(this.resolveUrl(url), '_blank')
     }
   }
 }
@@ -2555,6 +2603,7 @@ export default {
 .msg-attachments {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-start;
   gap: 6px;
   margin-bottom: 6px;
 }
@@ -2562,7 +2611,7 @@ export default {
 .msg-attach-img {
   width: 120px;
   height: 90px;
-  border-radius: 8px;
+  border-radius: 12px;
   cursor: pointer;
 }
 
