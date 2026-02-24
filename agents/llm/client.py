@@ -370,7 +370,8 @@ class OpenRouterClient:
                             "max_tokens": max_tokens,
                             "stream": True,
                             "stream_options": {"include_usage": True},
-                            "include_reasoning": True,
+                            # Only request reasoning for thinking-capable models
+                            **({"include_reasoning": True} if "thinking" in self.model.lower() else {}),
                         },
                     ) as response:
                         response.raise_for_status()
@@ -416,10 +417,9 @@ class OpenRouterClient:
                             finish_reason = choice.get("finish_reason")
 
                             # 处理 thinking 内容（reasoning 模型的推理过程）
-                            # OpenRouter 可能使用不同字段名：reasoning, reasoning_content, 或 reasoning_details
+                            # OpenRouter 返回 reasoning (字符串) 和 reasoning_details (数组)
                             reasoning = delta.get("reasoning") or delta.get("reasoning_content")
                             if not reasoning and delta.get("reasoning_details"):
-                                # reasoning_details 是数组格式，提取文本内容
                                 for detail in delta["reasoning_details"]:
                                     if isinstance(detail, dict) and detail.get("text"):
                                         reasoning = (reasoning or "") + detail["text"]

@@ -571,6 +571,7 @@ class ChatService:
         # and always executes Phase 3 (save).
         # Resolve model_id to OpenRouter model string
         openrouter_model = get_openrouter_model(model_id)
+        logger.info(f"[ModelSelection] study model_id={model_id!r} -> openrouter_model={openrouter_model!r}")
 
         orchestrator = LLMOrchestrator(
             user_id=user_id,
@@ -1104,6 +1105,7 @@ class ChatService:
         # === Phase 2: Stream via Queue + Background Task ===
         # Resolve model_id to OpenRouter model string
         openrouter_model = get_openrouter_model(model_id)
+        logger.info(f"[ModelSelection] quick_chat model_id={model_id!r} -> openrouter_model={openrouter_model!r}")
 
         orchestrator = QuickChatOrchestrator(
             user_id=user_id,
