@@ -59,7 +59,7 @@ import {
   getLabelBoxByPosition, clamp,
   UNMASTERED_NODE_COLOR, UNMASTERED_NODE_GLOW, UNMASTERED_NODE_OUTLINE
 } from '@/utils/graph-layout'
-import { drawEdges, drawNode } from '@/utils/graph-renderer'
+import { drawEdges, drawNode, drawNodeHighlight } from '@/utils/graph-renderer'
 
 export default {
   props: {
@@ -109,6 +109,10 @@ export default {
       visibleNodesCache: null,
       visibleNodeIdSetCache: new Set(),
       childCountCache: new Map(),
+
+      // Highlight animation state
+      highlightedNodes: new Map(),
+      highlightAnimationRunning: false,
 
       // Render throttling
       renderPending: false,
@@ -165,6 +169,9 @@ export default {
   },
 
   beforeUnmount() {
+    this.highlightAnimationRunning = false
+    this.highlightedNodes.clear()
+
     if (this._resizeObserver) {
       this._resizeObserver.disconnect()
       this._resizeObserver = null
@@ -487,13 +494,32 @@ export default {
         showAdvancedEdges: true
       })
 
-      // Draw nodes
+      // Draw nodes (apply highlight color override if active)
       renderNodes.forEach(node => {
+        const hlState = this.highlightedNodes.get(node.id)
+        let savedFill, savedGlow
+        if (node._highlightFillOverride) {
+          savedFill = node.fillColor
+          savedGlow = node.glowColor
+          node.fillColor = node._highlightFillOverride
+          node.glowColor = node._highlightGlowOverride || node.glowColor
+        }
+
         drawNode(ctx, node, {
           selectedNodeId: this.selectedNodeId,
           isPathHighlightOn: this.pathHighlight,
           learningPathSet: this.learningPathSet
         })
+
+        if (savedFill) {
+          node.fillColor = savedFill
+          node.glowColor = savedGlow
+        }
+
+        // Draw highlight ripple rings on top
+        if (hlState) {
+          drawNodeHighlight(ctx, node, hlState)
+        }
       })
 
       ctx.restore()
@@ -771,6 +797,87 @@ export default {
       }
 
       return null
+    },
+
+    // --- Mastery highlight animation ---
+    highlightNode(nodeName, newMastery, change) {
+      const node = this.nodes.find(n => n.label === nodeName)
+      if (!node) return
+
+      const oldFillColor = node.fillColor
+      const oldGlowColor = node.glowColor
+
+      // Update node mastery and recalculate colors
+      node.mastery = newMastery
+      node.fillColor = getMasteryColor(newMastery)
+      node.glowColor = getMasteryGlowColor(newMastery, 0.5)
+      node.outlineColor = getMasteryGlowColor(newMastery, 0.2)
+
+      const newGlowColor = getMasteryGlowColor(newMastery, 0.5)
+
+      this.highlightedNodes.set(node.id, {
+        startTime: Date.now(),
+        oldFillColor,
+        oldGlowColor,
+        newGlowColor
+      })
+
+      if (!this.highlightAnimationRunning) {
+        this.highlightAnimationRunning = true
+        this._runHighlightAnimation()
+      }
+
+      this._smoothPanToNode(node)
+    },
+
+    _runHighlightAnimation() {
+      if (this.highlightedNodes.size === 0) {
+        this.highlightAnimationRunning = false
+        return
+      }
+
+      this.requestRender()
+
+      requestAnimationFrame(() => {
+        if (!this.highlightAnimationRunning) return
+
+        // Prune finished animations
+        for (const [nodeId, state] of this.highlightedNodes) {
+          if (Date.now() - state.startTime > 3000) {
+            const node = this.nodeMap.get(nodeId)
+            if (node) {
+              node._highlightFillOverride = null
+              node._highlightGlowOverride = null
+            }
+            this.highlightedNodes.delete(nodeId)
+          }
+        }
+
+        this._runHighlightAnimation()
+      })
+    },
+
+    _smoothPanToNode(node, duration = 500) {
+      const targetOffsetX = this.canvasWidth / 2 - node.x * this.scale
+      const targetOffsetY = this.canvasHeight / 2 - node.y * this.scale
+      const startOffsetX = this.offsetX
+      const startOffsetY = this.offsetY
+      const startTime = Date.now()
+
+      const step = () => {
+        const elapsed = Date.now() - startTime
+        const t = Math.min(1, elapsed / duration)
+        const eased = 1 - Math.pow(1 - t, 3) // easeOutCubic
+
+        this.offsetX = startOffsetX + (targetOffsetX - startOffsetX) * eased
+        this.offsetY = startOffsetY + (targetOffsetY - startOffsetY) * eased
+        this.requestRender()
+
+        if (t < 1) {
+          requestAnimationFrame(step)
+        }
+      }
+      requestAnimationFrame(step)
     },
 
     // --- Minimap ---

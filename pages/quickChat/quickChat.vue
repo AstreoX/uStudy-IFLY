@@ -155,23 +155,16 @@
             :class="msg.role === 'user' ? 'message-row-right' : 'message-row-left'"
           >
             <!-- User message -->
-            <view v-if="msg.role === 'user'" class="user-bubble-row">
-              <view v-if="msg.isFailed" class="msg-retry-btn" @tap="resendMessage(msg)">
-                <svg viewBox="0 0 256 256" class="msg-retry-icon">
-                  <polyline points="176.17 99.71 224.17 99.71 224.17 51.71" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
-                  <path d="M65.78,65.78a88,88,0,0,1,124.44,0l34,33.93" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
-                  <polyline points="79.83 156.29 31.83 156.29 31.83 204.29" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
-                  <path d="M190.22,190.22a88,88,0,0,1-124.44,0l-34-33.93" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
-                </svg>
-              </view>
-              <view class="message-bubble bubble-user">
-                <view v-if="msg.attachments && msg.attachments.length > 0" class="msg-attachments">
+            <view v-if="msg.role === 'user'" class="user-msg-group">
+              <!-- Image attachments outside bubble -->
+              <view v-if="msg.attachments && msg.attachments.length > 0" class="msg-attachments-wrapper">
+                <view class="msg-attachments">
                   <template v-for="att in msg.attachments" :key="att.id">
                     <image
                       v-if="att.attachment_type === 'image'"
                       class="msg-attach-img"
                       :src="resolveUrl(att.thumbnail_url || att.file_url)"
-                      mode="aspectFit"
+                      mode="aspectFill"
                       @tap="previewImage(resolveUrl(att.file_url))"
                     />
                     <view v-else class="msg-attach-file" @tap="openFileUrl(att.file_url)">
@@ -179,7 +172,20 @@
                     </view>
                   </template>
                 </view>
-                <text class="bubble-text">{{ msg.content }}</text>
+              </view>
+              <!-- Text bubble -->
+              <view class="user-bubble-row">
+                <view v-if="msg.isFailed" class="msg-retry-btn" @tap="resendMessage(msg)">
+                  <svg viewBox="0 0 256 256" class="msg-retry-icon">
+                    <polyline points="176.17 99.71 224.17 99.71 224.17 51.71" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+                    <path d="M65.78,65.78a88,88,0,0,1,124.44,0l34,33.93" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+                    <polyline points="79.83 156.29 31.83 156.29 31.83 204.29" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+                    <path d="M190.22,190.22a88,88,0,0,1-124.44,0l-34-33.93" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+                  </svg>
+                </view>
+                <view v-if="msg.content && msg.content.trim()" class="message-bubble bubble-user">
+                  <text class="bubble-text">{{ msg.content }}</text>
+                </view>
               </view>
             </view>
 
@@ -2537,13 +2543,20 @@ export default {
   align-items: flex-end;
 }
 
+/* User message group: images + bubble stacked */
+.user-msg-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 85%;
+  margin-left: auto;
+}
+
 /* User bubble row with retry button */
 .user-bubble-row {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  max-width: 85%;
-  margin-left: auto;
 }
 
 .msg-retry-btn {
@@ -2599,20 +2612,27 @@ export default {
   border-bottom-left-radius: 4px;
 }
 
-/* User message attachments */
-.msg-attachments {
+/* User message attachments (outside bubble) */
+.msg-attachments-wrapper {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  gap: 6px;
+  justify-content: flex-end;
   margin-bottom: 6px;
 }
 
+.msg-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .msg-attach-img {
-  width: 120px;
-  height: 90px;
+  width: 160px;
+  height: 160px;
   border-radius: 12px;
+  overflow: hidden;
   cursor: pointer;
+  object-fit: cover;
 }
 
 .msg-attach-file {

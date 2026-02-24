@@ -252,6 +252,107 @@ export function drawNode(ctx, node, options = {}) {
   if (isDimmed) ctx.globalAlpha = 1.0
 }
 
+// --- Mastery highlight animation (ripple rings + color transition) ---
+
+const HIGHLIGHT_DURATION = 3000
+const RIPPLE_COUNT = 3
+const RIPPLE_STAGGER = 400
+const RIPPLE_EXPAND_DURATION = 1500
+const COLOR_TRANSITION_DURATION = 1000
+
+/**
+ * Draw highlight animation for a node that just received a mastery update.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Object} node - Graph node
+ * @param {Object} state - { startTime, oldFillColor, oldGlowColor, newGlowColor }
+ * @returns {boolean} true if animation is still running
+ */
+export function drawNodeHighlight(ctx, node, state) {
+  const elapsed = Date.now() - state.startTime
+  if (elapsed > HIGHLIGHT_DURATION) return false
+
+  const radius = getNodeBaseRadius(node)
+
+  ctx.save()
+  ctx.shadowColor = 'transparent'
+  ctx.shadowBlur = 0
+
+  // Ripple rings
+  for (let i = 0; i < RIPPLE_COUNT; i++) {
+    const ringElapsed = elapsed - i * RIPPLE_STAGGER
+    if (ringElapsed < 0 || ringElapsed > RIPPLE_EXPAND_DURATION) continue
+
+    const t = ringElapsed / RIPPLE_EXPAND_DURATION
+    const easedT = 1 - Math.pow(1 - t, 3) // easeOutCubic
+    const ringRadius = radius + 5 + easedT * 40
+    const opacity = 0.5 * (1 - t)
+    const lineWidth = 3 - 2.5 * t
+
+    ctx.beginPath()
+    ctx.arc(node.x, node.y, ringRadius, 0, Math.PI * 2)
+    ctx.strokeStyle = state.newGlowColor.replace(/[\d.]+\)$/, `${opacity})`)
+    ctx.lineWidth = Math.max(0.5, lineWidth)
+    ctx.stroke()
+  }
+
+  ctx.restore()
+
+  // Color transition: lerp node colors during first 1s
+  if (elapsed < COLOR_TRANSITION_DURATION) {
+    const t = elapsed / COLOR_TRANSITION_DURATION
+    node._highlightFillOverride = lerpColor(state.oldFillColor, node.fillColor, t)
+    node._highlightGlowOverride = lerpColor(state.oldGlowColor, node.glowColor, t)
+  } else {
+    node._highlightFillOverride = null
+    node._highlightGlowOverride = null
+  }
+
+  return true
+}
+
+/** Parse hex (#RRGGBB) or rgba() to {r,g,b,a} */
+function parseColor(color) {
+  if (!color) return { r: 156, g: 163, b: 175, a: 1 }
+
+  if (color.startsWith('#')) {
+    const hex = color.slice(1)
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+      a: 1
+    }
+  }
+
+  const match = color.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)/)
+  if (match) {
+    return {
+      r: parseFloat(match[1]),
+      g: parseFloat(match[2]),
+      b: parseFloat(match[3]),
+      a: match[4] !== undefined ? parseFloat(match[4]) : 1
+    }
+  }
+
+  return { r: 156, g: 163, b: 175, a: 1 }
+}
+
+/** Lerp between two color strings, returns same format as target */
+function lerpColor(fromStr, toStr, t) {
+  const from = parseColor(fromStr)
+  const to = parseColor(toStr)
+  const r = Math.round(from.r + (to.r - from.r) * t)
+  const g = Math.round(from.g + (to.g - from.g) * t)
+  const b = Math.round(from.b + (to.b - from.b) * t)
+
+  if (toStr && toStr.startsWith('rgba')) {
+    const a = from.a + (to.a - from.a) * t
+    return `rgba(${r}, ${g}, ${b}, ${a.toFixed(2)})`
+  }
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+}
+
 // --- Badge for collapsed child count ---
 
 export function drawBadge(ctx, x, y, count) {

@@ -66,12 +66,16 @@ export function connectSSE(options) {
   let aborted = false
   const abortController = new AbortController()
 
-  fetch(fullUrl, {
+  const fetchOptions = {
     method,
     headers,
-    body: JSON.stringify(data),
     signal: abortController.signal
-  })
+  }
+  if (method !== 'GET' && data !== undefined) {
+    fetchOptions.body = JSON.stringify(data)
+  }
+
+  fetch(fullUrl, fetchOptions)
     .then(response => {
       if (!response.ok) {
         return response.text().then(text => {
