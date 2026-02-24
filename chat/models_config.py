@@ -3,9 +3,9 @@
 from typing import Any
 
 ALLOWED_MODELS: dict[str, dict[str, Any]] = {
-    "gemini-3-flash": {
-        "openrouter_id": "google/gemini-3-flash-preview",
-        "display_name": "Gemini 3 Flash",
+    "minimax-m2.5": {
+        "openrouter_id": "minimax/minimax-m2.5",
+        "display_name": "MiniMax M2.5",
         "description": "快速响应，适合日常对话",
         "is_default": True,
     },
@@ -21,7 +21,7 @@ ALLOWED_MODELS: dict[str, dict[str, Any]] = {
     },
 }
 
-DEFAULT_MODEL_ID = "gemini-3-flash"
+DEFAULT_MODEL_ID = "minimax-m2.5"
 
 
 def get_openrouter_model(model_id: str | None) -> str:

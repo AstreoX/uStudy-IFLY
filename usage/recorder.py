@@ -18,6 +18,7 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
     "google/gemini-flash-1.5": (0.075, 0.30),
     "google/gemini-2.0-flash-001": (0.10, 0.40),
     "google/gemini-3-flash-preview": (0.10, 0.40),
+    "minimax/minimax-m2.5": (0.30, 1.20),
     "google/gemini-3-pro-preview": (1.25, 10.00),
     "openai/gpt-5.2": (2.00, 8.00),
     "openai/text-embedding-3-small": (0.02, 0),

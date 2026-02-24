@@ -19,7 +19,7 @@ class TestOpenRouterClientInit:
             mock_settings.return_value = MagicMock(
                 openrouter_api_key="",
                 openrouter_base_url="https://openrouter.ai/api/v1",
-                openrouter_model="google/gemini-3-flash-preview",
+                openrouter_model="minimax/minimax-m2.5",
                 llm_timeout_seconds=120,
                 llm_max_retries=3,
             )
@@ -34,13 +34,13 @@ class TestOpenRouterClientInit:
             mock_settings.return_value = MagicMock(
                 openrouter_api_key="sk-or-v1-test-key",
                 openrouter_base_url="https://openrouter.ai/api/v1",
-                openrouter_model="google/gemini-3-flash-preview",
+                openrouter_model="minimax/minimax-m2.5",
                 llm_timeout_seconds=120,
                 llm_max_retries=3,
             )
             client = OpenRouterClient()
             assert client.api_key == "sk-or-v1-test-key"
-            assert client.model == "google/gemini-3-flash-preview"
+            assert client.model == "minimax/minimax-m2.5"
             assert client.timeout == 120
 
 
@@ -54,7 +54,7 @@ class TestOpenRouterClientHeaders:
             mock_settings.return_value = MagicMock(
                 openrouter_api_key="sk-or-v1-test-key",
                 openrouter_base_url="https://openrouter.ai/api/v1",
-                openrouter_model="google/gemini-3-flash-preview",
+                openrouter_model="minimax/minimax-m2.5",
                 llm_timeout_seconds=120,
                 llm_max_retries=3,
             )
@@ -80,7 +80,7 @@ class TestOpenRouterClientComplete:
             mock_settings.return_value = MagicMock(
                 openrouter_api_key="sk-or-v1-test-key",
                 openrouter_base_url="https://openrouter.ai/api/v1",
-                openrouter_model="google/gemini-3-flash-preview",
+                openrouter_model="minimax/minimax-m2.5",
                 llm_timeout_seconds=120,
                 llm_max_retries=3,
             )
@@ -130,7 +130,7 @@ class TestOpenRouterClientComplete:
             call_kwargs = mock_post.call_args
             request_json = call_kwargs.kwargs["json"]
 
-            assert request_json["model"] == "google/gemini-3-flash-preview"
+            assert request_json["model"] == "minimax/minimax-m2.5"
             assert request_json["messages"] == [{"role": "user", "content": "test"}]
             assert request_json["temperature"] == 0.5
             assert request_json["max_tokens"] == 2048
@@ -295,7 +295,7 @@ class TestOpenRouterClientStreamComplete:
             mock_settings.return_value = MagicMock(
                 openrouter_api_key="sk-or-v1-test-key",
                 openrouter_base_url="https://openrouter.ai/api/v1",
-                openrouter_model="google/gemini-3-flash-preview",
+                openrouter_model="minimax/minimax-m2.5",
                 llm_timeout_seconds=120,
                 llm_max_retries=3,
             )

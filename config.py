@@ -76,8 +76,8 @@ class Settings(BaseSettings):
     # OpenRouter / LLM 配置
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "google/gemini-3-flash-preview"
-    gemini_model: str = "google/gemini-3-flash-preview"
+    openrouter_model: str = "minimax/minimax-m2.5"
+    gemini_model: str = "minimax/minimax-m2.5"
     llm_timeout_seconds: int = 300  # 5分钟
     llm_max_retries: int = 3
     llm_proxy_url: str = ""  # 可选：显式设置代理 URL，为空则使用系统环境变量
