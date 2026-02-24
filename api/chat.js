@@ -141,6 +141,7 @@ export function sendQuickChatMessage(conversationId, content, callbacks, attachm
     method: 'POST',
     data,
     onEvent: (eventType, data) => {
+      console.log('[QuickChat SSE]', eventType, Object.keys(data))
       switch (eventType) {
         case 'thinking_delta':
           callbacks.onThinkingDelta?.(data.content)

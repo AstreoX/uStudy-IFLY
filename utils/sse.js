@@ -11,14 +11,15 @@ const { API_BASE_URL } = config
 /**
  * Parse SSE data chunks
  * @param {string} buffer - Accumulated data buffer
+ * @param {string} pendingEvent - Event type carried over from previous chunk
  * @param {Function} onEvent - Event callback (eventType, data)
- * @returns {string} Remaining incomplete data
+ * @returns {{ remaining: string, pendingEvent: string }}
  */
-function parseSSEBuffer(buffer, onEvent) {
+function parseSSEBuffer(buffer, pendingEvent, onEvent) {
   const lines = buffer.split('\n')
   const remaining = lines.pop()
 
-  let currentEvent = 'message'
+  let currentEvent = pendingEvent
 
   for (const line of lines) {
     if (line.startsWith('event: ')) {
@@ -34,7 +35,7 @@ function parseSSEBuffer(buffer, onEvent) {
     }
   }
 
-  return remaining
+  return { remaining, pendingEvent: currentEvent }
 }
 
 /**
@@ -80,7 +81,7 @@ export function connectSSE(options) {
 
       if (!response.body) {
         return response.text().then(text => {
-          parseSSEBuffer(text + '\n', onEvent)
+          parseSSEBuffer(text + '\n', 'message', onEvent)
           onComplete?.()
           return null
         })
@@ -93,6 +94,7 @@ export function connectSSE(options) {
 
       const decoder = new TextDecoder()
       let buffer = ''
+      let pendingEvent = 'message'
 
       function read() {
         reader.read().then(({ done, value }) => {
@@ -103,7 +105,9 @@ export function connectSSE(options) {
 
           const chunk = decoder.decode(value, { stream: true })
           buffer += chunk
-          buffer = parseSSEBuffer(buffer, onEvent)
+          const result = parseSSEBuffer(buffer, pendingEvent, onEvent)
+          buffer = result.remaining
+          pendingEvent = result.pendingEvent
 
           read()
         }).catch(err => {
