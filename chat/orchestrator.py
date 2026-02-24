@@ -51,6 +51,7 @@ class SSEEventType:
     """SSE Event types for streaming responses"""
 
     TEXT_DELTA = "text_delta"  # Incremental text content
+    THINKING_DELTA = "thinking_delta"  # Thinking/reasoning content from thinking models
     TOOL_CALL = "tool_call"  # Tool call status
     CLIENT_TOOL_REQUEST = "client_tool_request"  # Client-side tool request
     DONE = "done"  # Completion signal
@@ -178,8 +179,16 @@ class QuickChatOrchestrator:
                 ):
                     event_type = event.get("type")
 
+                    # Emit thinking content (reasoning models)
+                    if event_type == "thinking":
+                        current_iteration.reasoning_content += event["content"]
+                        yield {
+                            "event": SSEEventType.THINKING_DELTA,
+                            "data": {"content": event["content"]},
+                        }
+
                     # Emit text content immediately
-                    if event_type == "content":
+                    elif event_type == "content":
                         content = event["content"]
                         iteration_content += content
                         full_response += content
@@ -571,8 +580,16 @@ class LLMOrchestrator:
                 ):
                     event_type = event.get("type")
 
+                    # Emit thinking content (reasoning models)
+                    if event_type == "thinking":
+                        current_iteration.reasoning_content += event["content"]
+                        yield {
+                            "event": SSEEventType.THINKING_DELTA,
+                            "data": {"content": event["content"]},
+                        }
+
                     # Immediately emit text content as it arrives
-                    if event_type == "content":
+                    elif event_type == "content":
                         content = event["content"]
                         iteration_content += content
                         full_response += content

@@ -12,6 +12,7 @@ class IterationData:
     """Single LLM call iteration data."""
 
     content: str = ""
+    reasoning_content: str = ""
     tool_calls: list[dict[str, Any]] | None = None
     tool_results: list[dict[str, Any]] | None = None
 
@@ -77,6 +78,7 @@ class LLMContextCollector:
                 "iterations": [
                     {
                         "content": it.content,
+                        "reasoning_content": it.reasoning_content,
                         "tool_calls": it.tool_calls,
                         "tool_results": it.tool_results,
                     }
