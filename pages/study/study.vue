@@ -230,6 +230,46 @@
                   </view>
                 </transition>
               </view>
+
+              <!-- Model selector (center of header) -->
+              <view v-if="availableModels.length > 0" class="model-selector-wrap">
+                <view class="model-selector-btn" @tap="toggleModelMenu">
+                  <svg viewBox="0 0 256 256" class="model-selector-icon">
+                    <rect width="256" height="256" fill="none"/>
+                    <line x1="40" y1="128" x2="216" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                    <line x1="40" y1="64" x2="216" y2="64" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                    <line x1="40" y1="192" x2="216" y2="192" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                    <circle cx="104" cy="64" r="12" fill="currentColor"/>
+                    <circle cx="168" cy="128" r="12" fill="currentColor"/>
+                    <circle cx="88" cy="192" r="12" fill="currentColor"/>
+                  </svg>
+                  <text class="model-selector-label">{{ selectedModelName }}</text>
+                  <svg viewBox="0 0 256 256" class="model-selector-chevron">
+                    <polyline points="208 96 128 176 48 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="20"/>
+                  </svg>
+                </view>
+                <!-- Model dropdown menu (opens downward from header) -->
+                <transition name="model-menu-fade">
+                  <view v-if="showModelMenu" class="model-menu model-menu-down">
+                    <view
+                      v-for="m in availableModels"
+                      :key="m.id"
+                      class="model-menu-item"
+                      :class="{ 'model-menu-item-active': m.id === selectedModelId }"
+                      @tap="selectModel(m.id)"
+                    >
+                      <view class="model-menu-item-info">
+                        <text class="model-menu-item-name">{{ m.display_name }}</text>
+                        <text class="model-menu-item-desc">{{ m.description }}</text>
+                      </view>
+                      <svg v-if="m.id === selectedModelId" viewBox="0 0 256 256" class="model-menu-check">
+                        <polyline points="40 144 96 200 216 80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+                      </svg>
+                    </view>
+                  </view>
+                </transition>
+              </view>
+
               <view
                 class="chat-header-btn"
                 :class="{ 'chat-header-btn-disabled': !spaceId }"
@@ -487,6 +527,8 @@
       </view>
       <!-- History popup backdrop -->
       <view v-if="showHistoryPopup" class="history-backdrop" @tap="showHistoryPopup = false"></view>
+      <!-- Model menu backdrop -->
+      <view v-if="showModelMenu" class="model-menu-backdrop" @tap="showModelMenu = false"></view>
 
       <u-modal
         :visible="showDeleteSpaceModal"
@@ -511,7 +553,7 @@ import StudyMaterialsPanel from '@/components/study/StudyMaterialsPanel.vue'
 import QuizPanel from '@/components/study/quiz/QuizPanel.vue'
 import UModal from '@/components/u-modal/u-modal.vue'
 import { getSpaces, deleteSpace, getTaskStatus } from '@/api/space'
-import { createConversation, getSpaceConversations, getConversation, sendMessage, uploadAttachment, deleteAttachment } from '@/api/chat'
+import { createConversation, getSpaceConversations, getConversation, sendMessage, uploadAttachment, deleteAttachment, getModels } from '@/api/chat'
 import { useUserStore } from '@/store/user'
 import { useSpacesStore } from '@/store/spaces'
 
@@ -666,6 +708,11 @@ export default {
       pendingAttachments: [],
       showAttachMenu: false,
 
+      // Model selection
+      availableModels: [],
+      selectedModelId: null,
+      showModelMenu: false,
+
       // Space delete
       isDeletingSpace: false,
       showDeleteSpaceModal: false,
@@ -697,6 +744,10 @@ export default {
     canSend() {
       return this.spaceId && this.inputText.trim().length > 0 && !this.isSending
     },
+    selectedModelName() {
+      const model = this.availableModels.find(m => m.id === this.selectedModelId)
+      return model ? model.display_name : 'Model'
+    },
     chatInputMaxHeight() {
       const base = this.chatInputLineHeight * this.chatInputMaxLines + this.chatInputVerticalPadding
       const extra = this.chatInputExtraPerWrappedLine * Math.max(0, this.chatInputMaxLines - 1)
@@ -727,6 +778,7 @@ export default {
   },
   mounted() {
     this._graphRefreshTimer = null
+    this.loadModels()
     const inputEl = this.getChatInputElement()
     if (inputEl && typeof inputEl.addEventListener === 'function') {
       inputEl.addEventListener('paste', this.handlePaste)
@@ -750,6 +802,32 @@ export default {
     }
   },
   methods: {
+    // ==================== Model Selection ====================
+    toggleModelMenu() {
+      this.showModelMenu = !this.showModelMenu
+    },
+    selectModel(id) {
+      this.selectedModelId = id
+      this.showModelMenu = false
+      uni.setStorageSync('uStudy_selectedModelId', id)
+    },
+    async loadModels() {
+      try {
+        const res = await getModels()
+        const models = res.models || res || []
+        this.availableModels = models
+        const storedId = uni.getStorageSync('uStudy_selectedModelId')
+        if (storedId && models.some(m => m.id === storedId)) {
+          this.selectedModelId = storedId
+        } else {
+          const defaultModel = models.find(m => m.is_default)
+          this.selectedModelId = defaultModel ? defaultModel.id : (models[0]?.id || null)
+        }
+      } catch (err) {
+        console.error('[StudyPage] Failed to load models:', err)
+      }
+    },
+
     getChatInputHostElement() {
       const ref = this.$refs.chatInput
       if (!ref) return null
@@ -1346,7 +1424,7 @@ export default {
       this.activeToolCalls = []
 
       const callbacks = this._buildSSECallbacks(aiMsgId, userMsgId)
-      this.cancelSSE = sendMessage(this.conversationId, text, callbacks, attachmentIds.length > 0 ? attachmentIds : null)
+      this.cancelSSE = sendMessage(this.conversationId, text, callbacks, attachmentIds.length > 0 ? attachmentIds : null, this.selectedModelId)
     },
 
     _buildSSECallbacks(aiMsgId, userMsgId) {
@@ -1494,7 +1572,7 @@ export default {
       this.activeToolCalls = []
 
       const callbacks = this._buildSSECallbacks(aiMsgId, msg.id)
-      this.cancelSSE = sendMessage(this.conversationId, text, callbacks, attachmentIds.length > 0 ? attachmentIds : null)
+      this.cancelSSE = sendMessage(this.conversationId, text, callbacks, attachmentIds.length > 0 ? attachmentIds : null, this.selectedModelId)
     },
 
     handleToolCallEvent(aiMsgId, data) {
@@ -3494,5 +3572,145 @@ textarea.chat-input-textarea {
 .quiz-entry-card:hover .quiz-entry-arrow {
   transform: translateX(3px);
   color: rgba(255, 255, 255, 0.6);
+}
+
+/* ==================== Model Selector ==================== */
+.model-selector-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.model-selector-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  height: 28px;
+  box-sizing: border-box;
+}
+
+.model-selector-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.model-selector-icon {
+  width: 13px;
+  height: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
+}
+
+.model-selector-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-selector-chevron {
+  width: 10px;
+  height: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+}
+
+/* Model menu dropdown (opens DOWN from header) */
+.model-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  background: rgba(22, 22, 42, 0.96);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 4px;
+  min-width: 220px;
+  z-index: 100;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.model-menu-down {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
+
+.model-menu-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.model-menu-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.model-menu-item-active {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.model-menu-item-active:hover {
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.model-menu-item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.model-menu-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.model-menu-item-active .model-menu-item-name {
+  color: #60A5FA;
+}
+
+.model-menu-item-desc {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-menu-check {
+  width: 18px;
+  height: 18px;
+  color: #60A5FA;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.model-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+
+/* Model menu transition */
+.model-menu-fade-enter-active,
+.model-menu-fade-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.model-menu-fade-enter-from,
+.model-menu-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 </style>

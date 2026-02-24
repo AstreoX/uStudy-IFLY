@@ -28,6 +28,45 @@
           <text class="header-title">Quick Chat</text>
         </view>
         <view class="header-actions">
+          <!-- Model selector -->
+          <view v-if="availableModels.length > 0" class="model-selector-wrap">
+            <view class="model-selector-btn" @tap="toggleModelMenu">
+              <svg viewBox="0 0 256 256" class="model-selector-icon">
+                <rect width="256" height="256" fill="none"/>
+                <line x1="40" y1="128" x2="216" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                <line x1="40" y1="64" x2="216" y2="64" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                <line x1="40" y1="192" x2="216" y2="192" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                <circle cx="104" cy="64" r="12" fill="currentColor"/>
+                <circle cx="168" cy="128" r="12" fill="currentColor"/>
+                <circle cx="88" cy="192" r="12" fill="currentColor"/>
+              </svg>
+              <text class="model-selector-label">{{ selectedModelName }}</text>
+              <svg viewBox="0 0 256 256" class="model-selector-chevron">
+                <polyline points="208 96 128 176 48 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="20"/>
+              </svg>
+            </view>
+            <!-- Model dropdown menu -->
+            <transition name="model-menu-fade">
+              <view v-if="showModelMenu" class="model-menu">
+                <view
+                  v-for="m in availableModels"
+                  :key="m.id"
+                  class="model-menu-item"
+                  :class="{ 'model-menu-item-active': m.id === selectedModelId }"
+                  @tap="selectModel(m.id)"
+                >
+                  <view class="model-menu-item-info">
+                    <text class="model-menu-item-name">{{ m.display_name }}</text>
+                    <text class="model-menu-item-desc">{{ m.description }}</text>
+                  </view>
+                  <svg v-if="m.id === selectedModelId" viewBox="0 0 256 256" class="model-menu-check">
+                    <polyline points="40 144 96 200 216 80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+                  </svg>
+                </view>
+              </view>
+            </transition>
+          </view>
+
           <view class="chat-header-btn-wrap">
             <view class="chat-header-btn" @tap="openHistoryPopup">
               <svg viewBox="0 0 256 256" class="chat-header-icon">
@@ -360,6 +399,8 @@
         <view v-if="showAttachMenu" class="attach-menu-backdrop" @tap="showAttachMenu = false"></view>
       </view>
 
+      <!-- Model menu backdrop -->
+      <view v-if="showModelMenu" class="model-menu-backdrop" @tap="showModelMenu = false"></view>
       <!-- History popup backdrop -->
       <view v-if="showHistoryPopup" class="history-backdrop" @tap="showHistoryPopup = false"></view>
     </view>
@@ -380,7 +421,8 @@ import {
   bindQuickChatToolTask,
   getConversation,
   uploadAttachment,
-  deleteAttachment
+  deleteAttachment,
+  getModels
 } from '@/api/chat'
 
 // Quick chat tool display names
@@ -486,7 +528,12 @@ export default {
       taskBindingLocks: {},
       taskNavigated: {},
       taskSidebarSyncPhases: {},
-      lastChatEnterMeta: null
+      lastChatEnterMeta: null,
+
+      // Model selection
+      availableModels: [],
+      selectedModelId: null,
+      showModelMenu: false
     }
   },
   computed: {
@@ -505,6 +552,10 @@ export default {
         maxHeight: `${this.chatInputMaxHeight}px`,
         overflowY: height >= this.chatInputMaxHeight ? 'auto' : 'hidden'
       }
+    },
+    selectedModelName() {
+      const model = this.availableModels.find(m => m.id === this.selectedModelId)
+      return model ? model.display_name : 'Model'
     }
   },
   onLoad() {
@@ -523,6 +574,7 @@ export default {
     })
   },
   mounted() {
+    this.loadModels()
     const inputEl = this.getChatInputElement()
     if (inputEl && typeof inputEl.addEventListener === 'function') {
       inputEl.addEventListener('paste', this.handlePaste)
@@ -557,6 +609,32 @@ export default {
 
     handleCreateSpace() {
       uni.navigateTo({ url: '/pages/createSpace/createSpace' })
+    },
+
+    // ==================== Model Selection ====================
+    toggleModelMenu() {
+      this.showModelMenu = !this.showModelMenu
+    },
+    selectModel(id) {
+      this.selectedModelId = id
+      this.showModelMenu = false
+      uni.setStorageSync('uStudy_selectedModelId', id)
+    },
+    async loadModels() {
+      try {
+        const res = await getModels()
+        const models = res.models || res || []
+        this.availableModels = models
+        const storedId = uni.getStorageSync('uStudy_selectedModelId')
+        if (storedId && models.some(m => m.id === storedId)) {
+          this.selectedModelId = storedId
+        } else {
+          const defaultModel = models.find(m => m.is_default)
+          this.selectedModelId = defaultModel ? defaultModel.id : (models[0]?.id || null)
+        }
+      } catch (err) {
+        console.error('[QuickChat] Failed to load models:', err)
+      }
     },
 
     // ==================== Chat Methods ====================
@@ -848,7 +926,8 @@ export default {
       const callbacks = this._buildSSECallbacks(aiMsgId, userMsgId)
       this.cancelSSE = sendQuickChatMessage(
         this.conversationId, text, callbacks,
-        attachmentIds.length > 0 ? attachmentIds : null
+        attachmentIds.length > 0 ? attachmentIds : null,
+        this.selectedModelId
       )
     },
 
@@ -1847,7 +1926,8 @@ export default {
       const callbacks = this._buildSSECallbacks(aiMsgId, msg.id)
       this.cancelSSE = sendQuickChatMessage(
         this.conversationId, text, callbacks,
-        attachmentIds.length > 0 ? attachmentIds : null
+        attachmentIds.length > 0 ? attachmentIds : null,
+        this.selectedModelId
       )
     },
 
@@ -3243,5 +3323,147 @@ textarea.chat-input-textarea {
   position: fixed;
   inset: 0;
   z-index: 50;
+}
+
+/* ==================== Model Selector ==================== */
+.model-selector-wrap {
+  position: relative;
+}
+
+.model-selector-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.model-selector-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.model-selector-btn:active {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.model-selector-icon {
+  width: 14px;
+  height: 14px;
+  color: rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
+}
+
+.model-selector-label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-selector-chevron {
+  width: 10px;
+  height: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  flex-shrink: 0;
+}
+
+/* Model dropdown menu */
+.model-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 260px;
+  z-index: 210;
+  background: rgba(22, 22, 42, 0.96);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 6px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.model-menu-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.model-menu-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.model-menu-item:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.model-menu-item-active {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.model-menu-item-active:hover {
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.model-menu-item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.model-menu-item-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.model-menu-item-active .model-menu-item-name {
+  color: #60A5FA;
+}
+
+.model-menu-item-desc {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-menu-check {
+  width: 18px;
+  height: 18px;
+  color: #60A5FA;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+/* Model menu backdrop */
+.model-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+}
+
+/* Model menu transition */
+.model-menu-fade-enter-active,
+.model-menu-fade-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.model-menu-fade-enter-from,
+.model-menu-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 </style>

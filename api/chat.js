@@ -4,6 +4,17 @@ import config from '@/config'
 import { getTokens } from '@/utils/storage'
 
 /**
+ * Get available models list
+ * @returns {Promise<Object>} { models: [{ id, display_name, description, is_default }] }
+ */
+export function getModels() {
+  return request({
+    url: '/api/models',
+    method: 'GET'
+  })
+}
+
+/**
  * Create a conversation
  * @param {string} spaceId - Learning space ID
  * @param {string} title - Conversation title
@@ -117,10 +128,13 @@ export function getQuickChatConversations() {
  * @param {Array<string>} attachmentIds - Attachment IDs (optional)
  * @returns {Function} Cancel function
  */
-export function sendQuickChatMessage(conversationId, content, callbacks, attachmentIds = null) {
+export function sendQuickChatMessage(conversationId, content, callbacks, attachmentIds = null, modelId = null) {
   const data = { content }
   if (attachmentIds && attachmentIds.length > 0) {
     data.attachment_ids = attachmentIds
+  }
+  if (modelId) {
+    data.model_id = modelId
   }
   return connectSSE({
     url: `/api/quick-chat/conversations/${conversationId}/messages`,
@@ -203,10 +217,13 @@ export function bindQuickChatToolTask(conversationId, toolCallId) {
   })
 }
 
-export function sendMessage(conversationId, content, callbacks, attachmentIds = null) {
+export function sendMessage(conversationId, content, callbacks, attachmentIds = null, modelId = null) {
   const data = { content }
   if (attachmentIds && attachmentIds.length > 0) {
     data.attachment_ids = attachmentIds
+  }
+  if (modelId) {
+    data.model_id = modelId
   }
   return connectSSE({
     url: `/api/conversations/${conversationId}/messages`,

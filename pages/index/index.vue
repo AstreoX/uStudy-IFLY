@@ -141,7 +141,7 @@ export default {
         const user = await getMe()
         const userStore = useUserStore()
         userStore.setUser(user)
-        this.showActivationModal = !this.isActivatedTier(user.subscription_tier)
+        this.showActivationModal = false
       } catch (error) {
         this.showActivationModal = false
       }

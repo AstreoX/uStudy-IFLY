@@ -1,17 +1,12 @@
+// ========== 环境配置 ==========
+// 切换这里来选择连接本地还是服务器
+const USE_PRODUCTION = true  // true = 连接服务器, false = 连接本地
 const LOCAL_BASE_URL = 'http://localhost:8000'
 const PRODUCTION_BASE_URL = 'https://api.ustudy.top'
-
-function isProduction() {
-  try {
-    return process.env.NODE_ENV === 'production'
-  } catch (error) {
-    return false
-  }
-}
+// ==============================
 
 function resolveBaseUrl() {
-  if (isProduction()) {
-    // Production uses dedicated API domain.
+  if (USE_PRODUCTION) {
     return PRODUCTION_BASE_URL
   }
 
