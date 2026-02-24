@@ -371,7 +371,7 @@ class OpenRouterClient:
                             "stream": True,
                             "stream_options": {"include_usage": True},
                             # Only request reasoning for thinking-capable models
-                            **({"include_reasoning": True} if "thinking" in self.model.lower() else {}),
+                            **({"reasoning": {"effort": "high"}} if "thinking" in self.model.lower() else {}),
                         },
                     ) as response:
                         response.raise_for_status()
