@@ -82,6 +82,7 @@ export function executeToolCall(spaceId, toolCall) {
  * @param {string} content - 消息内容
  * @param {Object} callbacks - 事件回调
  *   - onTextDelta(content): 增量文本
+ *   - onThinking(content): 思考过程增量内容（reasoning 模型）
  *   - onToolCall(toolData): 工具调用事件
  *   - onDone(fullContent): 完成事件
  *   - onError(message): 错误事件
@@ -103,6 +104,9 @@ export function sendMessage(conversationId, content, callbacks, attachmentIds = 
       switch (eventType) {
         case 'text_delta':
           callbacks.onTextDelta?.(data.content)
+          break
+        case 'thinking_delta':
+          callbacks.onThinking?.(data.content)
           break
         case 'tool_call':
           callbacks.onToolCall?.(data)
@@ -187,6 +191,7 @@ export function updateConversation(conversationId, data) {
  * @param {string} content - 消息内容
  * @param {Object} callbacks - 事件回调
  *   - onTextDelta(content): 增量文本
+ *   - onThinking(content): 思考过程增量内容（reasoning 模型）
  *   - onToolCall(toolData): 工具调用事件
  *   - onDone(fullContent): 完成事件
  *   - onError(message): 错误事件
@@ -208,6 +213,9 @@ export function sendQuickChatMessage(conversationId, content, callbacks, attachm
       switch (eventType) {
         case 'text_delta':
           callbacks.onTextDelta?.(data.content)
+          break
+        case 'thinking_delta':
+          callbacks.onThinking?.(data.content)
           break
         case 'tool_call':
           callbacks.onToolCall?.(data)

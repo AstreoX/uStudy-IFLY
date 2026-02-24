@@ -232,7 +232,27 @@
 
 		<!-- 底部输入栏 -->
 			<view class="input-bar" :style="{ bottom: keyboardHeight > 0 ? keyboardHeight + 'px' : '' }">
-				<view class="input-bar-inner">
+				<!-- 模型选择下拉菜单（向上弹出） -->
+				<view v-if="showModelMenu" class="model-menu-backdrop" @click="showModelMenu = false"></view>
+				<view v-if="showModelMenu" class="model-menu">
+					<view
+						v-for="m in availableModels"
+						:key="m.id"
+						class="model-menu-item"
+						:class="{ 'model-menu-item-active': m.id === selectedModelId }"
+						@click="selectModel(m.id)"
+					>
+						<view class="model-menu-item-info">
+							<text class="model-menu-item-name">{{ m.display_name }}</text>
+							<text class="model-menu-item-desc">{{ m.description }}</text>
+						</view>
+						<svg v-if="m.id === selectedModelId" viewBox="0 0 256 256" class="model-menu-check">
+							<polyline points="40 144 96 200 216 80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+						</svg>
+					</view>
+				</view>
+
+				<view class="input-card">
 					<!-- 待发送附件预览区域 -->
 					<view v-if="pendingAttachments.length > 0 || uploadingFiles.length > 0" class="pending-attachments-area">
 						<!-- 已上传待发送的附件 -->
@@ -268,14 +288,6 @@
 						</view>
 					</view>
 
-					<view
-						class="input-field-wrapper"
-						:class="{ 'input-field-wrapper-expanded': textareaLineCount > 1 }"
-					>
-					<view class="input-action" @click="handlePlusClick">
-						<image class="input-action-icon" src="/static/icons/phosphor-icons/SVGs/regular/plus.svg" mode="aspectFit"></image>
-					</view>
-
 					<textarea
 						ref="textareaRef"
 						class="input-field"
@@ -293,19 +305,44 @@
 						@blur="onInputBlur"
 					/>
 
-					<view class="input-action send-btn-wrapper" @click="sendMessage">
-						<image
-							class="input-action-icon send-action-icon"
-							:class="{ 'send-btn-disabled': !canSend }"
-							src="/static/icons/phosphor-icons/SVGs Flat/fill/arrow-circle-up-fill.svg"
-							mode="aspectFit"
-						></image>
+					<view class="input-bottom-row">
+						<!-- 左侧：模型选择 pill -->
+						<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
+							<svg viewBox="0 0 256 256" class="model-selector-icon">
+								<rect width="256" height="256" fill="none"/>
+								<line x1="40" y1="128" x2="216" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+								<line x1="40" y1="64" x2="216" y2="64" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+								<line x1="40" y1="192" x2="216" y2="192" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+								<circle cx="104" cy="64" r="12" fill="currentColor"/>
+								<circle cx="168" cy="128" r="12" fill="currentColor"/>
+								<circle cx="88" cy="192" r="12" fill="currentColor"/>
+							</svg>
+							<text class="model-selector-label">{{ selectedModelName }}</text>
+							<svg viewBox="0 0 256 256" class="model-selector-chevron">
+								<polyline points="208 96 128 176 48 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="20"/>
+							</svg>
+						</view>
+						<view v-else class="input-bottom-row-spacer"></view>
+
+						<!-- 右侧：操作按钮 -->
+						<view class="right-actions">
+							<view class="input-action" @click="handlePlusClick">
+								<image class="input-action-icon" src="/static/icons/phosphor-icons/SVGs/regular/plus.svg" mode="aspectFit"></image>
+							</view>
+							<view class="input-action send-btn-wrapper" @click="sendMessage">
+								<image
+									class="input-action-icon send-action-icon"
+									:class="{ 'send-btn-disabled': !canSend }"
+									src="/static/icons/phosphor-icons/SVGs Flat/fill/arrow-circle-up-fill.svg"
+									mode="aspectFit"
+								></image>
+							</view>
+						</view>
 					</view>
 				</view>
-			</view>
 
-			<view class="input-safe-area"></view>
-		</view>
+				<view class="input-safe-area"></view>
+			</view>
 
 		<!-- +号弹窗 -->
 		<view v-if="showPlusPopup" class="plus-popup-wrapper" @click="closePlusPopup">
@@ -346,6 +383,7 @@
 
 <script>
 	import { getSpaceGraph, getTaskStatus, generateKnowledgeGraph, addSpaceLink, uploadSpaceDocument } from '@/api/space'
+	import { getModels } from '@/api/chat'
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
 	import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
@@ -711,6 +749,11 @@
 				pendingAttachments: [],
 				uploadingFiles: [],
 
+				// 模型选择
+				availableModels: [],
+				selectedModelId: null,
+				showModelMenu: false,
+
 				// 静默刷新标志，防止并发刷新
 				isRefreshing: false,
 
@@ -760,6 +803,11 @@
 
 			canSend() {
 				return this.inputText.trim().length > 0 || this.pendingAttachments.length > 0
+			},
+
+			selectedModelName() {
+				const model = this.availableModels.find(m => m.id === this.selectedModelId)
+				return model ? model.display_name : ''
 			}
 		},
 
@@ -779,6 +827,7 @@
 		},
 
 		async mounted() {
+			this.loadModels()
 			try {
 				// 检测用户无障碍偏好
 				// #ifdef H5
@@ -1601,6 +1650,30 @@
 			},
 
 			// ========== 输入栏方法 ==========
+			toggleModelMenu() {
+				this.showModelMenu = !this.showModelMenu
+			},
+			selectModel(id) {
+				this.selectedModelId = id
+				this.showModelMenu = false
+				uni.setStorageSync('uStudy_selectedModelId', id)
+			},
+			async loadModels() {
+				try {
+					const res = await getModels()
+					const models = res.models || res || []
+					this.availableModels = models
+					const storedId = uni.getStorageSync('uStudy_selectedModelId')
+					if (storedId && models.some(m => m.id === storedId)) {
+						this.selectedModelId = storedId
+					} else {
+						const defaultModel = models.find(m => m.is_default)
+						this.selectedModelId = defaultModel ? defaultModel.id : (models[0]?.id || null)
+					}
+				} catch (err) {
+					console.error('[LearningSpace] Failed to load models:', err)
+				}
+			},
 			handlePlusClick() {
 				this.showPlusPopup = true
 				this.$nextTick(() => {
@@ -4245,7 +4318,7 @@
 	/* 操作按钮 */
 	.action-buttons {
 		position: fixed;
-		bottom: calc(100vh * 3 / 26);
+		bottom: calc(100vh * 4.5 / 26);
 		left: 0;
 		right: 0;
 		z-index: 100;
@@ -4336,17 +4409,58 @@
 		transition: bottom 0.25s ease;
 	}
 
-	.input-bar-inner {
-		display: flex;
-		flex-direction: column;
+	.input-card {
 		width: 100%;
-		align-items: stretch;
-		gap: 12rpx;
+		background-color: rgba(255, 255, 255, 0.06);
+		-webkit-backdrop-filter: blur(40px) saturate(180%);
+		backdrop-filter: blur(40px) saturate(180%);
+		border-radius: 32rpx;
+		border: 1rpx solid rgba(255, 255, 255, 0.1);
+		outline: 1rpx solid rgba(255, 255, 255, 0.04);
+		outline-offset: 1rpx;
+		box-shadow:
+			inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
+			0 2rpx 12rpx rgba(0, 0, 0, 0.25);
+		overflow: hidden;
+	}
+
+	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+		.input-card {
+			background-color: rgba(80, 80, 95, 0.65);
+		}
+	}
+
+	.input-field {
+		width: 100%;
+		font-size: 28rpx;
+		color: #ffffff;
+		min-height: 40rpx;
+		line-height: 1.4;
+		padding: 24rpx 28rpx 16rpx;
+		box-sizing: border-box;
+		resize: none;
+		overflow-y: hidden;
+	}
+
+	.input-bottom-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0 12rpx 12rpx 12rpx;
+	}
+
+	.input-bottom-row-spacer {
+		flex: 1;
+	}
+
+	.right-actions {
+		display: flex;
+		align-items: center;
 	}
 
 	.input-action {
-		width: 86rpx;
-		height: 86rpx;
+		width: 72rpx;
+		height: 72rpx;
 		flex-shrink: 0;
 		display: flex;
 		justify-content: center;
@@ -4354,14 +4468,14 @@
 	}
 
 	.input-action-icon {
-		width: 52rpx;
-		height: 52rpx;
+		width: 48rpx;
+		height: 48rpx;
 		filter: brightness(0) invert(1);
 	}
 
 	.send-btn-wrapper .send-action-icon {
-		width: 80rpx !important;
-		height: 80rpx !important;
+		width: 72rpx !important;
+		height: 72rpx !important;
 		transform: scale(1.0);
 		transform-origin: center center;
 		display: block;
@@ -4371,57 +4485,123 @@
 		opacity: 0.3;
 	}
 
-	.input-field-wrapper {
-		flex: none;
-		width: 100%;
-		max-width: 100%;
-		min-width: 0;
-		min-height: 86rpx;
-		background-color: rgba(255, 255, 255, 0.06);
-		-webkit-backdrop-filter: blur(40px) saturate(180%);
-		backdrop-filter: blur(40px) saturate(180%);
-		border-radius: 999rpx;
-		display: flex;
-		align-items: center;
-		overflow: hidden;
-		padding: 0 8rpx;
-		border: 1rpx solid rgba(255, 255, 255, 0.1);
-		outline: 1rpx solid rgba(255, 255, 255, 0.04);
-		outline-offset: 1rpx;
-		box-shadow:
-			inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
-			0 2rpx 12rpx rgba(0, 0, 0, 0.25);
-	}
-
-	.input-field-wrapper-expanded {
-		align-items: flex-end;
-		border-radius: 36rpx;
-	}
-
-	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-		.input-field-wrapper {
-			background-color: rgba(80, 80, 95, 0.65);
-		}
-	}
-
-	.input-field {
-		flex: 1 1 0;
-		width: 0;
-		min-width: 0;
-		max-width: 100%;
-		font-size: 28rpx;
-		color: #ffffff;
-		min-height: 40rpx;
-		line-height: 1.4;
-		padding: 22rpx 0;
-		box-sizing: border-box;
-		resize: none;
-		overflow-y: hidden;
-	}
-
 	.input-placeholder {
 		color: #9ca3af;
 		font-size: 28rpx;
+	}
+
+	/* 模型选择器 */
+	.model-selector-btn {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+		padding: 8rpx 16rpx 8rpx 12rpx;
+		background: rgba(255, 255, 255, 0.08);
+		border-radius: 999rpx;
+		cursor: pointer;
+		transition: background 0.15s ease;
+	}
+
+	.model-selector-btn:active {
+		background: rgba(255, 255, 255, 0.16);
+	}
+
+	.model-selector-icon {
+		width: 28rpx;
+		height: 28rpx;
+		color: rgba(255, 255, 255, 0.5);
+		flex-shrink: 0;
+	}
+
+	.model-selector-label {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.6);
+		white-space: nowrap;
+		max-width: 280rpx;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.model-selector-chevron {
+		width: 20rpx;
+		height: 20rpx;
+		color: rgba(255, 255, 255, 0.35);
+		flex-shrink: 0;
+	}
+
+	/* 模型菜单弹窗 */
+	.model-menu-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 199;
+	}
+
+	.model-menu {
+		position: absolute;
+		bottom: 100%;
+		left: 12rpx;
+		width: max-content;
+		min-width: 360rpx;
+		max-width: 80%;
+		z-index: 200;
+		margin-bottom: 8rpx;
+		background: rgba(38, 38, 42, 0.94);
+		-webkit-backdrop-filter: blur(24px) saturate(180%);
+		backdrop-filter: blur(24px) saturate(180%);
+		border: 1rpx solid rgba(255, 255, 255, 0.1);
+		border-radius: 20rpx;
+		padding: 6rpx;
+		box-shadow: 0 -6rpx 24rpx rgba(0, 0, 0, 0.35);
+	}
+
+	.model-menu-item {
+		display: flex;
+		align-items: center;
+		padding: 20rpx 24rpx;
+		border-radius: 16rpx;
+		transition: background 0.15s ease;
+	}
+
+	.model-menu-item:active {
+		background: rgba(255, 255, 255, 0.08);
+	}
+
+	.model-menu-item-active {
+		background: rgba(255, 255, 255, 0.08);
+	}
+
+	.model-menu-item-info {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 4rpx;
+		min-width: 0;
+	}
+
+	.model-menu-item-name {
+		font-size: 28rpx;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.9);
+	}
+
+	.model-menu-item-active .model-menu-item-name {
+		color: #ffffff;
+	}
+
+	.model-menu-item-desc {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.4);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.model-menu-check {
+		width: 32rpx;
+		height: 32rpx;
+		color: rgba(255, 255, 255, 0.7);
+		flex-shrink: 0;
+		margin-left: 16rpx;
 	}
 
 	.input-safe-area {

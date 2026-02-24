@@ -147,7 +147,7 @@ function replayEventsGradually(events, onEvent, onDone, isAborted) {
   const timerIds = []
 
   events.forEach((evt, index) => {
-    const step = evt.eventType === 'text_delta' ? 24 : 0
+    const step = (evt.eventType === 'text_delta' || evt.eventType === 'thinking_delta') ? 24 : 0
     delay += step
 
     const timerId = setTimeout(() => {

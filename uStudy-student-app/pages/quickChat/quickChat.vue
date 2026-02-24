@@ -68,6 +68,18 @@
 				<template v-else>
 					<view class="message-bubble bubble-ai">
 
+						<!-- 思考过程（reasoning 模型） -->
+						<view v-if="msg.thinkingContent" class="thinking-section">
+							<view class="thinking-header" @click="msg.isThinkingExpanded = !msg.isThinkingExpanded">
+								<text class="thinking-label">{{ msg.isStreaming && !msg.content ? '思考中...' : '已思考' + (msg.thinkingDuration ? '（用时 ' + msg.thinkingDuration + ' 秒）' : '') }}</text>
+								<image class="thinking-chevron" :class="{ 'thinking-chevron-up': msg.isThinkingExpanded }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+							</view>
+							<view class="thinking-body" :class="{ 'thinking-body-collapsed': !msg.isThinkingExpanded }">
+								<text class="thinking-text">{{ msg.thinkingContent }}</text>
+							</view>
+						</view>
+
 						<!-- AI消息：按片段顺序渲染 -->
 						<template v-for="(seg, segIdx) in getMessageSegments(msg)">
 						<!-- 文本片段（Markdown渲染） -->
@@ -1468,6 +1480,10 @@
 					id: aiMsgId,
 					role: 'ai',
 					content: '',
+					thinkingContent: '',
+					isThinkingExpanded: true,
+					thinkingStartTime: 0,
+					thinkingDuration: 0,
 					isStreaming: true,
 					isWaitingOutput: true
 				})
@@ -1481,10 +1497,26 @@
 					this.conversationId,
 					userMessage,
 					{
+						onThinking: (content) => {
+							const msg = this.messages[msgIndex]
+							if (msg.isWaitingOutput) msg.isWaitingOutput = false
+							if (!msg.thinkingStartTime) {
+								msg.thinkingStartTime = Date.now()
+							}
+							msg.thinkingContent = (msg.thinkingContent || '') + content
+						},
+
 						onTextDelta: (content) => {
 							const msg = this.messages[msgIndex]
 							if (msg.isWaitingOutput) {
 								msg.isWaitingOutput = false
+							}
+							// Auto-collapse thinking + calculate duration
+							if (msg.thinkingContent && msg.isThinkingExpanded) {
+								msg.isThinkingExpanded = false
+								if (msg.thinkingStartTime) {
+									msg.thinkingDuration = Math.round((Date.now() - msg.thinkingStartTime) / 1000)
+								}
 							}
 							msg.content = msg.content + content
 						},
@@ -2685,5 +2717,57 @@
 		color: rgba(255, 255, 255, 0.7);
 		flex-shrink: 0;
 		margin-left: 16rpx;
+	}
+
+	/* ===== Thinking/Reasoning Section (DeepSeek style) ===== */
+	.thinking-section {
+		margin-bottom: 16rpx;
+	}
+
+	.thinking-header {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+	}
+
+	.thinking-label {
+		font-size: 28rpx;
+		color: rgba(255, 255, 255, 0.85);
+	}
+
+	.thinking-chevron {
+		width: 28rpx;
+		height: 28rpx;
+		filter: invert(1);
+		opacity: 0.7;
+		transition: transform 0.2s ease;
+	}
+
+	.thinking-chevron-up {
+		transform: rotate(180deg);
+	}
+
+	.thinking-body {
+		margin-top: 8rpx;
+		padding-left: 20rpx;
+		border-left: 4rpx solid rgba(255, 255, 255, 0.25);
+		max-height: 5000rpx;
+		opacity: 1;
+		overflow: hidden;
+		transition: max-height 0.4s ease-in-out, opacity 0.25s ease 0.05s, margin-top 0.3s ease;
+	}
+
+	.thinking-body-collapsed {
+		max-height: 0;
+		opacity: 0;
+		margin-top: 0;
+		transition: max-height 0.3s ease-in-out, opacity 0.15s ease, margin-top 0.2s ease;
+	}
+
+	.thinking-text {
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.75);
+		line-height: 1.7;
+		word-break: break-all;
 	}
 </style>
