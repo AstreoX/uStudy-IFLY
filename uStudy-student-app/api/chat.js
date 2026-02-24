@@ -2,6 +2,17 @@ import { request } from '@/utils/request'
 import { connectSSE } from '@/utils/sse'
 
 /**
+ * 获取可用模型列表
+ * @returns {Promise<Object>} { models: [{ id, display_name, description, is_default }] }
+ */
+export function getModels() {
+  return request({
+    url: '/api/models',
+    method: 'GET'
+  })
+}
+
+/**
  * 创建对话
  * @param {string} spaceId - 学习空间 ID
  * @param {string} title - 对话标题

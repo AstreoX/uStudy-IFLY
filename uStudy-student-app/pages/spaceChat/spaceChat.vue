@@ -23,6 +23,45 @@
 			</view>
 		</view>
 
+		<!-- 模型选择器（导航栏下方） -->
+		<view v-if="availableModels.length > 0" class="model-bar">
+			<view class="model-selector-btn" @click="toggleModelMenu">
+				<svg viewBox="0 0 256 256" class="model-selector-icon">
+					<rect width="256" height="256" fill="none"/>
+					<line x1="40" y1="128" x2="216" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+					<line x1="40" y1="64" x2="216" y2="64" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+					<line x1="40" y1="192" x2="216" y2="192" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+					<circle cx="104" cy="64" r="12" fill="currentColor"/>
+					<circle cx="168" cy="128" r="12" fill="currentColor"/>
+					<circle cx="88" cy="192" r="12" fill="currentColor"/>
+				</svg>
+				<text class="model-selector-label">{{ selectedModelName }}</text>
+				<svg viewBox="0 0 256 256" class="model-selector-chevron">
+					<polyline points="208 96 128 176 48 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="20"/>
+				</svg>
+			</view>
+		</view>
+
+		<!-- 模型选择下拉菜单 -->
+		<view v-if="showModelMenu" class="model-menu-backdrop" @click="showModelMenu = false"></view>
+		<view v-if="showModelMenu" class="model-menu">
+			<view
+				v-for="m in availableModels"
+				:key="m.id"
+				class="model-menu-item"
+				:class="{ 'model-menu-item-active': m.id === selectedModelId }"
+				@click="selectModel(m.id)"
+			>
+				<view class="model-menu-item-info">
+					<text class="model-menu-item-name">{{ m.display_name }}</text>
+					<text class="model-menu-item-desc">{{ m.description }}</text>
+				</view>
+				<svg v-if="m.id === selectedModelId" viewBox="0 0 256 256" class="model-menu-check">
+					<polyline points="40 144 96 200 216 80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+				</svg>
+			</view>
+		</view>
+
 		<!-- 前置知识卡片 -->
 		<pre-knowledge-card
 			:visible="showPreKnowledgeCard"
@@ -591,7 +630,7 @@
 	import PreKnowledgeCard from '@/components/pre-knowledge-card/pre-knowledge-card.vue'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
 	import { generateQuiz, getTaskStatus, getSpaceGraph } from '@/api/space'
-	import { createConversation, getConversation, sendMessage as sendChatMessage, executeToolCall, submitFeedback, submitToolResult } from '@/api/chat'
+	import { createConversation, getConversation, sendMessage as sendChatMessage, executeToolCall, submitFeedback, submitToolResult, getModels } from '@/api/chat'
 	import { connectNotificationStream } from '@/api/notification'
 	import { executeCalendarTool } from '@/utils/calendar'
 	import { uploadAttachment, deleteAttachment } from '@/api/attachment'
@@ -819,6 +858,11 @@
 				notificationAbort: null,
 				notificationIdCounter: 0,
 
+				// 模型选择
+				availableModels: [],
+				selectedModelId: null,
+				showModelMenu: false,
+
 				// SSE 诊断面板
 				sseDebugLog: [],
 				showSseDebugPanel: false,
@@ -834,6 +878,10 @@
 			},
 			canSend() {
 				return this.inputText.trim().length > 0 || this.pendingAttachments.length > 0
+			},
+			selectedModelName() {
+				const model = this.availableModels.find(m => m.id === this.selectedModelId)
+				return model ? model.display_name : '模型'
 			},
 			// 从 debugLogs 提取进度百分比
 			calculatedQuizProgress() {
@@ -946,9 +994,18 @@
 					console.warn('[spaceChat] parse initialAttachmentIds failed:', e)
 				}
 			}
+
+			// 加载模型列表
+			this.loadModels()
 		},
 
 		onShow() {
+			// 同步已保存的模型选择
+			const storedId = uni.getStorageSync('uStudy_selectedModelId')
+			if (storedId && this.availableModels.some(m => m.id === storedId)) {
+				this.selectedModelId = storedId
+			}
+
 			// 检查后台监控结果并恢复
 			const monitor = getActiveMonitor()
 			if (monitor && monitor.conversationId === this.conversationId) {
@@ -1087,6 +1144,36 @@
 		},
 
 		methods: {
+			// ==================== 模型选择 ====================
+			toggleModelMenu() {
+				this.showModelMenu = !this.showModelMenu
+			},
+			selectModel(id) {
+				this.selectedModelId = id
+				this.showModelMenu = false
+				uni.setStorageSync('uStudy_selectedModelId', id)
+			},
+			async loadModels() {
+				console.log('[SpaceChat] loadModels() called')
+				try {
+					const res = await getModels()
+					console.log('[SpaceChat] getModels() response:', JSON.stringify(res))
+					const models = res.models || res || []
+					this.availableModels = models
+					console.log('[SpaceChat] availableModels set, count:', models.length)
+					const storedId = uni.getStorageSync('uStudy_selectedModelId')
+					if (storedId && models.some(m => m.id === storedId)) {
+						this.selectedModelId = storedId
+					} else {
+						const defaultModel = models.find(m => m.is_default)
+						this.selectedModelId = defaultModel ? defaultModel.id : (models[0]?.id || null)
+					}
+					console.log('[SpaceChat] selectedModelId:', this.selectedModelId)
+				} catch (err) {
+					console.error('[SpaceChat] Failed to load models:', err, 'statusCode:', err?.statusCode, 'message:', err?.message)
+				}
+			},
+
 			// ==================== 后台监控启动 ====================
 			_tryStartMonitorOrSave(source) {
 				// 已有监控则跳过
@@ -2095,7 +2182,7 @@
 						this.cancelSSE = null
 						this.isSendingMessage = false
 					}
-				}, attachmentIds.length > 0 ? attachmentIds : null)
+				}, attachmentIds.length > 0 ? attachmentIds : null, this.selectedModelId)
 			},
 
 			async resendMessage(msg) {
@@ -2235,7 +2322,7 @@
 						this.cancelSSE = null
 						this.isSendingMessage = false
 					}
-				}, attachmentIds && attachmentIds.length > 0 ? attachmentIds : null)
+				}, attachmentIds && attachmentIds.length > 0 ? attachmentIds : null, this.selectedModelId)
 			},
 
 			/**
@@ -4771,5 +4858,134 @@
 		padding: 8rpx 20rpx;
 		border: 1px solid #F59E0B;
 		border-radius: 8rpx;
+	}
+
+	/* 模型选择器 */
+	.model-bar {
+		position: fixed;
+		top: calc(100vh * 1.5 / 26 + 88rpx);
+		left: calc(100vw / 24);
+		z-index: 50;
+		display: flex;
+		padding: 8rpx 0;
+	}
+
+	.model-selector-btn {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+		padding: 8rpx 16rpx 8rpx 12rpx;
+		background: rgba(255, 255, 255, 0.06);
+		-webkit-backdrop-filter: blur(40px) saturate(180%);
+		backdrop-filter: blur(40px) saturate(180%);
+		border: 1rpx solid rgba(255, 255, 255, 0.1);
+		border-radius: 999rpx;
+		cursor: pointer;
+		transition: background 0.15s ease;
+	}
+
+	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+		.model-selector-btn {
+			background: rgba(80, 80, 95, 0.65);
+		}
+	}
+
+	.model-selector-btn:active {
+		background: rgba(255, 255, 255, 0.12);
+	}
+
+	.model-selector-icon {
+		width: 28rpx;
+		height: 28rpx;
+		color: rgba(255, 255, 255, 0.5);
+		flex-shrink: 0;
+	}
+
+	.model-selector-label {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.6);
+		white-space: nowrap;
+		max-width: 280rpx;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.model-selector-chevron {
+		width: 20rpx;
+		height: 20rpx;
+		color: rgba(255, 255, 255, 0.35);
+		flex-shrink: 0;
+	}
+
+	/* 模型菜单弹窗 */
+	.model-menu-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 199;
+	}
+
+	.model-menu {
+		position: fixed;
+		top: calc(100vh * 1.5 / 26 + 88rpx + 56rpx);
+		left: calc(100vw / 24);
+		right: calc(100vw / 24);
+		z-index: 200;
+		background: rgba(22, 22, 42, 0.96);
+		-webkit-backdrop-filter: blur(16px) saturate(180%);
+		backdrop-filter: blur(16px) saturate(180%);
+		border: 1rpx solid rgba(255, 255, 255, 0.1);
+		border-radius: 24rpx;
+		padding: 8rpx;
+		box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.4);
+	}
+
+	.model-menu-item {
+		display: flex;
+		align-items: center;
+		padding: 20rpx 24rpx;
+		border-radius: 16rpx;
+		transition: background 0.15s ease;
+	}
+
+	.model-menu-item:active {
+		background: rgba(255, 255, 255, 0.08);
+	}
+
+	.model-menu-item-active {
+		background: rgba(59, 130, 246, 0.12);
+	}
+
+	.model-menu-item-info {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 4rpx;
+		min-width: 0;
+	}
+
+	.model-menu-item-name {
+		font-size: 28rpx;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.9);
+	}
+
+	.model-menu-item-active .model-menu-item-name {
+		color: #60A5FA;
+	}
+
+	.model-menu-item-desc {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.4);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.model-menu-check {
+		width: 36rpx;
+		height: 36rpx;
+		color: #60A5FA;
+		flex-shrink: 0;
+		margin-left: 16rpx;
 	}
 </style>
