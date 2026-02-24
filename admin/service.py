@@ -8,19 +8,30 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from admin.schemas import (
+    ActivityTypeCount,
+    AdminAnalytics,
     AdminOrderItem,
     AdminStats,
     AdminUserDetail,
     AdminUserItem,
+    ContentStats,
+    DailyCount,
+    DailyRevenue,
     PaginatedOrders,
     PaginatedUsers,
+    StatusCount,
     TierCount,
+    TierRevenue,
 )
 from db.models import (
     Conversation,
+    DailyStudyRecord,
+    Message,
     OrderStatus,
     PaymentOrder,
+    Quiz,
     Space,
+    StudyActivityLog,
     SubscriptionTier,
     User,
 )
@@ -99,6 +110,127 @@ async def get_stats(db: AsyncSession) -> AdminStats:
         revenue_30d_cents=revenue_30d_cents,
         paid_order_count_30d=paid_order_count_30d,
         users_by_tier=users_by_tier,
+    )
+
+
+async def get_analytics(db: AsyncSession) -> AdminAnalytics:
+    """Analytics data for dashboard trend panels."""
+    now = datetime.now(timezone.utc)
+    thirty_days_ago = now - timedelta(days=30)
+
+    # Build date lookup for filling gaps
+    date_range = [
+        (now - timedelta(days=i)).strftime("%Y-%m-%d")
+        for i in range(30, -1, -1)
+    ]
+
+    # 1. User growth 30d
+    ug_q = await db.execute(
+        select(
+            func.date(User.created_at).label("d"),
+            func.count().label("c"),
+        )
+        .where(User.created_at >= thirty_days_ago)
+        .group_by(func.date(User.created_at))
+    )
+    ug_map = {str(row.d): row.c for row in ug_q.all()}
+    user_growth_30d = [
+        DailyCount(date=d, count=ug_map.get(d, 0)) for d in date_range
+    ]
+
+    # 2. Revenue trend 30d
+    rt_q = await db.execute(
+        select(
+            func.date(PaymentOrder.paid_at).label("d"),
+            func.coalesce(func.sum(PaymentOrder.amount_cents), 0).label("amt"),
+            func.count().label("cnt"),
+        )
+        .where(
+            PaymentOrder.status == OrderStatus.PAID,
+            PaymentOrder.paid_at >= thirty_days_ago,
+        )
+        .group_by(func.date(PaymentOrder.paid_at))
+    )
+    rt_map = {str(row.d): (row.amt, row.cnt) for row in rt_q.all()}
+    revenue_trend_30d = [
+        DailyRevenue(
+            date=d,
+            amount_cents=rt_map.get(d, (0, 0))[0],
+            order_count=rt_map.get(d, (0, 0))[1],
+        )
+        for d in date_range
+    ]
+
+    # 3. DAU 30d
+    dau_q = await db.execute(
+        select(
+            DailyStudyRecord.study_date.label("d"),
+            func.count(func.distinct(DailyStudyRecord.user_id)).label("c"),
+        )
+        .where(DailyStudyRecord.study_date >= thirty_days_ago.date())
+        .group_by(DailyStudyRecord.study_date)
+    )
+    dau_map = {str(row.d): row.c for row in dau_q.all()}
+    dau_30d = [
+        DailyCount(date=d, count=dau_map.get(d, 0)) for d in date_range
+    ]
+
+    # 4. Content stats
+    spaces_q = await db.execute(select(func.count()).select_from(Space))
+    convos_q = await db.execute(select(func.count()).select_from(Conversation))
+    msgs_q = await db.execute(select(func.count()).select_from(Message))
+    quizzes_q = await db.execute(select(func.count()).select_from(Quiz))
+    content_stats = ContentStats(
+        total_spaces=spaces_q.scalar() or 0,
+        total_conversations=convos_q.scalar() or 0,
+        total_messages=msgs_q.scalar() or 0,
+        total_quizzes=quizzes_q.scalar() or 0,
+    )
+
+    # 5. Orders by status
+    obs_q = await db.execute(
+        select(PaymentOrder.status, func.count())
+        .group_by(PaymentOrder.status)
+    )
+    orders_by_status = [
+        StatusCount(status=status.value, count=count)
+        for status, count in obs_q.all()
+    ]
+
+    # 6. Activity by type
+    abt_q = await db.execute(
+        select(StudyActivityLog.activity_type, func.count().label("c"))
+        .group_by(StudyActivityLog.activity_type)
+        .order_by(func.count().desc())
+    )
+    activity_by_type = [
+        ActivityTypeCount(activity_type=atype, count=count)
+        for atype, count in abt_q.all()
+    ]
+
+    # 7. Revenue by tier
+    rbt_q = await db.execute(
+        select(
+            PaymentOrder.target_tier,
+            func.coalesce(func.sum(PaymentOrder.amount_cents), 0),
+            func.count(),
+        )
+        .where(PaymentOrder.status == OrderStatus.PAID)
+        .group_by(PaymentOrder.target_tier)
+    )
+    revenue_by_tier = [
+        TierRevenue(tier=tier, amount_cents=amt, order_count=cnt)
+        for tier, amt, cnt in rbt_q.all()
+    ]
+
+    return AdminAnalytics(
+        user_growth_30d=user_growth_30d,
+        revenue_trend_30d=revenue_trend_30d,
+        dau_30d=dau_30d,
+        content_stats=content_stats,
+        orders_by_status=orders_by_status,
+        activity_by_type=activity_by_type,
+        revenue_by_tier=revenue_by_tier,
     )
 
 

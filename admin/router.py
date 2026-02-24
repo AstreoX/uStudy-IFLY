@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from admin.dependencies import require_admin
 from admin.schemas import (
+    AdminAnalytics,
     AdminStats,
     AdminUserDetail,
     AdminUserItem,
@@ -16,6 +17,7 @@ from admin.schemas import (
     UpdateSubscriptionRequest,
 )
 from admin.service import (
+    get_analytics,
     get_orders,
     get_stats,
     get_user_detail,
@@ -49,6 +51,15 @@ async def dashboard_stats(
 ):
     """Dashboard statistics."""
     return await get_stats(db)
+
+
+@router.get("/analytics", response_model=AdminAnalytics)
+async def analytics(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Dashboard analytics with trend data."""
+    return await get_analytics(db)
 
 
 @router.get("/users", response_model=PaginatedUsers)

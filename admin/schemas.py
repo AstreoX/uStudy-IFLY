@@ -26,6 +26,53 @@ class AdminStats(BaseModel):
     users_by_tier: list[TierCount]
 
 
+# ---- Analytics ----
+
+
+class DailyCount(BaseModel):
+    date: str
+    count: int
+
+
+class DailyRevenue(BaseModel):
+    date: str
+    amount_cents: int
+    order_count: int
+
+
+class ContentStats(BaseModel):
+    total_spaces: int
+    total_conversations: int
+    total_messages: int
+    total_quizzes: int
+
+
+class StatusCount(BaseModel):
+    status: str
+    count: int
+
+
+class ActivityTypeCount(BaseModel):
+    activity_type: str
+    count: int
+
+
+class TierRevenue(BaseModel):
+    tier: SubscriptionTier
+    amount_cents: int
+    order_count: int
+
+
+class AdminAnalytics(BaseModel):
+    user_growth_30d: list[DailyCount]
+    revenue_trend_30d: list[DailyRevenue]
+    dau_30d: list[DailyCount]
+    content_stats: ContentStats
+    orders_by_status: list[StatusCount]
+    activity_by_type: list[ActivityTypeCount]
+    revenue_by_tier: list[TierRevenue]
+
+
 # ---- Users ----
 
 
