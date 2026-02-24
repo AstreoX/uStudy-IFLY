@@ -3,25 +3,25 @@
 from typing import Any
 
 ALLOWED_MODELS: dict[str, dict[str, Any]] = {
-    "minimax-m2.5": {
-        "openrouter_id": "minimax/minimax-m2.5",
-        "display_name": "MiniMax M2.5",
+    "grok-4-fast": {
+        "openrouter_id": "x-ai/grok-4-fast",
+        "display_name": "Grok 4 Fast",
         "description": "快速响应，适合日常对话",
         "is_default": True,
     },
-    "qwen3-max-thinking": {
-        "openrouter_id": "qwen/qwen3-max-thinking",
-        "display_name": "Qwen3 Max Thinking",
+    "kimi-k2.5": {
+        "openrouter_id": "moonshotai/kimi-k2.5",
+        "display_name": "Kimi K2.5",
         "description": "更强推理能力，适合复杂问题",
     },
-    "glm-5": {
-        "openrouter_id": "z-ai/glm-5",
-        "display_name": "GLM 5",
-        "description": "智谱最新模型，低幻觉率",
+    "qwen3.5-plus": {
+        "openrouter_id": "qwen/qwen3.5-plus-02-15",
+        "display_name": "Qwen3.5 Plus",
+        "description": "通义千问最新模型，综合能力强",
     },
 }
 
-DEFAULT_MODEL_ID = "minimax-m2.5"
+DEFAULT_MODEL_ID = "grok-4-fast"
 
 
 def get_openrouter_model(model_id: str | None) -> str:

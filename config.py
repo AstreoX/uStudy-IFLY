@@ -76,8 +76,8 @@ class Settings(BaseSettings):
     # OpenRouter / LLM 配置
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "minimax/minimax-m2.5"
-    gemini_model: str = "minimax/minimax-m2.5"
+    openrouter_model: str = "x-ai/grok-4-fast"
+    gemini_model: str = "x-ai/grok-4-fast"
     llm_timeout_seconds: int = 300  # 5分钟
     llm_max_retries: int = 3
     llm_proxy_url: str = ""  # 可选：显式设置代理 URL，为空则使用系统环境变量
@@ -113,20 +113,20 @@ class Settings(BaseSettings):
     memory_search_top_k_space: int = 5  # 空间记忆语义检索数量
     memory_search_score_threshold: float = 0.3  # 最低相似度阈值
     memory_auto_extract_enabled: bool = True  # 是否启用自动记忆提取
-    memory_extraction_model: str = "z-ai/glm-4.7-flash"  # 记忆提取用的 LLM 模型（空则使用默认模型）
+    memory_extraction_model: str = "moonshotai/kimi-k2.5"  # 记忆提取用的 LLM 模型（空则使用默认模型）
 
     # 掌握分评估配置
     mastery_evaluation_enabled: bool = True
-    mastery_evaluation_model: str = ""  # 空则使用默认模型
+    mastery_evaluation_model: str = "moonshotai/kimi-k2.5"  # 空则使用默认模型
 
     # 学习路径自动扩展
     learning_path_auto_expand_enabled: bool = True
-    learning_path_expand_model: str = ""  # 空则使用默认模型
+    learning_path_expand_model: str = "moonshotai/kimi-k2.5"  # 空则使用默认模型
     learning_path_mastery_threshold: int = 80  # 掌握度阈值
     learning_path_ratio_threshold: float = 0.6  # 高掌握节点占比阈值
 
     # 学习建议配置
-    suggestion_model: str = "z-ai/glm-4.7-flash"  # 学习建议生成用的 LLM 模型（空则使用默认模型）
+    suggestion_model: str = "moonshotai/kimi-k2.5"  # 学习建议生成用的 LLM 模型（空则使用默认模型）
 
     # 对话连续性配置
     conversation_continuity_enabled: bool = True  # 是否启用上一次对话上下文加载
@@ -135,7 +135,7 @@ class Settings(BaseSettings):
 
     # 对话标题自动生成配置
     title_generation_enabled: bool = True
-    title_generation_model: str = "z-ai/glm-4.7-flash"
+    title_generation_model: str = "qwen/qwen3-8b"
     title_generation_timeout: int = 10  # 秒
 
     # 支付宝配置
