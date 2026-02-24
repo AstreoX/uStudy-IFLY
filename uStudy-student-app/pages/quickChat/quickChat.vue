@@ -457,6 +457,11 @@
 				plusPopupVisible: false,
 				showImageSourcePicker: false,
 
+				// thinking 打字机缓冲
+				thinkingBuffer: '',
+				thinkingTimer: null,
+				thinkingMsgId: null,
+
 				// 工具调用相关
 				activeToolCalls: [],
 
@@ -1290,6 +1295,47 @@
 				}, 150)
 			},
 
+			// ========== Thinking 打字机效果 ==========
+
+			appendThinkingText(msgId, text) {
+				if (this.thinkingMsgId !== msgId) {
+					this.flushThinkingBuffer()
+					this.thinkingMsgId = msgId
+				}
+				this.thinkingBuffer += text
+				if (!this.thinkingTimer) {
+					this.thinkingTimer = setInterval(() => {
+						if (this.thinkingBuffer.length === 0) {
+							clearInterval(this.thinkingTimer)
+							this.thinkingTimer = null
+							return
+						}
+						// 每次渲染 2 个字符，15ms 间隔 ≈ 133字/秒
+						const chunk = this.thinkingBuffer.slice(0, 2)
+						this.thinkingBuffer = this.thinkingBuffer.slice(2)
+						const msg = this.messages.find(m => m.id === this.thinkingMsgId)
+						if (msg) {
+							msg.thinkingContent = (msg.thinkingContent || '') + chunk
+						}
+					}, 15)
+				}
+			},
+
+			flushThinkingBuffer() {
+				if (this.thinkingTimer) {
+					clearInterval(this.thinkingTimer)
+					this.thinkingTimer = null
+				}
+				if (this.thinkingBuffer && this.thinkingMsgId) {
+					const msg = this.messages.find(m => m.id === this.thinkingMsgId)
+					if (msg) {
+						msg.thinkingContent = (msg.thinkingContent || '') + this.thinkingBuffer
+					}
+				}
+				this.thinkingBuffer = ''
+				this.thinkingMsgId = null
+			},
+
 			// ========== AI 流式生成监听 ==========
 
 			startHeightMonitor(msgId) {
@@ -1503,7 +1549,7 @@
 							if (!msg.thinkingStartTime) {
 								msg.thinkingStartTime = Date.now()
 							}
-							msg.thinkingContent = (msg.thinkingContent || '') + content
+							this.appendThinkingText(aiMsgId, content)
 						},
 
 						onTextDelta: (content) => {
@@ -1512,7 +1558,8 @@
 								msg.isWaitingOutput = false
 							}
 							// Auto-collapse thinking + calculate duration
-							if (msg.thinkingContent && msg.isThinkingExpanded) {
+							if (msg.isThinkingExpanded) {
+								this.flushThinkingBuffer()
 								msg.isThinkingExpanded = false
 								if (msg.thinkingStartTime) {
 									msg.thinkingDuration = Math.round((Date.now() - msg.thinkingStartTime) / 1000)
@@ -1526,6 +1573,7 @@
 						},
 
 						onDone: (fullContent) => {
+							this.flushThinkingBuffer()
 							const msg = this.messages.find(m => m.id === aiMsgId)
 							if (msg) {
 								// 构建最终片段
@@ -1577,6 +1625,7 @@
 							// 后台断连时不标记失败（后台监控会处理）
 							if (this.isBackgroundMonitorActive()) return
 
+							this.flushThinkingBuffer()
 							uni.showToast({ title: message || 'AI回复失败', icon: 'none' })
 							this.messages[msgIndex].isWaitingOutput = false
 							this.messages[msgIndex].isStreaming = false
@@ -1600,6 +1649,7 @@
 									return
 								}
 
+								this.flushThinkingBuffer()
 								aiMsg.isStreaming = false
 								aiMsg.isWaitingOutput = false
 								aiMsg.content = aiMsg.content || '（连接中断）'
@@ -2751,17 +2801,17 @@
 		margin-top: 8rpx;
 		padding-left: 20rpx;
 		border-left: 4rpx solid rgba(255, 255, 255, 0.25);
-		max-height: 5000rpx;
+		max-height: 1500rpx;
 		opacity: 1;
 		overflow: hidden;
-		transition: max-height 0.4s ease-in-out, opacity 0.25s ease 0.05s, margin-top 0.3s ease;
+		transition: max-height 0.35s ease-out, opacity 0.25s ease 0.05s, margin-top 0.25s ease;
 	}
 
 	.thinking-body-collapsed {
 		max-height: 0;
 		opacity: 0;
 		margin-top: 0;
-		transition: max-height 0.3s ease-in-out, opacity 0.15s ease, margin-top 0.2s ease;
+		transition: max-height 0.2s cubic-bezier(0, 0.8, 0.3, 1), opacity 0.15s ease, margin-top 0.15s ease;
 	}
 
 	.thinking-text {

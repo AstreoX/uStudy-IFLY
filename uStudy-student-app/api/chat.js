@@ -90,10 +90,13 @@ export function executeToolCall(spaceId, toolCall) {
  * @param {Array<string>} attachmentIds - 附件ID列表（可选）
  * @returns {Function} 取消函数
  */
-export function sendMessage(conversationId, content, callbacks, attachmentIds = null) {
+export function sendMessage(conversationId, content, callbacks, attachmentIds = null, modelId = null) {
   const requestData = { content }
   if (attachmentIds && attachmentIds.length > 0) {
     requestData.attachment_ids = attachmentIds
+  }
+  if (modelId) {
+    requestData.model_id = modelId
   }
 
   return connectSSE({
@@ -113,6 +116,9 @@ export function sendMessage(conversationId, content, callbacks, attachmentIds = 
           break
         case 'client_tool_request':
           callbacks.onClientToolRequest?.(data)
+          break
+        case 'title':
+          callbacks.onTitle?.(data.title)
           break
         case 'done':
           callbacks.onDone?.(data.content)
@@ -199,10 +205,13 @@ export function updateConversation(conversationId, data) {
  * @param {Array<string>} attachmentIds - 附件ID列表（可选）
  * @returns {Function} 取消函数
  */
-export function sendQuickChatMessage(conversationId, content, callbacks, attachmentIds = null) {
+export function sendQuickChatMessage(conversationId, content, callbacks, attachmentIds = null, modelId = null) {
   const requestData = { content }
   if (attachmentIds && attachmentIds.length > 0) {
     requestData.attachment_ids = attachmentIds
+  }
+  if (modelId) {
+    requestData.model_id = modelId
   }
 
   return connectSSE({
@@ -222,6 +231,9 @@ export function sendQuickChatMessage(conversationId, content, callbacks, attachm
           break
         case 'client_tool_request':
           callbacks.onClientToolRequest?.(data)
+          break
+        case 'title':
+          callbacks.onTitle?.(data.title)
           break
         case 'done':
           callbacks.onDone?.(data.content)

@@ -809,6 +809,11 @@
 				typewriterMsgId: null,
 				typewriterSpeed: 30, // 每字间隔(ms)，可调节
 
+				// thinking 打字机缓冲
+				thinkingBuffer: '',
+				thinkingTimer: null,
+				thinkingMsgId: null,
+
 				// 测试题 Snackbar 相关
 				showTestSnackbar: false,
 				snackbarMessage: '测试题已生成',
@@ -1423,6 +1428,46 @@
 				})
 			},
 
+			// ========== Thinking 打字机效果 ==========
+
+			appendThinkingText(msgId, text) {
+				if (this.thinkingMsgId !== msgId) {
+					this.flushThinkingBuffer()
+					this.thinkingMsgId = msgId
+				}
+				this.thinkingBuffer += text
+				if (!this.thinkingTimer) {
+					this.thinkingTimer = setInterval(() => {
+						if (this.thinkingBuffer.length === 0) {
+							clearInterval(this.thinkingTimer)
+							this.thinkingTimer = null
+							return
+						}
+						const chunk = this.thinkingBuffer.slice(0, 2)
+						this.thinkingBuffer = this.thinkingBuffer.slice(2)
+						const msg = this.messages.find(m => m.id === this.thinkingMsgId)
+						if (msg) {
+							msg.thinkingContent = (msg.thinkingContent || '') + chunk
+						}
+					}, 15)
+				}
+			},
+
+			flushThinkingBuffer() {
+				if (this.thinkingTimer) {
+					clearInterval(this.thinkingTimer)
+					this.thinkingTimer = null
+				}
+				if (this.thinkingBuffer && this.thinkingMsgId) {
+					const msg = this.messages.find(m => m.id === this.thinkingMsgId)
+					if (msg) {
+						msg.thinkingContent = (msg.thinkingContent || '') + this.thinkingBuffer
+					}
+				}
+				this.thinkingBuffer = ''
+				this.thinkingMsgId = null
+			},
+
 			// ========== 打字机效果方法 ==========
 
 			/**
@@ -2023,14 +2068,15 @@
 							if (!msg.thinkingStartTime) {
 								msg.thinkingStartTime = Date.now()
 							}
-							msg.thinkingContent = (msg.thinkingContent || '') + content
+							this.appendThinkingText(aiMsgId, content)
 						}
 					},
 
 					onTextDelta: (content) => {
 						// Auto-collapse thinking + calculate duration
 						const thinkMsg = this.messages.find(m => m.id === aiMsgId)
-						if (thinkMsg && thinkMsg.thinkingContent && thinkMsg.isThinkingExpanded) {
+						if (thinkMsg && thinkMsg.isThinkingExpanded) {
+							this.flushThinkingBuffer()
 							thinkMsg.isThinkingExpanded = false
 							if (thinkMsg.thinkingStartTime) {
 								thinkMsg.thinkingDuration = Math.round((Date.now() - thinkMsg.thinkingStartTime) / 1000)
@@ -2068,7 +2114,8 @@
 					},
 
 					onDone: (fullContent) => {
-						// 先刷新打字机缓冲区中剩余内容
+						// 先刷新缓冲区中剩余内容
+						this.flushThinkingBuffer()
 						this.flushTypewriter()
 
 						// 安排前置知识卡片自动消失
@@ -2146,6 +2193,7 @@
 						if (this.isBackgroundMonitorActive()) return
 
 						// 出错时也要清理打字机
+						this.flushThinkingBuffer()
 						this.flushTypewriter()
 
 						const msg = this.messages.find(m => m.id === aiMsgId)
@@ -2177,6 +2225,7 @@
 							}
 
 							console.warn('[SpaceChat] SSE connection closed but message still streaming, forcing end')
+							this.flushThinkingBuffer()
 							this.flushTypewriter()
 							if (this.showPreKnowledgeCard) {
 								this.schedulePreKnowledgeDismiss()
@@ -2270,13 +2319,14 @@
 							if (!msg.thinkingStartTime) {
 								msg.thinkingStartTime = Date.now()
 							}
-							msg.thinkingContent = (msg.thinkingContent || '') + content
+							this.appendThinkingText(aiMsgId, content)
 						}
 					},
 					onTextDelta: (content) => {
 						// Auto-collapse thinking + calculate duration
 						const thinkMsg = this.messages.find(m => m.id === aiMsgId)
-						if (thinkMsg && thinkMsg.thinkingContent && thinkMsg.isThinkingExpanded) {
+						if (thinkMsg && thinkMsg.isThinkingExpanded) {
+							this.flushThinkingBuffer()
 							thinkMsg.isThinkingExpanded = false
 							if (thinkMsg.thinkingStartTime) {
 								thinkMsg.thinkingDuration = Math.round((Date.now() - thinkMsg.thinkingStartTime) / 1000)
@@ -2295,6 +2345,7 @@
 					onToolCall: (data) => { this.handleToolCallEvent(aiMsgId, data) },
 					onClientToolRequest: (data) => { this.handleClientToolRequest(aiMsgId, data) },
 					onDone: (fullContent) => {
+						this.flushThinkingBuffer()
 						this.flushTypewriter()
 						if (this.showPreKnowledgeCard) this.schedulePreKnowledgeDismiss()
 						this.preKnowledgeParser = null
@@ -2337,6 +2388,7 @@
 						}
 					},
 					onError: (message) => {
+						this.flushThinkingBuffer()
 						this.flushTypewriter()
 						const aiMsg = this.messages.find(m => m.id === aiMsgId)
 						if (aiMsg) {
@@ -2355,6 +2407,7 @@
 					onComplete: () => {
 						const aiMsg = this.messages.find(m => m.id === aiMsgId)
 						if (aiMsg && aiMsg.isStreaming) {
+							this.flushThinkingBuffer()
 							this.flushTypewriter()
 							this.preKnowledgeParser = null
 							aiMsg.isWaitingOutput = false
@@ -5050,17 +5103,17 @@
 		margin-top: 8rpx;
 		padding-left: 20rpx;
 		border-left: 4rpx solid rgba(255, 255, 255, 0.25);
-		max-height: 5000rpx;
+		max-height: 1500rpx;
 		opacity: 1;
 		overflow: hidden;
-		transition: max-height 0.4s ease-in-out, opacity 0.25s ease 0.05s, margin-top 0.3s ease;
+		transition: max-height 0.35s ease-out, opacity 0.25s ease 0.05s, margin-top 0.25s ease;
 	}
 
 	.thinking-body-collapsed {
 		max-height: 0;
 		opacity: 0;
 		margin-top: 0;
-		transition: max-height 0.3s ease-in-out, opacity 0.15s ease, margin-top 0.2s ease;
+		transition: max-height 0.2s cubic-bezier(0, 0.8, 0.3, 1), opacity 0.15s ease, margin-top 0.15s ease;
 	}
 
 	.thinking-text {

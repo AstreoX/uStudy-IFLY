@@ -94,14 +94,15 @@ export function handleSseError(eventData) {
 /**
  * 解析 SSE 数据块
  * @param {string} buffer - 累积的数据缓冲区
+ * @param {string} pendingEvent - 上一次调用遗留的事件类型
  * @param {Function} onEvent - 事件回调 (eventType, data)
- * @returns {string} 剩余的未完成数据
+ * @returns {{ remaining: string, pendingEvent: string }}
  */
-function parseSSEBuffer(buffer, onEvent) {
+function parseSSEBuffer(buffer, pendingEvent, onEvent) {
   const lines = buffer.split('\n')
   const remaining = lines.pop() // 保留不完整的行
 
-  let currentEvent = 'message'
+  let currentEvent = pendingEvent
 
   for (const line of lines) {
     if (line.startsWith('event: ')) {
@@ -109,7 +110,6 @@ function parseSSEBuffer(buffer, onEvent) {
     } else if (line.startsWith('data: ')) {
       try {
         const parsed = JSON.parse(line.slice(6))
-        console.log('[SSE] Event received:', currentEvent, parsed)
         onEvent?.(currentEvent, parsed)
       } catch (e) {
         console.warn('[SSE] Parse error:', e, 'line:', line)
@@ -118,7 +118,7 @@ function parseSSEBuffer(buffer, onEvent) {
     }
   }
 
-  return remaining
+  return { remaining, pendingEvent: currentEvent }
 }
 
 /**
@@ -128,7 +128,7 @@ function parseSSEBuffer(buffer, onEvent) {
  */
 function collectSSEEvents(text) {
   const events = []
-  parseSSEBuffer(text, (eventType, data) => {
+  parseSSEBuffer(text, 'message', (eventType, data) => {
     events.push({ eventType, data })
   })
   return events
@@ -204,7 +204,7 @@ function connectSSE_H5(fullUrl, method, headers, data, onEvent, onComplete, onCo
         console.warn('[SSE-H5] ReadableStream not supported, using text fallback')
         return response.text().then(text => {
           console.log('[SSE-H5] Full response length:', text.length)
-          parseSSEBuffer(text + '\n', onEvent)
+          parseSSEBuffer(text + '\n', 'message', onEvent)
           onComplete?.()
           return null
         })
@@ -218,6 +218,7 @@ function connectSSE_H5(fullUrl, method, headers, data, onEvent, onComplete, onCo
 
       const decoder = new TextDecoder()
       let buffer = ''
+      let pendingEvent = 'message'
 
       function read() {
         reader.read().then(({ done, value }) => {
@@ -230,7 +231,9 @@ function connectSSE_H5(fullUrl, method, headers, data, onEvent, onComplete, onCo
           const chunk = decoder.decode(value, { stream: true })
           console.log('[SSE-H5] Chunk received:', chunk.length, 'bytes')
           buffer += chunk
-          buffer = parseSSEBuffer(buffer, onEvent)
+          const result = parseSSEBuffer(buffer, pendingEvent, onEvent)
+          buffer = result.remaining
+          pendingEvent = result.pendingEvent
 
           read()
         }).catch(err => {
@@ -264,6 +267,7 @@ function connectSSE_H5(fullUrl, method, headers, data, onEvent, onComplete, onCo
 function connectSSE_Android(fullUrl, method, headers, data, onEvent, onComplete, onConnectionError) {
   let aborted = false
   let buffer = ''
+  let pendingEvent = 'message'
   let lastProcessedLength = 0
   let xhr = null
 
@@ -299,7 +303,9 @@ function connectSSE_Android(fullUrl, method, headers, data, onEvent, onComplete,
       if (newData) {
         console.log('[SSE-Android] Progress chunk:', newData.length, 'bytes')
         buffer += newData
-        buffer = parseSSEBuffer(buffer, onEvent)
+        const result = parseSSEBuffer(buffer, pendingEvent, onEvent)
+        buffer = result.remaining
+        pendingEvent = result.pendingEvent
       }
     } catch (e) {
       console.warn('[SSE-Android] Progress parse error:', e)
@@ -317,7 +323,7 @@ function connectSSE_Android(fullUrl, method, headers, data, onEvent, onComplete,
     if (xhr && xhr.status >= 200 && xhr.status < 300) {
       // 处理缓冲区中剩余的数据
       if (buffer) {
-        parseSSEBuffer(buffer + '\n', onEvent)
+        parseSSEBuffer(buffer + '\n', pendingEvent, onEvent)
       }
       onComplete?.()
     } else {
@@ -406,6 +412,7 @@ function connectSSE_App(fullUrl, method, headers, data, onEvent, onComplete, onC
   // iOS 和其他平台: 保持现有 uni.request 实现
   let aborted = false
   let buffer = ''
+  let pendingEvent = 'message'
   let chunksReceived = 0
   let replayTimerIds = []
 
@@ -464,7 +471,9 @@ function connectSSE_App(fullUrl, method, headers, data, onEvent, onComplete, onC
 
         console.log('[SSE-App] Chunk #' + chunksReceived + ':', chunk.length, 'bytes')
         buffer += chunk
-        buffer = parseSSEBuffer(buffer, onEvent)
+        const result = parseSSEBuffer(buffer, pendingEvent, onEvent)
+        buffer = result.remaining
+        pendingEvent = result.pendingEvent
       } catch (e) {
         console.warn('[SSE-App] Chunk parse error:', e)
       }
@@ -526,7 +535,7 @@ export function connectSSE(options) {
     success: (res) => {
       console.log('[SSE-MP] Response:', res.statusCode)
       if (res.statusCode >= 200 && res.statusCode < 300 && typeof res.data === 'string') {
-        parseSSEBuffer(res.data + '\n', onEvent)
+        parseSSEBuffer(res.data + '\n', 'message', onEvent)
       }
       onComplete?.()
     },
