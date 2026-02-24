@@ -657,10 +657,11 @@ class ChatService:
 
                 # Phase 3.7: Auto-generate title for new conversations
                 if title_task is not None:
+                    _title_timeout = get_settings().title_generation_timeout
                     try:
-                        title = await asyncio.wait_for(title_task, timeout=3.0)
-                    except (asyncio.TimeoutError, Exception) as e:
-                        logger.warning(f"Title generation failed for {conversation_id}: {e}")
+                        title = await asyncio.wait_for(title_task, timeout=_title_timeout)
+                    except asyncio.TimeoutError:
+                        logger.warning(f"[TitleGen] Timed out after {_title_timeout}s for {conversation_id}")
                         title = fallback_title(content)
                         if not title_task.done():
                             title_task.cancel()
@@ -668,6 +669,9 @@ class ChatService:
                                 await title_task
                             except (asyncio.CancelledError, Exception):
                                 pass
+                    except Exception as e:
+                        logger.warning(f"[TitleGen] Failed for {conversation_id}: {type(e).__name__}: {e}")
+                        title = fallback_title(content)
 
                     try:
                         async with get_scoped_session() as save_db:
@@ -1174,10 +1178,11 @@ class ChatService:
 
                 # Phase 3.7: Auto-generate title for new conversations
                 if title_task is not None:
+                    _title_timeout = get_settings().title_generation_timeout
                     try:
-                        title = await asyncio.wait_for(title_task, timeout=3.0)
-                    except (asyncio.TimeoutError, Exception) as e:
-                        logger.warning(f"Title generation failed for quick chat {conversation_id}: {e}")
+                        title = await asyncio.wait_for(title_task, timeout=_title_timeout)
+                    except asyncio.TimeoutError:
+                        logger.warning(f"[TitleGen] Timed out after {_title_timeout}s for quick chat {conversation_id}")
                         title = fallback_title(content)
                         if not title_task.done():
                             title_task.cancel()
@@ -1185,6 +1190,9 @@ class ChatService:
                                 await title_task
                             except (asyncio.CancelledError, Exception):
                                 pass
+                    except Exception as e:
+                        logger.warning(f"[TitleGen] Failed for quick chat {conversation_id}: {type(e).__name__}: {e}")
+                        title = fallback_title(content)
 
                     try:
                         async with get_scoped_session() as save_db:

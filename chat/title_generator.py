@@ -33,6 +33,8 @@ async def generate_title(user_message: str) -> str:
     settings = get_settings()
     truncated_message = user_message[:500]
 
+    logger.info(f"[TitleGen] Calling model={settings.title_generation_model}, input={truncated_message[:60]!r}")
+
     async with httpx.AsyncClient(timeout=settings.title_generation_timeout) as client:
         response = await client.post(
             f"{settings.openrouter_base_url}/chat/completions",
@@ -58,12 +60,19 @@ async def generate_title(user_message: str) -> str:
         raise ValueError(f"Unexpected API response: no choices")
     raw_title = choices[0].get("message", {}).get("content", "").strip()
 
+    logger.info(f"[TitleGen] Raw response: {raw_title!r}")
+
     # Remove <think>...</think> blocks first (some models include reasoning)
     cleaned = re.sub(r"<think>.*?</think>", "", raw_title, flags=re.DOTALL).strip()
     # Strip surrounding quotes / brackets / whitespace
     cleaned = re.sub(r'^["\'""\u300c\u300e]+|["\'""\u300d\u300f]+$', "", cleaned).strip()
 
-    return cleaned[:200] if cleaned else fallback_title(user_message)
+    if cleaned:
+        logger.info(f"[TitleGen] Generated title: {cleaned[:50]!r}")
+        return cleaned[:200]
+    else:
+        logger.warning(f"[TitleGen] Empty after cleaning, falling back to user message")
+        return fallback_title(user_message)
 
 
 def fallback_title(user_message: str, max_length: int = 50) -> str:
