@@ -349,6 +349,20 @@
 
                 <!-- AI message -->
                 <view v-else class="message-bubble bubble-ai">
+                  <!-- Thinking block -->
+                  <view v-if="msg.thinkingContent" class="thinking-block" :class="{ 'thinking-active': msg.isThinking }">
+                    <view class="thinking-header" @tap="toggleThinking(msg.id)">
+                      <view v-if="msg.isThinking" class="thinking-spinner"></view>
+                      <text class="thinking-label">
+                        {{ msg.isThinking ? '深度思考中...' : `已深度思考 ${msg.thinkingDuration} 秒` }}
+                      </text>
+                      <text class="thinking-toggle">{{ isThinkingExpanded(msg.id) ? '▼' : '▶' }}</text>
+                    </view>
+                    <view v-show="isThinkingExpanded(msg.id) || msg.isThinking" class="thinking-content">
+                      <MarkdownRender :content="msg.thinkingContent" />
+                    </view>
+                  </view>
+
                   <!-- Segment-based rendering -->
                   <template v-for="(seg, segIdx) in getMessageSegments(msg)" :key="segIdx">
                     <!-- Text segment -->
@@ -692,6 +706,10 @@ export default {
       isAutoScrollEnabled: true,
       memoryToolDelayedDone: {},
       memoryToolStartTimes: {},
+
+      // Thinking model state
+      thinkingStartTime: null,
+      thinkingExpanded: {},
 
       // Typewriter buffer
       typewriterBuffer: '',
@@ -1416,7 +1434,10 @@ export default {
         isError: false,
         segments: null,
         streamSegments: null,
-        toolCalls: null
+        toolCalls: null,
+        thinkingContent: '',
+        isThinking: false,
+        thinkingDuration: 0
       })
 
       this.$nextTick(() => this.scrollToBottom())
@@ -1430,7 +1451,31 @@ export default {
     _buildSSECallbacks(aiMsgId, userMsgId) {
       let finalized = false
       return {
+        onThinkingDelta: (content) => {
+          const msg = this.messages.find(m => m.id === aiMsgId)
+          if (!msg) return
+          if (!msg.isThinking) {
+            msg.isThinking = true
+            msg.isWaitingOutput = false
+            this.thinkingStartTime = Date.now()
+            this.thinkingExpanded = { ...this.thinkingExpanded, [aiMsgId]: true }
+          }
+          msg.thinkingContent += content
+          if (this.isAutoScrollEnabled) {
+            this.$nextTick(() => this.scrollToBottom())
+          }
+        },
+
         onTextDelta: (content) => {
+          const msg = this.messages.find(m => m.id === aiMsgId)
+          if (msg && msg.isThinking) {
+            msg.isThinking = false
+            msg.thinkingDuration = this.thinkingStartTime
+              ? Math.round((Date.now() - this.thinkingStartTime) / 1000)
+              : 0
+            this.thinkingStartTime = null
+            this.thinkingExpanded = { ...this.thinkingExpanded, [aiMsgId]: false }
+          }
           this.appendToTypewriter(aiMsgId, content)
         },
 
@@ -1444,6 +1489,13 @@ export default {
           this.flushTypewriter()
           const aiMsg = this.messages.find(m => m.id === aiMsgId)
           if (aiMsg) {
+            if (aiMsg.isThinking) {
+              aiMsg.isThinking = false
+              aiMsg.thinkingDuration = this.thinkingStartTime
+                ? Math.round((Date.now() - this.thinkingStartTime) / 1000)
+                : 0
+              this.thinkingStartTime = null
+            }
             const finalSegments = []
             if (aiMsg.streamSegments && aiMsg.streamSegments.length > 0) {
               for (const seg of aiMsg.streamSegments) {
@@ -1565,7 +1617,10 @@ export default {
         isError: false,
         segments: null,
         streamSegments: null,
-        toolCalls: null
+        toolCalls: null,
+        thinkingContent: '',
+        isThinking: false,
+        thinkingDuration: 0
       })
 
       this.$nextTick(() => this.scrollToBottom())
@@ -1770,6 +1825,14 @@ export default {
       }
       this.isGeneratingQuiz = false
       this.activeQuizId = null
+    },
+
+    toggleThinking(msgId) {
+      this.thinkingExpanded = { ...this.thinkingExpanded, [msgId]: !this.thinkingExpanded[msgId] }
+    },
+
+    isThinkingExpanded(msgId) {
+      return !!this.thinkingExpanded[msgId]
     },
 
     getMessageSegments(msg) {
@@ -2964,6 +3027,8 @@ export default {
 
 .chat-input {
   flex: 1;
+  min-width: 0;
+  width: 0;
   height: 36px;
   min-height: 36px;
   padding: 7px 12px;
@@ -2974,7 +3039,7 @@ export default {
   font-size: 14px;
   line-height: 20px;
   box-sizing: border-box;
-  overflow-y: hidden;
+  overflow: hidden;
   outline: none;
 }
 
@@ -3712,5 +3777,74 @@ textarea.chat-input-textarea {
 .model-menu-fade-leave-to {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+/* ==================== Thinking Block ==================== */
+.thinking-block {
+  width: 100%;
+  margin-bottom: 8px;
+  border-left: 2px solid rgba(168, 85, 247, 0.4);
+  border-radius: 4px;
+  background: rgba(168, 85, 247, 0.06);
+  overflow: hidden;
+  transition: border-color 0.3s ease, background 0.3s ease;
+}
+
+.thinking-block.thinking-active {
+  border-color: rgba(168, 85, 247, 0.7);
+  background: rgba(168, 85, 247, 0.1);
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.thinking-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(168, 85, 247, 0.3);
+  border-top-color: rgba(168, 85, 247, 0.8);
+  border-radius: 50%;
+  animation: thinking-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes thinking-spin {
+  to { transform: rotate(360deg); }
+}
+
+.thinking-label {
+  font-size: 12px;
+  color: rgba(168, 85, 247, 0.8);
+  flex: 1;
+}
+
+.thinking-toggle {
+  font-size: 10px;
+  color: rgba(168, 85, 247, 0.5);
+  flex-shrink: 0;
+}
+
+.thinking-content {
+  padding: 0 10px 8px 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.thinking-content::-webkit-scrollbar {
+  width: 3px;
+}
+
+.thinking-content::-webkit-scrollbar-thumb {
+  background: rgba(168, 85, 247, 0.2);
+  border-radius: 3px;
 }
 </style>

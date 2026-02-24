@@ -92,6 +92,16 @@ export default {
       dragDistance: 0,
       selectedNodeId: null,
 
+      // Touch gesture state
+      activeTouches: [],
+      lastTouchDist: 0,
+      lastTouchMidX: 0,
+      lastTouchMidY: 0,
+      touchStartTime: 0,
+      lastTapTime: 0,
+      lastTapX: 0,
+      lastTapY: 0,
+
       // Caches
       nodeMap: new Map(),
       edgeBuckets: { treeEdges: [], advancedEdges: [], pathEdges: [], nonPathEdges: [] },
@@ -166,6 +176,10 @@ export default {
       this._canvasEl.removeEventListener('mouseleave', this._onMouseUp)
       this._canvasEl.removeEventListener('dblclick', this._onDblClick)
       this._canvasEl.removeEventListener('wheel', this._onWheel)
+      this._canvasEl.removeEventListener('touchstart', this._onTouchStart)
+      this._canvasEl.removeEventListener('touchmove', this._onTouchMove)
+      this._canvasEl.removeEventListener('touchend', this._onTouchEnd)
+      this._canvasEl.removeEventListener('touchcancel', this._onTouchEnd)
       this._canvasEl.remove()
       this._canvasEl = null
     }
@@ -192,6 +206,7 @@ export default {
       canvas.style.width = '100%'
       canvas.style.height = '100%'
       canvas.style.cursor = 'grab'
+      canvas.style.touchAction = 'none'
       parentEl.appendChild(canvas)
       this._canvasEl = canvas
 
@@ -208,6 +223,16 @@ export default {
       canvas.addEventListener('mouseleave', this._onMouseUp)
       canvas.addEventListener('dblclick', this._onDblClick)
       canvas.addEventListener('wheel', this._onWheel, { passive: false })
+
+      // Touch events for iPad/touch devices
+      this._onTouchStart = this.onTouchStart.bind(this)
+      this._onTouchMove = this.onTouchMove.bind(this)
+      this._onTouchEnd = this.onTouchEnd.bind(this)
+
+      canvas.addEventListener('touchstart', this._onTouchStart, { passive: false })
+      canvas.addEventListener('touchmove', this._onTouchMove, { passive: false })
+      canvas.addEventListener('touchend', this._onTouchEnd)
+      canvas.addEventListener('touchcancel', this._onTouchEnd)
 
       this.dpr = window.devicePixelRatio || 1
       this.resizeCanvas()
@@ -569,6 +594,157 @@ export default {
       this.scale = newScale
 
       this.requestRender()
+    },
+
+    // --- Touch interactions ---
+    onTouchStart(e) {
+      e.preventDefault()
+      const touches = e.touches
+      this.activeTouches = Array.from(touches).map(t => ({ id: t.identifier, x: t.clientX, y: t.clientY }))
+
+      if (touches.length === 1) {
+        this.isDragging = true
+        this.dragDistance = 0
+        this.lastMouseX = touches[0].clientX
+        this.lastMouseY = touches[0].clientY
+        this.touchStartTime = Date.now()
+      } else if (touches.length === 2) {
+        this.isDragging = false
+        const dx = touches[1].clientX - touches[0].clientX
+        const dy = touches[1].clientY - touches[0].clientY
+        this.lastTouchDist = Math.sqrt(dx * dx + dy * dy)
+        this.lastTouchMidX = (touches[0].clientX + touches[1].clientX) / 2
+        this.lastTouchMidY = (touches[0].clientY + touches[1].clientY) / 2
+      }
+    },
+
+    onTouchMove(e) {
+      e.preventDefault()
+      const touches = e.touches
+
+      if (touches.length === 1 && this.isDragging) {
+        const deltaX = touches[0].clientX - this.lastMouseX
+        const deltaY = touches[0].clientY - this.lastMouseY
+        this.dragDistance += Math.abs(deltaX) + Math.abs(deltaY)
+
+        this.offsetX += deltaX
+        this.offsetY += deltaY
+        this.lastMouseX = touches[0].clientX
+        this.lastMouseY = touches[0].clientY
+
+        this.requestRender()
+      } else if (touches.length === 2) {
+        const dx = touches[1].clientX - touches[0].clientX
+        const dy = touches[1].clientY - touches[0].clientY
+        const newDist = Math.sqrt(dx * dx + dy * dy)
+        const midX = (touches[0].clientX + touches[1].clientX) / 2
+        const midY = (touches[0].clientY + touches[1].clientY) / 2
+
+        if (this.lastTouchDist > 0) {
+          // Pinch-to-zoom centered on midpoint
+          const canvas = this._canvasEl
+          if (!canvas) return
+          const rect = canvas.getBoundingClientRect()
+          const canvasMidX = midX - rect.left
+          const canvasMidY = midY - rect.top
+
+          const scaleRatio = newDist / this.lastTouchDist
+          const newScale = clamp(this.scale * scaleRatio, 0.3, 3)
+          const actualRatio = newScale / this.scale
+
+          this.offsetX = canvasMidX - (canvasMidX - this.offsetX) * actualRatio
+          this.offsetY = canvasMidY - (canvasMidY - this.offsetY) * actualRatio
+          this.scale = newScale
+        }
+
+        // Pan by midpoint movement
+        this.offsetX += midX - this.lastTouchMidX
+        this.offsetY += midY - this.lastTouchMidY
+
+        this.lastTouchDist = newDist
+        this.lastTouchMidX = midX
+        this.lastTouchMidY = midY
+
+        this.requestRender()
+      }
+    },
+
+    onTouchEnd(e) {
+      const prevTouchCount = this.activeTouches.length
+      const remainingTouches = e.touches
+
+      // Single-finger lift: check for tap / double-tap
+      if (prevTouchCount === 1 && remainingTouches.length === 0) {
+        const elapsed = Date.now() - this.touchStartTime
+        if (this.dragDistance < 10 && elapsed < 300) {
+          const touch = this.activeTouches[0]
+          const now = Date.now()
+
+          // Double-tap detection
+          if (now - this.lastTapTime < 300 &&
+              Math.abs(touch.x - this.lastTapX) < 30 &&
+              Math.abs(touch.y - this.lastTapY) < 30) {
+            this.handleTouchDoubleTap(touch.x, touch.y)
+            this.lastTapTime = 0
+          } else {
+            this.handleTouchTap(touch.x, touch.y)
+            this.lastTapTime = now
+            this.lastTapX = touch.x
+            this.lastTapY = touch.y
+          }
+        }
+      }
+
+      // Reset state
+      this.isDragging = false
+      this.activeTouches = Array.from(remainingTouches).map(t => ({ id: t.identifier, x: t.clientX, y: t.clientY }))
+
+      // If going from 2 fingers to 1, restart single-finger pan
+      if (remainingTouches.length === 1) {
+        this.isDragging = true
+        this.dragDistance = 0
+        this.lastMouseX = remainingTouches[0].clientX
+        this.lastMouseY = remainingTouches[0].clientY
+      }
+    },
+
+    handleTouchTap(clientX, clientY) {
+      const canvas = this._canvasEl
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const screenX = clientX - rect.left
+      const screenY = clientY - rect.top
+
+      const node = this.findNodeAtPosition(screenX, screenY)
+      if (node) {
+        if (this.selectedNodeId === node.id) {
+          this.selectedNodeId = null
+          this.$emit('node-selected', null)
+        } else {
+          this.selectedNodeId = node.id
+          this.$emit('node-selected', { node })
+        }
+      } else {
+        this.selectedNodeId = null
+        this.$emit('node-selected', null)
+      }
+      this.requestRender()
+    },
+
+    handleTouchDoubleTap(clientX, clientY) {
+      const canvas = this._canvasEl
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const screenX = clientX - rect.left
+      const screenY = clientY - rect.top
+
+      const node = this.findNodeAtPosition(screenX, screenY)
+      if (node && node.childCount > 0) {
+        node.collapsed = !node.collapsed
+        this.updateVisibleNodesCache()
+        this.requestRender()
+        this.requestMinimapRender(true)
+      }
     },
 
     findNodeAtPosition(screenX, screenY) {

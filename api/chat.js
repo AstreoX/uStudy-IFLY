@@ -142,6 +142,9 @@ export function sendQuickChatMessage(conversationId, content, callbacks, attachm
     data,
     onEvent: (eventType, data) => {
       switch (eventType) {
+        case 'thinking_delta':
+          callbacks.onThinkingDelta?.(data.content)
+          break
         case 'text_delta':
           callbacks.onTextDelta?.(data.content)
           break
@@ -231,6 +234,9 @@ export function sendMessage(conversationId, content, callbacks, attachmentIds = 
     data,
     onEvent: (eventType, data) => {
       switch (eventType) {
+        case 'thinking_delta':
+          callbacks.onThinkingDelta?.(data.content)
+          break
         case 'text_delta':
           callbacks.onTextDelta?.(data.content)
           break
