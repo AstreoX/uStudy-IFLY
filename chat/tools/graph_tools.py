@@ -16,6 +16,8 @@ from graph.exceptions import (
 
 logger = logging.getLogger(__name__)
 
+_NODE_NOT_FOUND_HINT = "节点名称必须与知识图谱中已有节点完全匹配，请先调用 get_graph_overview 查看所有节点。"
+
 
 # ============ 10 Knowledge Graph Tools (OpenAI Function Calling Format) ============
 
@@ -522,7 +524,7 @@ class GraphToolExecutor:
                 return await handler(arguments, graph_service)
         except NodeNotFoundError as e:
             logger.warning(f"Node not found: {e}")
-            return ToolResult(success=False, data=None, message=f"节点不存在: {e}")
+            return ToolResult(success=False, data=None, message=f"节点不存在: {e}。{_NODE_NOT_FOUND_HINT}")
         except EdgeNotFoundError as e:
             logger.warning(f"Edge not found: {e}")
             return ToolResult(success=False, data=None, message=f"边不存在: {e}")
@@ -612,7 +614,7 @@ class GraphToolExecutor:
         )
         if not from_node_obj:
             return ToolResult(
-                success=False, data=None, message=f"节点不存在: {from_node}"
+                success=False, data=None, message=f"节点不存在: {from_node}。{_NODE_NOT_FOUND_HINT}"
             )
 
         to_node_obj = await graph_service.get_node_by_label(
@@ -620,7 +622,7 @@ class GraphToolExecutor:
         )
         if not to_node_obj:
             return ToolResult(
-                success=False, data=None, message=f"节点不存在: {to_node}"
+                success=False, data=None, message=f"节点不存在: {to_node}。{_NODE_NOT_FOUND_HINT}"
             )
 
         edge = await graph_service.create_edge(
@@ -653,7 +655,7 @@ class GraphToolExecutor:
         node = await graph_service.get_node_by_label(self.space_id, node_name)
         if not node:
             return ToolResult(
-                success=False, data=None, message=f"节点不存在: {node_name}"
+                success=False, data=None, message=f"节点不存在: {node_name}。{_NODE_NOT_FOUND_HINT}"
             )
 
         await graph_service.delete_node(self.space_id, node.id)
@@ -680,7 +682,7 @@ class GraphToolExecutor:
         )
         if not from_node_obj:
             return ToolResult(
-                success=False, data=None, message=f"节点不存在: {from_node}"
+                success=False, data=None, message=f"节点不存在: {from_node}。{_NODE_NOT_FOUND_HINT}"
             )
 
         to_node_obj = await graph_service.get_node_by_label(
@@ -688,7 +690,7 @@ class GraphToolExecutor:
         )
         if not to_node_obj:
             return ToolResult(
-                success=False, data=None, message=f"节点不存在: {to_node}"
+                success=False, data=None, message=f"节点不存在: {to_node}。{_NODE_NOT_FOUND_HINT}"
             )
 
         # 查找边
@@ -728,7 +730,7 @@ class GraphToolExecutor:
         node = await graph_service.get_node_by_label(self.space_id, node_name)
         if not node:
             return ToolResult(
-                success=False, data=None, message=f"节点不存在: {node_name}"
+                success=False, data=None, message=f"节点不存在: {node_name}。{_NODE_NOT_FOUND_HINT}"
             )
 
         updated_node = await graph_service.update_mastery(
@@ -754,7 +756,7 @@ class GraphToolExecutor:
 
         node = await graph_service.get_node_by_label(self.space_id, node_name)
         if not node:
-            return ToolResult(success=False, data=None, message=f"节点不存在: {node_name}")
+            return ToolResult(success=False, data=None, message=f"节点不存在: {node_name}。{_NODE_NOT_FOUND_HINT}")
 
         children = await graph_service.get_children(
             self.space_id, node.id, max_depth
@@ -789,7 +791,7 @@ class GraphToolExecutor:
 
         node = await graph_service.get_node_by_label(self.space_id, node_name)
         if not node:
-            return ToolResult(success=False, data=None, message=f"节点不存在: {node_name}")
+            return ToolResult(success=False, data=None, message=f"节点不存在: {node_name}。{_NODE_NOT_FOUND_HINT}")
 
         parents = await graph_service.get_parents(self.space_id, node.id)
 
@@ -815,7 +817,7 @@ class GraphToolExecutor:
 
         node = await graph_service.get_node_by_label(self.space_id, node_name)
         if not node:
-            return ToolResult(success=False, data=None, message=f"节点不存在: {node_name}")
+            return ToolResult(success=False, data=None, message=f"节点不存在: {node_name}。{_NODE_NOT_FOUND_HINT}")
 
         siblings = await graph_service.get_siblings(self.space_id, node.id)
 
@@ -855,7 +857,7 @@ class GraphToolExecutor:
             node = await graph_service.get_node_by_label(self.space_id, name)
             if not node:
                 return ToolResult(
-                    success=False, data=None, message=f"节点不存在: {name}"
+                    success=False, data=None, message=f"节点不存在: {name}。{_NODE_NOT_FOUND_HINT}"
                 )
             node_ids.append(node.id)
 
@@ -892,7 +894,7 @@ class GraphToolExecutor:
             node = await graph_service.get_node_by_label(self.space_id, name)
             if not node:
                 return ToolResult(
-                    success=False, data=None, message=f"节点不存在: {name}"
+                    success=False, data=None, message=f"节点不存在: {name}。{_NODE_NOT_FOUND_HINT}"
                 )
             node_ids.append(node.id)
 
@@ -1013,7 +1015,7 @@ class GraphToolExecutor:
             return ToolResult(
                 success=False,
                 data=None,
-                message=f"节点不存在: {node_name}",
+                message=f"节点不存在: {node_name}。{_NODE_NOT_FOUND_HINT}",
             )
 
         # 执行后序遍历

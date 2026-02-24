@@ -50,15 +50,24 @@ async def generate_title(user_message: str) -> str:
                 ],
                 "temperature": 0.3,
                 "max_tokens": 50,
+                "reasoning": {"effort": "none"},  # 禁用 reasoning，标题生成无需思考
             },
         )
         response.raise_for_status()
 
     data = response.json()
+    logger.debug(f"[TitleGen] Full API response keys: {list(data.keys())}")
     choices = data.get("choices") or []
     if not choices:
         raise ValueError(f"Unexpected API response: no choices")
-    raw_title = choices[0].get("message", {}).get("content", "").strip()
+    message = choices[0].get("message", {})
+    raw_title = message.get("content", "").strip()
+
+    # 某些 reasoning 模型可能将内容放在 reasoning_content 字段
+    if not raw_title:
+        raw_title = message.get("reasoning_content", "").strip()
+        if raw_title:
+            logger.info(f"[TitleGen] Title found in reasoning_content instead of content")
 
     logger.info(f"[TitleGen] Raw response: {raw_title!r}")
 
