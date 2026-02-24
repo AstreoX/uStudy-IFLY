@@ -191,12 +191,14 @@ class User(Base):
     subscription_tier: Mapped[SubscriptionTier] = mapped_column(
         Enum(SubscriptionTier), default=SubscriptionTier.FREE, nullable=False
     )
-    subscription_expires_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    subscription_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
-        default=func.now(), nullable=False
+        DateTime(timezone=True), default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        default=func.now(), onupdate=func.now(), nullable=False
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
     )
 
     # 关系
