@@ -94,7 +94,7 @@ async def upload_document(
 
     # 确定单文件大小限制（按用户等级）
     if user is not None:
-        from quota.service import get_user_tier_limits
+        from quota.service import get_effective_tier, get_user_tier_limits
 
         limits = get_user_tier_limits(user)
         max_file_bytes = limits.max_upload_file_bytes
@@ -104,9 +104,13 @@ async def upload_document(
     # 验证文件大小
     if len(content) > max_file_bytes:
         max_mb = max_file_bytes // (1024 * 1024)
-        raise HTTPException(
-            status_code=400, detail=f"文件大小超过限制（最大 {max_mb}MB）"
-        )
+        tier = get_effective_tier(user) if user is not None else None
+        tier_names = {"FREE": "免费版", "BASIC": "Plus", "PREMIUM": "Ultra", "ALPHA": "Alpha"}
+        tier_label = tier_names.get(tier.value, "") if tier else ""
+        msg = f"文件大小超过当前{tier_label}等级限制（最大 {max_mb}MB）"
+        if tier and tier.value in ("FREE", "BASIC"):
+            msg += "，升级订阅可获得更大的上传额度"
+        raise HTTPException(status_code=400, detail=msg)
 
     # Storage quota check
     if user is not None:
