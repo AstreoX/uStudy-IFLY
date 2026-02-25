@@ -29,13 +29,13 @@ TIER_LIMITS: dict[SubscriptionTier, TierLimits] = {
     SubscriptionTier.PREMIUM: TierLimits(
         max_spaces=None,
         daily_messages=None,
-        allowed_model_ids=("grok-4-fast", "kimi-k2.5", "qwen3.5-plus"),
+        allowed_model_ids=("grok-4-fast", "kimi-k2.5", "gemini-3.1-pro"),
         storage_per_space_bytes=500 * 1024 * 1024,  # 500 MB
     ),
     SubscriptionTier.ALPHA: TierLimits(
         max_spaces=None,
         daily_messages=None,
-        allowed_model_ids=("grok-4-fast", "kimi-k2.5", "qwen3.5-plus"),
+        allowed_model_ids=("grok-4-fast", "kimi-k2.5", "gemini-3.1-pro"),
         storage_per_space_bytes=500 * 1024 * 1024,  # 500 MB
     ),
 }

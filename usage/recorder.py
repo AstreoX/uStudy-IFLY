@@ -21,7 +21,7 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
     "minimax/minimax-m2.5": (0.30, 1.20),
     "x-ai/grok-4-fast": (2.00, 10.00),
     "moonshotai/kimi-k2.5": (1.00, 4.00),
-    "qwen/qwen3.5-plus-02-15": (0.80, 3.20),
+    "google/gemini-3.1-pro-preview": (1.25, 10.00),
     "qwen/qwen3-8b": (0.06, 0.06),
     "google/gemini-3-pro-preview": (1.25, 10.00),
     "openai/gpt-5.2": (2.00, 8.00),

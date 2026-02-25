@@ -19,10 +19,10 @@ ALLOWED_MODELS: dict[str, dict[str, Any]] = {
         "display_name": "Kimi K2.5",
         "description": "更强推理能力，适合复杂问题",
     },
-    "qwen3.5-plus": {
-        "openrouter_id": "qwen/qwen3.5-plus-02-15",
-        "display_name": "Qwen3.5 Plus",
-        "description": "通义千问最新模型，综合能力强",
+    "gemini-3.1-pro": {
+        "openrouter_id": "google/gemini-3.1-pro-preview",
+        "display_name": "Gemini 3.1 Pro",
+        "description": "Google 最新模型，综合能力强",
     },
 }
 
