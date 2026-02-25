@@ -32,6 +32,7 @@ from review.router import router as review_router
 from assessment.router import router as assessment_router
 from spaces.router import router as spaces_router
 from payment.router import router as payment_router
+from quota.router import router as quota_router
 from admin.router import router as admin_router
 from upload.router import router as upload_router
 
@@ -81,6 +82,18 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
                     },
                 )
     return await request_validation_exception_handler(request, exc)
+
+
+from quota.exceptions import QuotaExceededError
+
+
+@app.exception_handler(QuotaExceededError)
+async def quota_exceeded_handler(request: Request, exc: QuotaExceededError):
+    """Handle quota exceeded errors with structured JSON responses."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.to_response_body(),
+    )
 
 
 @app.exception_handler(Exception)
@@ -174,6 +187,7 @@ app.include_router(assessment_router)
 app.include_router(activity_router)
 app.include_router(review_router)
 app.include_router(payment_router)
+app.include_router(quota_router)
 app.include_router(admin_router)
 
 

@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import get_current_user, require_active_subscription
+from auth.dependencies import get_current_user
 from chat.schemas import (
     SendMessageRequest,
     CreateConversationRequest,
@@ -43,6 +43,7 @@ from chat.tools.learning_space_executor import LearningSpaceToolExecutor
 from chat.tools.learning_space_tools import get_allowed_tool_names
 from db.database import get_db, get_scoped_session
 from db.models import Conversation, Message, MessageRole, User
+from quota.service import check_daily_message_quota, check_model_access, get_effective_tier
 from spaces.service import SpaceService, SpaceNotFoundError as SpaceServiceNotFoundError, SpaceAccessDeniedError as SpaceServiceAccessDeniedError
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api",
     tags=["chat"],
-    dependencies=[Depends(require_active_subscription)],
 )
 
 
@@ -59,9 +59,12 @@ router = APIRouter(
     summary="获取可用模型列表",
     description="返回当前支持的 AI 模型列表",
 )
-async def list_models() -> list[dict]:
-    """Return available AI models."""
-    return get_available_models()
+async def list_models(
+    user: User = Depends(get_current_user),
+) -> list[dict]:
+    """Return available AI models for the user's subscription tier."""
+    tier = get_effective_tier(user)
+    return get_available_models(tier=tier)
 
 
 _STOP = object()
@@ -257,6 +260,11 @@ async def send_message(
                 "available_models": [m["id"] for m in get_available_models()],
             },
         )
+
+    # Quota checks: model access (pure config) + daily message count (DB)
+    check_model_access(user, request.model_id)
+    async with get_scoped_session() as db:
+        await check_daily_message_quota(db, user)
 
     # Validate conversation AND space binding with a short-lived session
     async with get_scoped_session() as db:
@@ -622,6 +630,11 @@ async def send_quick_chat_message(
                 "available_models": [m["id"] for m in get_available_models()],
             },
         )
+
+    # Quota checks: model access (pure config) + daily message count (DB)
+    check_model_access(user, request.model_id)
+    async with get_scoped_session() as db:
+        await check_daily_message_quota(db, user)
 
     # Validate conversation access with a short-lived session
     async with get_scoped_session() as db:

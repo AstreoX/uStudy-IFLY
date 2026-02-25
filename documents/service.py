@@ -13,7 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from db.models import DocumentType, Space, SpaceDocument
+from db.models import DocumentType, Space, SpaceDocument, User
+from quota.service import check_storage_quota
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ async def upload_document(
     space_id: uuid.UUID,
     user_id: uuid.UUID,
     file: UploadFile,
+    user: User | None = None,
 ) -> SpaceDocument:
     """上传文档"""
     await verify_space_ownership(db, space_id, user_id)
@@ -89,6 +91,10 @@ async def upload_document(
 
     # 读取文件内容
     content = await file.read()
+
+    # Storage quota check
+    if user is not None:
+        await check_storage_quota(db, user, space_id, len(content))
 
     # 验证文件大小
     if len(content) > settings.document_max_size_bytes:

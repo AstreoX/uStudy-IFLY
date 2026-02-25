@@ -46,6 +46,7 @@ async def upload_document_endpoint(
         space_id=space_id,
         user_id=current_user.id,
         file=file,
+        user=current_user,
     )
     return document
 

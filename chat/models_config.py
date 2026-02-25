@@ -1,6 +1,11 @@
 """Chat Models Configuration - Allowed models registry and helpers"""
 
-from typing import Any
+from __future__ import annotations
+
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from db.models import SubscriptionTier
 
 ALLOWED_MODELS: dict[str, dict[str, Any]] = {
     "grok-4-fast": {
@@ -39,8 +44,20 @@ def validate_model_id(model_id: str) -> bool:
     return model_id in ALLOWED_MODELS
 
 
-def get_available_models() -> list[dict[str, Any]]:
-    """Return the list of available models for the frontend."""
+def get_available_models(
+    tier: SubscriptionTier | None = None,
+) -> list[dict[str, Any]]:
+    """Return the list of available models for the frontend.
+
+    When tier is provided, only models allowed for that tier are returned.
+    """
+    if tier is not None:
+        from quota.config import get_tier_limits
+
+        allowed_ids = set(get_tier_limits(tier).allowed_model_ids)
+    else:
+        allowed_ids = None
+
     return [
         {
             "id": mid,
@@ -49,4 +66,5 @@ def get_available_models() -> list[dict[str, Any]]:
             "is_default": info.get("is_default", False),
         }
         for mid, info in ALLOWED_MODELS.items()
+        if allowed_ids is None or mid in allowed_ids
     ]

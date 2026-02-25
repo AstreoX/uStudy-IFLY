@@ -22,7 +22,10 @@ from db.models import (
     QuickChatToolTaskStage,
     QuickChatToolTaskStatus,
     Space,
+    User,
 )
+from quota.exceptions import SpaceCountQuotaExceeded
+from quota.service import check_space_count_quota
 
 logger = logging.getLogger(__name__)
 
@@ -546,6 +549,22 @@ class LearningSpaceToolExecutor:
             return ToolResult(success=False, data=None, message="对话不存在")
         if conversation.user_id != self.user_id:
             return ToolResult(success=False, data=None, message="无权访问该对话")
+
+        # Check space count quota
+        user_result = await db.execute(
+            select(User).where(User.id == self.user_id)
+        )
+        user = user_result.scalar_one_or_none()
+        if not user:
+            return ToolResult(success=False, data=None, message="用户不存在")
+        try:
+            await check_space_count_quota(db, user)
+        except SpaceCountQuotaExceeded as e:
+            return ToolResult(
+                success=False,
+                data=e.to_response_body(),
+                message=e.message,
+            )
 
         color = random.choice(SPACE_COLOR_POOL)
         space = Space(

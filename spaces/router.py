@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import get_current_user, require_active_subscription
+from auth.dependencies import get_current_user
 from db.database import get_db
 from db.models import LearningPathEvent, User
 from spaces.schemas import (
@@ -17,12 +17,12 @@ from spaces.schemas import (
     SpaceResponse,
     SpaceUpdate,
 )
+from quota.service import check_space_count_quota
 from spaces.service import SpaceAccessDeniedError, SpaceNotFoundError, SpaceService
 
 router = APIRouter(
     prefix="/api/spaces",
     tags=["spaces"],
-    dependencies=[Depends(require_active_subscription)],
 )
 
 
@@ -44,6 +44,7 @@ async def create_space(
     - **description**: 描述（可选）
     - **color**: 十六进制颜色（如 #0F6FFF）
     """
+    await check_space_count_quota(db, user)
     service = SpaceService(db)
     return await service.create_space(user.id, request)
 
