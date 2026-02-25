@@ -1244,6 +1244,21 @@ export default {
       this.isPathHighlightOn = !this.isPathHighlightOn
     },
 
+    async handleLearningPathAnimation(pathNodeNames) {
+      // Switch to graph tab if needed
+      if (this.activeTab !== 'graph') {
+        this.activeTab = 'graph'
+      }
+      // Enable path highlight so static edges/rings show after animation
+      this.isPathHighlightOn = true
+
+      await this.$nextTick()
+
+      if (this.$refs.knowledgeGraph) {
+        this.$refs.knowledgeGraph.animateLearningPath(pathNodeNames)
+      }
+    },
+
     onNodeSelected(payload) {
       // Could be used to inject context into chat
     },
@@ -1253,6 +1268,9 @@ export default {
     },
 
     scheduleGraphRefresh() {
+      // Skip refresh if path animation is running (it already loaded fresh data)
+      if (this.$refs.knowledgeGraph && this.$refs.knowledgeGraph.pathAnimationRunning) return
+
       if (this.activeTab === 'graph' && this.$refs.knowledgeGraph) {
         if (this._graphRefreshTimer) clearTimeout(this._graphRefreshTimer)
         this._graphRefreshTimer = setTimeout(() => {
@@ -1756,7 +1774,11 @@ export default {
         }
 
         if (success && GRAPH_MUTATING_TOOLS.has(tool)) {
-          this.scheduleGraphRefresh()
+          if (tool === 'generate_learning_path' && result?.path?.length > 0) {
+            this.handleLearningPathAnimation(result.path)
+          } else {
+            this.scheduleGraphRefresh()
+          }
         }
 
         if (tool === 'generate_test' && success && result?.task_id) {

@@ -252,6 +252,97 @@ export function drawNode(ctx, node, options = {}) {
   if (isDimmed) ctx.globalAlpha = 1.0
 }
 
+// --- Learning path animation (ripple rings + edge growth) ---
+
+export const PATH_RIPPLE_DURATION = 2000
+const PATH_RIPPLE_COUNT = 3
+const PATH_RIPPLE_STAGGER = 300
+const PATH_RIPPLE_EXPAND_DURATION = 1200
+export const PATH_EDGE_GROW_DURATION = 600
+
+/**
+ * Draw blue ripple rings for a node being highlighted in a learning path animation.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Object} node - Graph node
+ * @param {Object} state - { startTime }
+ * @returns {boolean} true if animation is still running
+ */
+export function drawPathHighlightRipple(ctx, node, state) {
+  const elapsed = Date.now() - state.startTime
+  if (elapsed > PATH_RIPPLE_DURATION) return false
+
+  const radius = getNodeBaseRadius(node)
+
+  ctx.save()
+  ctx.shadowColor = 'transparent'
+  ctx.shadowBlur = 0
+
+  for (let i = 0; i < PATH_RIPPLE_COUNT; i++) {
+    const ringElapsed = elapsed - i * PATH_RIPPLE_STAGGER
+    if (ringElapsed < 0 || ringElapsed > PATH_RIPPLE_EXPAND_DURATION) continue
+
+    const t = ringElapsed / PATH_RIPPLE_EXPAND_DURATION
+    const easedT = 1 - Math.pow(1 - t, 3)
+    const ringRadius = radius + 5 + easedT * 40
+    const opacity = 0.5 * (1 - t)
+    const lineWidth = 3 - 2.5 * t
+
+    ctx.beginPath()
+    ctx.arc(node.x, node.y, ringRadius, 0, Math.PI * 2)
+    ctx.strokeStyle = `rgba(0, 136, 255, ${opacity})`
+    ctx.lineWidth = Math.max(0.5, lineWidth)
+    ctx.stroke()
+  }
+
+  ctx.restore()
+  return true
+}
+
+/**
+ * Draw an animated edge that grows from fromNode toward toNode.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Object} fromNode
+ * @param {Object} toNode
+ * @param {number} progress - 0..1
+ */
+export function drawAnimatedPathEdge(ctx, fromNode, toNode, progress) {
+  const x1 = fromNode.x
+  const y1 = fromNode.y
+  const x2 = x1 + (toNode.x - x1) * progress
+  const y2 = y1 + (toNode.y - y1) * progress
+
+  ctx.save()
+  ctx.shadowColor = 'transparent'
+  ctx.shadowBlur = 0
+
+  ctx.beginPath()
+  ctx.strokeStyle = '#0088FF'
+  ctx.lineWidth = 3
+  ctx.moveTo(x1, y1)
+  ctx.lineTo(x2, y2)
+  ctx.stroke()
+
+  // Arrow at midpoint only when fully grown
+  if (progress >= 0.99) {
+    const midX = (fromNode.x + toNode.x) / 2
+    const midY = (fromNode.y + toNode.y) / 2
+    const angle = Math.atan2(toNode.y - fromNode.y, toNode.x - fromNode.x)
+    const arrowSize = 8
+
+    ctx.beginPath()
+    ctx.fillStyle = '#0088FF'
+    ctx.moveTo(midX + arrowSize * Math.cos(angle), midY + arrowSize * Math.sin(angle))
+    ctx.lineTo(midX + arrowSize * Math.cos(angle + 2.5), midY + arrowSize * Math.sin(angle + 2.5))
+    ctx.lineTo(midX + arrowSize * Math.cos(angle - 2.5), midY + arrowSize * Math.sin(angle - 2.5))
+    ctx.closePath()
+    ctx.fill()
+  }
+
+  ctx.restore()
+}
+
 // --- Mastery highlight animation (ripple rings + color transition) ---
 
 const HIGHLIGHT_DURATION = 3000

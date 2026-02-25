@@ -446,6 +446,14 @@ import {
   getModels
 } from '@/api/chat'
 
+import {
+  savePendingMessage,
+  getPendingMessages,
+  removePendingMessage,
+  clearPendingMessages,
+  savePendingMessagesFromArray
+} from '@/utils/messageDraft'
+
 // Quick chat tool display names
 const TOOL_DISPLAY_NAMES = {
   view_learning_spaces: 'View Learning Spaces',
@@ -616,6 +624,7 @@ export default {
       inputEl.removeEventListener('keydown', this.handleNativeChatKeydown)
     }
     this.cleanupPendingAttachments()
+    this._persistFailedMessages()
     this.stopTypewriter()
     if (this.cancelSSE) {
       this.cancelSSE()
@@ -903,12 +912,16 @@ export default {
       sentAttachments.forEach(a => { if (a.localPreview) URL.revokeObjectURL(a.localPreview) })
 
       // Add user message
+      const pendingId = `pending_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
       const userMsgId = this.nextId++
-      this.messages = [...this.messages, {
+      const userMessage = {
         id: userMsgId,
         role: 'user',
         content: text,
         isFailed: false,
+        pendingId,
+        synced: false,
+        timestamp: Date.now(),
         attachments: sentAttachments.map(a => ({
           id: a.id,
           attachment_type: a.type,
@@ -916,22 +929,27 @@ export default {
           thumbnail_url: a.thumbnail_url,
           original_filename: a.original_filename
         }))
-      }]
+      }
+      this.messages = [...this.messages, userMessage]
 
       this.$nextTick(() => this.scrollToBottom())
+
+      if (this.conversationId) {
+        savePendingMessage(this.conversationId, userMessage)
+      }
 
       // Create conversation if needed
       if (!this.conversationId) {
         try {
           const conv = await createQuickChatConversation(text.slice(0, 50))
           this.conversationId = conv.id
+          savePendingMessage(this.conversationId, userMessage)
         } catch (err) {
           this.isSending = false
           const msgs = [...this.messages]
           const userMsg = msgs.find(m => m.id === userMsgId)
           if (userMsg) userMsg.isFailed = true
           this.messages = msgs
-          this._persistFailedMessages()
           uni.showToast({ title: 'Failed to create conversation', icon: 'none' })
           return
         }
@@ -958,7 +976,7 @@ export default {
       this.isStreaming = true
       this.activeToolCalls = []
 
-      const callbacks = this._buildSSECallbacks(aiMsgId, userMsgId)
+      const callbacks = this._buildSSECallbacks(aiMsgId, userMsgId, pendingId)
       this.cancelSSE = sendQuickChatMessage(
         this.conversationId, text, callbacks,
         attachmentIds.length > 0 ? attachmentIds : null,
@@ -966,7 +984,7 @@ export default {
       )
     },
 
-    _buildSSECallbacks(aiMsgId, userMsgId) {
+    _buildSSECallbacks(aiMsgId, userMsgId, pendingId = null) {
       let finalized = false
       return {
         onThinkingDelta: (content) => {
@@ -1043,7 +1061,11 @@ export default {
           this.isStreaming = false
           this.isSending = false
           this.activeToolCalls = []
-          this._persistFailedMessages()
+          if (pendingId && this.conversationId) {
+            const userMsg = this.messages.find(m => m.pendingId === pendingId)
+            if (userMsg) userMsg.synced = true
+            removePendingMessage(this.conversationId, pendingId)
+          }
           this.$nextTick(() => this.scrollToBottom())
         },
 
@@ -1060,7 +1082,6 @@ export default {
           }
           const userMsg = this.messages.find(m => m.id === userMsgId)
           if (userMsg) userMsg.isFailed = true
-          this._persistFailedMessages()
           this.cancelSSE = null
           this.isStreaming = false
           this.isSending = false
@@ -1083,7 +1104,6 @@ export default {
             const userMsg = this.messages.find(m => m.id === userMsgId)
             if (userMsg) userMsg.isFailed = true
           }
-          this._persistFailedMessages()
           this.cancelSSE = null
           this.isSending = false
           this.isStreaming = false
@@ -1943,40 +1963,56 @@ export default {
 
     _persistFailedMessages() {
       if (!this.conversationId) return
-      const key = `uStudy_failedMsgs_${this.conversationId}`
-      const failed = this.messages
-        .filter(m => m.role === 'user' && m.isFailed)
-        .map(m => ({ content: m.content, attachments: m.attachments || [] }))
-      if (failed.length > 0) {
-        localStorage.setItem(key, JSON.stringify(failed))
-      } else {
-        localStorage.removeItem(key)
-      }
+      savePendingMessagesFromArray(this.conversationId, this.messages)
     },
 
     _restoreFailedMessages() {
       if (!this.conversationId) return
-      const key = `uStudy_failedMsgs_${this.conversationId}`
-      const raw = localStorage.getItem(key)
-      if (!raw) return
-      const failedMsgs = JSON.parse(raw)
-      for (const fm of failedMsgs) {
-        const match = this.messages.find(m =>
-          m.role === 'user' && m.content === fm.content && !m.isFailed
-        )
-        if (match) {
-          match.isFailed = true
-        } else {
+
+      // One-time migration from old format
+      const oldKey = `uStudy_failedMsgs_${this.conversationId}`
+      const oldRaw = localStorage.getItem(oldKey)
+      if (oldRaw) {
+        try {
+          const oldFailed = JSON.parse(oldRaw)
+          for (const fm of oldFailed) {
+            savePendingMessage(this.conversationId, {
+              role: 'user',
+              content: fm.content,
+              attachments: fm.attachments || [],
+              pendingId: `pending_migrated_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              timestamp: Date.now()
+            })
+          }
+        } catch { /* ignore */ }
+        localStorage.removeItem(oldKey)
+      }
+
+      const pendingMessages = getPendingMessages(this.conversationId)
+      if (!pendingMessages || pendingMessages.length === 0) return
+
+      const existingPendingIds = new Set(
+        this.messages.filter(m => m.pendingId).map(m => m.pendingId)
+      )
+
+      let added = false
+      for (const pm of pendingMessages) {
+        if (!existingPendingIds.has(pm.pendingId)) {
           this.messages = [...this.messages, {
             id: this.nextId++,
-            role: 'user',
-            content: fm.content,
-            isFailed: true,
-            attachments: fm.attachments || []
+            role: pm.role || 'user',
+            content: pm.content,
+            attachments: pm.attachments || [],
+            pendingId: pm.pendingId,
+            synced: false,
+            timestamp: pm.timestamp,
+            isFailed: true
           }]
+          added = true
         }
       }
-      this.nextId = this.messages.length + 1
+
+      if (added) this.$nextTick(() => this.scrollToBottom())
     },
 
     // ==================== Resend ====================
@@ -1987,6 +2023,11 @@ export default {
       this.isSending = true
       this.isAutoScrollEnabled = true
       msg.isFailed = false
+
+      if (!msg.pendingId) {
+        msg.pendingId = `pending_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      }
+      msg.synced = false
 
       // Remove the failed AI response that follows this message
       const msgIdx = this.messages.findIndex(m => m.id === msg.id)
@@ -2007,9 +2048,9 @@ export default {
         try {
           const conv = await createQuickChatConversation(text.slice(0, 50))
           this.conversationId = conv.id
+          savePendingMessage(this.conversationId, msg)
         } catch {
           msg.isFailed = true
-          this._persistFailedMessages()
           this.isSending = false
           uni.showToast({ title: 'Failed to create conversation', icon: 'none' })
           return
@@ -2037,7 +2078,7 @@ export default {
       this.$nextTick(() => this.scrollToBottom())
       this.activeToolCalls = []
 
-      const callbacks = this._buildSSECallbacks(aiMsgId, msg.id)
+      const callbacks = this._buildSSECallbacks(aiMsgId, msg.id, msg.pendingId)
       this.cancelSSE = sendQuickChatMessage(
         this.conversationId, text, callbacks,
         attachmentIds.length > 0 ? attachmentIds : null,

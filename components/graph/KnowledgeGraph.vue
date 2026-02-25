@@ -59,7 +59,11 @@ import {
   getLabelBoxByPosition, clamp,
   UNMASTERED_NODE_COLOR, UNMASTERED_NODE_GLOW, UNMASTERED_NODE_OUTLINE
 } from '@/utils/graph-layout'
-import { drawEdges, drawNode, drawNodeHighlight } from '@/utils/graph-renderer'
+import {
+  drawEdges, drawNode, drawNodeHighlight,
+  drawPathHighlightRipple, drawAnimatedPathEdge,
+  PATH_RIPPLE_DURATION, PATH_EDGE_GROW_DURATION
+} from '@/utils/graph-renderer'
 
 export default {
   props: {
@@ -113,6 +117,14 @@ export default {
       // Highlight animation state
       highlightedNodes: new Map(),
       highlightAnimationRunning: false,
+
+      // Path animation state
+      pathAnimationRunning: false,
+      pathAnimationNodes: [],
+      pathAnimationStep: -1,
+      pathRippleNodes: new Map(),
+      pathAnimatedEdges: [],
+      pathCompletedEdges: [],
 
       // Render throttling
       renderPending: false,
@@ -171,6 +183,20 @@ export default {
   beforeUnmount() {
     this.highlightAnimationRunning = false
     this.highlightedNodes.clear()
+    this.pathAnimationRunning = false
+    this.pathRippleNodes.clear()
+    if (this._pathStepTimer) {
+      clearTimeout(this._pathStepTimer)
+      this._pathStepTimer = null
+    }
+    if (this._pathEdgeGrowTimer) {
+      clearTimeout(this._pathEdgeGrowTimer)
+      this._pathEdgeGrowTimer = null
+    }
+    if (this._panRAF) {
+      cancelAnimationFrame(this._panRAF)
+      this._panRAF = null
+    }
 
     if (this._resizeObserver) {
       this._resizeObserver.disconnect()
@@ -494,6 +520,24 @@ export default {
         showAdvancedEdges: true
       })
 
+      // Draw path animation edges (completed + in-progress)
+      if (this.pathAnimationRunning) {
+        const now = Date.now()
+        this.pathCompletedEdges.forEach(edge => {
+          if (edge.from && edge.to) {
+            drawAnimatedPathEdge(ctx, edge.from, edge.to, 1.0)
+          }
+        })
+        this.pathAnimatedEdges.forEach(edge => {
+          if (edge.from && edge.to) {
+            const elapsed = now - edge.startTime
+            const t = Math.min(1, elapsed / PATH_EDGE_GROW_DURATION)
+            const progress = 1 - Math.pow(1 - t, 3)
+            drawAnimatedPathEdge(ctx, edge.from, edge.to, progress)
+          }
+        })
+      }
+
       // Draw nodes (apply highlight color override if active)
       renderNodes.forEach(node => {
         const hlState = this.highlightedNodes.get(node.id)
@@ -519,6 +563,14 @@ export default {
         // Draw highlight ripple rings on top
         if (hlState) {
           drawNodeHighlight(ctx, node, hlState)
+        }
+
+        // Draw path animation ripples on top
+        if (this.pathAnimationRunning) {
+          const rippleState = this.pathRippleNodes.get(node.id)
+          if (rippleState) {
+            drawPathHighlightRipple(ctx, node, rippleState)
+          }
         }
       })
 
@@ -858,6 +910,12 @@ export default {
     },
 
     _smoothPanToNode(node, duration = 500) {
+      // Cancel any previous smooth pan
+      if (this._panRAF) {
+        cancelAnimationFrame(this._panRAF)
+        this._panRAF = null
+      }
+
       const targetOffsetX = this.canvasWidth / 2 - node.x * this.scale
       const targetOffsetY = this.canvasHeight / 2 - node.y * this.scale
       const startOffsetX = this.offsetX
@@ -865,6 +923,7 @@ export default {
       const startTime = Date.now()
 
       const step = () => {
+        if (!this._canvasEl) return // component unmounted guard
         const elapsed = Date.now() - startTime
         const t = Math.min(1, elapsed / duration)
         const eased = 1 - Math.pow(1 - t, 3) // easeOutCubic
@@ -874,10 +933,132 @@ export default {
         this.requestRender()
 
         if (t < 1) {
-          requestAnimationFrame(step)
+          this._panRAF = requestAnimationFrame(step)
+        } else {
+          this._panRAF = null
         }
       }
-      requestAnimationFrame(step)
+      this._panRAF = requestAnimationFrame(step)
+    },
+
+    // --- Learning path animation ---
+    async animateLearningPath(pathNodeNames) {
+      // Cancel any running path animation first
+      this.pathAnimationRunning = false
+      if (this._pathStepTimer) {
+        clearTimeout(this._pathStepTimer)
+        this._pathStepTimer = null
+      }
+      if (this._pathEdgeGrowTimer) {
+        clearTimeout(this._pathEdgeGrowTimer)
+        this._pathEdgeGrowTimer = null
+      }
+      this.pathRippleNodes = new Map()
+      this.pathAnimatedEdges = []
+      this.pathCompletedEdges = []
+
+      // Load fresh graph data (which now includes the new path edges)
+      await this.loadAndRender()
+
+      // Resolve node names to node objects
+      const resolved = pathNodeNames
+        .map(name => this.nodes.find(n => n.label === name))
+        .filter(Boolean)
+
+      if (resolved.length === 0) return
+
+      // Initialize animation state
+      this.pathAnimationNodes = resolved
+      this.pathAnimationStep = -1
+      this.pathRippleNodes = new Map()
+      this.pathAnimatedEdges = []
+      this.pathCompletedEdges = []
+      this.pathAnimationRunning = true
+
+      this._startPathAnimationStep(0)
+      this._runPathAnimation()
+    },
+
+    _startPathAnimationStep(stepIndex) {
+      if (!this.pathAnimationRunning) return
+      if (stepIndex >= this.pathAnimationNodes.length) return
+
+      this.pathAnimationStep = stepIndex
+      const node = this.pathAnimationNodes[stepIndex]
+
+      // Add ripple for this node
+      this.pathRippleNodes.set(node.id, { startTime: Date.now() })
+
+      // Smooth-pan viewport to this node
+      this._smoothPanToNode(node, 400)
+
+      // Start edge growth (200ms after ripple) to next node
+      if (stepIndex < this.pathAnimationNodes.length - 1) {
+        const nextNode = this.pathAnimationNodes[stepIndex + 1]
+        this._pathEdgeGrowTimer = setTimeout(() => {
+          this._pathEdgeGrowTimer = null
+          if (!this.pathAnimationRunning) return
+          this.pathAnimatedEdges = [
+            ...this.pathAnimatedEdges,
+            { from: node, to: nextNode, startTime: Date.now(), done: false }
+          ]
+        }, 200)
+      }
+
+      // Schedule next step
+      if (stepIndex < this.pathAnimationNodes.length - 1) {
+        this._pathStepTimer = setTimeout(() => {
+          this._pathStepTimer = null
+          this._startPathAnimationStep(stepIndex + 1)
+        }, 800)
+      }
+    },
+
+    _runPathAnimation() {
+      if (!this.pathAnimationRunning) return
+
+      const now = Date.now()
+
+      // Prune finished ripples
+      for (const [nodeId, state] of this.pathRippleNodes) {
+        if (now - state.startTime > PATH_RIPPLE_DURATION) {
+          this.pathRippleNodes.delete(nodeId)
+        }
+      }
+
+      // Move completed edges to pathCompletedEdges
+      const stillAnimating = []
+      this.pathAnimatedEdges.forEach(edge => {
+        if (now - edge.startTime > PATH_EDGE_GROW_DURATION) {
+          this.pathCompletedEdges = [...this.pathCompletedEdges, { from: edge.from, to: edge.to }]
+        } else {
+          stillAnimating.push(edge)
+        }
+      })
+      this.pathAnimatedEdges = stillAnimating
+
+      // Detect full completion: all steps done, no active ripples, no animating edges
+      const allStepsDone = this.pathAnimationStep >= this.pathAnimationNodes.length - 1
+      const noActiveRipples = this.pathRippleNodes.size === 0
+      const noAnimatingEdges = this.pathAnimatedEdges.length === 0
+
+      if (allStepsDone && noActiveRipples && noAnimatingEdges) {
+        this.pathAnimationRunning = false
+        this.pathAnimationNodes = []
+        this.pathAnimationStep = -1
+        this.pathRippleNodes = new Map()
+        this.pathAnimatedEdges = []
+        this.pathCompletedEdges = []
+        // Final render with static path highlight
+        this.drawGraph()
+        return
+      }
+
+      this.requestRender()
+      requestAnimationFrame(() => {
+        if (!this.pathAnimationRunning) return
+        this._runPathAnimation()
+      })
     },
 
     // --- Minimap ---
