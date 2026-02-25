@@ -66,6 +66,7 @@ services:
       DB_POOL_RECYCLE_SECONDS: ${DB_POOL_RECYCLE_SECONDS:-1800}
     volumes:
       - uploads:/app/uploads
+      - payment_static:/app/static/payment
       - ./certs:/app/certs:ro
     ports:
       - "8000:8000"
@@ -74,4 +75,6 @@ volumes:
   pgdata:
     driver: local
   uploads:
+    driver: local
+  payment_static:
     driver: local
