@@ -3,7 +3,7 @@
     <view class="pm-container" :class="{ 'pm-submitted': showSubmitted }">
       <!-- Close button -->
       <view class="pm-close" @tap="handleClose">
-        <text class="pm-close-icon">\u00D7</text>
+        <text class="pm-close-icon">×</text>
       </view>
 
       <!-- State 1: Confirm & Pay -->
@@ -112,6 +112,9 @@
 
 <script>
 import { createOrder, notifyPaid } from '@/api/payment'
+import config from '@/config'
+
+const API_BASE_URL = config.API_BASE_URL
 
 const TIER_MAP = {
   PLUS: 'BASIC',
@@ -122,15 +125,6 @@ const CYCLE_LABELS = {
   monthly: '月付',
   semester: '学期包（4个月）',
   yearly: '年付'
-}
-
-const QR_CODE_MAP = {
-  PLUS_monthly: { cycle: 'month', plan: 'plus', price: '12-9' },
-  PLUS_semester: { cycle: '4-month', plan: 'plus', price: '38' },
-  PLUS_yearly: { cycle: 'year', plan: 'plus', price: '92' },
-  ULTRA_monthly: { cycle: 'month', plan: 'ultra', price: '36-9' },
-  ULTRA_semester: { cycle: '4-month', plan: 'ultra', price: '108' },
-  ULTRA_yearly: { cycle: 'year', plan: 'ultra', price: '268' }
 }
 
 export default {
@@ -150,7 +144,8 @@ export default {
       errorMsg: '',
       orderId: null,
       orderAmount: '',
-      payMethod: 'alipay'
+      payMethod: 'alipay',
+      qrCodes: { alipay: {}, wechat: {} }
     }
   },
   computed: {
@@ -170,19 +165,15 @@ export default {
       return pricing ? `${pricing.main}` : ''
     },
     qrCodeSrc() {
-      const key = `${this.plan?.id}_${this.billingCycle}`
-      const entry = QR_CODE_MAP[key]
-      if (!entry) return '/static/payment/alipay-qr.png'
-      const method = this.payMethod === 'alipay' ? 'alipay' : 'wechat'
-      return `/static/payment/${method}-qr-${entry.cycle}-${entry.plan}(${entry.price}).png`
+      const urls = this.qrCodes?.[this.payMethod]
+      if (!urls?.display) return ''
+      return urls.display.startsWith('http') ? urls.display : `${API_BASE_URL}${urls.display}`
     },
     saveQrCodeSrc() {
-      const key = `${this.plan?.id}_${this.billingCycle}`
-      const entry = QR_CODE_MAP[key]
-      if (!entry) return '/static/payment/alipay-qr.png'
-      const method = this.payMethod === 'alipay' ? 'alipay' : 'wechat'
-      const ext = this.payMethod === 'alipay' ? 'jpg' : 'png'
-      return `/static/payment/save-${method}-qr-${entry.cycle}-${entry.plan}(${entry.price}).${ext}`
+      const urls = this.qrCodes?.[this.payMethod]
+      const path = urls?.save || urls?.display
+      if (!path) return ''
+      return path.startsWith('http') ? path : `${API_BASE_URL}${path}`
     }
   },
   watch: {
@@ -203,6 +194,7 @@ export default {
       this.orderId = null
       this.orderAmount = ''
       this.payMethod = 'alipay'
+      this.qrCodes = { alipay: {}, wechat: {} }
     },
     handleClose() {
       this.$emit('close')
@@ -220,6 +212,7 @@ export default {
 
         this.orderId = resp.order_id
         this.orderAmount = resp.amount_display
+        this.qrCodes = resp.qr_codes || { alipay: {}, wechat: {} }
         this.showQrCode = true
       } catch (err) {
         this.errorMsg = err?.message || err?.detail || '创建订单失败，请稍后重试'
@@ -329,23 +322,25 @@ export default {
 
 .pm-close {
   position: absolute;
-  top: 20rpx;
+  top: 24rpx;
   right: 24rpx;
-  width: 56rpx;
-  height: 56rpx;
+  width: 52rpx;
+  height: 52rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 16rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  z-index: 1;
 }
 
 .pm-close:active {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .pm-close-icon {
-  font-size: 40rpx;
-  color: rgba(255, 255, 255, 0.4);
+  font-size: 36rpx;
+  color: rgba(255, 255, 255, 0.55);
   line-height: 1;
 }
 
