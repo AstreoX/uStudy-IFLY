@@ -212,14 +212,21 @@
 					v-for="m in availableModels"
 					:key="m.id"
 					class="model-menu-item"
-					:class="{ 'model-menu-item-active': m.id === selectedModelId }"
+					:class="{
+						'model-menu-item-active': m.id === selectedModelId,
+						'model-menu-item-locked': m.locked
+					}"
 					@click="selectModel(m.id)"
 				>
 					<view class="model-menu-item-info">
 						<text class="model-menu-item-name">{{ m.display_name }}</text>
-						<text class="model-menu-item-desc">{{ m.description }}</text>
+						<text class="model-menu-item-desc">{{ m.locked ? '升级订阅解锁' : m.description }}</text>
 					</view>
-					<svg v-if="m.id === selectedModelId" viewBox="0 0 256 256" class="model-menu-check">
+					<svg v-if="m.locked" viewBox="0 0 256 256" class="model-menu-lock">
+						<rect x="40" y="112" width="176" height="112" rx="8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+						<path d="M88,112V80a40,40,0,0,1,80,0v32" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+					</svg>
+					<svg v-else-if="m.id === selectedModelId" viewBox="0 0 256 256" class="model-menu-check">
 						<polyline points="40 144 96 200 216 80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
 					</svg>
 				</view>
@@ -628,28 +635,30 @@
 				this.showModelMenu = !this.showModelMenu
 			},
 			selectModel(id) {
+				const model = this.availableModels.find(m => m.id === id)
+				if (model?.locked) {
+					uni.showToast({ title: '升级订阅以解锁该模型', icon: 'none' })
+					return
+				}
 				this.selectedModelId = id
 				this.showModelMenu = false
 				uni.setStorageSync('uStudy_selectedModelId', id)
 			},
 			async loadModels() {
-				console.log('[QuickChat] loadModels() called')
 				try {
 					const res = await getModels()
-					console.log('[QuickChat] getModels() response:', JSON.stringify(res))
 					const models = res.models || res || []
 					this.availableModels = models
-					console.log('[QuickChat] availableModels set, count:', models.length)
 					const storedId = uni.getStorageSync('uStudy_selectedModelId')
-					if (storedId && models.some(m => m.id === storedId)) {
+					const storedModel = models.find(m => m.id === storedId)
+					if (storedModel && !storedModel.locked) {
 						this.selectedModelId = storedId
 					} else {
-						const defaultModel = models.find(m => m.is_default)
-						this.selectedModelId = defaultModel ? defaultModel.id : (models[0]?.id || null)
+						const defaultModel = models.find(m => m.is_default && !m.locked)
+						this.selectedModelId = defaultModel ? defaultModel.id : (models.find(m => !m.locked)?.id || null)
 					}
-					console.log('[QuickChat] selectedModelId:', this.selectedModelId)
 				} catch (err) {
-					console.error('[QuickChat] Failed to load models:', err, 'statusCode:', err?.statusCode, 'message:', err?.message)
+					console.error('[QuickChat] Failed to load models:', err)
 				}
 			},
 
@@ -1619,6 +1628,16 @@
 								}
 								removePendingMessage(this.conversationId, pendingId)
 							}
+						},
+
+						onQuotaError: (info) => {
+							this.flushThinkingBuffer()
+							uni.showToast({ title: info.message || '配额已达上限', icon: 'none', duration: 3000 })
+							this.messages[msgIndex].isWaitingOutput = false
+							this.messages[msgIndex].isStreaming = false
+							this.messages[msgIndex].content = info.message || '配额已达上限'
+							this.messages[msgIndex].isError = true
+							this.stopHeightMonitor()
 						},
 
 						onError: (message) => {
@@ -2765,6 +2784,22 @@
 		width: 32rpx;
 		height: 32rpx;
 		color: rgba(255, 255, 255, 0.7);
+		flex-shrink: 0;
+		margin-left: 16rpx;
+	}
+
+	.model-menu-item-locked {
+		opacity: 0.5;
+	}
+
+	.model-menu-item-locked .model-menu-item-name {
+		color: #9CA3AF;
+	}
+
+	.model-menu-lock {
+		width: 28rpx;
+		height: 28rpx;
+		color: #9CA3AF;
 		flex-shrink: 0;
 		margin-left: 16rpx;
 	}

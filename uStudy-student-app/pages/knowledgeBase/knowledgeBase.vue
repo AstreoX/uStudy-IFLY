@@ -462,9 +462,9 @@ export default {
     // 订阅计划存储限制 (字节)
     storageLimits() {
       return {
-        FREE: 50 * 1024 * 1024,    // 50MB
-        PLUS: 100 * 1024 * 1024,   // 100MB
-        ULTRA: 300 * 1024 * 1024,  // 300MB
+        FREE: 30 * 1024 * 1024,    // 30MB
+        PLUS: 200 * 1024 * 1024,   // 200MB
+        ULTRA: 500 * 1024 * 1024,  // 500MB
         ALPHA: 500 * 1024 * 1024   // 500MB - Alpha 内测用户
       }
     },
@@ -564,8 +564,9 @@ export default {
 
     loadUserTier() {
       const userStore = useUserStore()
-      const tier = userStore.user?.subscription_tier?.toUpperCase() || 'FREE'
-      this.userTier = tier
+      const rawTier = userStore.user?.subscription_tier?.toUpperCase() || 'FREE'
+      const tierMap = { BASIC: 'PLUS', PREMIUM: 'ULTRA' }
+      this.userTier = tierMap[rawTier] || rawTier
     },
 
     goBack() {

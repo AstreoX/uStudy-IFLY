@@ -77,6 +77,24 @@ export function executeToolCall(spaceId, toolCall) {
 }
 
 /**
+ * 解析配额错误（从 SSE 连接错误中提取配额相关信息）
+ */
+function parseQuotaError(errMessage) {
+  const match = errMessage?.match(/^HTTP (\d+): (.+)$/s)
+  if (!match) return null
+  const statusCode = parseInt(match[1])
+  if (statusCode !== 429 && statusCode !== 403) return null
+  try {
+    const body = JSON.parse(match[2])
+    if (body.detail?.code || body.code) {
+      const detail = body.detail || body
+      return { statusCode, code: detail.code, message: detail.message || errMessage }
+    }
+  } catch {}
+  return null
+}
+
+/**
  * 发送消息（SSE 流式）
  * @param {string} conversationId - 对话 ID
  * @param {string} content - 消息内容
@@ -86,6 +104,7 @@ export function executeToolCall(spaceId, toolCall) {
  *   - onToolCall(toolData): 工具调用事件
  *   - onDone(fullContent): 完成事件
  *   - onError(message): 错误事件
+ *   - onQuotaError(info): 配额超限错误事件
  *   - onComplete(): 连接关闭
  * @param {Array<string>} attachmentIds - 附件ID列表（可选）
  * @returns {Function} 取消函数
@@ -129,7 +148,15 @@ export function sendMessage(conversationId, content, callbacks, attachmentIds = 
       }
     },
     onComplete: () => callbacks.onComplete?.(),
-    onConnectionError: (err) => callbacks.onError?.(err.message || '连接失败')
+    onConnectionError: (err) => {
+      const quotaErr = parseQuotaError(err.message || String(err))
+      if (quotaErr) {
+        callbacks.onQuotaError?.(quotaErr)
+        if (!callbacks.onQuotaError) callbacks.onError?.(quotaErr.message)
+      } else {
+        callbacks.onError?.(err.message || '连接失败')
+      }
+    }
   })
 }
 
@@ -244,7 +271,15 @@ export function sendQuickChatMessage(conversationId, content, callbacks, attachm
       }
     },
     onComplete: () => callbacks.onComplete?.(),
-    onConnectionError: (err) => callbacks.onError?.(err.message || '连接失败')
+    onConnectionError: (err) => {
+      const quotaErr = parseQuotaError(err.message || String(err))
+      if (quotaErr) {
+        callbacks.onQuotaError?.(quotaErr)
+        if (!callbacks.onQuotaError) callbacks.onError?.(quotaErr.message)
+      } else {
+        callbacks.onError?.(err.message || '连接失败')
+      }
+    }
   })
 }
 
