@@ -211,8 +211,8 @@ export default {
       const tier = this.user?.subscription_tier || 'FREE'
       const labels = {
         FREE: 'Free',
-        BASIC: 'Basic',
-        PREMIUM: 'Premium',
+        BASIC: 'Plus',
+        PREMIUM: 'Ultra',
         ALPHA: 'Alpha'
       }
       return labels[tier] || tier
@@ -594,11 +594,11 @@ export default {
 }
 
 .badge-premium {
-  background: rgba(255, 215, 0, 0.2);
+  background: rgba(147, 51, 234, 0.2);
 }
 
 .badge-premium .badge-text {
-  color: #FFD700;
+  color: #A855F7;
 }
 
 .badge-alpha {

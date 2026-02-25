@@ -208,10 +208,10 @@
     <!-- Storage Full Upgrade Modal -->
     <u-modal
       :visible="showUpgradeModal"
-      :title="pendingFileSize > 0 ? '存储空间不足' : '存储空间已满'"
+      :title="isExpiredSubscription ? '订阅已到期' : (fileSizeExceeded ? '文件大小超出限制' : (pendingFileSize > 0 ? '存储空间不足' : '存储空间已满'))"
       :content="upgradeModalContent"
       cancel-text="取消"
-      confirm-text="升级订阅"
+      :confirm-text="isExpiredSubscription ? `续费 ${expiredTierLabel}` : (nextTierInfo ? `升级到 ${nextTierInfo.label}` : '查看订阅')"
       @confirm="handleUpgrade"
       @close="handleUpgradeModalClose"
     />
@@ -443,6 +443,9 @@ export default {
       // 待上传文件大小（用于弹窗提示）
       pendingFileSize: 0,
 
+      // 标记当前是文件大小超限（vs 存储空间不足）
+      fileSizeExceeded: false,
+
       // Debug 面板状态
       showDebugPanel: false,
       debugPanelVisible: false,
@@ -473,6 +476,53 @@ export default {
       return this.storageLimits[this.userTier] || this.storageLimits.FREE
     },
 
+    // 单文件上传大小限制 (字节)
+    uploadFileLimits() {
+      return {
+        FREE: 10 * 1024 * 1024,    // 10MB
+        PLUS: 50 * 1024 * 1024,    // 50MB
+        ULTRA: 100 * 1024 * 1024,  // 100MB
+        ALPHA: 100 * 1024 * 1024   // 100MB
+      }
+    },
+
+    uploadFileLimit() {
+      return this.uploadFileLimits[this.userTier] || this.uploadFileLimits.FREE
+    },
+
+    // 是否已过期的付费订阅
+    isExpiredSubscription() {
+      const userStore = useUserStore()
+      const user = userStore.user
+      if (!user?.subscription_expires_at) return false
+      const rawTier = (user.subscription_tier || 'FREE').toUpperCase()
+      if (rawTier === 'FREE') return false
+      return new Date(user.subscription_expires_at) < new Date()
+    },
+
+    expiredTierLabel() {
+      const userStore = useUserStore()
+      const rawTier = (userStore.user?.subscription_tier || '').toUpperCase()
+      const labels = { BASIC: 'Plus', PREMIUM: 'Ultra', PLUS: 'Plus', ULTRA: 'Ultra', ALPHA: 'Alpha' }
+      return labels[rawTier] || ''
+    },
+
+    // 下一订阅等级信息
+    nextTierInfo() {
+      const tierOrder = ['FREE', 'PLUS', 'ULTRA']
+      const currentIdx = tierOrder.indexOf(this.userTier)
+      if (currentIdx < 0 || currentIdx >= tierOrder.length - 1) return null
+      const nextTier = tierOrder[currentIdx + 1]
+      const labels = { PLUS: 'Plus', ULTRA: 'Ultra' }
+      const uploadLimits = { PLUS: 50, ULTRA: 100 }
+      const storageLimits = { PLUS: 200, ULTRA: 500 }
+      return {
+        label: labels[nextTier],
+        uploadLimitMB: uploadLimits[nextTier],
+        storageLimitMB: storageLimits[nextTier]
+      }
+    },
+
     storagePercent() {
       if (this.storageLimit === 0) return 0
       const percent = (this.storageUsed / this.storageLimit) * 100
@@ -501,9 +551,35 @@ export default {
       const limitMB = (this.storageLimit / (1024 * 1024)).toFixed(0)
       const remainingMB = ((this.storageLimit - this.storageUsed) / (1024 * 1024)).toFixed(1)
 
+      // 已到期用户 — 优先级最高
+      if (this.isExpiredSubscription) {
+        const tierLabel = this.expiredTierLabel
+        if (this.fileSizeExceeded && this.pendingFileSize > 0) {
+          const fileSizeMB = (this.pendingFileSize / (1024 * 1024)).toFixed(1)
+          return `你的 ${tierLabel} 订阅已到期，当前文件上传上限为 10MB，该文件 ${fileSizeMB}MB 无法上传。\n\n续费 ${tierLabel} 即可恢复更大上传额度。`
+        }
+        return `你的 ${tierLabel} 订阅已到期，存储空间已降至 ${limitMB}MB。\n\n续费即可恢复原有空间和功能。`
+      }
+
+      // 文件大小超限（非存储空间不足）
+      if (this.fileSizeExceeded && this.pendingFileSize > 0) {
+        const fileSizeMB = (this.pendingFileSize / (1024 * 1024)).toFixed(1)
+        const uploadLimitMB = (this.uploadFileLimit / (1024 * 1024)).toFixed(0)
+        let msg = `文件大小 ${fileSizeMB}MB，超过当前 ${this.tierLabel} 的单文件上限 ${uploadLimitMB}MB。`
+        if (this.nextTierInfo) {
+          msg += `\n\n升级到 ${this.nextTierInfo.label} 可上传最大 ${this.nextTierInfo.uploadLimitMB}MB 的文件。`
+        }
+        return msg
+      }
+
+      // 存储空间不足
       if (this.pendingFileSize > 0) {
         const fileSizeMB = (this.pendingFileSize / (1024 * 1024)).toFixed(1)
-        return `文件大小 ${fileSizeMB}MB，剩余空间仅 ${remainingMB}MB。\n\n当前 ${this.tierLabel} 存储上限为 ${limitMB}MB，升级订阅可获得更大空间。`
+        let msg = `文件大小 ${fileSizeMB}MB，剩余空间仅 ${remainingMB}MB。\n\n当前 ${this.tierLabel} 存储上限为 ${limitMB}MB。`
+        if (this.nextTierInfo) {
+          msg += `\n\n升级到 ${this.nextTierInfo.label} 可获得 ${this.nextTierInfo.storageLimitMB}MB 存储空间。`
+        }
+        return msg
       }
       return `当前 ${this.tierLabel} 存储空间为 ${limitMB}MB，已达到上限。\n\n升级订阅计划可获得更大存储空间。`
     },
@@ -766,10 +842,11 @@ export default {
       input.onchange = async (e) => {
         const file = e.target.files[0]
         if (file) {
-          // 验证文件大小（50MB）
-          const MAX_FILE_SIZE = 50 * 1024 * 1024
-          if (file.size > MAX_FILE_SIZE) {
-            this.showCustomToast('文件大小不能超过 50MB', 'error')
+          // 验证单文件大小（按订阅等级）
+          if (file.size > this.uploadFileLimit) {
+            this.pendingFileSize = file.size
+            this.fileSizeExceeded = true
+            this.showUpgradeModal = true
             return
           }
 
@@ -946,8 +1023,9 @@ export default {
     handleUpgrade() {
       this.showUpgradeModal = false
       this.pendingFileSize = 0
+      this.fileSizeExceeded = false
       uni.navigateTo({
-        url: '/pages/account/account'
+        url: '/pages/subscription/subscription'
       })
     },
 
@@ -955,6 +1033,7 @@ export default {
     handleUpgradeModalClose() {
       this.showUpgradeModal = false
       this.pendingFileSize = 0
+      this.fileSizeExceeded = false
     },
 
     // 检查是否有足够的存储空间
@@ -962,11 +1041,13 @@ export default {
       const remaining = this.storageLimit - this.storageUsed
       if (fileSize > remaining) {
         this.pendingFileSize = fileSize
+        this.fileSizeExceeded = false
         this.showUpgradeModal = true
         return false
       }
       return true
     },
+
 
     // ============ Debug 面板相关方法 ============
 

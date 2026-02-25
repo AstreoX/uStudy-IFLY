@@ -191,7 +191,8 @@ export default {
             '最多创建 1 个学习空间',
             '每日 AI 对话上限 20 次',
             '模型：Grok 4 Fast',
-            '每个学习空间知识库上限 30MB'
+            '每个学习空间知识库上限 30MB',
+            '单文件上传上限 10MB'
           ],
           limitations: [
             '不支持高级模型',
@@ -214,6 +215,7 @@ export default {
             '每日 AI 对话上限 150 次',
             '模型：Grok 4 Fast + Kimi K2.5',
             '每个学习空间知识库上限 200MB',
+            '单文件上传上限 50MB',
             '优先客服响应'
           ]
         },
@@ -230,8 +232,9 @@ export default {
           features: [
             '学习空间数量不限',
             '每日 AI 对话不限',
-            '全部模型：Grok 4 Fast / Kimi K2.5 / Qwen3.5 Plus',
+            '全部模型：Grok 4 Fast / Kimi K2.5 / Gemini-3.1-pro',
             '每个学习空间知识库上限 500MB',
+            '单文件上传上限 100MB',
             '优先客服 + 新功能抢先体验'
           ]
         }
@@ -239,8 +242,9 @@ export default {
       compareRows: [
         { metric: '学习空间数量', free: '1', plus: '5', ultra: '不限' },
         { metric: '每日 AI 对话', free: '20 次', plus: '150 次', ultra: '不限' },
-        { metric: '模型能力', free: 'Grok 4 Fast', plus: 'Grok + Kimi', ultra: 'Grok / Kimi / Qwen' },
+        { metric: '模型能力', free: 'Grok 4 Fast', plus: 'Grok + Kimi', ultra: 'Grok / Kimi / Gemini' },
         { metric: '单空间知识库', free: '30MB', plus: '200MB', ultra: '500MB' },
+        { metric: '单文件上传', free: '10MB', plus: '50MB', ultra: '100MB' },
         { metric: '优先客服', free: '—', plus: '✓', ultra: '✓' },
         { metric: '新功能抢先体验', free: '—', plus: '—', ultra: '✓' }
       ]
@@ -402,7 +406,7 @@ export default {
   .aurora-blob { animation: none !important; }
 }
 
-/* Navigation Bar */
+/* Navigation Bar - 磨砂玻璃效果 */
 .sub-nav-bar {
   position: fixed;
   top: 0;
@@ -410,11 +414,45 @@ export default {
   right: 0;
   z-index: 100;
   padding-top: calc(100vh * 1.5 / 26);
+  padding-bottom: calc(100vh * 0.5 / 26);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding-left: calc(100vw / 24);
   padding-right: calc(100vw / 24);
+}
+
+/* 磨砂玻璃背景层 - 渐变过渡 */
+.sub-nav-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: -70rpx;
+  z-index: -1;
+  background: linear-gradient(
+    to bottom,
+    rgba(10, 10, 18, 0.6) 0%,
+    rgba(10, 10, 18, 0.45) 50%,
+    rgba(10, 10, 18, 0) 100%
+  );
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
+}
+
+/* 不支持 backdrop-filter 的降级方案 */
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .sub-nav-bar::before {
+    background: linear-gradient(
+      to bottom,
+      rgba(10, 10, 18, 0.95) 0%,
+      rgba(10, 10, 18, 0.8) 50%,
+      rgba(10, 10, 18, 0) 100%
+    );
+  }
 }
 
 .nav-left {
@@ -887,7 +925,16 @@ export default {
 
 .plan-btn-free {
   background: rgba(255, 255, 255, 0.08);
-  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+}
+
+.plan-btn-free[disabled] {
+  opacity: 1;
+}
+
+.plan-btn-free .plan-btn-text {
+  color: #5a5a6e;
+  font-weight: 600;
 }
 
 .plan-btn-plus {
@@ -917,7 +964,7 @@ export default {
 }
 
 .plan-btn-text-current {
-  color: #6ee7b7;
+  color: #4a9a7a;
 }
 
 /* Comparison Table */

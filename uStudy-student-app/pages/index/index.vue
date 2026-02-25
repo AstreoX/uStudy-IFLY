@@ -7,6 +7,18 @@
 			<view class="aurora-blob aurora-blob-3"></view>
 		</view>
 
+		<!-- 订阅到期提醒 -->
+		<view
+			v-if="showExpiryBanner"
+			class="expiry-banner"
+			@click="goToSubscription"
+		>
+			<text class="expiry-banner-text">
+				你的 {{ expiryTierLabel }} 订阅将于 {{ expiryDateStr }} 到期，续费可继续享受完整功能
+			</text>
+			<text class="expiry-banner-close" @click.stop="dismissExpiryBanner">✕</text>
+		</view>
+
 		<!-- ========== Tab Swiper ========== -->
 		<swiper
 			class="tab-swiper"
@@ -305,7 +317,9 @@ import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 				// 启动状态兜底
 				bootState: 'loading',
 				bootErrorMessage: '',
-				bootTimeoutId: null
+				bootTimeoutId: null,
+				// 到期提醒横幅
+				expiryBannerDismissed: false
 			}
 		},
 
@@ -353,6 +367,36 @@ import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 					return { name: '无学习内容', progress: 0, currentPart: 0, totalParts: 0 }
 				}
 				return this.learningTopics[index]
+			},
+
+			// 订阅到期信息
+			userStore() {
+				return useUserStore()
+			},
+
+			subscriptionExpiryInfo() {
+				const user = this.userStore?.user
+				if (!user?.subscription_expires_at) return null
+				const tier = (user.subscription_tier || 'FREE').toUpperCase()
+				if (tier === 'FREE') return null
+				const expiresAt = new Date(user.subscription_expires_at)
+				const now = new Date()
+				const daysLeft = Math.ceil((expiresAt - now) / (1000 * 60 * 60 * 24))
+				if (daysLeft <= 0 || daysLeft > 7) return null
+				const tierMap = { BASIC: 'Plus', PREMIUM: 'Ultra', PLUS: 'Plus', ULTRA: 'Ultra', ALPHA: 'Alpha' }
+				return { daysLeft, label: tierMap[tier] || tier, dateStr: expiresAt.toISOString().slice(0, 10) }
+			},
+
+			showExpiryBanner() {
+				return this.subscriptionExpiryInfo && !this.expiryBannerDismissed
+			},
+
+			expiryTierLabel() {
+				return this.subscriptionExpiryInfo?.label || ''
+			},
+
+			expiryDateStr() {
+				return this.subscriptionExpiryInfo?.dateStr || ''
 			},
 
 			// 按顺序排列的卡片列表（包含虚拟新建卡片）
@@ -1280,6 +1324,16 @@ import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 				}
 			},
 
+			// 关闭到期提醒横幅
+			dismissExpiryBanner() {
+				this.expiryBannerDismissed = true
+			},
+
+			// 跳转到订阅页
+			goToSubscription() {
+				uni.navigateTo({ url: '/pages/subscription/subscription' })
+			},
+
 			// 显示 Toast 通知
 			showToast(message, type = 'info') {
 				this.toast = { visible: true, message, type }
@@ -1960,6 +2014,35 @@ import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 		width: 40rpx;
 		height: 40rpx;
 		filter: brightness(0) saturate(100%) invert(28%) sepia(93%) saturate(5765%) hue-rotate(351deg) brightness(97%) contrast(93%);
+	}
+
+	/* ========== 订阅到期提醒横幅 ========== */
+	.expiry-banner {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 200;
+		display: flex;
+		align-items: center;
+		padding: 12rpx 24rpx;
+		padding-top: calc(12rpx + env(safe-area-inset-top));
+		background: linear-gradient(90deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05));
+		border-bottom: 1rpx solid rgba(245,158,11,0.3);
+		-webkit-backdrop-filter: blur(20px);
+		backdrop-filter: blur(20px);
+	}
+
+	.expiry-banner-text {
+		flex: 1;
+		font-size: 24rpx;
+		color: #F59E0B;
+	}
+
+	.expiry-banner-close {
+		font-size: 28rpx;
+		color: rgba(245,158,11,0.6);
+		padding: 8rpx 12rpx;
 	}
 
 </style>
