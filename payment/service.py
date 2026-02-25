@@ -21,7 +21,11 @@ from payment.exceptions import (
     OrderExpiredError,
     OrderNotFoundError,
 )
-from payment.notification import send_payment_notification
+from payment.notification import (
+    send_payment_notification,
+    send_user_payment_rejected_email,
+    send_user_payment_success_email,
+)
 from core.admin import ADMIN_EMAILS
 from payment.pricing import PRICING
 from payment.schemas import (
@@ -159,6 +163,10 @@ async def admin_confirm_order(order_id, admin_user: User) -> OrderStatusResponse
     if admin_user.email not in ADMIN_EMAILS:
         raise PermissionError("Not an admin")
 
+    user_email = None
+    user_nickname = None
+    new_expiry = None
+
     async with get_scoped_session() as session:
         result = await session.execute(
             select(PaymentOrder)
@@ -186,10 +194,106 @@ async def admin_confirm_order(order_id, admin_user: User) -> OrderStatusResponse
         await session.commit()
         await session.refresh(order)
 
+        # Fetch user info for email notification
+        user_result = await session.execute(
+            select(User).where(User.id == order.user_id)
+        )
+        user = user_result.scalar_one()
+        user_email = user.email
+        user_nickname = user.nickname or "用户"
+        new_expiry = user.subscription_expires_at
+
     logger.info(
         f"Admin {admin_user.email} confirmed order {order.out_trade_no}, "
         f"tier={order.target_tier.value}, days={order.subscription_days}"
     )
+
+    # Send success email to user (non-blocking)
+    tier_name = _TIER_NAMES.get(order.target_tier, order.target_tier.value)
+    cycle_name = _CYCLE_NAMES.get(order.billing_cycle, order.billing_cycle.value)
+    amount = _cents_to_yuan(order.amount_cents)
+    expiry_str = new_expiry.strftime("%Y-%m-%d") if new_expiry else ""
+
+    try:
+        settings = get_settings()
+        await send_user_payment_success_email(
+            settings=settings,
+            user_email=user_email,
+            user_nickname=user_nickname,
+            tier_name=tier_name,
+            cycle_name=cycle_name,
+            amount_display=f"¥{amount}",
+            expiry_date=expiry_str,
+        )
+    except Exception:
+        logger.exception("Failed to send user payment success email")
+
+    return _order_to_response(order)
+
+
+async def admin_reject_order(order_id, admin_user: User) -> OrderStatusResponse:
+    """管理员拒绝订单"""
+    if admin_user.email not in ADMIN_EMAILS:
+        raise PermissionError("Not an admin")
+
+    user_email = None
+    user_nickname = None
+
+    async with get_scoped_session() as session:
+        result = await session.execute(
+            select(PaymentOrder)
+            .where(PaymentOrder.id == order_id)
+            .with_for_update()
+        )
+        order = result.scalar_one_or_none()
+
+        if order is None:
+            raise OrderNotFoundError("Order not found")
+
+        if order.status == OrderStatus.REJECTED:
+            # 已拒绝，幂等返回
+            return _order_to_response(order)
+
+        if order.status != OrderStatus.PENDING:
+            raise OrderExpiredError(f"Order is {order.status.value}, cannot reject")
+
+        order.status = OrderStatus.REJECTED
+        order.alipay_trade_no = f"REJECTED_{admin_user.email}"
+
+        await session.commit()
+        await session.refresh(order)
+
+        # Fetch user info for email notification
+        user_result = await session.execute(
+            select(User).where(User.id == order.user_id)
+        )
+        user = user_result.scalar_one()
+        user_email = user.email
+        user_nickname = user.nickname or "用户"
+
+    logger.info(
+        f"Admin {admin_user.email} rejected order {order.out_trade_no}"
+    )
+
+    # Send rejection email to user (non-blocking)
+    tier_name = _TIER_NAMES.get(order.target_tier, order.target_tier.value)
+    cycle_name = _CYCLE_NAMES.get(order.billing_cycle, order.billing_cycle.value)
+    amount = _cents_to_yuan(order.amount_cents)
+
+    try:
+        settings = get_settings()
+        await send_user_payment_rejected_email(
+            settings=settings,
+            user_email=user_email,
+            user_nickname=user_nickname,
+            tier_name=tier_name,
+            cycle_name=cycle_name,
+            amount_display=f"¥{amount}",
+            order_no=order.out_trade_no,
+        )
+    except Exception:
+        logger.exception("Failed to send user payment rejected email")
+
     return _order_to_response(order)
 
 

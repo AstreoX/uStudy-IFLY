@@ -27,7 +27,7 @@ from admin.service import (
 from db.database import get_db
 from db.models import User
 from payment.exceptions import OrderExpiredError, OrderNotFoundError
-from payment.service import admin_confirm_order
+from payment.service import admin_confirm_order, admin_reject_order
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +121,22 @@ async def confirm_order(
     """Confirm payment for an order (delegates to payment service)."""
     try:
         return await admin_confirm_order(order_id, admin)
+    except OrderNotFoundError:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    except OrderExpiredError as e:
+        raise HTTPException(status_code=410, detail=str(e))
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="无权限")
+
+
+@router.post("/orders/{order_id}/reject")
+async def reject_order(
+    order_id: UUID,
+    admin: User = Depends(require_admin),
+):
+    """Reject a payment order (delegates to payment service)."""
+    try:
+        return await admin_reject_order(order_id, admin)
     except OrderNotFoundError:
         raise HTTPException(status_code=404, detail="订单不存在")
     except OrderExpiredError as e:

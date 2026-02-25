@@ -160,6 +160,7 @@ class OrderStatus(str, enum.Enum):
 
     PENDING = "pending"
     PAID = "paid"
+    REJECTED = "rejected"
     EXPIRED = "expired"
     CANCELLED = "cancelled"
 

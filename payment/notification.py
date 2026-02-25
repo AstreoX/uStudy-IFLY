@@ -103,7 +103,9 @@ def _build_payment_notification_html(
     """
 
 
-async def _send_via_resend(settings, subject: str, html_content: str) -> bool:
+async def _send_via_resend(
+    settings, subject: str, html_content: str, to_email: str = ADMIN_NOTIFICATION_EMAIL
+) -> bool:
     if resend is None:
         logger.error("resend package not installed")
         return False
@@ -111,7 +113,7 @@ async def _send_via_resend(settings, subject: str, html_content: str) -> bool:
     resend.api_key = settings.resend_api_key
     params = {
         "from": f"{settings.smtp_from_name} <{settings.smtp_from_email}>",
-        "to": [ADMIN_NOTIFICATION_EMAIL],
+        "to": [to_email],
         "subject": subject,
         "html": html_content,
     }
@@ -125,14 +127,16 @@ async def _send_via_resend(settings, subject: str, html_content: str) -> bool:
     return bool(response.get("id"))
 
 
-async def _send_via_smtp(settings, subject: str, html_content: str) -> bool:
+async def _send_via_smtp(
+    settings, subject: str, html_content: str, to_email: str = ADMIN_NOTIFICATION_EMAIL
+) -> bool:
     if aiosmtplib is None:
         logger.error("aiosmtplib package not installed")
         return False
 
     message = EmailMessage()
     message["From"] = f"{settings.smtp_from_name} <{settings.smtp_from_email}>"
-    message["To"] = ADMIN_NOTIFICATION_EMAIL
+    message["To"] = to_email
     message["Subject"] = subject
     message.set_content("Please view this email in an HTML-capable email client.")
     message.add_alternative(html_content, subtype="html")
@@ -188,4 +192,169 @@ async def send_payment_notification(
 
     except Exception:
         logger.exception("Error sending payment notification for order %s", out_trade_no)
+        return False
+
+
+def _build_user_success_html(
+    user_nickname: str,
+    tier_name: str,
+    cycle_name: str,
+    amount_display: str,
+    expiry_date: str,
+) -> str:
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="UTF-8"></head>
+    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                 max-width: 600px; margin: 0 auto; padding: 20px; background: #f5f5f5;">
+        <div style="background: #fff; border-radius: 12px; padding: 24px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <div style="text-align: center; margin-bottom: 24px; padding-bottom: 16px;
+                        border-bottom: 1px solid #eee;">
+                <h1 style="color: #10b981; font-size: 24px; margin: 0;">订阅开通成功</h1>
+                <p style="color: #666; margin: 8px 0 0;">uStudy</p>
+            </div>
+            <div style="padding: 16px; background: #f0fdf4; border-radius: 8px;
+                        border-left: 4px solid #10b981;">
+                <p style="font-size: 14px; color: #333; margin: 0 0 12px;">
+                    亲爱的 {html.escape(user_nickname)}：
+                </p>
+                <p style="font-size: 14px; color: #333; margin: 0 0 12px;">
+                    您的 <strong>{html.escape(tier_name)} · {html.escape(cycle_name)}</strong>
+                    订阅已开通，支付金额
+                    <strong style="color: #10b981;">{html.escape(amount_display)}</strong>。
+                </p>
+                <p style="font-size: 14px; color: #333; margin: 0;">
+                    有效期至 <strong>{html.escape(expiry_date)}</strong>，
+                    祝您学习愉快！
+                </p>
+            </div>
+            <div style="text-align: center; padding-top: 16px; margin-top: 16px;
+                        border-top: 1px solid #eee;">
+                <p style="color: #999; font-size: 12px; margin: 0;">
+                    此邮件由 uStudy 系统自动发送，请勿直接回复。
+                </p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+
+def _build_user_rejected_html(
+    user_nickname: str,
+    tier_name: str,
+    cycle_name: str,
+    amount_display: str,
+    order_no: str,
+) -> str:
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="UTF-8"></head>
+    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                 max-width: 600px; margin: 0 auto; padding: 20px; background: #f5f5f5;">
+        <div style="background: #fff; border-radius: 12px; padding: 24px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <div style="text-align: center; margin-bottom: 24px; padding-bottom: 16px;
+                        border-bottom: 1px solid #eee;">
+                <h1 style="color: #ea580c; font-size: 24px; margin: 0;">订单审核未通过</h1>
+                <p style="color: #666; margin: 8px 0 0;">uStudy</p>
+            </div>
+            <div style="padding: 16px; background: #fff7ed; border-radius: 8px;
+                        border-left: 4px solid #ea580c;">
+                <p style="font-size: 14px; color: #333; margin: 0 0 12px;">
+                    亲爱的 {html.escape(user_nickname)}：
+                </p>
+                <p style="font-size: 14px; color: #333; margin: 0 0 12px;">
+                    您的订单 <strong style="font-family: monospace;">{html.escape(order_no)}</strong>
+                    （{html.escape(tier_name)} · {html.escape(cycle_name)}，
+                    {html.escape(amount_display)}）未通过审核。
+                </p>
+                <p style="font-size: 14px; color: #333; margin: 0;">
+                    如有疑问，请联系客服。
+                </p>
+            </div>
+            <div style="text-align: center; padding-top: 16px; margin-top: 16px;
+                        border-top: 1px solid #eee;">
+                <p style="color: #999; font-size: 12px; margin: 0;">
+                    此邮件由 uStudy 系统自动发送，请勿直接回复。
+                </p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+
+async def send_user_payment_success_email(
+    settings,
+    user_email: str,
+    user_nickname: str,
+    tier_name: str,
+    cycle_name: str,
+    amount_display: str,
+    expiry_date: str,
+) -> bool:
+    """发送订阅开通成功邮件给用户"""
+    try:
+        html_content = _build_user_success_html(
+            user_nickname=user_nickname,
+            tier_name=tier_name,
+            cycle_name=cycle_name,
+            amount_display=amount_display,
+            expiry_date=expiry_date,
+        )
+        subject = f"[uStudy] 订阅开通成功 - {tier_name} {cycle_name}"
+
+        if settings.email_provider == "resend":
+            ok = await _send_via_resend(settings, subject, html_content, to_email=user_email)
+        else:
+            ok = await _send_via_smtp(settings, subject, html_content, to_email=user_email)
+
+        if ok:
+            logger.info("User success email sent to %s", user_email)
+        else:
+            logger.warning("User success email failed for %s", user_email)
+        return ok
+
+    except Exception:
+        logger.exception("Error sending user success email to %s", user_email)
+        return False
+
+
+async def send_user_payment_rejected_email(
+    settings,
+    user_email: str,
+    user_nickname: str,
+    tier_name: str,
+    cycle_name: str,
+    amount_display: str,
+    order_no: str,
+) -> bool:
+    """发送订单审核未通过邮件给用户"""
+    try:
+        html_content = _build_user_rejected_html(
+            user_nickname=user_nickname,
+            tier_name=tier_name,
+            cycle_name=cycle_name,
+            amount_display=amount_display,
+            order_no=order_no,
+        )
+        subject = f"[uStudy] 订单审核未通过 - {order_no}"
+
+        if settings.email_provider == "resend":
+            ok = await _send_via_resend(settings, subject, html_content, to_email=user_email)
+        else:
+            ok = await _send_via_smtp(settings, subject, html_content, to_email=user_email)
+
+        if ok:
+            logger.info("User rejected email sent to %s", user_email)
+        else:
+            logger.warning("User rejected email failed for %s", user_email)
+        return ok
+
+    except Exception:
+        logger.exception("Error sending user rejected email to %s", user_email)
         return False
