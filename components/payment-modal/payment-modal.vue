@@ -1,13 +1,13 @@
 <template>
   <view v-if="visible" class="pm-overlay" @tap.self="handleClose">
-    <view class="pm-container" :class="{ 'pm-success': showSuccess }">
+    <view class="pm-container" :class="{ 'pm-submitted': showSubmitted }">
       <!-- Close button -->
       <view class="pm-close" @tap="handleClose">
         <text class="pm-close-icon">×</text>
       </view>
 
       <!-- State 1: Confirm & Pay -->
-      <template v-if="!showSuccess && !showQrCode">
+      <template v-if="!showSubmitted && !showQrCode">
         <view class="pm-header">
           <text class="pm-title">确认订阅</text>
         </view>
@@ -42,7 +42,7 @@
       </template>
 
       <!-- State 2: Show QR Code -->
-      <template v-if="showQrCode && !showSuccess">
+      <template v-if="showQrCode && !showSubmitted">
         <view class="pm-header">
           <text class="pm-title">扫码支付</text>
         </view>
@@ -68,18 +68,7 @@
 
         <!-- QR Code -->
         <view class="pm-qr-section">
-          <image
-            v-if="payMethod === 'alipay'"
-            class="pm-qr-img"
-            src="/static/payment/alipay-qr.png"
-            mode="aspectFit"
-          />
-          <image
-            v-else
-            class="pm-qr-img"
-            src="/static/payment/wechat-qr.png"
-            mode="aspectFit"
-          />
+          <image class="pm-qr-img" :src="qrCodeSrc" mode="aspectFit" />
         </view>
 
         <!-- Amount -->
@@ -91,28 +80,24 @@
         <text class="pm-hint">请使用{{ payMethod === 'alipay' ? '支付宝' : '微信' }}扫描上方二维码完成支付</text>
 
         <!-- Confirm button -->
-        <button class="pm-confirm-btn" @tap="handleConfirmPaid">
-          <text class="pm-confirm-text">{{ polling ? '等待管理员确认中...' : '我已支付' }}</text>
+        <button class="pm-confirm-btn" :disabled="submitting" @tap="handleConfirmPaid">
+          <text class="pm-confirm-text">{{ submitting ? '提交中...' : '我已支付' }}</text>
         </button>
-
-        <text v-if="polling" class="pm-waiting-hint">
-          管理员收到通知后会尽快确认，请稍候
-        </text>
 
         <text v-if="errorMsg" class="pm-error">{{ errorMsg }}</text>
       </template>
 
-      <!-- State 3: Success -->
-      <template v-if="showSuccess">
-        <view class="pm-success-content">
-          <view class="pm-success-icon-wrap">
-            <text class="pm-success-check">✓</text>
+      <!-- State 3: Submitted -->
+      <template v-if="showSubmitted">
+        <view class="pm-submitted-content">
+          <view class="pm-submitted-icon-wrap">
+            <text class="pm-submitted-icon">✉</text>
           </view>
-          <text class="pm-success-title">订阅成功</text>
-          <text class="pm-success-desc">
-            已开通 {{ planDisplayName }}，有效期至 {{ expiryDisplay }}
+          <text class="pm-submitted-title">已提交</text>
+          <text class="pm-submitted-desc">
+            已通知管理员，审核结果将通过邮件通知您
           </text>
-          <button class="pm-done-btn" @tap="handleDone">开始使用</button>
+          <button class="pm-done-btn" @tap="handleDone">知道了</button>
         </view>
       </template>
     </view>
@@ -120,9 +105,7 @@
 </template>
 
 <script>
-import { createOrder, notifyPaid, getOrderStatus } from '@/api/payment'
-import { getMe } from '@/api/auth'
-import { useUserStore } from '@/store/user'
+import { createOrder, notifyPaid } from '@/api/payment'
 
 const TIER_MAP = {
   PLUS: 'BASIC',
@@ -140,6 +123,15 @@ const CYCLE_LABELS = {
   yearly: '年付'
 }
 
+const QR_CODE_MAP = {
+  PLUS_monthly: { cycle: 'month', plan: 'plus', price: '12-9' },
+  PLUS_semester: { cycle: '4-month', plan: 'plus', price: '38' },
+  PLUS_yearly: { cycle: 'year', plan: 'plus', price: '92' },
+  ULTRA_monthly: { cycle: 'month', plan: 'ultra', price: '36-9' },
+  ULTRA_semester: { cycle: '4-month', plan: 'ultra', price: '108' },
+  ULTRA_yearly: { cycle: 'year', plan: 'ultra', price: '268' },
+}
+
 export default {
   props: {
     visible: { type: Boolean, default: false },
@@ -150,15 +142,12 @@ export default {
   data() {
     return {
       loading: false,
-      showSuccess: false,
+      showSubmitted: false,
       showQrCode: false,
-      polling: false,
+      submitting: false,
       errorMsg: '',
       orderId: null,
       orderAmount: '',
-      pollTimer: null,
-      pollCount: 0,
-      successData: null,
       payMethod: 'alipay'
     }
   },
@@ -168,7 +157,6 @@ export default {
       return TIER_MAP[this.plan.id] || this.plan.id
     },
     planDisplayName() {
-      if (this.successData) return TIER_LABELS[this.successData.target_tier] || this.successData.target_tier
       return this.plan?.name || ''
     },
     cycleDisplayName() {
@@ -179,14 +167,12 @@ export default {
       const pricing = this.plan.pricing?.[this.billingCycle]
       return pricing ? `${pricing.main}` : ''
     },
-    expiryDisplay() {
-      if (!this.successData?.subscription_expires_at) return ''
-      const d = new Date(this.successData.subscription_expires_at)
-      if (Number.isNaN(d.getTime())) return ''
-      const yyyy = d.getFullYear()
-      const mm = String(d.getMonth() + 1).padStart(2, '0')
-      const dd = String(d.getDate()).padStart(2, '0')
-      return `${yyyy}-${mm}-${dd}`
+    qrCodeSrc() {
+      const key = `${this.plan?.id}_${this.billingCycle}`
+      const entry = QR_CODE_MAP[key]
+      if (!entry) return '/static/payment/alipay-qr.png'
+      const method = this.payMethod === 'alipay' ? 'alipay' : 'wechat'
+      return `/static/payment/${method}-qr-${entry.cycle}-${entry.plan}(${entry.price}).png`
     }
   },
   watch: {
@@ -196,25 +182,18 @@ export default {
       }
     }
   },
-  beforeUnmount() {
-    this.stopPolling()
-  },
   methods: {
     reset() {
       this.loading = false
-      this.showSuccess = false
+      this.showSubmitted = false
       this.showQrCode = false
-      this.polling = false
+      this.submitting = false
       this.errorMsg = ''
       this.orderId = null
       this.orderAmount = ''
-      this.successData = null
-      this.pollCount = 0
       this.payMethod = 'alipay'
-      this.stopPolling()
     },
     handleClose() {
-      this.stopPolling()
       this.$emit('close')
     },
     async handlePay() {
@@ -238,71 +217,19 @@ export default {
       }
     },
     async handleConfirmPaid() {
-      if (this.polling) return
-      this.polling = true
+      if (this.submitting) return
+      this.submitting = true
       this.errorMsg = ''
 
       try {
         await notifyPaid(this.orderId)
       } catch {
-        // 通知失败不阻塞轮询
+        // 通知失败不阻塞
       }
 
-      this.startPolling()
-    },
-    startPolling() {
-      this.pollCount = 0
-      this.stopPolling()
-      this.pollTimer = setInterval(() => {
-        this.pollOrderStatus()
-      }, 3000)
-    },
-    stopPolling() {
-      if (this.pollTimer) {
-        clearInterval(this.pollTimer)
-        this.pollTimer = null
-      }
-    },
-    async pollOrderStatus() {
-      if (!this.orderId) return
-      this.pollCount++
-
-      // Stop after 10 minutes
-      if (this.pollCount > 200) {
-        this.stopPolling()
-        this.polling = false
-        this.errorMsg = '等待确认超时，请联系管理员'
-        return
-      }
-
-      try {
-        const order = await getOrderStatus(this.orderId)
-
-        if (order.status === 'paid') {
-          this.stopPolling()
-          this.polling = false
-          const user = await getMe()
-          const userStore = useUserStore()
-          userStore.setUser(user)
-
-          this.successData = {
-            ...order,
-            subscription_expires_at: user.subscription_expires_at
-          }
-          this.showSuccess = true
-          this.showQrCode = false
-          this.$emit('success', {
-            subscription_tier: user.subscription_tier,
-            subscription_expires_at: user.subscription_expires_at
-          })
-        } else if (order.status === 'expired' || order.status === 'cancelled') {
-          this.stopPolling()
-          this.polling = false
-          this.errorMsg = '订单已过期，请重新下单'
-        }
-      } catch {
-        // Ignore polling errors silently
-      }
+      this.showSubmitted = true
+      this.showQrCode = false
+      this.submitting = false
     },
     handleDone() {
       this.$emit('close')
@@ -561,14 +488,6 @@ export default {
   color: #fff;
 }
 
-.pm-waiting-hint {
-  display: block;
-  text-align: center;
-  margin-top: 10px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
-}
-
 .pm-error {
   display: block;
   text-align: center;
@@ -577,8 +496,8 @@ export default {
   color: #f87171;
 }
 
-/* Success State */
-.pm-success-content {
+/* Submitted State */
+.pm-submitted-content {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -586,29 +505,28 @@ export default {
   gap: 12px;
 }
 
-.pm-success-icon-wrap {
+.pm-submitted-icon-wrap {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: rgba(16, 185, 129, 0.15);
+  background: rgba(96, 165, 250, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.pm-success-check {
+.pm-submitted-icon {
   font-size: 28px;
-  font-weight: 700;
-  color: #10b981;
+  color: #60a5fa;
 }
 
-.pm-success-title {
+.pm-submitted-title {
   font-size: 20px;
   font-weight: 700;
   color: #fff;
 }
 
-.pm-success-desc {
+.pm-submitted-desc {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.55);
   text-align: center;
