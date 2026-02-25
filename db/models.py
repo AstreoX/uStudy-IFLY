@@ -1343,6 +1343,49 @@ class PaymentOrder(Base):
     )
 
 
+class PaymentQrCode(Base):
+    """收款码图片管理"""
+
+    __tablename__ = "payment_qr_codes"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    tier: Mapped[SubscriptionTier] = mapped_column(
+        Enum(SubscriptionTier), nullable=False
+    )
+    billing_cycle: Mapped[BillingCycle] = mapped_column(
+        Enum(
+            BillingCycle,
+            name="billingcycle",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        nullable=False,
+    )
+    pay_method: Mapped[str] = mapped_column(
+        String(20), nullable=False, comment="alipay / wechat"
+    )
+    display_filename: Mapped[str] = mapped_column(
+        String(255), nullable=False, comment="展示用二维码文件名"
+    )
+    save_filename: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="保存到相册用文件名"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tier", "billing_cycle", "pay_method", name="uq_payment_qr_combo"
+        ),
+    )
+
+
 class ReviewSchedule(Base):
     """艾宾浩斯遗忘曲线复习计划"""
 

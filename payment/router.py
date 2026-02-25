@@ -2,13 +2,13 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import get_current_user
 from db.database import get_db
-from db.models import User
+from db.models import BillingCycle, SubscriptionTier, User
 from payment.exceptions import (
     AlipayError,
     InvalidPlanError,
@@ -21,6 +21,7 @@ from payment.schemas import (
     CreateOrderResponse,
     OrderListItem,
     OrderStatusResponse,
+    QrCodeAdminItem,
 )
 from core.admin import ADMIN_EMAILS
 from payment.service import (
@@ -29,8 +30,10 @@ from payment.service import (
     get_order_status,
     handle_alipay_notification,
     list_pending_orders,
+    list_qr_codes,
     list_user_orders,
     notify_user_paid,
+    upload_qr_code,
 )
 
 logger = logging.getLogger(__name__)
@@ -119,6 +122,41 @@ async def admin_list_pending_orders(
     if current_user.email not in ADMIN_EMAILS:
         raise HTTPException(status_code=403, detail="无权限")
     return await list_pending_orders()
+
+
+@router.post("/admin/qr-codes")
+async def admin_upload_qr_code(
+    tier: SubscriptionTier = Form(...),
+    billing_cycle: BillingCycle = Form(...),
+    pay_method: str = Form(...),
+    variant: str = Form(...),
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """管理员上传/更新收款码图片"""
+    if current_user.email not in ADMIN_EMAILS:
+        raise HTTPException(status_code=403, detail="无权限")
+    if pay_method not in ("alipay", "wechat"):
+        raise HTTPException(status_code=400, detail="pay_method 必须是 alipay 或 wechat")
+    if variant not in ("display", "save"):
+        raise HTTPException(status_code=400, detail="variant 必须是 display 或 save")
+    try:
+        await upload_qr_code(db, tier, billing_cycle, pay_method, variant, file)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+@router.get("/admin/qr-codes", response_model=list[QrCodeAdminItem])
+async def admin_list_qr_codes(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """管理员查看所有收款码"""
+    if current_user.email not in ADMIN_EMAILS:
+        raise HTTPException(status_code=403, detail="无权限")
+    return await list_qr_codes(db)
 
 
 # ---- 支付宝回调（保留以备将来使用）----

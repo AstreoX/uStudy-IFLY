@@ -169,6 +169,11 @@ uploads_dir = Path(settings.upload_dir)
 uploads_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
+# 挂载支付收款码静态文件
+payment_static_dir = Path("static/payment")
+payment_static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static/payment", StaticFiles(directory=str(payment_static_dir)), name="payment-static")
+
 # 注册路由
 app.include_router(auth_router)
 app.include_router(activation_router)

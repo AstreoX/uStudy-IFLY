@@ -1,9 +1,12 @@
 """支付业务逻辑"""
 
 import logging
+import shutil
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
+from fastapi import UploadFile
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +16,7 @@ from db.models import (
     BillingCycle,
     OrderStatus,
     PaymentOrder,
+    PaymentQrCode,
     SubscriptionTier,
     User,
 )
@@ -32,11 +36,15 @@ from payment.schemas import (
     CreateOrderResponse,
     OrderListItem,
     OrderStatusResponse,
+    QrCodeAdminItem,
+    QrCodesResponse,
+    QrCodeUrls,
 )
 
 logger = logging.getLogger(__name__)
 
 ORDER_EXPIRY_MINUTES = 30
+PAYMENT_STATIC_DIR = Path("static/payment")
 
 # 定价方案名称映射
 _TIER_NAMES = {
@@ -61,6 +69,35 @@ def _generate_trade_no() -> str:
 def _cents_to_yuan(cents: int) -> str:
     """分 → 元字符串 (保留两位小数)"""
     return f"{cents / 100:.2f}"
+
+
+async def _build_qr_codes_response(
+    db: AsyncSession,
+    tier: SubscriptionTier,
+    billing_cycle: BillingCycle,
+) -> QrCodesResponse:
+    """Query payment_qr_codes table, return URLs for both methods."""
+    result = await db.execute(
+        select(PaymentQrCode).where(
+            PaymentQrCode.tier == tier,
+            PaymentQrCode.billing_cycle == billing_cycle,
+        )
+    )
+    rows = result.scalars().all()
+
+    codes: dict[str, QrCodeUrls] = {
+        "alipay": QrCodeUrls(),
+        "wechat": QrCodeUrls(),
+    }
+    for row in rows:
+        has_display = row.display_filename and row.display_filename != "PLACEHOLDER"
+        urls = QrCodeUrls(
+            display=f"/static/payment/{row.display_filename}" if has_display else None,
+            save=f"/static/payment/{row.save_filename}" if row.save_filename else None,
+        )
+        codes[row.pay_method] = urls
+
+    return QrCodesResponse(**codes)
 
 
 async def create_order(
@@ -112,12 +149,15 @@ async def create_order(
     await db.commit()
     await db.refresh(order)
 
+    qr_codes = await _build_qr_codes_response(db, tier, billing_cycle)
+
     return CreateOrderResponse(
         order_id=order.id,
         out_trade_no=out_trade_no,
         amount_cents=amount_cents,
         amount_display=f"¥{total_amount}",
         expires_at=order.expires_at,
+        qr_codes=qr_codes,
     )
 
 
@@ -487,6 +527,82 @@ async def expire_stale_orders() -> int:
     if count > 0:
         logger.info(f"Expired {count} stale payment orders")
     return count
+
+
+_ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+async def upload_qr_code(
+    db: AsyncSession,
+    tier: SubscriptionTier,
+    billing_cycle: BillingCycle,
+    pay_method: str,
+    variant: str,
+    file: UploadFile,
+) -> None:
+    """上传/更新收款码图片"""
+    raw_ext = Path(file.filename).suffix.lower() if file.filename else ".png"
+    if raw_ext not in _ALLOWED_IMAGE_EXTS:
+        raise ValueError(f"不支持的文件格式: {raw_ext}，仅支持 {', '.join(_ALLOWED_IMAGE_EXTS)}")
+    filename = f"qr_{tier.value}_{billing_cycle.value}_{pay_method}_{variant}{raw_ext}"
+
+    PAYMENT_STATIC_DIR.mkdir(parents=True, exist_ok=True)
+    dest = PAYMENT_STATIC_DIR / filename
+    with open(dest, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    result = await db.execute(
+        select(PaymentQrCode).where(
+            PaymentQrCode.tier == tier,
+            PaymentQrCode.billing_cycle == billing_cycle,
+            PaymentQrCode.pay_method == pay_method,
+        )
+    )
+    row = result.scalar_one_or_none()
+
+    if row:
+        if variant == "display":
+            row.display_filename = filename
+        else:
+            row.save_filename = filename
+    else:
+        row = PaymentQrCode(
+            tier=tier,
+            billing_cycle=billing_cycle,
+            pay_method=pay_method,
+            display_filename=filename if variant == "display" else "PLACEHOLDER",
+            save_filename=filename if variant == "save" else None,
+        )
+        db.add(row)
+
+    await db.commit()
+
+
+async def list_qr_codes(db: AsyncSession) -> list[QrCodeAdminItem]:
+    """管理员查看所有收款码"""
+    result = await db.execute(
+        select(PaymentQrCode).order_by(
+            PaymentQrCode.tier, PaymentQrCode.billing_cycle
+        )
+    )
+    rows = result.scalars().all()
+
+    return [
+        QrCodeAdminItem(
+            id=row.id,
+            tier=row.tier,
+            billing_cycle=row.billing_cycle,
+            pay_method=row.pay_method,
+            display_url=(
+                f"/static/payment/{row.display_filename}"
+                if row.display_filename and row.display_filename != "PLACEHOLDER"
+                else None
+            ),
+            save_url=f"/static/payment/{row.save_filename}" if row.save_filename else None,
+            updated_at=row.updated_at,
+        )
+        for row in rows
+    ]
 
 
 def _order_to_response(order: PaymentOrder) -> OrderStatusResponse:
