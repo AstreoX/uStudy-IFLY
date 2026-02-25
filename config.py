@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     # OpenRouter / LLM 配置
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_bridge_url: str = ""  # JP bridge for region-restricted models (Gemini etc.)
     openrouter_model: str = "x-ai/grok-4-fast"
     gemini_model: str = "x-ai/grok-4-fast"
     llm_timeout_seconds: int = 300  # 5分钟

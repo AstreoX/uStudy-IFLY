@@ -18,6 +18,16 @@ from config import get_settings
 
 logger = logging.getLogger(__name__)
 
+
+def _model_needs_bridge(openrouter_id: str) -> bool:
+    """Check if a model requires routing through the JP bridge."""
+    from chat.models_config import ALLOWED_MODELS
+
+    return any(
+        info.get("use_bridge") and info["openrouter_id"] == openrouter_id
+        for info in ALLOWED_MODELS.values()
+    )
+
 # 可重试的网络异常类型
 RETRYABLE_EXCEPTIONS = (
     httpx.HTTPStatusError,
@@ -76,6 +86,10 @@ class OpenRouterClient:
         self.base_url = self.settings.openrouter_base_url
         self.api_key = self.settings.openrouter_api_key
         self.model = model_override or self.settings.openrouter_model
+
+        # Route region-restricted models through JP bridge
+        if self.settings.openrouter_bridge_url and _model_needs_bridge(self.model):
+            self.base_url = self.settings.openrouter_bridge_url
         self.timeout = self.settings.llm_timeout_seconds
         self.max_retries = self.settings.llm_max_retries
         self.proxy_url = self.settings.llm_proxy_url or None

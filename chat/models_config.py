@@ -23,6 +23,7 @@ ALLOWED_MODELS: dict[str, dict[str, Any]] = {
         "openrouter_id": "google/gemini-3.1-pro-preview",
         "display_name": "Gemini 3.1 Pro",
         "description": "Google 最新模型，综合能力强",
+        "use_bridge": True,
     },
 }
 
