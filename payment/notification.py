@@ -273,7 +273,17 @@ def _build_user_rejected_html(
                     {html.escape(amount_display)}）未通过审核。
                 </p>
                 <p style="font-size: 14px; color: #333; margin: 0;">
-                    如有疑问，请联系客服。
+                    如您已完成付款但订单被拒绝，可能是管理员未查收到对应款项，请添加客服微信联系我们处理：
+                </p>
+            </div>
+            <div style="margin-top: 16px; padding: 14px 16px; background: #f0fdf4; border-radius: 8px;
+                        border: 1px solid #d1fae5;">
+                <p style="font-size: 13px; color: #666; margin: 0 0 8px;">客服微信</p>
+                <p style="font-size: 15px; color: #333; margin: 0 0 6px;">
+                    <strong style="color: #10b981;">instructrualism</strong>
+                </p>
+                <p style="font-size: 15px; color: #333; margin: 0;">
+                    <strong style="color: #10b981;">Gmrnobodyzx</strong>
                 </p>
             </div>
             <div style="text-align: center; padding-top: 16px; margin-top: 16px;
