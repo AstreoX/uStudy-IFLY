@@ -9,7 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ENUM, UUID
 
 # revision identifiers, used by Alembic.
 revision: str = "payment_qr_v1"
@@ -22,8 +22,8 @@ def upgrade() -> None:
     op.create_table(
         "payment_qr_codes",
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tier", sa.Enum("FREE", "BASIC", "PREMIUM", "ALPHA", name="subscriptiontier", create_type=False), nullable=False),
-        sa.Column("billing_cycle", sa.Enum("monthly", "semester", "yearly", name="billingcycle", create_type=False), nullable=False),
+        sa.Column("tier", ENUM("FREE", "BASIC", "PREMIUM", "ALPHA", name="subscriptiontier", create_type=False), nullable=False),
+        sa.Column("billing_cycle", ENUM("monthly", "semester", "yearly", name="billingcycle", create_type=False), nullable=False),
         sa.Column("pay_method", sa.String(20), nullable=False, comment="alipay / wechat"),
         sa.Column("display_filename", sa.String(255), nullable=False, comment="展示用二维码文件名"),
         sa.Column("save_filename", sa.String(255), nullable=True, comment="保存到相册用文件名"),
