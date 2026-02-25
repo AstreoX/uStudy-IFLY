@@ -390,14 +390,16 @@ export default {
     },
     normalizedTier() {
       const tier = (this.userTier || 'FREE').toUpperCase()
-      if (['FREE', 'PLUS', 'ULTRA', 'ALPHA'].includes(tier)) return tier
+      const tierMap = { BASIC: 'PLUS', PREMIUM: 'ULTRA' }
+      const mapped = tierMap[tier] || tier
+      if (['FREE', 'PLUS', 'ULTRA', 'ALPHA'].includes(mapped)) return mapped
       return 'FREE'
     },
     storageLimits() {
       return {
-        FREE: 50 * 1024 * 1024,
-        PLUS: 100 * 1024 * 1024,
-        ULTRA: 300 * 1024 * 1024,
+        FREE: 30 * 1024 * 1024,
+        PLUS: 200 * 1024 * 1024,
+        ULTRA: 500 * 1024 * 1024,
         ALPHA: 500 * 1024 * 1024
       }
     },

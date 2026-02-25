@@ -448,8 +448,24 @@ export default {
           ...(hasPreferences && { learning_preferences: learningPreferences })
         })
       } catch (err) {
-        const errorMsg = err?.data?.detail?.message || err?.data?.message || '创建失败，请重试'
-        uni.showToast({ title: errorMsg, icon: 'none' })
+        const errData = err?.data || {}
+        const errCode = errData?.detail?.code || errData?.code
+        if (errCode === 'SPACE_COUNT_QUOTA_EXCEEDED') {
+          uni.showModal({
+            title: '空间数量已达上限',
+            content: errData.detail?.message || errData.message || '升级订阅以创建更多学习空间',
+            confirmText: '去升级',
+            cancelText: '知道了',
+            success: (res) => {
+              if (res.confirm) {
+                uni.navigateTo({ url: '/pages/account/account' })
+              }
+            }
+          })
+        } else {
+          const errorMsg = errData?.detail?.message || errData?.message || '创建失败，请重试'
+          uni.showToast({ title: errorMsg, icon: 'none' })
+        }
         this.isCreating = false
         return
       }

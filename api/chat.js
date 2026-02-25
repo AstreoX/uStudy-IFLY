@@ -94,6 +94,24 @@ export function deleteAttachment(attachmentId) {
   })
 }
 
+/**
+ * Parse quota error from SSE connection error message
+ */
+function parseQuotaError(errMessage) {
+  const match = errMessage?.match(/^HTTP (\d+): (.+)$/s)
+  if (!match) return null
+  const statusCode = parseInt(match[1])
+  if (statusCode !== 429 && statusCode !== 403) return null
+  try {
+    const body = JSON.parse(match[2])
+    if (body.detail?.code || body.code) {
+      const detail = body.detail || body
+      return { statusCode, code: detail.code, message: detail.message || errMessage }
+    }
+  } catch {}
+  return null
+}
+
 // ==================== Quick Chat API ====================
 
 /**
@@ -164,7 +182,15 @@ export function sendQuickChatMessage(conversationId, content, callbacks, attachm
       }
     },
     onComplete: () => callbacks.onComplete?.(),
-    onConnectionError: (err) => callbacks.onError?.(err.message || 'Connection failed')
+    onConnectionError: (err) => {
+      const quotaErr = parseQuotaError(err.message || String(err))
+      if (quotaErr) {
+        callbacks.onQuotaError?.(quotaErr)
+        if (!callbacks.onQuotaError) callbacks.onError?.(quotaErr.message)
+      } else {
+        callbacks.onError?.(err.message || 'Connection failed')
+      }
+    }
   })
 }
 
@@ -253,6 +279,14 @@ export function sendMessage(conversationId, content, callbacks, attachmentIds = 
       }
     },
     onComplete: () => callbacks.onComplete?.(),
-    onConnectionError: (err) => callbacks.onError?.(err.message || 'Connection failed')
+    onConnectionError: (err) => {
+      const quotaErr = parseQuotaError(err.message || String(err))
+      if (quotaErr) {
+        callbacks.onQuotaError?.(quotaErr)
+        if (!callbacks.onQuotaError) callbacks.onError?.(quotaErr.message)
+      } else {
+        callbacks.onError?.(err.message || 'Connection failed')
+      }
+    }
   })
 }
