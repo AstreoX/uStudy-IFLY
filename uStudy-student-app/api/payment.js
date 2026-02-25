@@ -1,0 +1,16 @@
+import { request } from '@/utils/request'
+
+export function createOrder({ tier, billing_cycle }) {
+  return request({
+    url: '/api/payment/orders',
+    method: 'POST',
+    data: { tier, billing_cycle }
+  })
+}
+
+export function notifyPaid(orderId) {
+  return request({
+    url: `/api/payment/orders/${orderId}/notify`,
+    method: 'POST'
+  })
+}

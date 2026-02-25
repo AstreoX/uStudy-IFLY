@@ -369,7 +369,7 @@ export default {
     },
 
     handleSubscription() {
-      this.showCustomToast('即将推出', 'info')
+      uni.navigateTo({ url: '/pages/subscription/subscription' })
     },
 
     // 关于弹窗
