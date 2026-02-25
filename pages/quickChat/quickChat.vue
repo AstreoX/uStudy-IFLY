@@ -206,10 +206,10 @@
                     <text class="thinking-label">
                       {{ msg.isThinking ? '深度思考中...' : `已深度思考 ${msg.thinkingDuration} 秒` }}
                     </text>
-                    <text class="thinking-toggle">{{ isThinkingExpanded(msg.id) ? '▼' : '▶' }}</text>
+                    <text class="thinking-chevron" :class="{ 'thinking-chevron-expanded': isThinkingExpanded(msg.id) || msg.isThinking }">&#9662;</text>
                   </view>
-                  <view v-show="isThinkingExpanded(msg.id) || msg.isThinking" class="thinking-content">
-                    <MarkdownRender :content="msg.thinkingContent" />
+                  <view class="thinking-body" :class="{ 'thinking-body-collapsed': !isThinkingExpanded(msg.id) && !msg.isThinking }">
+                    <text class="thinking-text">{{ msg.thinkingContent }}</text>
                   </view>
                 </view>
 
@@ -569,6 +569,9 @@ export default {
       // Thinking model state
       thinkingStartTime: null,
       thinkingExpanded: {},
+      thinkingBuffer: '',
+      thinkingTimer: null,
+      thinkingMsgId: null,
 
       // Model selection
       availableModels: [],
@@ -633,6 +636,7 @@ export default {
     this.cleanupPendingAttachments()
     this._persistFailedMessages()
     this.stopTypewriter()
+    this.flushThinkingBuffer()
     if (this.cancelSSE) {
       this.cancelSSE()
       this.cancelSSE = null
@@ -1009,15 +1013,13 @@ export default {
             this.thinkingStartTime = Date.now()
             this.thinkingExpanded = { ...this.thinkingExpanded, [aiMsgId]: true }
           }
-          msg.thinkingContent += content
-          if (this.isAutoScrollEnabled) {
-            this.$nextTick(() => this.scrollToBottom())
-          }
+          this.appendThinkingText(aiMsgId, content)
         },
 
         onTextDelta: (content) => {
           const msg = this.messages.find(m => m.id === aiMsgId)
           if (msg && msg.isThinking) {
+            this.flushThinkingBuffer()
             msg.isThinking = false
             msg.thinkingDuration = this.thinkingStartTime
               ? Math.round((Date.now() - this.thinkingStartTime) / 1000)
@@ -1035,6 +1037,7 @@ export default {
         onDone: (fullContent) => {
           if (finalized) return
           finalized = true
+          this.flushThinkingBuffer()
           this.flushTypewriter()
           const aiMsg = this.messages.find(m => m.id === aiMsgId)
           if (aiMsg) {
@@ -1085,6 +1088,7 @@ export default {
         onQuotaError: (info) => {
           if (finalized) return
           finalized = true
+          this.flushThinkingBuffer()
           this.flushTypewriter()
           uni.showToast({ title: info.message || '配额已达上限', icon: 'none', duration: 3000 })
           const aiMsg = this.messages.find(m => m.id === aiMsgId)
@@ -1103,6 +1107,7 @@ export default {
         onError: (message) => {
           if (finalized) return
           finalized = true
+          this.flushThinkingBuffer()
           this.flushTypewriter()
           const aiMsg = this.messages.find(m => m.id === aiMsgId)
           if (aiMsg) {
@@ -1123,6 +1128,7 @@ export default {
         onComplete: () => {
           if (finalized) return
           finalized = true
+          this.flushThinkingBuffer()
           this.flushTypewriter()
           const aiMsg = this.messages.find(m => m.id === aiMsgId)
           if (aiMsg && aiMsg.isStreaming) {
@@ -1159,6 +1165,7 @@ export default {
         if (existing) return
 
         // Flush typewriter buffer before saving current content to streamSegments
+        this.flushThinkingBuffer()
         this.flushTypewriter()
 
         if (!msg.streamSegments || msg.streamSegments === null) {
@@ -1956,6 +1963,49 @@ export default {
       this.stopTypewriter()
     },
 
+    // ==================== Thinking Typewriter ====================
+
+    appendThinkingText(msgId, text) {
+      if (this.thinkingMsgId !== msgId) {
+        this.flushThinkingBuffer()
+        this.thinkingMsgId = msgId
+      }
+      this.thinkingBuffer += text
+      if (!this.thinkingTimer) {
+        this.thinkingTimer = setInterval(() => {
+          if (this.thinkingBuffer.length === 0) {
+            clearInterval(this.thinkingTimer)
+            this.thinkingTimer = null
+            return
+          }
+          const chunk = this.thinkingBuffer.slice(0, 2)
+          this.thinkingBuffer = this.thinkingBuffer.slice(2)
+          const msg = this.messages.find(m => m.id === this.thinkingMsgId)
+          if (msg) {
+            msg.thinkingContent = (msg.thinkingContent || '') + chunk
+          }
+          if (this.isAutoScrollEnabled) {
+            this.$nextTick(() => this.scrollToBottom())
+          }
+        }, 15)
+      }
+    },
+
+    flushThinkingBuffer() {
+      if (this.thinkingTimer) {
+        clearInterval(this.thinkingTimer)
+        this.thinkingTimer = null
+      }
+      if (this.thinkingBuffer && this.thinkingMsgId) {
+        const msg = this.messages.find(m => m.id === this.thinkingMsgId)
+        if (msg) {
+          msg.thinkingContent = (msg.thinkingContent || '') + this.thinkingBuffer
+        }
+      }
+      this.thinkingBuffer = ''
+      this.thinkingMsgId = null
+    },
+
     // ==================== Scroll ====================
 
     scrollToBottom() {
@@ -1971,6 +2021,7 @@ export default {
     },
 
     handleStop() {
+      this.flushThinkingBuffer()
       this.flushTypewriter()
 
       if (this.cancelSSE) {
@@ -2143,6 +2194,7 @@ export default {
         return
       }
 
+      this.flushThinkingBuffer()
       this.flushTypewriter()
       if (this.cancelSSE) {
         this.cancelSSE()
@@ -2188,6 +2240,7 @@ export default {
     },
 
     handleNewConversation() {
+      this.flushThinkingBuffer()
       this.flushTypewriter()
       if (this.cancelSSE) {
         this.cancelSSE()
@@ -3693,23 +3746,14 @@ textarea.chat-input-textarea {
 .thinking-block {
   width: 100%;
   margin-bottom: 8px;
-  border-left: 2px solid rgba(168, 85, 247, 0.4);
-  border-radius: 4px;
-  background: rgba(168, 85, 247, 0.06);
   overflow: hidden;
-  transition: border-color 0.3s ease, background 0.3s ease;
-}
-
-.thinking-block.thinking-active {
-  border-color: rgba(168, 85, 247, 0.7);
-  background: rgba(168, 85, 247, 0.1);
 }
 
 .thinking-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 4px 0;
   cursor: pointer;
   user-select: none;
 }
@@ -3729,32 +3773,45 @@ textarea.chat-input-textarea {
 }
 
 .thinking-label {
-  font-size: 12px;
-  color: rgba(168, 85, 247, 0.8);
+  font-size: 13px;
+  color: rgba(168, 85, 247, 0.85);
   flex: 1;
 }
 
-.thinking-toggle {
+.thinking-chevron {
   font-size: 10px;
-  color: rgba(168, 85, 247, 0.5);
+  color: rgba(168, 85, 247, 0.6);
   flex-shrink: 0;
+  transition: transform 0.2s ease;
+  display: inline-block;
 }
 
-.thinking-content {
-  padding: 0 10px 8px 10px;
+.thinking-chevron-expanded {
+  transform: rotate(180deg);
+}
+
+.thinking-body {
+  padding-left: 12px;
+  border-left: 2px solid rgba(168, 85, 247, 0.4);
+  max-height: 800px;
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height 0.35s ease-out, opacity 0.25s ease 0.05s, margin-top 0.25s ease;
+  margin-top: 4px;
+}
+
+.thinking-body-collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+  transition: max-height 0.2s cubic-bezier(0, 0.8, 0.3, 1), opacity 0.15s ease, margin-top 0.15s ease;
+}
+
+.thinking-text {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.55);
-  line-height: 1.5;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.thinking-content::-webkit-scrollbar {
-  width: 3px;
-}
-
-.thinking-content::-webkit-scrollbar-thumb {
-  background: rgba(168, 85, 247, 0.2);
-  border-radius: 3px;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>
