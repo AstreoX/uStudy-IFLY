@@ -64,7 +64,7 @@ def get_available_models(
             "display_name": info["display_name"],
             "description": info["description"],
             "is_default": info.get("is_default", False),
+            "locked": allowed_ids is not None and mid not in allowed_ids,
         }
         for mid, info in ALLOWED_MODELS.items()
-        if allowed_ids is None or mid in allowed_ids
     ]
