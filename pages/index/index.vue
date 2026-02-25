@@ -18,6 +18,18 @@
 
     <!-- Main Content -->
     <view class="main-content">
+      <!-- 订阅到期提醒 -->
+      <view
+        v-if="showExpiryBanner"
+        class="expiry-banner"
+        @click="goToActivation"
+      >
+        <text class="expiry-banner-text">
+          你的 {{ expiryTierLabel }} 订阅将于 {{ expiryDateStr }} 到期，续费可继续享受完整功能
+        </text>
+        <text class="expiry-banner-close" @click.stop="dismissExpiryBanner">✕</text>
+      </view>
+
       <!-- Header + Daily Quote Bar -->
       <DailyQuoteBar>
         <template #left>
@@ -119,8 +131,36 @@ export default {
       editMode: false,
       showPicker: false,
       showActivationModal: false,
+      expiryBannerDismissed: false,
       widgetStore: useWidgetStore(),
       catalog: WIDGET_CATALOG
+    }
+  },
+  computed: {
+    userStore() {
+      return useUserStore()
+    },
+    subscriptionExpiryInfo() {
+      const user = this.userStore?.user
+      if (!user?.subscription_expires_at) return null
+      const tier = (user.subscription_tier || 'FREE').toUpperCase()
+      if (tier === 'FREE') return null
+      const expiresAt = new Date(user.subscription_expires_at)
+      if (isNaN(expiresAt.getTime())) return null
+      const now = new Date()
+      const daysLeft = Math.ceil((expiresAt - now) / (1000 * 60 * 60 * 24))
+      if (daysLeft <= 0 || daysLeft > 7) return null
+      const tierMap = { BASIC: 'Plus', PREMIUM: 'Ultra', PLUS: 'Plus', ULTRA: 'Ultra', ALPHA: 'Alpha' }
+      return { daysLeft, label: tierMap[tier] || tier, dateStr: expiresAt.toISOString().slice(0, 10) }
+    },
+    showExpiryBanner() {
+      return this.subscriptionExpiryInfo && !this.expiryBannerDismissed
+    },
+    expiryTierLabel() {
+      return this.subscriptionExpiryInfo?.label || ''
+    },
+    expiryDateStr() {
+      return this.subscriptionExpiryInfo?.dateStr || ''
     }
   },
   onShow() {
@@ -201,6 +241,12 @@ export default {
     },
     handleCreateSpace() {
       uni.navigateTo({ url: '/pages/createSpace/createSpace' })
+    },
+    dismissExpiryBanner() {
+      this.expiryBannerDismissed = true
+    },
+    goToActivation() {
+      uni.navigateTo({ url: '/pages/activation/activation' })
     }
   }
 }
@@ -496,5 +542,29 @@ export default {
 
 .grid-area::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* Expiry Banner */
+.expiry-banner {
+  display: flex;
+  align-items: center;
+  padding: 10px 20px;
+  background: linear-gradient(90deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05));
+  border-bottom: 1px solid rgba(245,158,11,0.3);
+  cursor: pointer;
+}
+.expiry-banner-text {
+  flex: 1;
+  font-size: 13px;
+  color: #F59E0B;
+}
+.expiry-banner-close {
+  font-size: 16px;
+  color: rgba(245,158,11,0.6);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.expiry-banner-close:hover {
+  color: #F59E0B;
 }
 </style>
