@@ -21,3 +21,4 @@ class QuotaStatusResponse(BaseModel):
     space_count: QuotaUsage
     allowed_models: list[str]
     storage_per_space_bytes: int
+    max_upload_file_bytes: int

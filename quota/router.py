@@ -59,4 +59,5 @@ async def get_quota_status(
         ),
         allowed_models=list(limits.allowed_model_ids),
         storage_per_space_bytes=limits.storage_per_space_bytes,
+        max_upload_file_bytes=limits.max_upload_file_bytes,
     )

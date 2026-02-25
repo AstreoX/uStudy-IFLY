@@ -11,6 +11,7 @@ class TierLimits:
     daily_messages: int | None  # None = unlimited
     allowed_model_ids: tuple[str, ...]
     storage_per_space_bytes: int
+    max_upload_file_bytes: int
 
 
 TIER_LIMITS: dict[SubscriptionTier, TierLimits] = {
@@ -19,24 +20,28 @@ TIER_LIMITS: dict[SubscriptionTier, TierLimits] = {
         daily_messages=20,
         allowed_model_ids=("grok-4-fast",),
         storage_per_space_bytes=30 * 1024 * 1024,  # 30 MB
+        max_upload_file_bytes=10 * 1024 * 1024,  # 10 MB
     ),
     SubscriptionTier.BASIC: TierLimits(
         max_spaces=5,
         daily_messages=150,
         allowed_model_ids=("grok-4-fast", "kimi-k2.5"),
         storage_per_space_bytes=200 * 1024 * 1024,  # 200 MB
+        max_upload_file_bytes=50 * 1024 * 1024,  # 50 MB
     ),
     SubscriptionTier.PREMIUM: TierLimits(
         max_spaces=None,
         daily_messages=None,
         allowed_model_ids=("grok-4-fast", "kimi-k2.5", "gemini-3.1-pro"),
         storage_per_space_bytes=500 * 1024 * 1024,  # 500 MB
+        max_upload_file_bytes=100 * 1024 * 1024,  # 100 MB
     ),
     SubscriptionTier.ALPHA: TierLimits(
         max_spaces=None,
         daily_messages=None,
         allowed_model_ids=("grok-4-fast", "kimi-k2.5", "gemini-3.1-pro"),
         storage_per_space_bytes=500 * 1024 * 1024,  # 500 MB
+        max_upload_file_bytes=100 * 1024 * 1024,  # 100 MB
     ),
 }
 

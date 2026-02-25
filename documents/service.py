@@ -92,16 +92,25 @@ async def upload_document(
     # 读取文件内容
     content = await file.read()
 
-    # Storage quota check
+    # 确定单文件大小限制（按用户等级）
     if user is not None:
-        await check_storage_quota(db, user, space_id, len(content))
+        from quota.service import get_user_tier_limits
+
+        limits = get_user_tier_limits(user)
+        max_file_bytes = limits.max_upload_file_bytes
+    else:
+        max_file_bytes = settings.document_max_size_bytes
 
     # 验证文件大小
-    if len(content) > settings.document_max_size_bytes:
-        max_mb = settings.document_max_size_bytes // (1024 * 1024)
+    if len(content) > max_file_bytes:
+        max_mb = max_file_bytes // (1024 * 1024)
         raise HTTPException(
             status_code=400, detail=f"文件大小超过限制（最大 {max_mb}MB）"
         )
+
+    # Storage quota check
+    if user is not None:
+        await check_storage_quota(db, user, space_id, len(content))
 
     # 生成存储路径
     documents_dir = Path(settings.upload_dir) / "documents"
