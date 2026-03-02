@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
@@ -35,6 +36,10 @@ RETRYABLE_EXCEPTIONS = (
     httpx.ConnectError,
     httpx.RemoteProtocolError,  # 服务器意外断开连接
 )
+
+
+# Module-level shared httpx client pool (keyed by base_url:proxy_url)
+_shared_clients: dict[str, httpx.AsyncClient] = {}
 
 
 class OpenRouterClientError(Exception):
@@ -100,6 +105,21 @@ class OpenRouterClient:
         if self.proxy_url:
             kwargs["proxy"] = self.proxy_url
         return kwargs
+
+    def _get_shared_client(self) -> httpx.AsyncClient:
+        """Get or create a shared httpx client with connection pooling."""
+        key = f"{self.base_url}:{self.proxy_url}"
+        client = _shared_clients.get(key)
+        if client is None or client.is_closed:
+            _shared_clients[key] = httpx.AsyncClient(
+                **self._get_client_kwargs(),
+                limits=httpx.Limits(
+                    max_connections=20,
+                    max_keepalive_connections=10,
+                    keepalive_expiry=30,
+                ),
+            )
+        return _shared_clients[key]
 
     def _get_headers(self) -> dict[str, str]:
         """获取请求头"""
@@ -370,145 +390,158 @@ class OpenRouterClient:
         last_error: Exception | None = None
 
         for attempt in range(self.max_retries):
+            t_attempt_start = time.monotonic()
+            logger.info(f"[Perf] LLM attempt {attempt+1}: model={self.model}, base_url={self.base_url}")
+
             try:
-                async with httpx.AsyncClient(**self._get_client_kwargs()) as client:
-                    async with client.stream(
-                        "POST",
-                        f"{self.base_url}/chat/completions",
-                        headers=self._get_headers(),
-                        json={
-                            "model": self.model,
-                            "messages": messages,
-                            "tools": tools,
-                            "temperature": temperature,
-                            "max_tokens": max_tokens,
-                            "stream": True,
-                            "stream_options": {"include_usage": True},
-                            # Only request reasoning for thinking-capable models
-                            **({"reasoning": {"effort": "high"}} if "thinking" in self.model.lower() else {}),
-                        },
-                    ) as response:
-                        response.raise_for_status()
+                client = self._get_shared_client()
+                t_conn = time.monotonic()
+                logger.info(f"[Perf] httpx client ready: {(t_conn-t_attempt_start)*1000:.0f}ms")
 
-                        # 用于累积工具调用参数
-                        tool_calls_buffer: dict[int, dict[str, Any]] = {}
-                        # 用于累积 token 用量（OpenRouter 在 finish_reason 之后的单独 chunk 返回）
-                        accumulated_usage: dict[str, int] = {}
-                        # 记录 finish_reason（可能在 usage 之前到达）
-                        final_finish_reason: str | None = None
+                async with client.stream(
+                    "POST",
+                    f"{self.base_url}/chat/completions",
+                    headers=self._get_headers(),
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "tools": tools,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
+                        "stream": True,
+                        "stream_options": {"include_usage": True},
+                        # Only request reasoning for thinking-capable models
+                        **({"reasoning": {"effort": "high"}} if "thinking" in self.model.lower() else {}),
+                    },
+                ) as response:
+                    t_response = time.monotonic()
+                    logger.info(f"[Perf] HTTP response received (status={response.status_code}): {(t_response-t_conn)*1000:.0f}ms")
+                    response.raise_for_status()
 
-                        async for line in response.aiter_lines():
-                            if not line.startswith("data: "):
-                                continue
+                    # 用于累积工具调用参数
+                    tool_calls_buffer: dict[int, dict[str, Any]] = {}
+                    # 用于累积 token 用量（OpenRouter 在 finish_reason 之后的单独 chunk 返回）
+                    accumulated_usage: dict[str, int] = {}
+                    # 记录 finish_reason（可能在 usage 之前到达）
+                    final_finish_reason: str | None = None
+                    first_sse_line = True
 
-                            data_str = line[6:]
-                            if data_str == "[DONE]":
-                                break
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
 
+                        if first_sse_line:
+                            logger.info(f"[Perf] First SSE line from LLM: {(time.monotonic()-t_response)*1000:.0f}ms")
+                            first_sse_line = False
+
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            break
+
+                        try:
+                            data = json.loads(data_str)
+                        except json.JSONDecodeError as e:
+                            logger.warning("流式响应 JSON 解析失败: %s, line: %s", e, data_str[:100])
+                            continue
+
+                        if "error" in data:
+                            error_msg = data.get("error", {})
+                            error_text = error_msg.get("message", str(error_msg)) if isinstance(error_msg, dict) else str(error_msg)
+                            logger.error("流式 LLM API 错误: %s", error_text)
+                            raise Exception(f"LLM API 错误: {error_text}")
+
+                        choices = data.get("choices", [])
+
+                        # 检查 usage 字段（OpenRouter 在 finish_reason 之后的单独 chunk 返回）
+                        if "usage" in data and data["usage"]:
+                            accumulated_usage = data["usage"]
+
+                        if not choices:
+                            continue
+
+                        choice = choices[0]
+                        delta = choice.get("delta", {})
+                        finish_reason = choice.get("finish_reason")
+
+                        # 处理 thinking 内容（reasoning 模型的推理过程）
+                        # OpenRouter 返回 reasoning (字符串) 和 reasoning_details (数组)
+                        reasoning = delta.get("reasoning") or delta.get("reasoning_content")
+                        if not reasoning and delta.get("reasoning_details"):
+                            for detail in delta["reasoning_details"]:
+                                if isinstance(detail, dict) and detail.get("text"):
+                                    reasoning = (reasoning or "") + detail["text"]
+                        if reasoning:
+                            yield {"type": "thinking", "content": reasoning}
+
+                        # 处理文本内容 - 立即发送
+                        if delta.get("content"):
+                            yield {"type": "content", "content": delta["content"]}
+
+                        # 处理工具调用
+                        if delta.get("tool_calls"):
+                            for tc in delta["tool_calls"]:
+                                index = tc.get("index", 0)
+
+                                # 新工具调用开始
+                                if tc.get("id"):
+                                    tool_calls_buffer[index] = {
+                                        "id": tc["id"],
+                                        "name": tc.get("function", {}).get("name", ""),
+                                        "arguments": ""
+                                    }
+                                    yield {
+                                        "type": "tool_call_start",
+                                        "id": tc["id"],
+                                        "name": tc.get("function", {}).get("name", "")
+                                    }
+
+                                # 工具名称增量（某些模型可能分开发送）
+                                if tc.get("function", {}).get("name") and index in tool_calls_buffer:
+                                    if not tool_calls_buffer[index]["name"]:
+                                        tool_calls_buffer[index]["name"] = tc["function"]["name"]
+
+                                # 参数增量
+                                if tc.get("function", {}).get("arguments"):
+                                    args_delta = tc["function"]["arguments"]
+                                    if index in tool_calls_buffer:
+                                        tool_calls_buffer[index]["arguments"] += args_delta
+
+                        # 记录 finish_reason（但不立即结束，等待 usage chunk）
+                        # tool_call_end 统一在循环结束后发送，避免 Gemini/OpenRouter
+                        # finish_reason 先于部分 tool_call delta 到达导致遗漏
+                        if finish_reason:
+                            final_finish_reason = finish_reason
+
+                    # 循环结束（[DONE] 后），统一发送所有 tool_call_end
+                    if tool_calls_buffer:
+                        for tc_data in tool_calls_buffer.values():
                             try:
-                                data = json.loads(data_str)
-                            except json.JSONDecodeError as e:
-                                logger.warning("流式响应 JSON 解析失败: %s, line: %s", e, data_str[:100])
-                                continue
-
-                            if "error" in data:
-                                error_msg = data.get("error", {})
-                                error_text = error_msg.get("message", str(error_msg)) if isinstance(error_msg, dict) else str(error_msg)
-                                logger.error("流式 LLM API 错误: %s", error_text)
-                                raise Exception(f"LLM API 错误: {error_text}")
-
-                            choices = data.get("choices", [])
-
-                            # 检查 usage 字段（OpenRouter 在 finish_reason 之后的单独 chunk 返回）
-                            if "usage" in data and data["usage"]:
-                                accumulated_usage = data["usage"]
-
-                            if not choices:
-                                continue
-
-                            choice = choices[0]
-                            delta = choice.get("delta", {})
-                            finish_reason = choice.get("finish_reason")
-
-                            # 处理 thinking 内容（reasoning 模型的推理过程）
-                            # OpenRouter 返回 reasoning (字符串) 和 reasoning_details (数组)
-                            reasoning = delta.get("reasoning") or delta.get("reasoning_content")
-                            if not reasoning and delta.get("reasoning_details"):
-                                for detail in delta["reasoning_details"]:
-                                    if isinstance(detail, dict) and detail.get("text"):
-                                        reasoning = (reasoning or "") + detail["text"]
-                            if reasoning:
-                                yield {"type": "thinking", "content": reasoning}
-
-                            # 处理文本内容 - 立即发送
-                            if delta.get("content"):
-                                yield {"type": "content", "content": delta["content"]}
-
-                            # 处理工具调用
-                            if delta.get("tool_calls"):
-                                for tc in delta["tool_calls"]:
-                                    index = tc.get("index", 0)
-
-                                    # 新工具调用开始
-                                    if tc.get("id"):
-                                        tool_calls_buffer[index] = {
-                                            "id": tc["id"],
-                                            "name": tc.get("function", {}).get("name", ""),
-                                            "arguments": ""
-                                        }
-                                        yield {
-                                            "type": "tool_call_start",
-                                            "id": tc["id"],
-                                            "name": tc.get("function", {}).get("name", "")
-                                        }
-
-                                    # 工具名称增量（某些模型可能分开发送）
-                                    if tc.get("function", {}).get("name") and index in tool_calls_buffer:
-                                        if not tool_calls_buffer[index]["name"]:
-                                            tool_calls_buffer[index]["name"] = tc["function"]["name"]
-
-                                    # 参数增量
-                                    if tc.get("function", {}).get("arguments"):
-                                        args_delta = tc["function"]["arguments"]
-                                        if index in tool_calls_buffer:
-                                            tool_calls_buffer[index]["arguments"] += args_delta
-
-                            # 记录 finish_reason（但不立即结束，等待 usage chunk）
-                            # tool_call_end 统一在循环结束后发送，避免 Gemini/OpenRouter
-                            # finish_reason 先于部分 tool_call delta 到达导致遗漏
-                            if finish_reason:
-                                final_finish_reason = finish_reason
-
-                        # 循环结束（[DONE] 后），统一发送所有 tool_call_end
-                        if tool_calls_buffer:
-                            for tc_data in tool_calls_buffer.values():
-                                try:
-                                    args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
-                                except json.JSONDecodeError:
-                                    logger.warning(
-                                        "工具参数 JSON 解析失败: %s",
-                                        tc_data["arguments"][:100] if tc_data["arguments"] else ""
-                                    )
-                                    args = {}
-                                yield {
-                                    "type": "tool_call_end",
-                                    "id": tc_data["id"],
-                                    "name": tc_data["name"],
-                                    "arguments": args,
-                                }
-
-                        # 发送 done 事件
-                        # 构建 usage 信息（如果可用）
-                        usage_info = None
-                        if accumulated_usage:
-                            usage_info = {
-                                "prompt_tokens": accumulated_usage.get("prompt_tokens", 0),
-                                "completion_tokens": accumulated_usage.get("completion_tokens", 0),
-                                "total_tokens": accumulated_usage.get("total_tokens", 0),
+                                args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
+                            except json.JSONDecodeError:
+                                logger.warning(
+                                    "工具参数 JSON 解析失败: %s",
+                                    tc_data["arguments"][:100] if tc_data["arguments"] else ""
+                                )
+                                args = {}
+                            yield {
+                                "type": "tool_call_end",
+                                "id": tc_data["id"],
+                                "name": tc_data["name"],
+                                "arguments": args,
                             }
 
-                        yield {"type": "done", "finish_reason": final_finish_reason or "stop", "usage": usage_info}
-                        logger.info("流式 LLM 调用完成: finish_reason=%s, usage=%s", final_finish_reason, usage_info)
+                    # 发送 done 事件
+                    # 构建 usage 信息（如果可用）
+                    usage_info = None
+                    if accumulated_usage:
+                        usage_info = {
+                            "prompt_tokens": accumulated_usage.get("prompt_tokens", 0),
+                            "completion_tokens": accumulated_usage.get("completion_tokens", 0),
+                            "total_tokens": accumulated_usage.get("total_tokens", 0),
+                        }
+
+                    yield {"type": "done", "finish_reason": final_finish_reason or "stop", "usage": usage_info}
+                    logger.info("流式 LLM 调用完成: finish_reason=%s, usage=%s", final_finish_reason, usage_info)
 
                 # 成功完成，退出重试循环
                 return

@@ -4,6 +4,7 @@ import asyncio
 import copy
 import json
 import logging
+import time
 from typing import Any, AsyncGenerator
 from uuid import UUID
 
@@ -166,19 +167,25 @@ class QuickChatOrchestrator:
         Yields:
             SSE events for streaming response
         """
+        t_orch_start = time.monotonic()
+
         # Parallel: load long-term memory + count due reviews across all spaces
+        t0 = time.monotonic()
         long_term_memory, reviews_count = await asyncio.gather(
             self._load_long_term_memory(),
             get_due_reviews_total(self.user_id),
         )
+        logger.info(f"[Perf][QC] Memory + reviews retrieval: {(time.monotonic()-t0)*1000:.0f}ms")
 
         # Build system prompt with tool instructions, memory, previous conversation context, and reviews count
+        t0 = time.monotonic()
         system_prompt = self.prompt_builder.build_quick_chat_prompt(
             with_tools=True,
             long_term_memory=long_term_memory,
             previous_conversation_context=self.previous_conversation_context,
             reviews_count=reviews_count,
         )
+        logger.info(f"[Perf][QC] Build prompt ({len(system_prompt)} chars): {(time.monotonic()-t0)*1000:.0f}ms")
 
         # Handle both string and dict formats for user message
         if isinstance(user_message, str):
@@ -193,6 +200,11 @@ class QuickChatOrchestrator:
             *history_messages,
             current_user_message,
         ]
+
+        total_chars = sum(len(str(m.get('content', ''))) for m in messages)
+        logger.info(f"[Perf][QC] Messages: {len(messages)} msgs, ~{total_chars} chars")
+        logger.info(f"[Perf][QC] Tools: {len(self.available_tools)} tools")
+        logger.info(f"[Perf][QC] Orchestrator prep: {(time.monotonic()-t_orch_start)*1000:.0f}ms")
 
         # Initialize LLM context collector for feedback/debugging
         context_collector = LLMContextCollector(
@@ -217,6 +229,8 @@ class QuickChatOrchestrator:
             iteration_content = ""
             has_confirmation_tool = False
             current_iteration = IterationData()
+            t_llm_start = time.monotonic()
+            first_token_logged = False
 
             try:
                 async for event in self.llm_client.stream_complete_with_tools(
@@ -228,6 +242,9 @@ class QuickChatOrchestrator:
 
                     # Emit thinking content (reasoning models)
                     if event_type == "thinking":
+                        if not first_token_logged:
+                            logger.info(f"[Perf][QC] LLM first token (thinking): {(time.monotonic()-t_llm_start)*1000:.0f}ms")
+                            first_token_logged = True
                         current_iteration.reasoning_content += event["content"]
                         yield {
                             "event": SSEEventType.THINKING_DELTA,
@@ -236,6 +253,9 @@ class QuickChatOrchestrator:
 
                     # Emit text content immediately
                     elif event_type == "content":
+                        if not first_token_logged:
+                            logger.info(f"[Perf][QC] LLM first token: {(time.monotonic()-t_llm_start)*1000:.0f}ms")
+                            first_token_logged = True
                         content = event["content"]
                         iteration_content += content
                         full_response += content
@@ -596,6 +616,8 @@ class LLMOrchestrator:
             - {"event": "done", "data": {"content": "full response"}}
             - {"event": "error", "data": {"message": "..."}}
         """
+        t_orch_start = time.monotonic()
+
         # 1. 提取用户消息文本用于语义检索
         if isinstance(user_message, str):
             message_text = user_message
@@ -610,6 +632,7 @@ class LLMOrchestrator:
                 message_text = str(content)
 
         # 2. 并行：语义检索记忆 + 查询到期复习项数量
+        t0 = time.monotonic()
         relevant_memories, reviews_count = await asyncio.gather(
             self.memory_retriever.get_relevant_memories(
                 user_message=message_text,
@@ -618,6 +641,7 @@ class LLMOrchestrator:
             ),
             get_due_reviews_count_by_space(self.user_id, self.space_id),
         )
+        logger.info(f"[Perf] Memory + reviews retrieval: {(time.monotonic()-t0)*1000:.0f}ms")
 
         # 3. 格式化记忆用于 prompt 注入（标注本空间/共享来源）
         formatted_memories = format_memories_for_prompt(
@@ -625,6 +649,7 @@ class LLMOrchestrator:
         )
 
         # 4. Build system prompt with relevant memories, previous conversation context, and reviews count
+        t0 = time.monotonic()
         system_prompt = self.prompt_builder.build_system_prompt(
             space_id=self.space_id,
             space_name=self.space_name,
@@ -632,6 +657,7 @@ class LLMOrchestrator:
             previous_conversation_context=self.previous_conversation_context,
             reviews_count=reviews_count,
         )
+        logger.info(f"[Perf] Build prompt ({len(system_prompt)} chars): {(time.monotonic()-t0)*1000:.0f}ms")
 
         # Handle both string and dict formats for user message
         if isinstance(user_message, str):
@@ -646,6 +672,11 @@ class LLMOrchestrator:
             *history_messages,
             current_user_message,
         ]
+
+        total_chars = sum(len(str(m.get('content', ''))) for m in messages)
+        logger.info(f"[Perf] Messages: {len(messages)} msgs, ~{total_chars} chars")
+        logger.info(f"[Perf] Tools: {len(self.available_tools)} tools")
+        logger.info(f"[Perf] Orchestrator prep: {(time.monotonic()-t_orch_start)*1000:.0f}ms")
 
         # 3. Initialize LLM context collector for feedback/debugging
         context_collector = LLMContextCollector(
@@ -669,6 +700,8 @@ class LLMOrchestrator:
             iteration_content = ""
             finish_reason = None
             current_iteration = IterationData()
+            t_llm_start = time.monotonic()
+            first_token_logged = False
 
             try:
                 # Use streaming method for real-time text output
@@ -681,6 +714,9 @@ class LLMOrchestrator:
 
                     # Emit thinking content (reasoning models)
                     if event_type == "thinking":
+                        if not first_token_logged:
+                            logger.info(f"[Perf] LLM first token (thinking): {(time.monotonic()-t_llm_start)*1000:.0f}ms")
+                            first_token_logged = True
                         current_iteration.reasoning_content += event["content"]
                         yield {
                             "event": SSEEventType.THINKING_DELTA,
@@ -689,6 +725,9 @@ class LLMOrchestrator:
 
                     # Immediately emit text content as it arrives
                     elif event_type == "content":
+                        if not first_token_logged:
+                            logger.info(f"[Perf] LLM first token: {(time.monotonic()-t_llm_start)*1000:.0f}ms")
+                            first_token_logged = True
                         content = event["content"]
                         iteration_content += content
                         full_response += content

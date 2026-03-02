@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -250,6 +251,8 @@ async def send_message(
     Does NOT hold a DB session during SSE streaming.
     Validation uses a short-lived session; the streaming method manages its own sessions.
     """
+    t_start = time.monotonic()
+
     # Validate model_id early (before entering SSE stream)
     if request.model_id is not None and not validate_model_id(request.model_id):
         raise HTTPException(
@@ -267,12 +270,14 @@ async def send_message(
         await check_daily_message_quota(db, user)
 
     # Validate conversation AND space binding with a short-lived session
+    validated_space_id = None
     async with get_scoped_session() as db:
         service = ChatService(db)
         try:
-            await service.validate_conversation_access(
+            conv = await service.validate_conversation_access(
                 user.id, conversation_id, require_space=True
             )
+            validated_space_id = conv.space_id
         except ConversationNotFoundError:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -290,6 +295,8 @@ async def send_message(
             )
     # DB session released before SSE stream starts
 
+    logger.info(f"[Perf] Router validation: {(time.monotonic() - t_start)*1000:.0f}ms")
+
     # Static method: manages its own short-lived DB sessions internally
     event_generator = ChatService.send_message(
         user.id,
@@ -297,8 +304,10 @@ async def send_message(
         request.content,
         request.attachment_ids,
         model_id=request.model_id,
+        validated_space_id=validated_space_id,
     )
 
+    logger.info(f"[Perf] Router total: {(time.monotonic() - t_start)*1000:.0f}ms")
     return StreamingResponse(
         sse_generator(event_generator),
         media_type="text/event-stream",
@@ -620,6 +629,8 @@ async def send_quick_chat_message(
     Send message in quick chat mode (SSE streaming).
     Does NOT hold a DB session during streaming.
     """
+    t_start = time.monotonic()
+
     # Validate model_id early (before entering SSE stream)
     if request.model_id is not None and not validate_model_id(request.model_id):
         raise HTTPException(
@@ -655,6 +666,8 @@ async def send_quick_chat_message(
             )
     # DB session released before SSE stream starts
 
+    logger.info(f"[Perf] QuickChat router validation: {(time.monotonic() - t_start)*1000:.0f}ms")
+
     # Static method: manages its own short-lived DB sessions internally
     event_generator = ChatService.send_quick_chat_message(
         user.id,
@@ -662,8 +675,10 @@ async def send_quick_chat_message(
         request.content,
         request.attachment_ids,
         model_id=request.model_id,
+        validated=True,
     )
 
+    logger.info(f"[Perf] QuickChat router total: {(time.monotonic() - t_start)*1000:.0f}ms")
     return StreamingResponse(
         sse_generator(event_generator),
         media_type="text/event-stream",

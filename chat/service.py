@@ -4,6 +4,7 @@ import asyncio
 import base64
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, AsyncGenerator
 from uuid import UUID
@@ -450,6 +451,7 @@ class ChatService:
         content: str,
         attachment_ids: list[UUID] | None = None,
         model_id: str | None = None,
+        validated_space_id: UUID | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Send a message in a conversation and get SSE response stream.
@@ -468,6 +470,7 @@ class ChatService:
             content: Message content
             attachment_ids: Optional attachment IDs
             model_id: Optional model ID for per-message model selection
+            validated_space_id: Space ID already validated by router (skip re-validation)
 
         Yields:
             SSE events for streaming response
@@ -477,26 +480,33 @@ class ChatService:
             ConversationAccessDeniedError: If user doesn't own the conversation
             SpaceRequiredError: If conversation has no bound learning space
         """
+        t_phase1_start = time.monotonic()
+
         # === Phase 1: Prepare (short-lived DB session) ===
         async with get_scoped_session() as db:
-            # 1. Validate conversation ownership
-            result = await db.execute(
-                select(Conversation).where(Conversation.id == conversation_id)
-            )
-            conversation = result.scalar_one_or_none()
+            # 1. Validate conversation ownership (skip if already validated by router)
+            if validated_space_id:
+                space_id = validated_space_id
+            else:
+                t0 = time.monotonic()
+                result = await db.execute(
+                    select(Conversation).where(Conversation.id == conversation_id)
+                )
+                conversation = result.scalar_one_or_none()
 
-            if not conversation:
-                raise ConversationNotFoundError(f"对话 {conversation_id} 不存在")
-            if conversation.user_id != user_id:
-                raise ConversationAccessDeniedError(f"无权访问对话 {conversation_id}")
+                if not conversation:
+                    raise ConversationNotFoundError(f"对话 {conversation_id} 不存在")
+                if conversation.user_id != user_id:
+                    raise ConversationAccessDeniedError(f"无权访问对话 {conversation_id}")
 
-            # 2. Validate space is bound
-            if not conversation.space_id:
-                raise SpaceRequiredError("对话必须绑定到学习空间才能使用知识图谱功能")
+                if not conversation.space_id:
+                    raise SpaceRequiredError("对话必须绑定到学习空间才能使用知识图谱功能")
 
-            space_id = conversation.space_id
+                space_id = conversation.space_id
+                logger.info(f"[Perf] Validate conversation: {(time.monotonic()-t0)*1000:.0f}ms")
 
             # 3. Save user message
+            t0 = time.monotonic()
             user_message = Message(
                 conversation_id=conversation_id,
                 role=MessageRole.USER,
@@ -526,8 +536,10 @@ class ChatService:
 
             # Refresh and load attachments relationship
             await db.refresh(user_message, ["attachments"])
+            logger.info(f"[Perf] Save user message: {(time.monotonic()-t0)*1000:.0f}ms")
 
             # 4. Load recent history messages (with attachments preloaded)
+            t0 = time.monotonic()
             history_result = await db.execute(
                 select(Message)
                 .options(selectinload(Message.attachments))
@@ -536,8 +548,10 @@ class ChatService:
                 .limit(MAX_HISTORY_MESSAGES + 1)
             )
             history_messages = list(reversed(history_result.scalars().all()))
+            logger.info(f"[Perf] Load history ({len(history_messages)} msgs): {(time.monotonic()-t0)*1000:.0f}ms")
 
             # Build LLM history with attachments (async)
+            t0 = time.monotonic()
             llm_history = []
             for m in history_messages[:-1]:
                 msg_dict = await _build_llm_message_with_attachments_async(m, db)
@@ -547,8 +561,10 @@ class ChatService:
             current_message_dict = await _build_llm_message_with_attachments_async(
                 user_message, db
             )
+            logger.info(f"[Perf] Build LLM history: {(time.monotonic()-t0)*1000:.0f}ms")
 
             # 5. Get space info
+            t0 = time.monotonic()
             space_result = await db.execute(
                 select(Space).where(Space.id == space_id)
             )
@@ -558,12 +574,14 @@ class ChatService:
                 raise SpaceRequiredError("绑定的学习空间不存在")
 
             space_name = space.name
+            logger.info(f"[Perf] Load space info: {(time.monotonic()-t0)*1000:.0f}ms")
 
             # 6. 对话连续性：检测新对话并加载上一次对话上下文
             # 新对话定义：当前对话只有刚发送的这一条消息
             is_new_conversation = len(history_messages) == 1
             previous_conversation_context = None
 
+            t0 = time.monotonic()
             settings = get_settings()
             if is_new_conversation and settings.conversation_continuity_enabled:
                 from chat.previous_conversation import get_previous_conversation_context
@@ -580,7 +598,10 @@ class ChatService:
                     logger.debug(
                         f"Loaded previous conversation context for new conversation {conversation_id}"
                     )
+            logger.info(f"[Perf] Previous context: {(time.monotonic()-t0)*1000:.0f}ms")
         # === DB session released here ===
+
+        logger.info(f"[Perf] Phase 1 total: {(time.monotonic()-t_phase1_start)*1000:.0f}ms")
 
         # === Start title generation concurrently (for new conversations) ===
         title_task = None
@@ -589,8 +610,10 @@ class ChatService:
             title_task = asyncio.create_task(generate_title(content))
 
         # === Load user search settings ===
+        t0 = time.monotonic()
         from search_settings.service import SearchSettingsService
         enabled_channels = await SearchSettingsService.get_enabled_channels(user_id)
+        logger.info(f"[Perf] Search settings: {(time.monotonic()-t0)*1000:.0f}ms")
 
         # === Phase 2: Stream via Queue + Background Task ===
         # Orchestrator runs in an independent background task so that client
@@ -1014,6 +1037,7 @@ class ChatService:
         content: str,
         attachment_ids: list[UUID] | None = None,
         model_id: str | None = None,
+        validated: bool = False,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Send message in quick chat mode (no space required).
@@ -1032,6 +1056,7 @@ class ChatService:
             content: Message content
             attachment_ids: Optional attachment IDs
             model_id: Optional model ID for per-message model selection
+            validated: If True, skip conversation ownership check (already done by router)
 
         Yields:
             SSE events for streaming response
@@ -1040,20 +1065,26 @@ class ChatService:
             ConversationNotFoundError: If conversation not found
             ConversationAccessDeniedError: If user doesn't own the conversation
         """
+        t_phase1_start = time.monotonic()
+
         # === Phase 1: Prepare (short-lived DB session) ===
         async with get_scoped_session() as db:
-            # 1. Validate conversation
-            result = await db.execute(
-                select(Conversation).where(Conversation.id == conversation_id)
-            )
-            conversation = result.scalar_one_or_none()
+            # 1. Validate conversation (skip if already validated by router)
+            if not validated:
+                t0 = time.monotonic()
+                result = await db.execute(
+                    select(Conversation).where(Conversation.id == conversation_id)
+                )
+                conversation = result.scalar_one_or_none()
 
-            if not conversation:
-                raise ConversationNotFoundError(f"对话 {conversation_id} 不存在")
-            if conversation.user_id != user_id:
-                raise ConversationAccessDeniedError(f"无权访问对话 {conversation_id}")
+                if not conversation:
+                    raise ConversationNotFoundError(f"对话 {conversation_id} 不存在")
+                if conversation.user_id != user_id:
+                    raise ConversationAccessDeniedError(f"无权访问对话 {conversation_id}")
+                logger.info(f"[Perf][QC] Validate conversation: {(time.monotonic()-t0)*1000:.0f}ms")
 
             # 2. Save user message
+            t0 = time.monotonic()
             user_message = Message(
                 conversation_id=conversation_id,
                 role=MessageRole.USER,
@@ -1083,8 +1114,10 @@ class ChatService:
 
             # Refresh and load attachments relationship
             await db.refresh(user_message, ["attachments"])
+            logger.info(f"[Perf][QC] Save user message: {(time.monotonic()-t0)*1000:.0f}ms")
 
             # 3. Load recent history messages (with attachments preloaded)
+            t0 = time.monotonic()
             history_result = await db.execute(
                 select(Message)
                 .options(selectinload(Message.attachments))
@@ -1093,8 +1126,10 @@ class ChatService:
                 .limit(MAX_HISTORY_MESSAGES + 1)
             )
             history_messages = list(reversed(history_result.scalars().all()))
+            logger.info(f"[Perf][QC] Load history ({len(history_messages)} msgs): {(time.monotonic()-t0)*1000:.0f}ms")
 
             # Build LLM history with attachments (async)
+            t0 = time.monotonic()
             llm_history = []
             for m in history_messages[:-1]:
                 msg_dict = await _build_llm_message_with_attachments_async(m, db)
@@ -1104,12 +1139,14 @@ class ChatService:
             current_message_dict = await _build_llm_message_with_attachments_async(
                 user_message, db
             )
+            logger.info(f"[Perf][QC] Build LLM history: {(time.monotonic()-t0)*1000:.0f}ms")
 
             # 4. 对话连续性：检测新对话并加载上一个对话上下文
             # 新对话定义：当前对话只有刚发送的这一条消息
             is_new_conversation = len(history_messages) == 1
             previous_conversation_context = None
 
+            t0 = time.monotonic()
             settings = get_settings()
             if is_new_conversation and settings.conversation_continuity_enabled:
                 from chat.previous_conversation import (
@@ -1129,7 +1166,10 @@ class ChatService:
                     logger.debug(
                         f"Loaded global previous conversation context for quick chat {conversation_id}"
                     )
+            logger.info(f"[Perf][QC] Previous context: {(time.monotonic()-t0)*1000:.0f}ms")
         # === DB session released here ===
+
+        logger.info(f"[Perf][QC] Phase 1 total: {(time.monotonic()-t_phase1_start)*1000:.0f}ms")
 
         # === Start title generation concurrently (for new conversations) ===
         title_task = None
@@ -1138,8 +1178,10 @@ class ChatService:
             title_task = asyncio.create_task(generate_title(content))
 
         # === Load user search settings ===
+        t0 = time.monotonic()
         from search_settings.service import SearchSettingsService
         enabled_channels = await SearchSettingsService.get_enabled_channels(user_id)
+        logger.info(f"[Perf][QC] Search settings: {(time.monotonic()-t0)*1000:.0f}ms")
 
         # === Phase 2: Stream via Queue + Background Task ===
         # Resolve model_id to OpenRouter model string

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -100,6 +101,7 @@ class EmbeddingClient:
             httpx.TimeoutException: 请求超时
             EmbeddingClientError: API 返回错误
         """
+        t0 = time.monotonic()
         async with httpx.AsyncClient(**self._get_client_kwargs()) as client:
             payload = {
                 "model": self.model,
@@ -114,6 +116,7 @@ class EmbeddingClient:
                 json=payload,
             )
             response.raise_for_status()
+            logger.info(f"[Perf] Embedding API call ({len(texts)} texts): {(time.monotonic()-t0)*1000:.0f}ms, model={self.model}")
             data = response.json()
 
             # 检查 API 响应是否包含错误
