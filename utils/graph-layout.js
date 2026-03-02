@@ -23,9 +23,9 @@ export const LABEL_LAYOUT_CONFIG = {
 }
 
 // Node color constants
-export const UNMASTERED_NODE_COLOR = '#9CA3AF'
-export const UNMASTERED_NODE_GLOW = 'rgba(156, 163, 175, 0.50)'
-export const UNMASTERED_NODE_OUTLINE = 'rgba(226, 232, 240, 0.26)'
+export const UNMASTERED_NODE_COLOR = '#E2E8F0'
+export const UNMASTERED_NODE_GLOW = 'rgba(226, 232, 240, 0.50)'
+export const UNMASTERED_NODE_OUTLINE = 'rgba(241, 245, 249, 0.30)'
 export const KNOWLEDGE_EDGE_COLOR = 'rgba(245, 248, 255, 0.42)'
 export const KNOWLEDGE_EDGE_WIDTH = 1.8
 

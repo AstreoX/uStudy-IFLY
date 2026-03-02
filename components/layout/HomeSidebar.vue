@@ -459,7 +459,20 @@ export default {
 }
 
 .sidebar.collapsed .sidebar-logo {
-  padding: 24px 12px 32px 22px;
+  padding: 24px 12px 32px 12px;
+  justify-content: center;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+}
+
+.sidebar.collapsed .account-row {
+  justify-content: center;
+}
+
+.sidebar.collapsed .account-login-row {
+  justify-content: center;
 }
 
 .logo-u {

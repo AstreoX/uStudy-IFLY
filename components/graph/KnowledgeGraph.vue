@@ -24,10 +24,15 @@
               <text class="kg-mastery-text">{{ selectedNode.mastery }}</text>
             </view>
           </view>
-          <svg v-else viewBox="0 0 256 256" class="kg-lock-icon">
-            <rect width="256" height="256" fill="none"/>
-            <path d="M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80Zm-80,84a12,12,0,1,1,12-12A12,12,0,0,1,128,164Zm32-84H96V56a32,32,0,0,1,64,0Z" fill="rgba(255,255,255,0.4)"/>
-          </svg>
+          <view v-else class="kg-unlearned-row">
+            <svg viewBox="0 0 256 256" class="kg-lock-icon">
+              <rect width="256" height="256" fill="none"/>
+              <path d="M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80Zm-80,84a12,12,0,1,1,12-12A12,12,0,0,1,128,164Zm32-84H96V56a32,32,0,0,1,64,0Z" fill="rgba(255,255,255,0.4)"/>
+            </svg>
+            <view class="kg-quick-learn-btn" @click.stop="handleQuickLearn">
+              <text class="kg-quick-learn-text">快速学习</text>
+            </view>
+          </view>
         </view>
       </view>
     </view>
@@ -82,7 +87,7 @@ export default {
     generating: { type: Boolean, default: false }
   },
 
-  emits: ['node-selected', 'graph-loaded', 'retry'],
+  emits: ['node-selected', 'graph-loaded', 'retry', 'quick-learn'],
 
   data() {
     return {
@@ -238,6 +243,11 @@ export default {
   },
 
   methods: {
+    handleQuickLearn() {
+      if (!this.selectedNode) return
+      this.$emit('quick-learn', { node: this.selectedNode })
+    },
+
     // --- Canvas initialization ---
     initCanvas() {
       const wrap = this.$refs.canvasWrap
@@ -1304,6 +1314,7 @@ export default {
   border-radius: 12px;
   backdrop-filter: blur(12px);
   white-space: nowrap;
+  pointer-events: auto;
 }
 
 .kg-popup-name {
@@ -1347,6 +1358,36 @@ export default {
 .kg-lock-icon {
   width: 24px;
   height: 24px;
+}
+
+.kg-unlearned-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kg-quick-learn-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 10px;
+  background: rgba(129, 140, 248, 0.18);
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.kg-quick-learn-btn:hover {
+  background: rgba(129, 140, 248, 0.30);
+}
+
+.kg-quick-learn-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: #818CF8;
+  white-space: nowrap;
+  line-height: 1;
 }
 
 /* Loading */

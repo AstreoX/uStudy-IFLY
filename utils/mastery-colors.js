@@ -22,7 +22,7 @@ export function interpolateMasteryRGB(mastery) {
 }
 
 export function getMasteryColor(mastery) {
-  if (mastery == null) return '#9CA3AF'
+  if (mastery == null) return '#E2E8F0'
   const { r, g, b } = interpolateMasteryRGB(mastery)
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
 }

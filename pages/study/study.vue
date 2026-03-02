@@ -68,6 +68,7 @@
                 @node-selected="onNodeSelected"
                 @graph-loaded="onGraphLoaded"
                 @retry="handleGraphRetry"
+                @quick-learn="onQuickLearn"
               />
               <StudyMaterialsPanel
                 v-else-if="activeTab === 'materials'"
@@ -1406,6 +1407,12 @@ export default {
 
     onGraphLoaded({ nodeCount, edgeCount }) {
       // Graph loaded
+    },
+
+    onQuickLearn({ node }) {
+      const spaceName = this.spaceName || '学习空间'
+      this.inputText = `我要学习${spaceName}下的${node.label}知识点`
+      this.$nextTick(() => this.handleSend())
     },
 
     scheduleGraphRefresh() {
