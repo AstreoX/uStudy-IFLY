@@ -194,6 +194,12 @@
                   <text class="bubble-text">{{ msg.content }}</text>
                 </view>
               </view>
+              <view v-if="msg.content && msg.content.trim()" class="user-msg-actions">
+                <svg viewBox="0 0 256 256" class="ai-msg-action-icon" @tap="copyMessage(msg)">
+                  <rect x="32" y="80" width="128" height="144" rx="8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                  <path d="M96,80V40a8,8,0,0,1,8-8h112a8,8,0,0,1,8,8V176a8,8,0,0,1-8,8H160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                </svg>
+              </view>
             </view>
 
             <!-- AI message -->
@@ -2834,6 +2840,10 @@ export default {
   color: rgba(255, 255, 255, 0.95);
   font-size: 14px;
   line-height: 1.5;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
 }
 
 .bubble-ai {
@@ -3142,6 +3152,16 @@ export default {
 @keyframes memory-shimmer {
   0% { background-position: 100% 50%; }
   100% { background-position: -100% 50%; }
+}
+
+/* User message actions */
+.user-msg-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  margin-top: 4px;
+  justify-content: flex-end;
+  padding-right: 4px;
 }
 
 /* AI message actions */
