@@ -1,11 +1,21 @@
 <template>
 	<view class="markdown-container">
+		<!-- #ifdef APP-PLUS -->
+		<view
+			class="markdown-content app-rich-content"
+			:prop="parsedHtml"
+			:change:prop="mdRender.onContentChange"
+		></view>
+		<!-- #endif -->
+
+		<!-- #ifndef APP-PLUS -->
 		<rich-text
 			:nodes="parsedHtml"
 			class="markdown-content"
 			selectable="true"
 			@itemclick="onRichTextItemClick"
 		></rich-text>
+		<!-- #endif -->
 	</view>
 </template>
 
@@ -300,6 +310,19 @@ export default {
 		}
 	},
 	methods: {
+		onLinkClick(data) {
+			const href = data && data.href
+			if (!href) return
+			if (isSafeHttpUrl(href)) {
+				this.openExternalLink(href)
+			}
+		},
+		onCodeCopy(data) {
+			const index = data && data.index
+			if (typeof index === 'number') {
+				this.copyCode(index)
+			}
+		},
 		onRichTextItemClick(event) {
 			const detail = event && event.detail
 			const node = detail && detail.node
@@ -373,6 +396,41 @@ export default {
 }
 </script>
 
+<!-- #ifdef APP-PLUS -->
+<script module="mdRender" lang="renderjs">
+export default {
+	methods: {
+		onContentChange(newVal, oldVal, ownerInstance) {
+			if (!ownerInstance) return
+			const el = ownerInstance.$el
+			if (!el) return
+
+			const container = el.querySelector('.app-rich-content') || el
+			if (!container) return
+
+			container.innerHTML = newVal || ''
+
+			const links = container.querySelectorAll('a[href]')
+			links.forEach(function(link) {
+				link.addEventListener('click', function(e) {
+					e.preventDefault()
+					e.stopPropagation()
+					const href = link.getAttribute('href')
+					if (href && href.indexOf('copy:') === 0) {
+						ownerInstance.callMethod('onCodeCopy', {
+							index: parseInt(href.slice(5), 10)
+						})
+					} else if (href) {
+						ownerInstance.callMethod('onLinkClick', { href: href })
+					}
+				})
+			})
+		}
+	}
+}
+</script>
+<!-- #endif -->
+
 <style scoped>
 .markdown-container {
 	width: 100%;
@@ -394,6 +452,12 @@ export default {
 </style>
 
 <style>
+/* APP-PLUS renderjs content inherits markdown styles */
+.app-rich-content {
+	-webkit-user-select: text;
+	user-select: text;
+}
+
 /* 全局样式 - rich-text内部元素 */
 .markdown-content p {
 	margin: 0 0 16rpx 0;
