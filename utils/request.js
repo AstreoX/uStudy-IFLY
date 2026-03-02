@@ -79,6 +79,36 @@ async function refreshAccessToken() {
   return data.access_token
 }
 
+/**
+ * 确保 access_token 有效（供 SSE 等非 request.js 路径使用）
+ * 复用 request.js 的刷新锁，避免并发 refresh 请求
+ */
+export function ensureFreshToken() {
+  const tokens = getTokens()
+  if (!tokens?.refresh_token) {
+    return Promise.reject(new Error('No refresh token'))
+  }
+
+  if (!isRefreshing) {
+    isRefreshing = true
+    return refreshAccessToken()
+      .then(newToken => {
+        isRefreshing = false
+        onRefreshed(newToken)
+        return newToken
+      })
+      .catch(err => {
+        isRefreshing = false
+        refreshSubscribers = []
+        throw err
+      })
+  }
+
+  return new Promise((resolve) => {
+    addRefreshSubscriber(resolve)
+  })
+}
+
 function retryRequest(options, token) {
   return request({
     ...options,

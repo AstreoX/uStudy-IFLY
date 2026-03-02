@@ -1566,14 +1566,25 @@ export default {
       try {
         const result = await getConversation(this.conversationId)
         const rawMessages = result.messages || []
-        this.messages = rawMessages.map((m, i) => ({
-          id: i + 1,
-          role: m.role === 'user' ? 'user' : 'ai',
-          content: m.content,
-          isFailed: false,
-          attachments: m.attachments || [],
-          created_at: m.created_at
-        }))
+        this.messages = rawMessages.map((m, i) => {
+          const msg = {
+            id: i + 1,
+            role: m.role === 'user' ? 'user' : 'ai',
+            content: m.content,
+            isFailed: false,
+            attachments: m.attachments || [],
+            created_at: m.created_at
+          }
+          if (msg.role === 'ai' && m.tool_calls && m.tool_calls.length > 0) {
+            const segments = m.tool_calls.map(tc => ({ type: 'tool', toolCall: { ...tc } }))
+            if (m.content && m.content.trim()) {
+              segments.push({ type: 'text', content: m.content })
+            }
+            msg.segments = segments
+            msg.toolCalls = m.tool_calls
+          }
+          return msg
+        })
         this.nextId = this.messages.length + 1
         this.$nextTick(() => this.scrollToBottom())
       } catch (err) {
