@@ -240,22 +240,6 @@ export default {
       this.saving = true
 
       try {
-        const { authSetting } = await new Promise((resolve, reject) => {
-          uni.getSetting({ success: resolve, fail: reject })
-        })
-
-        if (authSetting['scope.writePhotosAlbum'] === false) {
-          this.guideToSettings()
-          this.saving = false
-          return
-        }
-
-        if (authSetting['scope.writePhotosAlbum'] === undefined) {
-          await new Promise((resolve, reject) => {
-            uni.authorize({ scope: 'scope.writePhotosAlbum', success: resolve, fail: reject })
-          })
-        }
-
         const imgInfo = await new Promise((resolve, reject) => {
           uni.getImageInfo({ src: this.saveQrCodeSrc, success: resolve, fail: reject })
         })
@@ -266,9 +250,11 @@ export default {
 
         uni.showToast({ title: '已保存到相册', icon: 'success' })
       } catch (err) {
-        if (err?.errMsg?.includes('authorize') || err?.errMsg?.includes('deny')) {
+        const errMsg = err?.errMsg || ''
+        if (errMsg.includes('deny') || errMsg.includes('authorize') || errMsg.includes('permission')) {
           this.guideToSettings()
         } else {
+          console.error('Save QR failed:', errMsg)
           uni.showToast({ title: '保存失败，请重试', icon: 'none' })
         }
       } finally {
