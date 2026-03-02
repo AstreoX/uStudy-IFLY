@@ -55,6 +55,14 @@
 
           <view class="settings-divider"></view>
 
+          <view class="settings-item" @click="handleSearchSettings">
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg" mode="aspectFit"></image>
+            <text class="item-label">搜索设置</text>
+            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+          </view>
+
+          <view class="settings-divider"></view>
+
           <view class="settings-item" @click="handleSubscription">
             <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/crown.svg" mode="aspectFit"></image>
             <text class="item-label">订阅管理</text>
@@ -366,6 +374,10 @@ export default {
       uni.navigateTo({
         url: '/pages/forgotPassword/forgotPassword'
       })
+    },
+
+    handleSearchSettings() {
+      uni.navigateTo({ url: '/pages/searchSettings/searchSettings' })
     },
 
     handleSubscription() {

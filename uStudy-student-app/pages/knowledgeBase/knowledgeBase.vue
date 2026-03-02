@@ -838,7 +838,7 @@ export default {
       // #ifdef H5
       const input = document.createElement('input')
       input.type = 'file'
-      input.accept = '.pdf,.doc,.docx,.txt'
+      input.accept = '.pdf,.doc,.docx,.txt,.xlsx,.xls,.pptx,.ppt,.md,.html,.htm,.csv,.epub'
       input.onchange = async (e) => {
         const file = e.target.files[0]
         if (file) {
@@ -852,9 +852,9 @@ export default {
 
           // 验证文件扩展名
           const ext = file.name.split('.').pop()?.toLowerCase()
-          const validExtensions = ['pdf', 'doc', 'docx', 'txt']
+          const validExtensions = ['pdf', 'doc', 'docx', 'txt', 'xlsx', 'xls', 'pptx', 'ppt', 'md', 'html', 'htm', 'csv', 'epub']
           if (!validExtensions.includes(ext)) {
-            this.showCustomToast('仅支持 PDF, DOC, DOCX, TXT 文件', 'error')
+            this.showCustomToast('不支持该文件类型', 'error')
             return
           }
 
@@ -873,7 +873,7 @@ export default {
       try {
         const files = await chooseLocalFiles({
           count: 1,
-          extension: ['pdf', 'doc', 'docx', 'txt']
+          extension: ['pdf', 'doc', 'docx', 'txt', 'xlsx', 'xls', 'pptx', 'ppt', 'md', 'html', 'htm', 'csv', 'epub']
         })
         if (!files.length) return
 

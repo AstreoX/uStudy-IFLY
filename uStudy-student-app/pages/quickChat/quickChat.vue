@@ -102,6 +102,63 @@
 							<text class="memory-tool-text">{{ getMemoryToolText(seg.toolCall.tool) }}</text>
 						</view>
 
+						<!-- 搜索类工具：结构化搜索结果卡片 -->
+						<view
+							v-else-if="seg.type === 'tool' && isSearchTool(seg.toolCall.tool)"
+							:key="'search-tool-' + segIdx"
+							class="tool-call-card search-result-card"
+							:class="{
+								'tool-call-running': seg.toolCall.status === 'running',
+								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
+								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+							}"
+						>
+							<view class="tool-call-header">
+								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="tool-call-name">{{ seg.toolCall.display_name || getToolDisplayName(seg.toolCall.tool) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
+								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
+									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
+								<image v-else class="tool-call-status-icon tool-call-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.results?.length"
+								class="search-results-list">
+								<view v-for="(item, idx) in getVisibleSearchResults(seg.toolCall)" :key="idx"
+									class="search-result-item" @click="openSearchResultUrl(item.url)">
+									<view class="search-result-item-header">
+										<text class="search-result-source-badge"
+											:class="'source-' + (item.source || 'web')">{{ getSourceLabel(item.source || 'web') }}</text>
+										<text class="search-result-title">{{ item.title }}</text>
+									</view>
+									<text v-if="item.snippet" class="search-result-snippet">{{ item.snippet }}</text>
+									<view class="search-result-meta">
+										<text v-if="item.authors" class="search-result-authors">{{ item.authors }}</text>
+										<text v-if="item.year" class="search-result-year">{{ item.year }}</text>
+										<text v-if="item.citation_count" class="search-result-citations">引用 {{ item.citation_count }}</text>
+										<text v-if="item.author_name" class="search-result-author">{{ item.author_name }}</text>
+										<text v-if="item.duration" class="search-result-duration">{{ item.duration }}</text>
+										<text class="search-result-url">{{ formatDisplayUrl(item.url) }}</text>
+									</view>
+								</view>
+								<view v-if="seg.toolCall.result.results.length > 2"
+									class="search-results-toggle" @click="toggleSearchResults(seg.toolCall.id)">
+									<text class="search-results-toggle-text">
+										{{ isSearchExpanded(seg.toolCall.id) ? '收起' : '展开全部 ' + seg.toolCall.result.results.length + ' 条结果' }}
+									</text>
+									<image class="search-results-toggle-icon"
+										:src="isSearchExpanded(seg.toolCall.id) ? '/static/icons/phosphor-icons/SVGs/regular/arrow-up.svg' : '/static/icons/phosphor-icons/SVGs/regular/caret-down.svg'"
+										mode="aspectFit" />
+								</view>
+							</view>
+							<view v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" class="tool-call-result">
+								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '未找到相关结果' }}</text>
+							</view>
+							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
+								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '搜索失败' }}</text>
+							</view>
+						</view>
+
 						<!-- 非记忆类工具：原有卡片样式 -->
 						<view
 							v-else-if="seg.type === 'tool'"
@@ -397,14 +454,34 @@
 	const TOOL_DISPLAY_NAMES = {
 		view_learning_spaces: '查看学习空间',
 		rebind_to_learning_space: '绑定到学习空间',
-		create_learning_space: '创建学习空间'
+		create_learning_space: '创建学习空间',
+		// 网络搜索工具
+		web_search: '联网搜索',
+		web_fetch: '获取网页',
+		// 多渠道搜索工具
+		academic_search: '学术搜索',
+		encyclopedia_search: '百科搜索',
+		course_search: 'B站课程搜索',
+		// 复习事件工具
+		get_review_events: '查看复习事件',
+		mark_review_completed: '标记复习完成'
 	}
 
 	// 工具图标映射
 	const TOOL_ICONS = {
 		view_learning_spaces: '/static/icons/phosphor-icons/SVGs/regular/eye.svg',
 		rebind_to_learning_space: '/static/icons/phosphor-icons/SVGs/regular/link.svg',
-		create_learning_space: '/static/icons/phosphor-icons/SVGs/regular/plus-circle.svg'
+		create_learning_space: '/static/icons/phosphor-icons/SVGs/regular/plus-circle.svg',
+		// 网络搜索工具
+		web_search: '/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg',
+		web_fetch: '/static/icons/phosphor-icons/SVGs/regular/globe.svg',
+		// 多渠道搜索工具
+		academic_search: '/static/icons/phosphor-icons/SVGs/regular/graduation-cap.svg',
+		encyclopedia_search: '/static/icons/phosphor-icons/SVGs/regular/books.svg',
+		course_search: '/static/icons/phosphor-icons/SVGs/regular/globe.svg',
+		// 复习事件工具
+		get_review_events: '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg',
+		mark_review_completed: '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg'
 	}
 
 	// 记忆类工具集合（使用行内波浪文字而非卡片）
@@ -475,6 +552,9 @@
 				// 记忆工具最短显示时间跟踪
 				memoryToolStartTimes: {},    // { toolCallId: timestamp }
 				memoryToolDelayedDone: {}, // { toolCallId: true } 延迟隐藏的工具ID
+
+				// 搜索结果展开状态
+				expandedSearchResults: {}, // { toolCallId: true }
 
 				// 问题反馈相关
 				showFeedbackModal: false,
@@ -1059,6 +1139,58 @@
 
 			isMemoryTool(toolName) {
 				return MEMORY_TOOLS.has(toolName)
+			},
+
+			isSearchTool(toolName) {
+				return ['web_search', 'academic_search', 'encyclopedia_search', 'course_search'].includes(toolName)
+			},
+
+			getVisibleSearchResults(toolCall) {
+				const results = toolCall.result?.results || []
+				if (this.expandedSearchResults[toolCall.id]) {
+					return results
+				}
+				return results.slice(0, 2)
+			},
+
+			isSearchExpanded(toolCallId) {
+				return !!this.expandedSearchResults[toolCallId]
+			},
+
+			toggleSearchResults(toolCallId) {
+				this.expandedSearchResults = {
+					...this.expandedSearchResults,
+					[toolCallId]: !this.expandedSearchResults[toolCallId]
+				}
+			},
+
+			openSearchResultUrl(url) {
+				if (!url) return
+				// #ifdef H5
+				window.open(url, '_blank')
+				// #endif
+				// #ifdef APP-PLUS
+				plus.runtime.openURL(url)
+				// #endif
+			},
+
+			getSourceLabel(source) {
+				const map = {
+					academic: '学术',
+					encyclopedia: '百科',
+					course: 'B站',
+					web: '网页'
+				}
+				return map[source] || source
+			},
+
+			formatDisplayUrl(url) {
+				try {
+					const u = new URL(url)
+					return u.hostname
+				} catch {
+					return url
+				}
 			},
 
 			getMemoryToolText(toolName) {
@@ -2460,6 +2592,122 @@
 		.plus-popup {
 			background: rgba(40, 40, 55, 0.98);
 		}
+	}
+
+	/* ========== 搜索结果卡片 ========== */
+	.search-result-card {
+		max-width: 560rpx;
+	}
+
+	.search-results-list {
+		margin-top: 12rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 8rpx;
+	}
+
+	.search-result-item {
+		background: rgba(255, 255, 255, 0.06);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 12rpx;
+		padding: 12rpx 16rpx;
+	}
+
+	.search-result-item-header {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+	}
+
+	.search-result-source-badge {
+		font-size: 18rpx;
+		padding: 2rpx 10rpx;
+		border-radius: 6rpx;
+		flex-shrink: 0;
+		font-weight: 500;
+	}
+
+	.source-academic {
+		color: rgba(168, 85, 247, 0.95);
+		background: rgba(168, 85, 247, 0.15);
+	}
+
+	.source-encyclopedia {
+		color: rgba(59, 130, 246, 0.95);
+		background: rgba(59, 130, 246, 0.15);
+	}
+
+	.source-course {
+		color: rgba(251, 113, 133, 0.95);
+		background: rgba(251, 113, 133, 0.15);
+	}
+
+	.source-web {
+		color: rgba(34, 197, 94, 0.95);
+		background: rgba(34, 197, 94, 0.15);
+	}
+
+	.search-result-title {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.85);
+		font-weight: 500;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		flex: 1;
+	}
+
+	.search-result-snippet {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.5);
+		margin-top: 6rpx;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+		line-height: 1.4;
+	}
+
+	.search-result-meta {
+		display: flex;
+		align-items: center;
+		gap: 10rpx;
+		margin-top: 6rpx;
+		flex-wrap: wrap;
+	}
+
+	.search-result-authors,
+	.search-result-year,
+	.search-result-citations,
+	.search-result-author,
+	.search-result-duration {
+		font-size: 20rpx;
+		color: rgba(255, 255, 255, 0.4);
+	}
+
+	.search-result-url {
+		font-size: 20rpx;
+		color: rgba(96, 165, 250, 0.7);
+	}
+
+	.search-results-toggle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6rpx;
+		padding: 10rpx 0;
+		margin-top: 4rpx;
+	}
+
+	.search-results-toggle-text {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.45);
+	}
+
+	.search-results-toggle-icon {
+		width: 24rpx;
+		height: 24rpx;
+		opacity: 0.45;
 	}
 
 	/* ========== 等待输出加载动画 ========== */
