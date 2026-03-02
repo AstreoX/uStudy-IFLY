@@ -1,0 +1,75 @@
+{
+	"pages": [
+		{
+			"path": "pages/login/login",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "登录",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/register/register",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "注册",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/activation/activation",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "订阅",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "uStudy",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/study/study",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "Study",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/quickChat/quickChat",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "快速对话",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/createSpace/createSpace",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "新建学习空间",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/searchSettings/searchSettings",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "搜索设置",
+				"backgroundColor": "#0A0A12"
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "white",
+		"navigationBarTitleText": "uStudy",
+		"navigationBarBackgroundColor": "#0A0A12",
+		"backgroundColor": "#0A0A12"
+	},
+	"uniIdRouter": {}
+}

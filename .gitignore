@@ -1,39 +1,41 @@
-# 环境变量（包含密钥，不要上传！）
+# Secrets and local configuration
 .env
+.env.*
+!.env.example
+!.env.docker.example
+!.env.local.example
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.docker.example
+!**/.env.local.example
 
-# Python 虚拟环境
-venv/
-.venv/
-env/
-
-# Python 缓存
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-
-# 测试和覆盖率
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# 系统文件
-.DS_Store
-Thumbs.db
-
-# 日志
+# Runtime data and generated artifacts
+**/venv/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.coverage
+**/uploads/*
+!**/uploads/.gitkeep
+**/outputs/
+**/logs/
+**/node_modules/
+**/unpackage/
+**/dist/
+**/certs/
 *.log
 
-# 上传的聊天附件（运行时生成，不提交）
-uploads/attachments/
+# Local IDE and temporary files
+.idea/
+.vscode/
+tmp/
+.codex/
+.claude/
+.agents/
 
-# 支付宝证书密钥（绝对不要提交！）
-certs/
+# Credentials and exports
+*credentials*
+*accounts*.csv
+*activation*.csv
