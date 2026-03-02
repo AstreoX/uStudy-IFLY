@@ -516,6 +516,7 @@ export default {
 .sidebar.collapsed .sidebar-logo .collapse-btn {
   max-width: 0;
   opacity: 0;
+  margin-left: 0;
 }
 
 .sidebar-nav {
