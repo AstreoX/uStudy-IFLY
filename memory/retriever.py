@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -63,13 +64,22 @@ class MemoryRetriever:
             self.settings, "memory_search_score_threshold", 0.3
         )
 
-        # 并行搜索长期记忆和空间记忆
+        # 预计算一次 embedding，两次搜索共用（省去重复 API 调用）
+        embed_start = time.monotonic()
+        query_embedding = await self.memory_service.embedding_client.embed_query(
+            user_message
+        )
+        embed_ms = (time.monotonic() - embed_start) * 1000
+        logger.info(f"[Perf] Memory embedding computed once: {embed_ms:.0f}ms")
+
+        # 并行搜索长期记忆和空间记忆（传入预计算向量）
         long_term_task = self.memory_service.search_memories(
             user_id=self.user_id,
             query=user_message,
             memory_type=MemoryType.LONG_TERM,
             top_k=max_long_term,
             score_threshold=score_threshold,
+            query_embedding=query_embedding,
         )
 
         if self.space_id:
@@ -83,6 +93,7 @@ class MemoryRetriever:
                 space_ids=searchable_space_ids,
                 top_k=max_space,
                 score_threshold=score_threshold,
+                query_embedding=query_embedding,
             )
         else:
             # 没有空间 ID，返回空列表

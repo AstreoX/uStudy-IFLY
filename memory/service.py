@@ -76,6 +76,7 @@ class MemoryService:
         space_ids: list[UUID] | None = None,
         top_k: int = 5,
         score_threshold: float = 0.3,
+        query_embedding: list[float] | None = None,
     ) -> list[MemorySearchResult]:
         """
         语义搜索记忆
@@ -88,12 +89,17 @@ class MemoryService:
             space_ids: 限定多个空间（可选，用于记忆共享场景）
             top_k: 返回结果数量
             score_threshold: 最低相似度阈值 (0-1)
+            query_embedding: 预计算的查询向量（可选，传入则跳过 embedding API 调用）
 
         Returns:
             按相似度排序的记忆搜索结果
         """
-        # 生成查询向量
-        query_embedding = await self.embedding_client.embed_query(query)
+        # 使用预计算向量或自行生成
+        if query_embedding is None:
+            query_embedding = await self.embedding_client.embed_query(query)
+            logger.debug("[Perf] search_memories: computed embedding locally")
+        else:
+            logger.debug("[Perf] search_memories: using pre-computed embedding")
         embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
 
         async with get_scoped_session() as db:
