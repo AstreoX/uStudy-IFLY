@@ -332,6 +332,11 @@ class Message(Base):
         nullable=True,
         comment="Complete LLM API request/response context for debugging and feedback",
     )
+    tool_calls: Mapped[Optional[list]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Extracted tool call data for frontend rendering",
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=func.now(), nullable=False
     )

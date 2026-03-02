@@ -29,6 +29,31 @@ from db.models import Conversation, Message, MessageRole, Space, MessageAttachme
 
 logger = logging.getLogger(__name__)
 
+
+def _extract_tool_calls_from_context(llm_context: dict | None) -> list[dict] | None:
+    """Extract tool calls from llm_context for frontend rendering."""
+    if not llm_context:
+        return None
+    iterations = (llm_context.get("response") or {}).get("iterations") or []
+    extracted = []
+    for iteration in iterations:
+        tc_list = iteration.get("tool_calls") or []
+        tr_list = iteration.get("tool_results") or []
+        results_map = {r["tool_call_id"]: r for r in tr_list if r.get("tool_call_id")}
+        for tc in tc_list:
+            tc_id = tc.get("id")
+            result = results_map.get(tc_id, {})
+            extracted.append({
+                "id": tc_id,
+                "tool": tc.get("name"),
+                "arguments": tc.get("arguments"),
+                "status": "done",
+                "success": result.get("success"),
+                "result": result.get("data"),
+                "message": result.get("message"),
+            })
+    return extracted if extracted else None
+
 # Context window limit - how many messages to include in LLM context
 # DeepSeek V3 has 128K context window, so we can include more history
 MAX_HISTORY_MESSAGES = 50
@@ -619,6 +644,7 @@ class ChatService:
                                 role=MessageRole.ASSISTANT,
                                 content=full_response,
                                 llm_context=llm_context,
+                                tool_calls=_extract_tool_calls_from_context(llm_context),
                             )
                             save_db.add(assistant_message)
                             await save_db.commit()
@@ -1159,6 +1185,7 @@ class ChatService:
                                 role=MessageRole.ASSISTANT,
                                 content=full_response,
                                 llm_context=llm_context,
+                                tool_calls=_extract_tool_calls_from_context(llm_context),
                             )
                             save_db.add(assistant_message)
                             await save_db.commit()
