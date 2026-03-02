@@ -2035,13 +2035,24 @@
 
 				try {
 					const result = await getConversation(this.conversationId)
-					this.messages = result.messages.map((m, i) => ({
-						id: i + 1,
-						role: m.role === 'user' ? 'user' : 'ai',
-						content: m.content,
-						attachments: m.attachments || [],
-						created_at: m.created_at
-					}))
+					this.messages = result.messages.map((m, i) => {
+						const msg = {
+							id: i + 1,
+							role: m.role === 'user' ? 'user' : 'ai',
+							content: m.content,
+							attachments: m.attachments || [],
+							created_at: m.created_at
+						}
+						if (msg.role === 'ai' && m.tool_calls && m.tool_calls.length > 0) {
+							const segments = m.tool_calls.map(tc => ({ type: 'tool', toolCall: { ...tc } }))
+							if (m.content && m.content.trim()) {
+								segments.push({ type: 'text', content: m.content })
+							}
+							msg.segments = segments
+							msg.toolCalls = m.tool_calls
+						}
+						return msg
+					})
 					this.nextId = this.messages.length + 1
 					clearPendingMessages(this.conversationId)
 					this.$nextTick(() => this.scrollToLatestMessage())
@@ -2541,13 +2552,24 @@
 				this.isLoadingHistory = true
 				try {
 					const result = await getConversation(this.conversationId)
-					this.messages = result.messages.map((m, i) => ({
-						id: i + 1,
-						role: m.role === 'user' ? 'user' : 'ai',
-						content: m.content,
-						attachments: m.attachments || [],
-						created_at: m.created_at
-					}))
+					this.messages = result.messages.map((m, i) => {
+						const msg = {
+							id: i + 1,
+							role: m.role === 'user' ? 'user' : 'ai',
+							content: m.content,
+							attachments: m.attachments || [],
+							created_at: m.created_at
+						}
+						if (msg.role === 'ai' && m.tool_calls && m.tool_calls.length > 0) {
+							const segments = m.tool_calls.map(tc => ({ type: 'tool', toolCall: { ...tc } }))
+							if (m.content && m.content.trim()) {
+								segments.push({ type: 'text', content: m.content })
+							}
+							msg.segments = segments
+							msg.toolCalls = m.tool_calls
+						}
+						return msg
+					})
 					this.nextId = this.messages.length + 1
 					// 后台监控 active 时，服务器数据已包含完整回复，清空缓存避免重复
 					const monitor = getActiveMonitor()

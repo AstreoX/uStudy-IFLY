@@ -8,7 +8,8 @@
  */
 
 import config from '@/config'
-import { getTokens } from './storage'
+import { getTokens, clearAuth } from './storage'
+import { ensureFreshToken } from './request'
 
 const { API_BASE_URL } = config
 
@@ -173,6 +174,18 @@ function isAndroidPlatform() {
   } catch (e) {
     return false
   }
+}
+
+/**
+ * 检测是否为 401 Unauthorized 错误
+ * 需匹配各平台的不同错误格式
+ */
+function is401Error(err) {
+  if (!err) return false
+  if (err.statusCode === 401 || err.status === 401) return true
+  const msg = err.message || (typeof err === 'string' ? err : '')
+  if (/\bHTTP\s+401\b/.test(msg)) return true
+  return false
 }
 
 /**
@@ -427,6 +440,14 @@ function connectSSE_App(fullUrl, method, headers, data, onEvent, onComplete, onC
     success: (res) => {
       console.log('[SSE-App] Request completed, status:', res.statusCode, 'chunks:', chunksReceived)
 
+      // HTTP error (e.g. 401) — uni.request routes these to success, not fail
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        if (!aborted) {
+          onConnectionError?.(new Error(`HTTP ${res.statusCode}: ${typeof res.data === 'string' ? res.data : JSON.stringify(res.data)}`))
+        }
+        return
+      }
+
       // 如果没有收到分块数据，尝试从完整响应解析
       if (chunksReceived === 0 && res.data) {
         console.log('[SSE-App] No chunks received, replaying parsed events gradually')
@@ -494,9 +515,11 @@ function connectSSE_App(fullUrl, method, headers, data, onEvent, onComplete, onC
 }
 
 /**
- * 跨平台 SSE 连接
+ * 跨平台 SSE 连接（内部实现）
+ * @param {Object} options - 连接选项
+ * @param {string} [tokenOverride] - 重试时传入的新 token
  */
-export function connectSSE(options) {
+function _connectSSEInner(options, tokenOverride) {
   const { url, method = 'POST', data, onEvent, onComplete, onConnectionError } = options
 
   const tokens = getTokens()
@@ -506,13 +529,14 @@ export function connectSSE(options) {
     'Accept': 'text/event-stream',
   }
 
-  if (tokens?.access_token) {
-    headers['Authorization'] = `Bearer ${tokens.access_token}`
+  const tokenToUse = tokenOverride || tokens?.access_token
+  if (tokenToUse) {
+    headers['Authorization'] = `Bearer ${tokenToUse}`
   }
 
   console.log('[SSE] ===== New Connection =====')
   console.log('[SSE] URL:', fullUrl)
-  console.log('[SSE] Has token:', !!tokens?.access_token)
+  console.log('[SSE] Has token:', !!tokenToUse)
 
   // #ifdef H5
   console.log('[SSE] Platform: H5')
@@ -534,7 +558,11 @@ export function connectSSE(options) {
     data,
     success: (res) => {
       console.log('[SSE-MP] Response:', res.statusCode)
-      if (res.statusCode >= 200 && res.statusCode < 300 && typeof res.data === 'string') {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        onConnectionError?.(new Error(`HTTP ${res.statusCode}: ${typeof res.data === 'string' ? res.data : JSON.stringify(res.data)}`))
+        return
+      }
+      if (typeof res.data === 'string') {
         parseSSEBuffer(res.data + '\n', 'message', onEvent)
       }
       onComplete?.()
@@ -547,4 +575,57 @@ export function connectSSE(options) {
 
   return () => {}
   // #endif
+}
+
+/**
+ * 跨平台 SSE 连接（含 401 自动刷新重试）
+ * @param {Object} options
+ * @param {string} options.url - API 路径
+ * @param {string} [options.method='POST'] - HTTP 方法
+ * @param {Object} options.data - 请求体
+ * @param {Function} options.onEvent - SSE 事件回调
+ * @param {Function} options.onComplete - 连接关闭回调
+ * @param {Function} options.onConnectionError - 连接错误回调
+ * @returns {Function} 取消函数
+ */
+export function connectSSE(options) {
+  let aborted = false
+  let currentAbort = null
+  let retried = false
+
+  const wrappedOptions = {
+    ...options,
+    onConnectionError: (err) => {
+      if (aborted) return
+
+      if (!retried && is401Error(err)) {
+        retried = true
+        console.log('[SSE] 401 detected, attempting token refresh...')
+
+        ensureFreshToken()
+          .then(newToken => {
+            if (aborted) return
+            console.log('[SSE] Token refreshed, retrying SSE connection...')
+            currentAbort = _connectSSEInner(options, newToken)
+          })
+          .catch(refreshErr => {
+            if (aborted) return
+            console.error('[SSE] Token refresh failed, redirecting to login...')
+            clearAuth()
+            uni.reLaunch({ url: '/pages/login/login' })
+            options.onConnectionError?.(refreshErr)
+          })
+        return
+      }
+
+      options.onConnectionError?.(err)
+    }
+  }
+
+  currentAbort = _connectSSEInner(wrappedOptions)
+
+  return () => {
+    aborted = true
+    currentAbort?.()
+  }
 }

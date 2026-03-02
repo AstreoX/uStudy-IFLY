@@ -1557,13 +1557,22 @@
 					const historyMessages = result.messages || []
 
 					historyMessages.forEach(msg => {
-						this.messages.push({
+						const m = {
 							id: this.nextId++,
 							role: msg.role === 'user' ? 'user' : 'ai',
 							content: msg.content || '',
 							attachments: msg.attachments || [],
 							isStreaming: false
-						})
+						}
+						if (m.role === 'ai' && msg.tool_calls && msg.tool_calls.length > 0) {
+							const segments = msg.tool_calls.map(tc => ({ type: 'tool', toolCall: { ...tc } }))
+							if (msg.content && msg.content.trim()) {
+								segments.push({ type: 'text', content: msg.content })
+							}
+							m.segments = segments
+							m.toolCalls = msg.tool_calls
+						}
+						this.messages.push(m)
 					})
 
 					// 后台监控 active 时，服务器数据已包含完整回复，清空缓存避免重复

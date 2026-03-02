@@ -78,6 +78,12 @@ const CODE_COPY_STYLE = 'color:#5c90f7; font-size:12px; text-decoration:none;'
 const CODE_PRE_STYLE = 'overflow-x:auto; margin:0; padding:16px; white-space:pre; background:transparent;'
 const CODE_STYLE = 'font-family:SF Mono,Monaco,Consolas,monospace; font-size:13px; color:#e0e0e0;'
 
+// Table inline styles (dark theme, rpx units for app)
+const TABLE_WRAPPER_STYLE = 'overflow-x:auto; margin:24rpx 0;'
+const TABLE_STYLE = 'border-collapse:collapse; width:100%;'
+const TABLE_TH_STYLE = 'border:1px solid rgba(255,255,255,0.2); padding:16rpx 24rpx; background:rgba(255,255,255,0.08); font-weight:600; color:#ffffff; text-align:left;'
+const TABLE_TD_STYLE = 'border:1px solid rgba(255,255,255,0.15); padding:16rpx 24rpx; color:#ffffff;'
+
 function parseSimpleMarkdown(text) {
 	if (!text) return { html: '', codeContents: [] }
 
@@ -104,6 +110,58 @@ function parseSimpleMarkdown(text) {
 		)
 		return `@@CODE_BLOCK_${idx}@@`
 	})
+
+	// Extract tables before escapeHtml (same placeholder pattern as code blocks)
+	const tableBlocks = []
+	content = content.replace(
+		/(?:^|\n)((?:\|[^\n]+\|[ \t]*\n)+\|[\s:|-]+\|[ \t]*\n((?:\|[^\n]+\|[ \t]*\n?)*))/gm,
+		(match, fullTable) => {
+			const lines = fullTable.trim().split('\n').filter(l => l.trim())
+			// Need at least header + separator + 1 data row
+			if (lines.length < 3) return match
+
+			// Parse header row
+			const headerCells = lines[0].split('|').filter((_, i, arr) => i > 0 && i < arr.length - 1).map(c => c.trim())
+			// Parse separator row for alignment
+			const sepCells = lines[1].split('|').filter((_, i, arr) => i > 0 && i < arr.length - 1).map(c => c.trim())
+			// Validate separator row
+			if (!sepCells.every(s => /^:?-+:?$/.test(s))) return match
+
+			const alignments = sepCells.map(sep => {
+				if (/^:-+:$/.test(sep)) return 'center'
+				if (/^-+:$/.test(sep)) return 'right'
+				return 'left'
+			})
+
+			// Parse body rows
+			const bodyRows = lines.slice(2).map(line =>
+				line.split('|').filter((_, i, arr) => i > 0 && i < arr.length - 1).map(c => c.trim())
+			)
+
+			// Build HTML with inline styles
+			let html = `<div style="${TABLE_WRAPPER_STYLE}"><table style="${TABLE_STYLE}">`
+			html += '<thead><tr>'
+			headerCells.forEach((cell, i) => {
+				const align = alignments[i] || 'left'
+				html += `<th style="${TABLE_TH_STYLE}text-align:${align};">${escapeHtml(cell)}</th>`
+			})
+			html += '</tr></thead><tbody>'
+			bodyRows.forEach(row => {
+				html += '<tr>'
+				headerCells.forEach((_, i) => {
+					const cell = (row[i] || '').trim()
+					const align = alignments[i] || 'left'
+					html += `<td style="${TABLE_TD_STYLE}text-align:${align};">${escapeHtml(cell)}</td>`
+				})
+				html += '</tr>'
+			})
+			html += '</tbody></table></div>'
+
+			const idx = tableBlocks.length
+			tableBlocks.push(html)
+			return `\n@@TABLE_BLOCK_${idx}@@\n`
+		}
+	)
 
 	content = escapeHtml(content)
 
@@ -160,11 +218,15 @@ function parseSimpleMarkdown(text) {
 	content = content.replace(/\n/g, '<br/>')
 
 	content = content
-		.replace(/<br\/>(<\/?(?:h1|h2|h3|ul|ol|li|blockquote|pre|hr)[^>]*>)/g, '$1')
-		.replace(/(<\/?(?:h1|h2|h3|ul|ol|li|blockquote|pre|hr)[^>]*>)<br\/>/g, '$1')
+		.replace(/<br\/>(<\/?(?:h1|h2|h3|ul|ol|li|blockquote|pre|hr|div|table|thead|tbody|tr|th|td)[^>]*>)/g, '$1')
+		.replace(/(<\/?(?:h1|h2|h3|ul|ol|li|blockquote|pre|hr|div|table|thead|tbody|tr|th|td)[^>]*>)<br\/>/g, '$1')
 
 	for (let i = 0; i < codeBlocks.length; i++) {
 		content = content.split(`@@CODE_BLOCK_${i}@@`).join(codeBlocks[i])
+	}
+
+	for (let i = 0; i < tableBlocks.length; i++) {
+		content = content.split(`@@TABLE_BLOCK_${i}@@`).join(tableBlocks[i])
 	}
 
 	return { html: content, codeContents }
@@ -413,6 +475,22 @@ export default {
 	border: none;
 	border-top: 1px solid rgba(255, 255, 255, 0.2);
 	margin: 24rpx 0;
+}
+
+/* 表格 */
+.markdown-content table {
+	border-collapse: collapse;
+	width: 100%;
+	margin: 24rpx 0;
+}
+.markdown-content th,
+.markdown-content td {
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	padding: 16rpx 24rpx;
+}
+.markdown-content th {
+	background: rgba(255, 255, 255, 0.08);
+	font-weight: 600;
 }
 
 /* ===== Highlight.js 代码高亮主题（深色） ===== */
