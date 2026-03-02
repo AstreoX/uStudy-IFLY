@@ -2518,7 +2518,7 @@
 
 	.plus-popup {
 		position: fixed;
-		left: calc(100vw / 24);
+		right: calc(100vw / 24);
 		bottom: calc(100vh * 1.5 / 26 + 100rpx);
 		min-width: 280rpx;
 		background: rgba(30, 30, 45, 0.95);
@@ -2573,7 +2573,7 @@
 
 	.popup-arrow {
 		position: absolute;
-		left: 36rpx;
+		right: 36rpx;
 		bottom: -16rpx;
 		width: 0;
 		height: 0;
