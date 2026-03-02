@@ -43,10 +43,20 @@
       <text class="kg-error-text">{{ error }}</text>
     </view>
 
+    <!-- Generating state (async task in progress) -->
+    <view v-else-if="generating && nodes.length === 0" class="kg-generating">
+      <view class="kg-spinner"></view>
+      <text class="kg-loading-text">正在生成知识图谱...</text>
+      <text class="kg-loading-sub">这可能需要 10~30 秒</text>
+    </view>
+
     <!-- Empty state -->
     <view v-else-if="nodes.length === 0" class="kg-empty">
-      <text class="kg-empty-text">No knowledge graph yet</text>
-      <text class="kg-empty-sub">Start a conversation to generate one</text>
+      <text class="kg-empty-text">暂无知识图谱</text>
+      <text class="kg-empty-sub">知识图谱尚未生成或生成失败</text>
+      <view class="kg-retry-btn" @click="$emit('retry')">
+        <text class="kg-retry-btn-text">重新生成</text>
+      </view>
     </view>
   </view>
 </template>
@@ -68,10 +78,11 @@ import {
 export default {
   props: {
     spaceId: { type: [String, Number], default: null },
-    pathHighlight: { type: Boolean, default: false }
+    pathHighlight: { type: Boolean, default: false },
+    generating: { type: Boolean, default: false }
   },
 
-  emits: ['node-selected', 'graph-loaded'],
+  emits: ['node-selected', 'graph-loaded', 'retry'],
 
   data() {
     return {
@@ -1401,6 +1412,45 @@ export default {
 .kg-empty-sub {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.08);
+}
+
+/* Generating state */
+.kg-generating {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.kg-loading-sub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.25);
+  margin-top: 2px;
+}
+
+/* Retry button */
+.kg-retry-btn {
+  margin-top: 12px;
+  padding: 8px 20px;
+  border-radius: 20px;
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.kg-retry-btn:hover {
+  background: rgba(59, 130, 246, 0.3);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.kg-retry-btn-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(59, 130, 246, 0.9);
 }
 
 /* Minimap */

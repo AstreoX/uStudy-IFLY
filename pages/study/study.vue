@@ -64,8 +64,10 @@
                 v-if="activeTab === 'graph'"
                 :spaceId="spaceId"
                 :pathHighlight="isPathHighlightOn"
+                :generating="graphGenerating"
                 @node-selected="onNodeSelected"
                 @graph-loaded="onGraphLoaded"
+                @retry="handleGraphRetry"
               />
               <StudyMaterialsPanel
                 v-else-if="activeTab === 'materials'"
@@ -404,6 +406,58 @@
                         <text class="memory-tool-text">{{ getMemoryToolText(seg.toolCall.tool) }}</text>
                       </view>
 
+                      <!-- Search tools: structured result card -->
+                      <view
+                        v-else-if="isSearchTool(seg.toolCall.tool)"
+                        class="tool-call-card search-result-card"
+                        :class="getToolCardClass(seg.toolCall)"
+                      >
+                        <view class="tool-call-header">
+                          <view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
+                          <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-success">
+                            <polyline points="88 136 112 160 168 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                          <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-failed">
+                            <line x1="160" y1="96" x2="96" y2="160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                            <line x1="160" y1="160" x2="96" y2="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                          <view class="tool-call-icon" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
+                          <text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
+                        </view>
+                        <view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.results?.length"
+                          class="search-results-list">
+                          <view v-for="(item, idx) in getVisibleSearchResults(seg.toolCall)" :key="idx"
+                            class="search-result-item" @click="openSearchResultUrl(item.url)">
+                            <view class="search-result-item-header">
+                              <text class="search-result-source-badge"
+                                :class="'source-' + (item.source || 'web')">{{ getSourceLabel(item.source || 'web') }}</text>
+                              <text class="search-result-title">{{ item.title }}</text>
+                            </view>
+                            <text v-if="item.snippet" class="search-result-snippet">{{ item.snippet }}</text>
+                            <view class="search-result-meta">
+                              <text v-if="item.authors" class="search-result-authors">{{ item.authors }}</text>
+                              <text v-if="item.year" class="search-result-year">{{ item.year }}</text>
+                              <text v-if="item.citation_count" class="search-result-citations">引用 {{ item.citation_count }}</text>
+                              <text v-if="item.author_name" class="search-result-author">{{ item.author_name }}</text>
+                              <text v-if="item.duration" class="search-result-duration">{{ item.duration }}</text>
+                              <text class="search-result-url">{{ formatDisplayUrl(item.url) }}</text>
+                            </view>
+                          </view>
+                          <view v-if="seg.toolCall.result.results.length > 2"
+                            class="search-results-toggle" @click="toggleSearchResults(seg.toolCall.id)">
+                            <text class="search-results-toggle-text">
+                              {{ isSearchExpanded(seg.toolCall.id) ? '收起' : '展开全部 ' + seg.toolCall.result.results.length + ' 条结果' }}
+                            </text>
+                          </view>
+                        </view>
+                        <text v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" class="tool-call-args">
+                          {{ seg.toolCall.result?.message || '未找到相关结果' }}
+                        </text>
+                        <text v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-args">
+                          {{ seg.toolCall.result?.message || '搜索失败' }}
+                        </text>
+                      </view>
+
                       <!-- Regular tools: card -->
                       <view
                         v-else
@@ -591,7 +645,7 @@ import QuizPanel from '@/components/study/quiz/QuizPanel.vue'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UMasteryToast from '@/components/u-mastery-toast/u-mastery-toast.vue'
 import { connectNotificationStream } from '@/api/notification'
-import { getSpaces, deleteSpace, getTaskStatus } from '@/api/space'
+import { getSpaces, deleteSpace, getTaskStatus, generateKnowledgeGraph } from '@/api/space'
 import { createConversation, getSpaceConversations, getConversation, sendMessage, uploadAttachment, deleteAttachment, getModels } from '@/api/chat'
 import { useUserStore } from '@/store/user'
 import { useSpacesStore } from '@/store/spaces'
@@ -625,7 +679,10 @@ const TOOL_DISPLAY_NAMES = {
   write_to_space_memory: 'Update Space Memory',
   delete_from_space_memory: 'Delete Space Memory',
   get_review_events: 'View Reviews',
-  mark_review_completed: 'Mark Reviewed'
+  mark_review_completed: 'Mark Reviewed',
+  academic_search: '学术搜索',
+  encyclopedia_search: '百科搜索',
+  course_search: 'B站课程搜索'
 }
 
 // Graph-mutating tools (trigger auto-refresh of knowledge graph)
@@ -732,6 +789,7 @@ export default {
       isAutoScrollEnabled: true,
       memoryToolDelayedDone: {},
       memoryToolStartTimes: {},
+      expandedSearchResults: {},
 
       // Thinking model state
       thinkingStartTime: null,
@@ -775,7 +833,12 @@ export default {
       isGeneratingQuiz: false,
       activeQuizId: null,
       quizPollTimer: null,
-      lastChatEnterMeta: null
+      lastChatEnterMeta: null,
+
+      // Knowledge graph generation polling
+      graphTaskId: null,
+      graphGenerating: false,
+      _abortGraphPoll: false
     }
   },
   computed: {
@@ -821,8 +884,15 @@ export default {
   async onLoad(options) {
     if (options.spaceId) {
       this.spaceId = options.spaceId
+      if (options.graphTaskId) {
+        this.graphTaskId = options.graphTaskId
+        this.graphGenerating = true
+      }
       await this.loadSpaceInfo()
       this.initConversation()
+      if (this.graphTaskId) {
+        this.pollGraphTask(this.graphTaskId)
+      }
     }
   },
   onUnload() {
@@ -859,6 +929,7 @@ export default {
       clearTimeout(this._graphRefreshTimer)
       this._graphRefreshTimer = null
     }
+    this._abortGraphPoll = true
   },
   methods: {
     resolveUrl(url) {
@@ -891,6 +962,52 @@ export default {
 
     removeMasteryNotification(id) {
       this.masteryNotifications = this.masteryNotifications.filter(n => n.id !== id)
+    },
+
+    // ==================== Knowledge Graph Generation Polling ====================
+    async pollGraphTask(taskId) {
+      const maxAttempts = 150 // ~5 minutes at 2s interval
+      for (let i = 0; i < maxAttempts; i++) {
+        if (this._abortGraphPoll) return
+        try {
+          const task = await getTaskStatus(taskId)
+          if (task.status === 'done') {
+            await new Promise(r => setTimeout(r, 2000))
+            this.graphGenerating = false
+            this.graphTaskId = null
+            this.$nextTick(() => {
+              if (this.$refs.knowledgeGraph) {
+                this.$refs.knowledgeGraph.loadAndRender()
+              }
+            })
+            return
+          }
+          if (task.status === 'failed') {
+            this.graphGenerating = false
+            this.graphTaskId = null
+            return
+          }
+        } catch (err) {
+          // Network error — continue polling
+        }
+        await new Promise(r => setTimeout(r, 2000))
+      }
+      // Timeout
+      this.graphGenerating = false
+      this.graphTaskId = null
+    },
+
+    async handleGraphRetry() {
+      if (this.graphGenerating || !this.spaceId) return
+      this.graphGenerating = true
+      try {
+        const taskRes = await generateKnowledgeGraph(this.spaceId, {
+          topic: this.spaceName
+        })
+        await this.pollGraphTask(taskRes.task_id)
+      } catch (err) {
+        this.graphGenerating = false
+      }
     },
 
     // ==================== Model Selection ====================
@@ -2009,6 +2126,40 @@ export default {
 
     isMemoryTool(toolName) {
       return MEMORY_TOOLS.has(toolName)
+    },
+
+    isSearchTool(toolName) {
+      return ['web_search', 'academic_search', 'encyclopedia_search', 'course_search'].includes(toolName)
+    },
+
+    getVisibleSearchResults(toolCall) {
+      const results = toolCall.result?.results || []
+      if (this.expandedSearchResults[toolCall.id]) return results
+      return results.slice(0, 2)
+    },
+
+    isSearchExpanded(toolCallId) {
+      return !!this.expandedSearchResults[toolCallId]
+    },
+
+    toggleSearchResults(toolCallId) {
+      this.expandedSearchResults = {
+        ...this.expandedSearchResults,
+        [toolCallId]: !this.expandedSearchResults[toolCallId]
+      }
+    },
+
+    openSearchResultUrl(url) {
+      if (!url) return
+      window.open(url, '_blank')
+    },
+
+    getSourceLabel(source) {
+      return { academic: '学术', encyclopedia: '百科', course: 'B站', web: '网页' }[source] || source
+    },
+
+    formatDisplayUrl(url) {
+      try { return new URL(url).hostname } catch { return url }
     },
 
     getMemoryToolText(toolName) {
@@ -3152,6 +3303,108 @@ export default {
 @keyframes memory-shimmer {
   0% { background-position: 100% 50%; }
   100% { background-position: -100% 50%; }
+}
+
+/* Search Result Cards */
+.search-result-card {
+  max-width: 420px;
+}
+
+.search-results-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.search-result-item {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.search-result-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.search-result-item-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.search-result-source-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.source-academic { color: rgba(168, 85, 247, 0.95); background: rgba(168, 85, 247, 0.15); }
+.source-encyclopedia { color: rgba(59, 130, 246, 0.95); background: rgba(59, 130, 246, 0.15); }
+.source-course { color: rgba(251, 113, 133, 0.95); background: rgba(251, 113, 133, 0.15); }
+.source-web { color: rgba(34, 197, 94, 0.95); background: rgba(34, 197, 94, 0.15); }
+
+.search-result-title {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.search-result-snippet {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+.search-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.search-result-authors,
+.search-result-year,
+.search-result-citations,
+.search-result-author,
+.search-result-duration {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.search-result-url {
+  font-size: 11px;
+  color: rgba(96, 165, 250, 0.7);
+}
+
+.search-results-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 0;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.search-results-toggle-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 /* Typing Indicator */

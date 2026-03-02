@@ -475,18 +475,21 @@ export default {
       spacesStore.invalidate()
 
       // Trigger knowledge graph generation
+      let graphTaskId = ''
       try {
-        await generateKnowledgeGraph(spaceRes.id, {
+        const taskRes = await generateKnowledgeGraph(spaceRes.id, {
           topic: this.topicName.trim(),
           user_preference: preferenceLabels.length > 0 ? preferenceLabels.join('、') : null
         })
+        graphTaskId = taskRes.task_id || ''
       } catch (err) {
         // Space was created, still navigate even if KG generation fails
       }
 
       this.isCreating = false
+      const taskParam = graphTaskId ? `&graphTaskId=${graphTaskId}` : ''
       uni.reLaunch({
-        url: `/pages/study/study?spaceId=${spaceRes.id}`
+        url: `/pages/study/study?spaceId=${spaceRes.id}${taskParam}`
       })
     }
   }
