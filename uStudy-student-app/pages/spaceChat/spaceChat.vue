@@ -556,13 +556,8 @@
 						<text class="model-menu-item-name">{{ m.display_name }}</text>
 						<text class="model-menu-item-desc">{{ m.locked ? '升级订阅解锁' : m.description }}</text>
 					</view>
-					<svg v-if="m.locked" viewBox="0 0 256 256" class="model-menu-lock">
-						<rect x="40" y="112" width="176" height="112" rx="8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-						<path d="M88,112V80a40,40,0,0,1,80,0v32" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-					</svg>
-					<svg v-else-if="m.id === selectedModelId" viewBox="0 0 256 256" class="model-menu-check">
-						<polyline points="40 144 96 200 216 80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
-					</svg>
+					<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
+					<image v-else-if="m.id === selectedModelId" class="model-menu-check" src="/static/icons/phosphor-icons/SVGs/bold/check.svg" mode="aspectFit"></image>
 				</view>
 			</view>
 
@@ -619,19 +614,9 @@
 				<view class="input-bottom-row">
 					<!-- 左侧：模型选择 pill -->
 					<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
-						<svg viewBox="0 0 256 256" class="model-selector-icon">
-							<rect width="256" height="256" fill="none"/>
-							<line x1="40" y1="128" x2="216" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-							<line x1="40" y1="64" x2="216" y2="64" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-							<line x1="40" y1="192" x2="216" y2="192" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-							<circle cx="104" cy="64" r="12" fill="currentColor"/>
-							<circle cx="168" cy="128" r="12" fill="currentColor"/>
-							<circle cx="88" cy="192" r="12" fill="currentColor"/>
-						</svg>
+						<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
 						<text class="model-selector-label">{{ selectedModelName }}</text>
-						<svg viewBox="0 0 256 256" class="model-selector-chevron">
-							<polyline points="208 96 128 176 48 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="20"/>
-						</svg>
+						<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
 					</view>
 					<view v-else class="input-bottom-row-spacer"></view>
 
@@ -5285,7 +5270,8 @@
 	.model-selector-icon {
 		width: 28rpx;
 		height: 28rpx;
-		color: rgba(255, 255, 255, 0.5);
+		filter: brightness(0) invert(1);
+		opacity: 0.5;
 		flex-shrink: 0;
 	}
 
@@ -5301,7 +5287,8 @@
 	.model-selector-chevron {
 		width: 20rpx;
 		height: 20rpx;
-		color: rgba(255, 255, 255, 0.35);
+		filter: brightness(0) invert(1);
+		opacity: 0.35;
 		flex-shrink: 0;
 	}
 
@@ -5375,7 +5362,8 @@
 	.model-menu-check {
 		width: 32rpx;
 		height: 32rpx;
-		color: rgba(255, 255, 255, 0.7);
+		filter: brightness(0) invert(1);
+		opacity: 0.7;
 		flex-shrink: 0;
 		margin-left: 16rpx;
 	}
@@ -5391,7 +5379,8 @@
 	.model-menu-lock {
 		width: 28rpx;
 		height: 28rpx;
-		color: #9CA3AF;
+		filter: brightness(0) invert(1);
+		opacity: 0.5;
 		flex-shrink: 0;
 		margin-left: 16rpx;
 	}

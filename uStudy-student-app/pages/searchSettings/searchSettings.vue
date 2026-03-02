@@ -24,7 +24,7 @@
         <!-- 联网搜索 -->
         <view class="settings-item">
           <view class="item-left">
-            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg" mode="aspectFit"></image>
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/bold/magnifying-glass.svg" mode="aspectFit"></image>
             <view class="item-text">
               <text class="item-label">联网搜索</text>
               <text class="item-desc">DuckDuckGo 通用网页搜索</text>
@@ -41,7 +41,7 @@
         <!-- 学术搜索 -->
         <view class="settings-item">
           <view class="item-left">
-            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/graduation-cap.svg" mode="aspectFit"></image>
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/bold/graduation-cap.svg" mode="aspectFit"></image>
             <view class="item-text">
               <text class="item-label">学术搜索</text>
               <text class="item-desc">Semantic Scholar 学术论文</text>
@@ -58,7 +58,7 @@
         <!-- 百科搜索 -->
         <view class="settings-item">
           <view class="item-left">
-            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/books.svg" mode="aspectFit"></image>
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/bold/books.svg" mode="aspectFit"></image>
             <view class="item-text">
               <text class="item-label">百科搜索</text>
               <text class="item-desc">维基百科中英文词条</text>
@@ -75,7 +75,7 @@
         <!-- 课程搜索 -->
         <view class="settings-item">
           <view class="item-left">
-            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/globe.svg" mode="aspectFit"></image>
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/bold/globe.svg" mode="aspectFit"></image>
             <view class="item-text">
               <text class="item-label">课程搜索</text>
               <text class="item-desc">B站教育视频与课程</text>
@@ -221,6 +221,7 @@ export default {
 .nav-icon {
   width: 40rpx;
   height: 40rpx;
+  filter: brightness(0) invert(1);
   opacity: 0.7;
 }
 
@@ -280,6 +281,7 @@ export default {
 .item-icon {
   width: 40rpx;
   height: 40rpx;
+  filter: brightness(0) invert(1);
   opacity: 0.6;
   flex-shrink: 0;
 }

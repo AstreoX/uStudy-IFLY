@@ -190,13 +190,8 @@
 		<!-- 加载遮罩 -->
 		<view v-if="isLoading" class="loading-overlay">
 			<view class="loading-content">
-				<!-- 多节点轨道加载器 -->
-				<view class="loading-spinner-enhanced">
-					<view class="loading-center-glow"></view>
-					<view class="loading-dot loading-dot-1"></view>
-					<view class="loading-dot loading-dot-2"></view>
-					<view class="loading-dot loading-dot-3"></view>
-				</view>
+				<!-- 简单旋转加载器 -->
+				<view class="loading-spinner-simple"></view>
 				<text class="loading-text">{{ loadingText }}</text>
 				<!-- 不确定性进度条 -->
 				<view class="loading-progress-bar">
@@ -249,13 +244,8 @@
 							<text class="model-menu-item-name">{{ m.display_name }}</text>
 							<text class="model-menu-item-desc">{{ m.locked ? '升级订阅解锁' : m.description }}</text>
 						</view>
-						<svg v-if="m.locked" viewBox="0 0 256 256" class="model-menu-lock">
-							<rect x="40" y="112" width="176" height="112" rx="8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-							<path d="M88,112V80a40,40,0,0,1,80,0v32" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-						</svg>
-						<svg v-else-if="m.id === selectedModelId" viewBox="0 0 256 256" class="model-menu-check">
-							<polyline points="40 144 96 200 216 80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
-						</svg>
+						<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
+						<image v-else-if="m.id === selectedModelId" class="model-menu-check" src="/static/icons/phosphor-icons/SVGs/bold/check.svg" mode="aspectFit"></image>
 					</view>
 				</view>
 
@@ -315,19 +305,9 @@
 					<view class="input-bottom-row">
 						<!-- 左侧：模型选择 pill -->
 						<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
-							<svg viewBox="0 0 256 256" class="model-selector-icon">
-								<rect width="256" height="256" fill="none"/>
-								<line x1="40" y1="128" x2="216" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-								<line x1="40" y1="64" x2="216" y2="64" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-								<line x1="40" y1="192" x2="216" y2="192" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-								<circle cx="104" cy="64" r="12" fill="currentColor"/>
-								<circle cx="168" cy="128" r="12" fill="currentColor"/>
-								<circle cx="88" cy="192" r="12" fill="currentColor"/>
-							</svg>
+							<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
 							<text class="model-selector-label">{{ selectedModelName }}</text>
-							<svg viewBox="0 0 256 256" class="model-selector-chevron">
-								<polyline points="208 96 128 176 48 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="20"/>
-							</svg>
+							<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
 						</view>
 						<view v-else class="input-bottom-row-spacer"></view>
 
@@ -1328,8 +1308,14 @@
 						throw new Error(task.error_message || '知识图谱生成失败')
 					}
 
-					// 更新加载进度提示
-					this.loadingText = `正在生成知识图谱... (${i + 1}/${maxAttempts})`
+					// 更新加载提示（根据等待时间显示不同阶段文案）
+					if (i < 5) {
+						this.loadingText = '正在生成知识图谱...'
+					} else if (i < 15) {
+						this.loadingText = '知识图谱生成中，请稍候...'
+					} else {
+						this.loadingText = '即将完成，请耐心等待...'
+					}
 
 					// 等待 2 秒后重试
 					await new Promise(resolve => setTimeout(resolve, 2000))
@@ -1348,8 +1334,8 @@
 					// 检测空图谱情况 + 重试逻辑
 					if (!nodes || nodes.length === 0) {
 						if (retryAttempt < MAX_RETRIES) {
-							// 更新加载提示文案，显示重试次数
-							this.loadingText = `正在加载知识图谱... (尝试 ${retryAttempt + 1}/${MAX_RETRIES})`
+							// 更新加载提示文案
+							this.loadingText = '正在加载知识图谱...'
 
 							// 等待后重试
 							await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[retryAttempt]))
@@ -1434,7 +1420,7 @@
 				} catch (err) {
 					// 网络错误重试（仅针对服务器错误或网络断开）
 					if (retryAttempt < MAX_RETRIES) {
-						this.loadingText = `正在重试加载... (尝试 ${retryAttempt + 1}/${MAX_RETRIES})`
+						this.loadingText = '正在重试加载...'
 						await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[retryAttempt]))
 						return await this.loadGraphData(retryAttempt + 1)
 					}
@@ -4522,7 +4508,8 @@
 	.model-selector-icon {
 		width: 28rpx;
 		height: 28rpx;
-		color: rgba(255, 255, 255, 0.5);
+		filter: brightness(0) invert(1);
+		opacity: 0.5;
 		flex-shrink: 0;
 	}
 
@@ -4538,7 +4525,8 @@
 	.model-selector-chevron {
 		width: 20rpx;
 		height: 20rpx;
-		color: rgba(255, 255, 255, 0.35);
+		filter: brightness(0) invert(1);
+		opacity: 0.35;
 		flex-shrink: 0;
 	}
 
@@ -4612,7 +4600,8 @@
 	.model-menu-check {
 		width: 32rpx;
 		height: 32rpx;
-		color: rgba(255, 255, 255, 0.7);
+		filter: brightness(0) invert(1);
+		opacity: 0.7;
 		flex-shrink: 0;
 		margin-left: 16rpx;
 	}
@@ -4628,7 +4617,8 @@
 	.model-menu-lock {
 		width: 28rpx;
 		height: 28rpx;
-		color: #9CA3AF;
+		filter: brightness(0) invert(1);
+		opacity: 0.5;
 		flex-shrink: 0;
 		margin-left: 16rpx;
 	}
@@ -4898,71 +4888,19 @@
 		gap: 24rpx;
 	}
 
-	/* 多节点轨道加载器 */
-	.loading-spinner-enhanced {
-		position: relative;
-		width: 120rpx;
-		height: 120rpx;
-	}
-
-	/* 中心脉冲光晕 */
-	.loading-center-glow {
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		width: 32rpx;
-		height: 32rpx;
-		margin: -16rpx 0 0 -16rpx;
-		background: radial-gradient(circle, rgba(64, 224, 208, 0.8), rgba(64, 224, 208, 0.2));
+	/* 简单旋转加载器 */
+	.loading-spinner-simple {
+		width: 72rpx;
+		height: 72rpx;
+		border: 4rpx solid rgba(255, 255, 255, 0.2);
+		border-top: 4rpx solid #0088FF;
 		border-radius: 50%;
-		animation: centerPulse 2s ease-in-out infinite;
+		animation: spinSimple 1s linear infinite;
 	}
 
-	/* 轨道节点 */
-	.loading-dot {
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		width: 16rpx;
-		height: 16rpx;
-		margin: -8rpx 0 0 -8rpx;
-		background: #0088FF;
-		border-radius: 50%;
-		box-shadow: 0 0 16rpx rgba(0, 136, 255, 0.6);
-	}
-
-	.loading-dot-1 {
-		animation: orbitRotate 2s linear infinite;
-	}
-
-	.loading-dot-2 {
-		animation: orbitRotate 2s linear infinite 0.66s;
-	}
-
-	.loading-dot-3 {
-		animation: orbitRotate 2s linear infinite 1.33s;
-	}
-
-	/* 中心脉冲动画 */
-	@keyframes centerPulse {
-		0%, 100% {
-			transform: scale(1);
-			opacity: 1;
-		}
-		50% {
-			transform: scale(1.5);
-			opacity: 0.6;
-		}
-	}
-
-	/* 轨道旋转动画 */
-	@keyframes orbitRotate {
-		0% {
-			transform: rotate(0deg) translateX(48rpx) rotate(0deg);
-		}
-		100% {
-			transform: rotate(360deg) translateX(48rpx) rotate(-360deg);
-		}
+	@keyframes spinSimple {
+		0% { transform: rotate(0deg); }
+		100% { transform: rotate(360deg); }
 	}
 
 	.loading-text {

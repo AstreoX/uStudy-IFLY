@@ -56,10 +56,10 @@
             },
             "icons" : {
                 "android" : {
-                    "hdpi" : "uStudy-LOGO2.png",
-                    "xhdpi" : "uStudy-LOGO2.png",
-                    "xxhdpi" : "uStudy-LOGO2.png",
-                    "xxxhdpi" : "uStudy-LOGO2.png"
+                    "hdpi" : "uStudy-LOGO3.png",
+                    "xhdpi" : "uStudy-LOGO3.png",
+                    "xxhdpi" : "uStudy-LOGO3.png",
+                    "xxxhdpi" : "uStudy-LOGO3.png"
                 }
             },
             /* SDK配置 */
