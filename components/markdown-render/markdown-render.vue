@@ -10,6 +10,8 @@
 </template>
 
 <script>
+import katex from 'katex'
+
 function escapeHtml(text) {
   return String(text)
     .replace(/&/g, '&amp;')
@@ -166,6 +168,54 @@ function parseSimpleMarkdown(text) {
   return { html: content, codeContents }
 }
 
+function renderLatex(formula, displayMode) {
+  try {
+    return katex.renderToString(formula, {
+      throwOnError: false,
+      displayMode: displayMode,
+      output: 'html',
+      strict: false
+    })
+  } catch (e) {
+    return `<span class="katex-error">${formula}</span>`
+  }
+}
+
+function processLatex(text) {
+  if (!text) return { text: '', placeholders: [] }
+
+  const placeholders = []
+  let processed = text
+  const katexBlockStyle = 'display:block; text-align:center; margin:16px 0; padding:12px; overflow-x:auto; max-width:100%;'
+
+  // 块级公式 $$...$$
+  processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+    const rendered = renderLatex(formula.trim(), true)
+    const key = `@@LATEX_BLOCK_${placeholders.length}@@`
+    placeholders.push({ key, html: `<div class="katex-block" style="${katexBlockStyle}">${rendered}</div>` })
+    return `\n${key}\n`
+  })
+
+  // 行内公式 $...$ （跳过货币格式如 $10, $10.00）
+  processed = processed.replace(/(^|[^$])\$(?!\$)([^\$\n]+?)\$(?!\$)/g, (match, prefix, formula) => {
+    if (/^[\d,]+(\.\d+)?$/.test(formula.trim())) return match
+    const rendered = renderLatex(formula.trim(), false)
+    const key = `@@LATEX_INLINE_${placeholders.length}@@`
+    placeholders.push({ key, html: `<span class="katex-inline">${rendered}</span>` })
+    return `${prefix}${key}`
+  })
+
+  return { text: processed, placeholders }
+}
+
+function restorePlaceholders(text, placeholders) {
+  let output = text
+  for (const item of placeholders) {
+    output = output.split(item.key).join(item.html)
+  }
+  return output
+}
+
 export default {
   name: 'MarkdownRender',
   props: {
@@ -216,7 +266,13 @@ export default {
     markdownResult() {
       if (!this.content) return { html: '', codeContents: [] }
       try {
-        return parseSimpleMarkdown(this.content)
+        // 先处理 LaTeX 公式，再处理 Markdown
+        const latexResult = processLatex(this.content)
+        const markdownResult = parseSimpleMarkdown(latexResult.text)
+        return {
+          html: restorePlaceholders(markdownResult.html, latexResult.placeholders),
+          codeContents: markdownResult.codeContents
+        }
       } catch (e) {
         return { html: escapeHtml(this.content), codeContents: [] }
       }
@@ -319,5 +375,78 @@ export default {
   border: none;
   border-top: 1px solid rgba(255, 255, 255, 0.2);
   margin: 12px 0;
+}
+
+/* ===== KaTeX 数学公式样式 ===== */
+
+/* 块级公式容器 */
+.katex-block {
+  display: block;
+  text-align: center;
+  margin: 16px 0;
+  padding: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* 行内公式容器 */
+.katex-inline {
+  display: inline;
+}
+
+/* KaTeX 渲染错误提示 */
+.katex-error {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+/* KaTeX 核心样式 - 深色主题适配 */
+.katex {
+  font-size: 1.1em;
+  line-height: 1.2;
+  color: #ffffff;
+}
+
+.katex .katex-html {
+  color: #ffffff;
+}
+
+/* 分数线颜色 */
+.katex .frac-line {
+  background: #ffffff;
+}
+
+/* 根号线颜色 */
+.katex .sqrt-line {
+  background: #ffffff;
+}
+
+/* 矩阵括号颜色 */
+.katex .delimsizing,
+.katex .delimsizinginner {
+  color: #ffffff;
+}
+
+/* 上下标 */
+.katex .msupsub {
+  text-align: left;
+}
+
+/* 操作符 */
+.katex .mop {
+  color: #82aaff;
+}
+
+/* 变量 */
+.katex .mord.mathnormal {
+  color: #ffffff;
+}
+
+/* 数字 */
+.katex .mord.text {
+  color: #f78c6c;
 }
 </style>
