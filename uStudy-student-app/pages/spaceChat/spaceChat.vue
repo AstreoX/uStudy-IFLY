@@ -181,6 +181,124 @@
 							</view>
 						</view>
 
+						<!-- 测验成绩工具：view_quiz_results -->
+						<view
+							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'view_quiz_results'"
+							:key="'quiz-results-' + segIdx"
+							class="tool-call-card"
+							:class="{
+								'tool-call-running': seg.toolCall.status === 'running',
+								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
+								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+							}"
+						>
+							<!-- Header -->
+							<view class="tool-call-header">
+								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
+								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
+									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
+								<image v-else class="tool-call-status-icon tool-call-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- 测验列表 -->
+							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.data?.quizzes?.length"
+								class="quiz-results-list">
+								<view v-for="(quiz, idx) in seg.toolCall.result.data.quizzes" :key="idx" class="quiz-result-item">
+									<view class="quiz-result-header">
+										<text class="quiz-result-title">{{ quiz.title }}</text>
+										<text class="quiz-result-difficulty"
+											:class="'difficulty-' + quiz.difficulty">{{ getDifficultyLabel(quiz.difficulty) }}</text>
+									</view>
+									<view class="quiz-result-meta">
+										<text v-if="quiz.has_attempt" class="quiz-result-score">{{ quiz.score }}/{{ quiz.total_score }}</text>
+										<text v-else class="quiz-result-no-attempt">未作答</text>
+										<text class="quiz-result-date">{{ quiz.created_at }}</text>
+									</view>
+								</view>
+							</view>
+
+							<!-- 无测验 -->
+							<view v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" class="tool-call-result">
+								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '当前学习空间没有测验' }}</text>
+							</view>
+
+							<!-- 失败 -->
+							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
+								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '获取测验成绩失败' }}</text>
+							</view>
+						</view>
+
+						<!-- 测验详情工具：view_quiz_attempt_detail -->
+						<view
+							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'view_quiz_attempt_detail'"
+							:key="'quiz-detail-' + segIdx"
+							class="tool-call-card"
+							:class="{
+								'tool-call-running': seg.toolCall.status === 'running',
+								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
+								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+							}"
+						>
+							<!-- Header -->
+							<view class="tool-call-header">
+								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
+								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
+									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
+								<image v-else class="tool-call-status-icon tool-call-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- 详情内容 -->
+							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.data"
+								class="quiz-detail-content">
+								<!-- 总分 -->
+								<view class="quiz-detail-score-summary">
+									<text class="quiz-detail-score-value">{{ seg.toolCall.result.data.score }}/{{ seg.toolCall.result.data.total_score }}</text>
+									<text class="quiz-detail-score-percent">({{ seg.toolCall.result.data.percentage }}%)</text>
+								</view>
+
+								<!-- 优势 -->
+								<view v-if="seg.toolCall.result.data.strengths?.length" class="quiz-detail-section">
+									<text class="quiz-detail-section-title">优势</text>
+									<view v-for="(item, idx) in seg.toolCall.result.data.strengths" :key="'s-' + idx" class="quiz-detail-list-item">
+										<text class="quiz-detail-list-icon strength-icon">✓</text>
+										<text class="quiz-detail-list-text">{{ item }}</text>
+									</view>
+								</view>
+
+								<!-- 不足 -->
+								<view v-if="seg.toolCall.result.data.weaknesses?.length" class="quiz-detail-section">
+									<text class="quiz-detail-section-title">不足</text>
+									<view v-for="(item, idx) in seg.toolCall.result.data.weaknesses" :key="'w-' + idx" class="quiz-detail-list-item">
+										<text class="quiz-detail-list-icon weakness-icon">✗</text>
+										<text class="quiz-detail-list-text">{{ item }}</text>
+									</view>
+								</view>
+
+								<!-- 题目列表 -->
+								<view v-if="seg.toolCall.result.data.questions?.length" class="quiz-detail-section">
+									<text class="quiz-detail-section-title">题目详情</text>
+									<view v-for="(q, idx) in seg.toolCall.result.data.questions" :key="'q-' + idx" class="quiz-detail-question-item">
+										<text class="quiz-detail-question-order">{{ q.order }}</text>
+										<text class="quiz-detail-question-status"
+											:class="'status-' + q.status">{{ q.status === 'correct' ? '✓' : q.status === 'wrong' ? '✗' : '△' }}</text>
+										<text class="quiz-detail-question-title">{{ q.title }}</text>
+										<text class="quiz-detail-question-score">{{ q.score }}</text>
+									</view>
+								</view>
+							</view>
+
+							<!-- 失败 -->
+							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
+								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '获取测验详情失败' }}</text>
+							</view>
+						</view>
+
 						<!-- 搜索类工具：结构化搜索结果卡片 -->
 						<view
 							v-else-if="seg.type === 'tool' && isSearchTool(seg.toolCall.tool)"
@@ -755,6 +873,9 @@
 		// 复习事件工具
 		get_review_events: '查看复习事件',
 		mark_review_completed: '标记复习完成',
+		// 测验成绩查看
+		view_quiz_results: '查看测验成绩',
+		view_quiz_attempt_detail: '查看测验详情',
 		// 多渠道搜索工具
 		academic_search: '学术搜索',
 		encyclopedia_search: '百科搜索',
@@ -798,6 +919,9 @@
 		// 复习事件工具
 		get_review_events: '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg',
 		mark_review_completed: '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg',
+		// 测验成绩查看
+		view_quiz_results: '/static/icons/phosphor-icons/SVGs/regular/list-checks.svg',
+		view_quiz_attempt_detail: '/static/icons/phosphor-icons/SVGs/regular/chart-bar.svg',
 		// 多渠道搜索工具
 		academic_search: '/static/icons/phosphor-icons/SVGs/regular/graduation-cap.svg',
 		encyclopedia_search: '/static/icons/phosphor-icons/SVGs/regular/books.svg',
@@ -2806,6 +2930,21 @@
 			 */
 			isMemoryTool(toolName) {
 				return MEMORY_TOOLS.has(toolName)
+			},
+
+			/**
+			 * 判断是否为测验成绩类工具
+			 */
+			isQuizResultTool(toolName) {
+				return toolName === 'view_quiz_results' || toolName === 'view_quiz_attempt_detail'
+			},
+
+			/**
+			 * 获取难度显示文字
+			 */
+			getDifficultyLabel(difficulty) {
+				const map = { easy: '简单', medium: '中等', hard: '困难' }
+				return map[difficulty] || difficulty
 			},
 
 			/**
@@ -4855,6 +4994,192 @@
 
 	.review-event-urgency.urgency-overdue {
 		color: rgba(251, 191, 36, 0.9);
+	}
+
+	/* ========== 测验成绩列表 ========== */
+	.quiz-results-list {
+		margin-top: 12rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 8rpx;
+	}
+
+	.quiz-result-item {
+		background: rgba(255, 255, 255, 0.06);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 12rpx;
+		padding: 12rpx 16rpx;
+	}
+
+	.quiz-result-header {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+	}
+
+	.quiz-result-title {
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.9);
+		font-weight: 500;
+		flex: 1;
+	}
+
+	.quiz-result-difficulty {
+		font-size: 20rpx;
+		padding: 2rpx 10rpx;
+		border-radius: 6rpx;
+	}
+
+	.quiz-result-difficulty.difficulty-easy {
+		color: rgba(34, 197, 94, 0.9);
+		background: rgba(34, 197, 94, 0.15);
+	}
+
+	.quiz-result-difficulty.difficulty-medium {
+		color: rgba(251, 191, 36, 0.9);
+		background: rgba(251, 191, 36, 0.15);
+	}
+
+	.quiz-result-difficulty.difficulty-hard {
+		color: rgba(239, 68, 68, 0.9);
+		background: rgba(239, 68, 68, 0.15);
+	}
+
+	.quiz-result-meta {
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+		margin-top: 6rpx;
+	}
+
+	.quiz-result-score {
+		font-size: 24rpx;
+		color: rgba(59, 130, 246, 0.9);
+		font-weight: 600;
+	}
+
+	.quiz-result-no-attempt {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.4);
+	}
+
+	.quiz-result-date {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.4);
+	}
+
+	/* ========== 测验详情 ========== */
+	.quiz-detail-content {
+		margin-top: 12rpx;
+	}
+
+	.quiz-detail-score-summary {
+		display: flex;
+		align-items: baseline;
+		gap: 8rpx;
+		margin-bottom: 12rpx;
+	}
+
+	.quiz-detail-score-value {
+		font-size: 36rpx;
+		color: rgba(59, 130, 246, 0.95);
+		font-weight: 700;
+	}
+
+	.quiz-detail-score-percent {
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.5);
+	}
+
+	.quiz-detail-section {
+		margin-top: 12rpx;
+	}
+
+	.quiz-detail-section-title {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.6);
+		font-weight: 500;
+		margin-bottom: 6rpx;
+	}
+
+	.quiz-detail-list-item {
+		display: flex;
+		align-items: flex-start;
+		gap: 8rpx;
+		padding: 4rpx 0;
+	}
+
+	.quiz-detail-list-icon {
+		font-size: 22rpx;
+		width: 28rpx;
+		text-align: center;
+		flex-shrink: 0;
+	}
+
+	.quiz-detail-list-icon.strength-icon {
+		color: rgba(34, 197, 94, 0.9);
+	}
+
+	.quiz-detail-list-icon.weakness-icon {
+		color: rgba(239, 68, 68, 0.9);
+	}
+
+	.quiz-detail-list-text {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.8);
+		flex: 1;
+	}
+
+	.quiz-detail-question-item {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+		background: rgba(255, 255, 255, 0.04);
+		border-radius: 8rpx;
+		padding: 8rpx 12rpx;
+		margin-top: 6rpx;
+	}
+
+	.quiz-detail-question-order {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.4);
+		width: 32rpx;
+		text-align: center;
+		flex-shrink: 0;
+	}
+
+	.quiz-detail-question-status {
+		font-size: 24rpx;
+		width: 32rpx;
+		text-align: center;
+		flex-shrink: 0;
+	}
+
+	.quiz-detail-question-status.status-correct {
+		color: rgba(34, 197, 94, 0.9);
+	}
+
+	.quiz-detail-question-status.status-wrong {
+		color: rgba(239, 68, 68, 0.9);
+	}
+
+	.quiz-detail-question-status.status-partial {
+		color: rgba(251, 191, 36, 0.9);
+	}
+
+	.quiz-detail-question-title {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.8);
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.quiz-detail-question-score {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.5);
+		flex-shrink: 0;
 	}
 
 	/* ========== 搜索结果卡片 ========== */

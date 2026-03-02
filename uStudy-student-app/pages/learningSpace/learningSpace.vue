@@ -84,13 +84,17 @@
 						</view>
 					</view>
 
-					<!-- 未掌握节点：显示锁图标 -->
-					<image
-						v-else
-						class="mastery-lock-icon"
-						src="/static/icons/phosphor-icons/SVGs/fill/lock-key-fill.svg"
-						mode="aspectFit"
-					></image>
+					<!-- 未掌握节点：显示锁图标 + 快速学习按钮 -->
+					<view v-else class="mastery-unlearned-row">
+						<image
+							class="mastery-lock-icon"
+							src="/static/icons/phosphor-icons/SVGs/fill/lock-key-fill.svg"
+							mode="aspectFit"
+						></image>
+						<view class="quick-learn-btn" @click.stop="handleQuickLearn">
+							<text class="quick-learn-btn-text">快速学习</text>
+						</view>
+					</view>
 				</view>
 			</view>
 		</view>
@@ -379,9 +383,9 @@
 	const MASTERY_COLOR_START = { r: 255, g: 50, b: 66 }   // #FF3242 (mastery=0, 珊瑚红)
 	const MASTERY_COLOR_MID = { r: 255, g: 217, b: 61 }    // #FFD93D (mastery=50, 浅黄色)
 	const MASTERY_COLOR_END = { r: 73, g: 255, b: 170 }    // #49FFAA (mastery=100, 薄荷绿)
-	const UNMASTERED_NODE_COLOR = '#9CA3AF'
-	const UNMASTERED_NODE_GLOW = 'rgba(156, 163, 175, 0.50)'
-	const UNMASTERED_NODE_OUTLINE = 'rgba(226, 232, 240, 0.26)'
+	const UNMASTERED_NODE_COLOR = '#E2E8F0'
+	const UNMASTERED_NODE_GLOW = 'rgba(226, 232, 240, 0.50)'
+	const UNMASTERED_NODE_OUTLINE = 'rgba(241, 245, 249, 0.30)'
 	const KNOWLEDGE_EDGE_COLOR = 'rgba(245, 248, 255, 0.42)'
 	const KNOWLEDGE_EDGE_WIDTH = 1.8
 
@@ -1875,6 +1879,24 @@
 				const url = `/pages/spaceChat/spaceChat?${queryParts.join('&')}`
 				this.inputText = ''
 				this.pendingAttachments = []
+
+				// #ifdef APP-PLUS
+				uni.navigateTo({
+					url,
+					animationType: 'slide-in-right',
+					animationDuration: 300
+				})
+				// #endif
+
+				// #ifndef APP-PLUS
+				uni.navigateTo({ url })
+				// #endif
+			},
+
+			handleQuickLearn() {
+				if (!this.selectedNode || !this.spaceId) return
+				const message = `我要学习${this.spaceTitle}下的${this.selectedNode.label}知识点`
+				const url = `/pages/spaceChat/spaceChat?id=${this.spaceId}&name=${encodeURIComponent(this.spaceTitle)}&initialMessage=${encodeURIComponent(message)}`
 
 				// #ifdef APP-PLUS
 				uni.navigateTo({
@@ -4865,6 +4887,31 @@
 		width: 36rpx;
 		height: 36rpx;
 		filter: brightness(0) invert(1); /* SVG 转白色 */
+	}
+
+	/* 未掌握节点行：锁图标 + 快速学习按钮 */
+	.mastery-unlearned-row {
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+	}
+
+	.quick-learn-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 6rpx 16rpx;
+		background: rgba(129, 140, 248, 0.18);
+		border: 1rpx solid rgba(129, 140, 248, 0.35);
+		border-radius: 10rpx;
+	}
+
+	.quick-learn-btn-text {
+		font-size: 22rpx;
+		font-weight: 500;
+		color: #818CF8;
+		white-space: nowrap;
+		line-height: 1;
 	}
 
 	/* 加载遮罩 */
