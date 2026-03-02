@@ -145,7 +145,7 @@ class Settings(BaseSettings):
 
     # 掌握分评估配置
     mastery_evaluation_enabled: bool = True
-    mastery_evaluation_model: str = "x-ai/grok-4-fast"  # 空则使用默认模型
+    mastery_evaluation_model: str = "moonshotai/kimi-k2.5"  # 空则使用默认模型
 
     # 学习路径自动扩展
     learning_path_auto_expand_enabled: bool = True

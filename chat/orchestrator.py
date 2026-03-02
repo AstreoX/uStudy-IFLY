@@ -29,6 +29,7 @@ from memory.retriever import MemoryRetriever, format_memories_for_prompt
 from chat.tools.memory_tools import MEMORY_TOOLS, MEMORY_TOOL_NAMES
 from chat.tools.memory_executor import MemoryToolExecutor, format_memory_for_prompt
 from chat.tools.quiz_generation_tools import QUIZ_GENERATION_TOOLS, QuizGenerationToolExecutor
+from chat.tools.quiz_result_tools import QUIZ_RESULT_TOOLS, QUIZ_RESULT_TOOL_NAMES, QuizResultToolExecutor
 from chat.tools.rag_tools import RAG_TOOLS, RAGToolExecutor
 from chat.tools.client_tool_bridge import create_pending_request, wait_for_result
 from chat.tools.schedule_tools import SCHEDULE_TOOLS
@@ -511,6 +512,7 @@ class LLMOrchestrator:
         self.quiz_tool_executor = QuizGenerationToolExecutor(
             user_id, conversation_id, space_id
         )
+        self.quiz_result_executor = QuizResultToolExecutor(user_id, space_id)
         self.web_tool_executor = WebToolExecutor()
         self.rag_tool_executor = RAGToolExecutor(space_id)
         self.time_tool_executor = TimeToolExecutor()
@@ -533,6 +535,7 @@ class LLMOrchestrator:
         self.available_tools = (
             GRAPH_TOOLS
             + QUIZ_GENERATION_TOOLS
+            + QUIZ_RESULT_TOOLS
             + (WEB_TOOLS if channels.get("web_search_enabled", True) else [])
             + SCHEDULE_TOOLS
             + RAG_TOOLS
@@ -566,6 +569,7 @@ class LLMOrchestrator:
 
         # Tool name to executor mapping
         self._quiz_tool_names = {"generate_test"}
+        self._quiz_result_tool_names = QUIZ_RESULT_TOOL_NAMES
         self._web_tool_names = {"web_search", "web_fetch"}
         self._schedule_tool_names = {"get_schedule", "add_schedule", "delete_schedule", "update_schedule"}
         self._rag_tool_names = {"search_documents"}
@@ -746,6 +750,11 @@ class LLMOrchestrator:
                     # Execute tool - dispatch to appropriate executor
                     if tool_call.name in self._quiz_tool_names:
                         tool_result = await self.quiz_tool_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
+                    elif tool_call.name in self._quiz_result_tool_names:
+                        tool_result = await self.quiz_result_executor.execute(
                             tool_call.name,
                             tool_call.arguments,
                         )

@@ -15,6 +15,7 @@ from chat.tools.space_memory_tools import SPACE_MEMORY_TOOLS, SPACE_MEMORY_TOOL_
 from chat.tools.space_memory_executor import SpaceMemoryToolExecutor, format_space_memory_for_prompt
 from chat.tools.time_tools import TIME_TOOLS, TIME_TOOL_NAMES, TIME_TOOL_METADATA, TimeToolExecutor
 from chat.tools.review_tools import REVIEW_TOOLS, REVIEW_TOOL_NAMES, REVIEW_TOOL_METADATA, QUICK_CHAT_REVIEW_TOOLS, ReviewToolExecutor
+from chat.tools.quiz_result_tools import QUIZ_RESULT_TOOLS, QUIZ_RESULT_TOOL_NAMES, QuizResultToolExecutor
 
 __all__ = [
     "ToolResult",
@@ -42,4 +43,7 @@ __all__ = [
     "REVIEW_TOOL_METADATA",
     "QUICK_CHAT_REVIEW_TOOLS",
     "ReviewToolExecutor",
+    "QUIZ_RESULT_TOOLS",
+    "QUIZ_RESULT_TOOL_NAMES",
+    "QuizResultToolExecutor",
 ]
