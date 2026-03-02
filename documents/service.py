@@ -77,7 +77,7 @@ async def upload_document(
     if file.content_type not in settings.document_allowed_types:
         raise HTTPException(
             status_code=400,
-            detail=f"不支持的文件类型: {file.content_type}。支持的类型: PDF, Word, TXT",
+            detail=f"不支持的文件类型: {file.content_type}。支持的类型: PDF, Word, TXT, Excel, PowerPoint, Markdown, HTML, CSV, EPUB",
         )
 
     # 验证文件扩展名

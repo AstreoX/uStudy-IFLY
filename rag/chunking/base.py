@@ -175,3 +175,21 @@ class BaseChunker(ABC):
             切片列表
         """
         pass
+
+    async def enrich(
+        self, chunks: list[Chunk], content: bytes, filename: str | None = None
+    ) -> list[Chunk]:
+        """
+        异步后处理：VLM OCR / 图片描述等增强处理。
+
+        默认 no-op，子类按需 override。
+
+        Args:
+            chunks: chunk() 产出的切片列表
+            content: 原始文档字节内容
+            filename: 文件名
+
+        Returns:
+            增强后的切片列表
+        """
+        return chunks

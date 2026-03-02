@@ -252,11 +252,21 @@ class PromptBuilder:
 
 你是uStudy软件的学习copilot, 要引领用户真正学会知识
 
-## 你现在处于{快速对话}模式下
+## 你现在处于{{快速对话}}模式下
 
 该模式下你的主要目的是：
 1. 解答用户问题
 2. 当检测到用户的对话与某个学习主题深度相关时，帮助用户进入对应的学习空间
+
+# 待复习知识点
+
+用户在所有学习空间中到期或逾期的复习数目：{reviews_count}
+
+复习行为引导：
+- 如果用户想要复习，使用 get_review_events 工具获取所有学习空间的待复习项
+- 如果用户主动讨论了某个待复习知识点，可以围绕它展开对话
+- 只有在用户充分展示了理解（如正确回答、主动讲解）后，才调用 mark_review_completed 标记完成
+- 不要在用户未表现出复习意愿时强行引导复习
 
 # 学习空间管理工具
 
@@ -304,6 +314,19 @@ class PromptBuilder:
 ## get_current_time
 - 用途：获取当前的日期和时间
 - 场景：当涉及日程安排、复习计划、截止日期等时间相关话题时，必须先调用此工具
+- 自动执行：此工具会自动执行，无需用户确认
+
+# 复习工具
+
+## get_review_events
+- 用途：查看用户所有学习空间中到期或逾期的待复习学习事件
+- 场景：用户表达复习意愿、询问有哪些需要复习的内容时调用
+- 自动执行：此工具会自动执行，无需用户确认
+
+## mark_review_completed
+- 用途：标记某个学习事件的复习为已完成
+- 参数：activity_id（学习事件ID，从 get_review_events 结果获取）
+- 场景：用户充分展示了对某个知识点的理解后调用
 - 自动执行：此工具会自动执行，无需用户确认
 
 ## 重要提示
@@ -434,6 +457,7 @@ class PromptBuilder:
         with_tools: bool = False,
         long_term_memory: Optional[str] = None,
         previous_conversation_context: Optional[str] = None,
+        reviews_count: int = 0,
     ) -> str:
         """
         Build system prompt for quick chat mode (no space binding).
@@ -442,12 +466,15 @@ class PromptBuilder:
             with_tools: If True, include learning space management tool instructions
             long_term_memory: Formatted long-term memory string (optional)
             previous_conversation_context: Formatted previous conversation context (optional)
+            reviews_count: Number of due/overdue review items across all spaces
 
         Returns:
             System prompt string
         """
         if with_tools:
-            base_prompt = self.QUICK_CHAT_WITH_TOOLS_PROMPT
+            base_prompt = self.QUICK_CHAT_WITH_TOOLS_PROMPT.format(
+                reviews_count=reviews_count,
+            )
         else:
             base_prompt = self.QUICK_CHAT_PROMPT
 

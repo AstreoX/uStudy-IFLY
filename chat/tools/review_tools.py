@@ -9,6 +9,7 @@ from chat.tools.base import ToolResult
 from review.service import (
     complete_review,
     complete_reviews_by_activity,
+    get_due_reviews_all_spaces,
     get_due_reviews_by_space,
 )
 
@@ -71,10 +72,53 @@ REVIEW_TOOL_METADATA: dict[str, dict[str, Any]] = {
 }
 
 
+# Quick chat mode: cross-space review tools
+QUICK_CHAT_REVIEW_TOOLS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_review_events",
+            "description": (
+                "查看用户所有学习空间中到期或逾期的待复习学习事件列表。"
+                "当用户表达复习意愿、询问有哪些需要复习的内容时调用此工具。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "mark_review_completed",
+            "description": (
+                "标记用户的某个学习事件的复习为已完成。"
+                "仅在用户已充分展示对该学习事件所涉知识点的理解后调用。"
+                "使用 activity_id 参数（从 get_review_events 结果中获取）。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "activity_id": {
+                        "type": "string",
+                        "description": "学习事件 ID（UUID），批量标记该事件所有到期待复习项为已完成",
+                    },
+                    "review_id": {
+                        "type": "string",
+                        "description": "复习计划 ID（UUID），精确标记单条复习。仅在需要精确控制时使用",
+                    },
+                },
+            },
+        },
+    },
+]
+
+
 class ReviewToolExecutor:
     """Executor for review tools - uses short-lived DB sessions per call"""
 
-    def __init__(self, user_id: UUID, space_id: UUID) -> None:
+    def __init__(self, user_id: UUID, space_id: UUID | None = None) -> None:
         self.user_id = user_id
         self.space_id = space_id
 
@@ -142,29 +186,51 @@ class ReviewToolExecutor:
 
     async def _get_review_events(self) -> ToolResult:
         try:
-            rows = await get_due_reviews_by_space(
-                self.user_id, self.space_id, limit=10
-            )
-            if not rows:
+            today = datetime.now(timezone.utc).date()
+            items = []
+
+            if self.space_id is not None:
+                # Learning space mode: query single space
+                rows = await get_due_reviews_by_space(
+                    self.user_id, self.space_id, limit=10
+                )
+                for r, activity in rows:
+                    overdue_days = (today - r.scheduled_date).days
+                    items.append({
+                        "activity_id": str(r.activity_id),
+                        "activity_title": activity.title,
+                        "related_node_labels": activity.related_node_labels or [],
+                        "study_depth": r.study_depth,
+                        "review_number": r.review_number,
+                        "scheduled_date": str(r.scheduled_date),
+                        "overdue_days": overdue_days,
+                        "urgency": f"逾期{overdue_days}天" if overdue_days > 0 else "今日到期",
+                    })
+            else:
+                # Quick chat mode: query all spaces
+                rows = await get_due_reviews_all_spaces(
+                    self.user_id, limit=20
+                )
+                for r, activity, space_name in rows:
+                    overdue_days = (today - r.scheduled_date).days
+                    items.append({
+                        "activity_id": str(r.activity_id),
+                        "activity_title": activity.title,
+                        "related_node_labels": activity.related_node_labels or [],
+                        "space_name": space_name or "未关联空间",
+                        "study_depth": r.study_depth,
+                        "review_number": r.review_number,
+                        "scheduled_date": str(r.scheduled_date),
+                        "overdue_days": overdue_days,
+                        "urgency": f"逾期{overdue_days}天" if overdue_days > 0 else "今日到期",
+                    })
+
+            if not items:
                 return ToolResult(
                     success=True,
                     data={"message": "当前没有到期的复习项", "items": [], "total": 0},
                     message="当前没有到期的复习项",
                 )
-            today = datetime.now(timezone.utc).date()
-            items = []
-            for r, activity in rows:
-                overdue_days = (today - r.scheduled_date).days
-                items.append({
-                    "activity_id": str(r.activity_id),
-                    "activity_title": activity.title,
-                    "related_node_labels": activity.related_node_labels or [],
-                    "study_depth": r.study_depth,
-                    "review_number": r.review_number,
-                    "scheduled_date": str(r.scheduled_date),
-                    "overdue_days": overdue_days,
-                    "urgency": f"逾期{overdue_days}天" if overdue_days > 0 else "今日到期",
-                })
             return ToolResult(
                 success=True,
                 data={

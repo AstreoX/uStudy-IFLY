@@ -2,10 +2,15 @@
 
 import io
 import logging
+from typing import TYPE_CHECKING
 
 import fitz  # PyMuPDF
 
+from config import get_settings
 from rag.chunking.base import BaseChunker, Chunk
+
+if TYPE_CHECKING:
+    from rag.vlm_processor import VLMProcessor, VLMTask
 
 logger = logging.getLogger(__name__)
 
@@ -35,14 +40,26 @@ class PDFChunker(BaseChunker):
             logger.error("无法打开 PDF 文件: %s", e)
             raise ValueError(f"无法解析 PDF 文件: {e}")
 
-        # 提取每页的文本
+        # 提取每页的文本（含表格检测）
         page_texts: list[tuple[int, str]] = []
         try:
             for page_num in range(len(doc)):
                 page = doc[page_num]
                 text = page.get_text("text")
+
+                # 尝试检测并提取表格为 Markdown 格式
+                table_texts = self._extract_tables_from_page(page)
+
+                # 合并页面文本和表格
+                page_content_parts: list[str] = []
                 if text.strip():
-                    page_texts.append((page_num + 1, text))  # 页码从 1 开始
+                    page_content_parts.append(text)
+                if table_texts:
+                    page_content_parts.extend(table_texts)
+
+                if page_content_parts:
+                    combined = "\n\n".join(page_content_parts)
+                    page_texts.append((page_num + 1, combined))
         finally:
             doc.close()
 
@@ -73,6 +90,40 @@ class PDFChunker(BaseChunker):
                 chunk.metadata["filename"] = filename
 
         return chunks
+
+    def _extract_tables_from_page(self, page) -> list[str]:
+        """使用 PyMuPDF find_tables() 检测页面表格并转为 Markdown"""
+        try:
+            tables = page.find_tables()
+        except Exception:
+            # find_tables() 在某些页面可能失败，静默忽略
+            return []
+
+        result: list[str] = []
+        for table in tables:
+            try:
+                extracted = table.extract()
+                if not extracted or len(extracted) < 2:
+                    continue
+
+                # 清洗单元格内容
+                header = [str(c).strip() if c else "" for c in extracted[0]]
+                lines = ["| " + " | ".join(header) + " |"]
+                lines.append("| " + " | ".join("---" for _ in header) + " |")
+
+                for row in extracted[1:]:
+                    cells = [str(c).strip() if c else "" for c in row]
+                    # 确保列数与表头一致
+                    while len(cells) < len(header):
+                        cells.append("")
+                    cells = cells[:len(header)]
+                    lines.append("| " + " | ".join(cells) + " |")
+
+                result.append("\n".join(lines))
+            except Exception:
+                continue
+
+        return result
 
     def _clean_text(self, text: str) -> str:
         """清理 PDF 提取的文本"""
@@ -170,5 +221,154 @@ class PDFChunker(BaseChunker):
                         },
                     )
                 )
+
+        return chunks
+
+    async def enrich(
+        self, chunks: list[Chunk], content: bytes, filename: str | None = None
+    ) -> list[Chunk]:
+        """
+        VLM 后处理：扫描件 OCR + 嵌入图片描述
+
+        1. 逐页检查：文字少 + 有图片 → 判定为扫描页 → OCR
+        2. 嵌入图片提取 → 过滤小图 → VLM 描述 → 作为额外 Chunk
+        """
+        settings = get_settings()
+
+        if not settings.vlm_processing_enabled:
+            return chunks
+
+        from rag.vlm_processor import VLMProcessor, VLMTask
+
+        vlm = VLMProcessor()
+        vlm_tasks: list[VLMTask] = []
+        task_metadata: list[dict] = []
+
+        try:
+            pdf_stream = io.BytesIO(content)
+            doc = fitz.open(stream=pdf_stream, filetype="pdf")
+        except Exception:
+            return chunks
+
+        images_processed = 0
+        max_images = settings.vlm_max_images_per_document
+
+        try:
+            for page_num in range(len(doc)):
+                if images_processed >= max_images:
+                    break
+
+                page = doc[page_num]
+                page_text = page.get_text("text").strip()
+
+                # 扫描页检测: 文字极少 + 有图片
+                if settings.vlm_ocr_enabled and len(page_text) < 20:
+                    page_images = page.get_images(full=True)
+                    if page_images:
+                        try:
+                            pix = page.get_pixmap(dpi=200)
+                            img_bytes = pix.tobytes("png")
+                            vlm_tasks.append(VLMTask(
+                                image_bytes=img_bytes,
+                                task_type="ocr",
+                                page_num=page_num + 1,
+                            ))
+                            task_metadata.append({
+                                "type": "ocr",
+                                "page_num": page_num + 1,
+                            })
+                            images_processed += 1
+                        except Exception as e:
+                            logger.warning("PDF 页面渲染失败 (page %d): %s", page_num + 1, e)
+                        continue
+
+                # 嵌入图片提取
+                if settings.vlm_image_description_enabled:
+                    for img_info in page.get_images(full=True):
+                        if images_processed >= max_images:
+                            break
+
+                        xref = img_info[0]
+                        try:
+                            img_data = doc.extract_image(xref)
+                            if not img_data:
+                                continue
+
+                            img_bytes = img_data["image"]
+                            img_size = len(img_bytes)
+
+                            if img_size < settings.vlm_min_image_size_bytes:
+                                continue
+                            if img_size > settings.vlm_max_image_size_bytes:
+                                continue
+
+                            vlm_tasks.append(VLMTask(
+                                image_bytes=img_bytes,
+                                task_type="describe",
+                                context=page_text[:500] if page_text else "",
+                                page_num=page_num + 1,
+                            ))
+                            task_metadata.append({
+                                "type": "describe",
+                                "page_num": page_num + 1,
+                            })
+                            images_processed += 1
+                        except Exception as e:
+                            logger.warning("PDF 图片提取失败 (xref %d): %s", xref, e)
+        finally:
+            doc.close()
+
+        if not vlm_tasks:
+            return chunks
+
+        logger.info("PDF VLM 处理: %d 个任务 (文件: %s)", len(vlm_tasks), filename)
+        try:
+            results = await vlm.process_batch(vlm_tasks)
+        except Exception as e:
+            logger.error("VLM 批量处理失败，降级返回原始 chunks: %s", e)
+            return chunks
+
+        next_index = max((c.index for c in chunks), default=-1) + 1
+        added = 0
+
+        for result_text, meta in zip(results, task_metadata):
+            if not result_text or result_text.strip() == "[无可识别文字]":
+                continue
+
+            if meta["type"] == "ocr":
+                chunk = Chunk(
+                    content=result_text,
+                    index=next_index,
+                    token_count=self.count_tokens(result_text),
+                    metadata={
+                        "source_type": "pdf",
+                        "vlm_type": "ocr",
+                        "page_start": meta["page_num"],
+                        "page_end": meta["page_num"],
+                    },
+                )
+            else:
+                desc_text = f"[图片描述] {result_text}"
+                chunk = Chunk(
+                    content=desc_text,
+                    index=next_index,
+                    token_count=self.count_tokens(desc_text),
+                    metadata={
+                        "source_type": "pdf",
+                        "vlm_type": "image_description",
+                        "page_start": meta["page_num"],
+                        "page_end": meta["page_num"],
+                    },
+                )
+
+            if filename:
+                chunk.metadata["filename"] = filename
+
+            chunks.append(chunk)
+            next_index += 1
+            added += 1
+
+        if added:
+            logger.info("PDF VLM 处理完成，新增 %d 个 chunks", added)
 
         return chunks

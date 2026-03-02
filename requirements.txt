@@ -31,6 +31,11 @@ ddgs>=9.0.0
 # RAG 系统
 PyMuPDF>=1.23.0           # PDF 解析
 python-docx>=1.0.0        # DOCX 解析
+openpyxl>=3.1.0           # Excel 解析
+python-pptx>=0.6.21       # PowerPoint 解析
+markdown>=3.5.0           # Markdown 解析
+beautifulsoup4>=4.12.0    # HTML 解析
+ebooklib>=0.18            # EPUB 解析
 pgvector>=0.2.0           # PostgreSQL 向量扩展
 tiktoken>=0.5.0           # Token 计数
 chardet>=5.0.0            # 编码检测

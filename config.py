@@ -70,8 +70,20 @@ class Settings(BaseSettings):
         "application/msword",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "text/plain",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "text/markdown",
+        "text/html",
+        "text/csv",
+        "application/epub+zip",
     ]
-    document_allowed_extensions: list = [".pdf", ".doc", ".docx", ".txt"]
+    document_allowed_extensions: list = [
+        ".pdf", ".doc", ".docx", ".txt",
+        ".xlsx", ".xls", ".pptx", ".ppt",
+        ".md", ".html", ".htm", ".csv", ".epub",
+    ]
 
     # OpenRouter / LLM 配置
     openrouter_api_key: str = ""
@@ -86,6 +98,11 @@ class Settings(BaseSettings):
     # Web 搜索配置
     web_search_timeout_seconds: int = 30
     web_fetch_max_length: int = 3000
+
+    # 多渠道搜索配置
+    semantic_scholar_timeout: int = 15
+    wikipedia_timeout: int = 10
+    bilibili_search_timeout: int = 15
 
     # RAG 配置
     # Embedding 模型配置
@@ -103,6 +120,16 @@ class Settings(BaseSettings):
     rerank_enabled: bool = False  # 是否启用重排序（需要访问 HuggingFace）
     rerank_top_k: int = 5  # 重排序后返回数量
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+    # VLM 视觉处理配置
+    vlm_processing_enabled: bool = True
+    vlm_model: str = "qwen/qwen3-vl-8b-instruct"
+    vlm_ocr_enabled: bool = True
+    vlm_image_description_enabled: bool = True
+    vlm_max_images_per_document: int = 30
+    vlm_min_image_size_bytes: int = 5000       # 跳过 <5KB 小图
+    vlm_max_image_size_bytes: int = 5242880    # 跳过 >5MB 大图
+    vlm_max_concurrent: int = 3
 
     # 附件文本提取配置
     attachment_text_max_tokens: int = 10000  # 每个文件最大 token 数

@@ -33,9 +33,10 @@ from chat.tools.rag_tools import RAG_TOOLS, RAGToolExecutor
 from chat.tools.client_tool_bridge import create_pending_request, wait_for_result
 from chat.tools.schedule_tools import SCHEDULE_TOOLS
 from chat.tools.web_tools import WEB_TOOLS, WebToolExecutor
+from chat.tools.search_tools import SEARCH_TOOLS, SEARCH_TOOL_NAMES, SearchToolExecutor
 from chat.tools.time_tools import TIME_TOOLS, TIME_TOOL_NAMES, TimeToolExecutor
-from chat.tools.review_tools import REVIEW_TOOLS, REVIEW_TOOL_NAMES, ReviewToolExecutor
-from review.service import get_due_reviews_count_by_space
+from chat.tools.review_tools import REVIEW_TOOLS, REVIEW_TOOL_NAMES, QUICK_CHAT_REVIEW_TOOLS, ReviewToolExecutor
+from review.service import get_due_reviews_count_by_space, get_due_reviews_total
 from db.database import get_scoped_session
 from db.models import LongTermMemory
 from config import get_settings
@@ -76,6 +77,7 @@ class QuickChatOrchestrator:
         conversation_id: UUID,
         previous_conversation_context: str | None = None,
         openrouter_model: str | None = None,
+        search_channels: dict[str, bool] | None = None,
     ) -> None:
         """
         Initialize the quick chat orchestrator.
@@ -85,6 +87,7 @@ class QuickChatOrchestrator:
             conversation_id: Current conversation ID
             previous_conversation_context: Previous conversation context for continuity (optional)
             openrouter_model: OpenRouter model ID override (resolved from model_id)
+            search_channels: User's search channel settings (channel_name -> enabled)
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
@@ -100,9 +103,48 @@ class QuickChatOrchestrator:
         )
         self.memory_tool_executor = MemoryToolExecutor(user_id)
         self.time_tool_executor = TimeToolExecutor()
+        self.review_tool_executor = ReviewToolExecutor(user_id)  # No space_id = cross-space mode
 
-        # Available tools for quick chat (learning space + memory + time)
-        self.available_tools = LEARNING_SPACE_TOOLS + MEMORY_TOOLS + TIME_TOOLS
+        # Search channels: default all enabled
+        channels = search_channels or {
+            "web_search_enabled": True,
+            "academic_search_enabled": True,
+            "encyclopedia_search_enabled": True,
+            "course_search_enabled": True,
+        }
+
+        # Available tools for quick chat (learning space + memory + time + review + web + search)
+        self.available_tools = (
+            LEARNING_SPACE_TOOLS
+            + MEMORY_TOOLS
+            + TIME_TOOLS
+            + QUICK_CHAT_REVIEW_TOOLS
+            + (WEB_TOOLS if channels.get("web_search_enabled", True) else [])
+        )
+
+        # Conditionally add each search tool
+        channel_to_tool = {
+            "academic_search_enabled": "academic_search",
+            "encyclopedia_search_enabled": "encyclopedia_search",
+            "course_search_enabled": "course_search",
+        }
+        for channel_key, tool_name in channel_to_tool.items():
+            if channels.get(channel_key, True):
+                for tool_def in SEARCH_TOOLS:
+                    if tool_def["function"]["name"] == tool_name:
+                        self.available_tools = list(self.available_tools) + [tool_def]
+                        break
+
+        # Initialize executors for web and search tools
+        any_web_enabled = channels.get("web_search_enabled", True)
+        self.web_tool_executor = WebToolExecutor() if any_web_enabled else None
+        self._web_tool_names = {"web_search", "web_fetch"}
+
+        any_search_enabled = any(
+            channels.get(k, True) for k in channel_to_tool
+        )
+        self.search_tool_executor = SearchToolExecutor() if any_search_enabled else None
+        self._search_tool_names = SEARCH_TOOL_NAMES
 
     async def process_message(
         self,
@@ -123,14 +165,18 @@ class QuickChatOrchestrator:
         Yields:
             SSE events for streaming response
         """
-        # Load user's long-term memory
-        long_term_memory = await self._load_long_term_memory()
+        # Parallel: load long-term memory + count due reviews across all spaces
+        long_term_memory, reviews_count = await asyncio.gather(
+            self._load_long_term_memory(),
+            get_due_reviews_total(self.user_id),
+        )
 
-        # Build system prompt with tool instructions, memory, and previous conversation context
+        # Build system prompt with tool instructions, memory, previous conversation context, and reviews count
         system_prompt = self.prompt_builder.build_quick_chat_prompt(
             with_tools=True,
             long_term_memory=long_term_memory,
             previous_conversation_context=self.previous_conversation_context,
+            reviews_count=reviews_count,
         )
 
         # Handle both string and dict formats for user message
@@ -286,6 +332,21 @@ class QuickChatOrchestrator:
                             tool_call.name,
                             tool_call.arguments,
                         )
+                    elif tool_call.name in REVIEW_TOOL_NAMES:
+                        tool_result = await self.review_tool_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
+                    elif tool_call.name in self._web_tool_names and self.web_tool_executor:
+                        tool_result = await self.web_tool_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
+                    elif tool_call.name in self._search_tool_names and self.search_tool_executor:
+                        tool_result = await self.search_tool_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
                     else:
                         tool_result = await self.tool_executor.execute(
                             tool_call.name,
@@ -420,6 +481,7 @@ class LLMOrchestrator:
         space_name: str,
         previous_conversation_context: str | None = None,
         openrouter_model: str | None = None,
+        search_channels: dict[str, bool] | None = None,
     ) -> None:
         """
         Initialize the orchestrator.
@@ -431,6 +493,7 @@ class LLMOrchestrator:
             space_name: Learning space name
             previous_conversation_context: Previous conversation context for continuity (optional)
             openrouter_model: OpenRouter model ID override (resolved from model_id)
+            search_channels: User's search channel settings (channel_name -> enabled)
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
@@ -457,17 +520,49 @@ class LLMOrchestrator:
         self.vector_memory_executor = VectorMemoryExecutor(user_id, space_id)
         self.memory_retriever = MemoryRetriever(user_id, space_id)
 
+        # Search channels: default all enabled
+        channels = search_channels or {
+            "web_search_enabled": True,
+            "academic_search_enabled": True,
+            "encyclopedia_search_enabled": True,
+            "course_search_enabled": True,
+        }
+
         # Combined tools list for learning space mode (using new vector memory tools)
+        # Conditionally include web tools and search tools based on user settings
         self.available_tools = (
             GRAPH_TOOLS
             + QUIZ_GENERATION_TOOLS
-            + WEB_TOOLS
+            + (WEB_TOOLS if channels.get("web_search_enabled", True) else [])
             + SCHEDULE_TOOLS
             + RAG_TOOLS
             + VECTOR_MEMORY_TOOLS
             + TIME_TOOLS
             + REVIEW_TOOLS
         )
+
+        # Conditionally add each search tool based on user settings
+        channel_to_tool = {
+            "academic_search_enabled": "academic_search",
+            "encyclopedia_search_enabled": "encyclopedia_search",
+            "course_search_enabled": "course_search",
+        }
+        enabled_search_tools = []
+        for channel_key, tool_name in channel_to_tool.items():
+            if channels.get(channel_key, True):
+                for tool_def in SEARCH_TOOLS:
+                    if tool_def["function"]["name"] == tool_name:
+                        enabled_search_tools.append(tool_def)
+                        break
+
+        self.available_tools = list(self.available_tools) + enabled_search_tools
+
+        # Initialize search tool executor if any search tool is enabled
+        any_search_enabled = any(
+            channels.get(k, True) for k in channel_to_tool
+        )
+        self.search_tool_executor = SearchToolExecutor() if any_search_enabled else None
+        self._search_tool_names = SEARCH_TOOL_NAMES
 
         # Tool name to executor mapping
         self._quiz_tool_names = {"generate_test"}
@@ -696,6 +791,11 @@ class LLMOrchestrator:
                         )
                     elif tool_call.name in self._review_tool_names:
                         tool_result = await self.review_tool_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
+                    elif tool_call.name in self._search_tool_names and self.search_tool_executor:
+                        tool_result = await self.search_tool_executor.execute(
                             tool_call.name,
                             tool_call.arguments,
                         )

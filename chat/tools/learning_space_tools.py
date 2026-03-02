@@ -104,6 +104,29 @@ TOOL_METADATA: dict[str, dict[str, Any]] = {
         "requires_confirmation": False,
         "display_name": "查看当前时间",
     },
+    "get_review_events": {
+        "requires_confirmation": False,
+        "display_name": "查看复习事件",
+    },
+    "mark_review_completed": {
+        "requires_confirmation": False,
+        "display_name": "标记复习完成",
+    },
+    "academic_search": {
+        "requires_confirmation": False,
+        "display_name": "学术搜索",
+        "category": "search",
+    },
+    "encyclopedia_search": {
+        "requires_confirmation": False,
+        "display_name": "百科搜索",
+        "category": "search",
+    },
+    "course_search": {
+        "requires_confirmation": False,
+        "display_name": "B站课程搜索",
+        "category": "search",
+    },
 }
 
 

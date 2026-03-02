@@ -35,6 +35,7 @@ from payment.router import router as payment_router
 from quota.router import router as quota_router
 from admin.router import router as admin_router
 from upload.router import router as upload_router
+from search_settings.router import router as search_settings_router
 
 settings = get_settings()
 
@@ -194,6 +195,7 @@ app.include_router(review_router)
 app.include_router(payment_router)
 app.include_router(quota_router)
 app.include_router(admin_router)
+app.include_router(search_settings_router)
 
 
 @app.get("/health")

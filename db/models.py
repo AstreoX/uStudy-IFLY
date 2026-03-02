@@ -1438,3 +1438,44 @@ class ReviewSchedule(Base):
         Index("idx_review_activity", "activity_id"),
         Index("idx_review_status_date", "user_id", "status", "scheduled_date"),
     )
+
+
+class UserSearchSettings(Base):
+    """用户搜索渠道设置"""
+
+    __tablename__ = "user_search_settings"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    web_search_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    academic_search_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    encyclopedia_search_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    course_search_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # 关系
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        Index("idx_search_settings_user", "user_id", unique=True),
+    )

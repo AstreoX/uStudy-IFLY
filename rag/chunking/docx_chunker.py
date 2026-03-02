@@ -5,6 +5,7 @@ import logging
 
 from docx import Document
 
+from config import get_settings
 from rag.chunking.base import BaseChunker, Chunk
 
 logger = logging.getLogger(__name__)
@@ -74,20 +75,31 @@ class DocxChunker(BaseChunker):
         return chunks
 
     def _extract_table_text(self, table) -> str:
-        """提取表格内容为文本"""
-        rows_text = []
+        """提取表格内容为 Markdown 表格格式"""
+        rows_data: list[list[str]] = []
         for row in table.rows:
-            cells_text = []
-            for cell in row.cells:
-                cell_text = cell.text.strip()
-                if cell_text:
-                    cells_text.append(cell_text)
-            if cells_text:
-                rows_text.append(" | ".join(cells_text))
+            cells = [cell.text.strip() for cell in row.cells]
+            rows_data.append(cells)
 
-        if rows_text:
-            return "\n".join(rows_text)
-        return ""
+        if not rows_data:
+            return ""
+
+        # 确保所有行列数一致
+        max_cols = max(len(r) for r in rows_data)
+        for row in rows_data:
+            while len(row) < max_cols:
+                row.append("")
+
+        lines: list[str] = []
+        # Header row
+        lines.append("| " + " | ".join(rows_data[0]) + " |")
+        # Separator
+        lines.append("| " + " | ".join("---" for _ in rows_data[0]) + " |")
+        # Data rows
+        for row in rows_data[1:]:
+            lines.append("| " + " | ".join(row) + " |")
+
+        return "\n".join(lines)
 
     def _merge_with_heading_info(
         self, segments_with_heading: list[tuple[str, str | None]]
@@ -209,5 +221,91 @@ class DocxChunker(BaseChunker):
                         },
                     )
                 )
+
+        return chunks
+
+    async def enrich(
+        self, chunks: list[Chunk], content: bytes, filename: str | None = None
+    ) -> list[Chunk]:
+        """VLM 后处理：提取 DOCX 中嵌入图片并生成描述"""
+        settings = get_settings()
+
+        if not settings.vlm_processing_enabled or not settings.vlm_image_description_enabled:
+            return chunks
+
+        from rag.vlm_processor import VLMProcessor, VLMTask
+
+        try:
+            doc = Document(io.BytesIO(content))
+        except Exception:
+            return chunks
+
+        vlm_tasks: list[VLMTask] = []
+        images_processed = 0
+        max_images = settings.vlm_max_images_per_document
+
+        # 遍历文档关系中的图片
+        for rel in doc.part.rels.values():
+            if images_processed >= max_images:
+                break
+
+            if "image" not in rel.reltype:
+                continue
+
+            try:
+                img_bytes = rel.target_part.blob
+                img_size = len(img_bytes)
+
+                if img_size < settings.vlm_min_image_size_bytes:
+                    continue
+                if img_size > settings.vlm_max_image_size_bytes:
+                    continue
+
+                vlm_tasks.append(VLMTask(
+                    image_bytes=img_bytes,
+                    task_type="describe",
+                ))
+                images_processed += 1
+            except Exception as e:
+                logger.warning("DOCX 图片提取失败: %s", e)
+
+        if not vlm_tasks:
+            return chunks
+
+        logger.info("DOCX VLM 处理: %d 张图片 (文件: %s)", len(vlm_tasks), filename)
+        vlm = VLMProcessor()
+
+        try:
+            results = await vlm.process_batch(vlm_tasks)
+        except Exception as e:
+            logger.error("VLM 批量处理失败，降级返回原始 chunks: %s", e)
+            return chunks
+
+        next_index = max((c.index for c in chunks), default=-1) + 1
+        added = 0
+
+        for result_text in results:
+            if not result_text or not result_text.strip():
+                continue
+
+            desc_text = f"[图片描述] {result_text}"
+            chunk = Chunk(
+                content=desc_text,
+                index=next_index,
+                token_count=self.count_tokens(desc_text),
+                metadata={
+                    "source_type": "docx",
+                    "vlm_type": "image_description",
+                },
+            )
+            if filename:
+                chunk.metadata["filename"] = filename
+
+            chunks.append(chunk)
+            next_index += 1
+            added += 1
+
+        if added:
+            logger.info("DOCX VLM 处理完成，新增 %d 个 chunks", added)
 
         return chunks

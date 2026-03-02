@@ -242,6 +242,7 @@ class WebToolExecutor:
                 "title": r.get("title", ""),
                 "url": r.get("href", ""),
                 "snippet": r.get("body", ""),
+                "source": "web",
             }
             for r in results
         ]
@@ -250,7 +251,7 @@ class WebToolExecutor:
 
         return ToolResult(
             success=True,
-            data={"results": formatted, "query": query},
+            data={"results": formatted, "query": query, "channel": "web"},
             message=f"找到 {len(formatted)} 条搜索结果",
         )
 

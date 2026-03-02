@@ -563,6 +563,10 @@ class ChatService:
         if is_new_conversation and settings.title_generation_enabled:
             title_task = asyncio.create_task(generate_title(content))
 
+        # === Load user search settings ===
+        from search_settings.service import SearchSettingsService
+        enabled_channels = await SearchSettingsService.get_enabled_channels(user_id)
+
         # === Phase 2: Stream via Queue + Background Task ===
         # Orchestrator runs in an independent background task so that client
         # disconnect does NOT cancel LLM generation.  Events flow through an
@@ -580,6 +584,7 @@ class ChatService:
             space_name=space_name,
             previous_conversation_context=previous_conversation_context,
             openrouter_model=openrouter_model,
+            search_channels=enabled_channels,
         )
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -1106,6 +1111,10 @@ class ChatService:
         if is_new_conversation and settings.title_generation_enabled:
             title_task = asyncio.create_task(generate_title(content))
 
+        # === Load user search settings ===
+        from search_settings.service import SearchSettingsService
+        enabled_channels = await SearchSettingsService.get_enabled_channels(user_id)
+
         # === Phase 2: Stream via Queue + Background Task ===
         # Resolve model_id to OpenRouter model string
         openrouter_model = get_openrouter_model(model_id)
@@ -1116,6 +1125,7 @@ class ChatService:
             conversation_id=conversation_id,
             previous_conversation_context=previous_conversation_context,
             openrouter_model=openrouter_model,
+            search_channels=enabled_channels,
         )
 
         queue: asyncio.Queue = asyncio.Queue()

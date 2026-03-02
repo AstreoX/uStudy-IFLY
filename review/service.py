@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 
 from db.database import get_scoped_session
-from db.models import ReviewSchedule, StudyActivityLog
+from db.models import ReviewSchedule, Space, StudyActivityLog
 
 logger = logging.getLogger(__name__)
 
@@ -275,6 +275,77 @@ async def get_due_reviews_by_space(
                 r.study_depth,
                 a.title,
                 a.related_node_labels,
+            )
+        return list(rows)
+
+
+async def get_due_reviews_all_spaces(
+    user_id: UUID, limit: int = 20
+) -> list[tuple[ReviewSchedule, StudyActivityLog, str | None]]:
+    """查询用户所有学习空间中到期/逾期待复习项，按 activity_id 去重。
+
+    Returns:
+        List of (ReviewSchedule, StudyActivityLog, space_name) tuples.
+        space_name 可能为 None（活动未关联空间时）。
+    """
+    today = datetime.now(timezone.utc).date()
+    async with get_scoped_session() as session:
+        ranked_due_reviews = (
+            select(
+                ReviewSchedule.id.label("review_id"),
+                func.row_number()
+                .over(
+                    partition_by=ReviewSchedule.activity_id,
+                    order_by=(
+                        ReviewSchedule.scheduled_date.asc(),
+                        ReviewSchedule.review_number.asc(),
+                        ReviewSchedule.id.asc(),
+                    ),
+                )
+                .label("rn"),
+            )
+            .join(
+                StudyActivityLog,
+                ReviewSchedule.activity_id == StudyActivityLog.id,
+            )
+            .where(
+                ReviewSchedule.user_id == user_id,
+                ReviewSchedule.status == "pending",
+                ReviewSchedule.scheduled_date <= today,
+            )
+            .subquery()
+        )
+
+        result = await session.execute(
+            select(ReviewSchedule, StudyActivityLog, Space.name)
+            .join(
+                ranked_due_reviews,
+                ReviewSchedule.id == ranked_due_reviews.c.review_id,
+            )
+            .join(
+                StudyActivityLog,
+                ReviewSchedule.activity_id == StudyActivityLog.id,
+            )
+            .outerjoin(
+                Space,
+                StudyActivityLog.space_id == Space.id,
+            )
+            .where(ranked_due_reviews.c.rn == 1)
+            .order_by(ReviewSchedule.scheduled_date.asc())
+            .limit(limit)
+        )
+        rows = result.all()
+        # Eagerly access attributes before session closes
+        for r, a, space_name in rows:
+            _ = (
+                r.id,
+                r.activity_id,
+                r.review_number,
+                r.scheduled_date,
+                r.study_depth,
+                a.title,
+                a.related_node_labels,
+                space_name,
             )
         return list(rows)
 
