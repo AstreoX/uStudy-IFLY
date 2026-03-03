@@ -16,6 +16,7 @@ from quizzes.schemas import (
     QuizDetailResponse,
     QuizEvaluationResponse,
     QuizListItemResponse,
+    QuizSubmitAsyncResponse,
     QuizSubmitRequest,
 )
 from quizzes.service import (
@@ -94,27 +95,32 @@ async def get_quiz_detail(
 
 @router.post(
     "/{quiz_id}/submit",
-    response_model=QuizEvaluationResponse,
     summary="提交答卷并获取评估结果",
-    description="提交用户的答案，系统会自动评分并返回整卷评估结果。",
+    description="提交用户的答案。async=false（默认）同步返回评估结果；async=true 立即返回，后台评估完成后通过通知推送。",
 )
 async def submit_quiz(
     quiz_id: UUID,
     request: QuizSubmitRequest,
+    async_mode: bool = Query(False, alias="async"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> QuizEvaluationResponse:
+) -> QuizEvaluationResponse | QuizSubmitAsyncResponse:
     """
-    提交答卷并获取评估结果
+    提交答卷
 
     - **quiz_id**: 测试 ID
     - **request**: 包含用户答案列表
-
-    返回评估结果，包括得分、优缺点分析、提升建议和逐题评估。
+    - **async**: 是否异步模式（web 端使用）
     """
     service = QuizService(db)
 
     try:
+        # 异步模式：立即返回，后台评估
+        if async_mode:
+            result = await service.submit_async(user.id, quiz_id, request.answers)
+            return result
+
+        # 同步模式：等待评估完成（手机端默认）
         result = await service.submit_and_evaluate(user.id, quiz_id, request.answers)
 
         # 构建调试信息响应（如有）

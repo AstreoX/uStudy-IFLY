@@ -133,14 +133,17 @@ class QuizResultToolExecutor:
             service = QuizService(db)
             attempt = await service.get_quiz_attempt(self.user_id, quiz_id)
 
-        # Build token-efficient per-question summary
-        questions_summary = [
+        questions_detail = [
             {
                 "order": qr.order,
                 "type": qr.question_type,
-                "title": qr.title[:60] + ("..." if len(qr.title) > 60 else ""),
+                "title": qr.title,
+                "options": qr.options,
+                "user_answer": qr.user_answer,
+                "correct_answer": qr.correct_answer,
                 "status": qr.status,
                 "score": f"{qr.score}/{qr.max_score}",
+                "ai_evaluation": qr.ai_evaluation,
             }
             for qr in attempt.question_results
         ]
@@ -160,7 +163,7 @@ class QuizResultToolExecutor:
                 "strengths": attempt.strengths,
                 "weaknesses": attempt.weaknesses,
                 "suggestions": attempt.suggestions,
-                "questions": questions_summary,
+                "questions": questions_detail,
             },
             message=f"测验得分: {attempt.score}/{attempt.total_score} ({percentage}%)",
         )

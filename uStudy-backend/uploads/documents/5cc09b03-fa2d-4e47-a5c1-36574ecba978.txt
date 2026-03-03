@@ -1,0 +1,302 @@
+你是一名个人智能助理，拥有操控用户电脑的功能
+
+我得先把边界说清楚一点点：**我不能真的操控你的电脑**（不能直接点鼠标、敲键盘、读你本地文件）。
+但——我可以**像一个“影子操作者”一样指挥你**，把事情做到几乎同样的效果。
+
+你可以把我当成三合一的个人智能助理 👇
+
+* **操作指导员**：一步一步告诉你该点哪里、输什么命令、怎么验证结果
+* **自动化编写者**：给你 PowerShell / Bash / Python / AutoHotkey / AppleScript 等脚本，你一跑就等于“我在操作”
+* **决策与监控大脑**：帮你设计流程、排错路径、检查清单，避免你走弯路
+
+举几个贴近你现在使用场景的例子：
+
+### 🖥️ 系统 / 开发环境
+
+* 配环境（Python / Node / Docker / WSL / 数据库）
+* 我直接给你**可复制的命令序列**，你只需要一路回车
+* 出错了，把报错贴给我，我继续“接管下一步决策”
+
+### 🤖 自动化 ≈ 间接操控
+
+如果你愿意，我可以：
+
+* 写 **一键脚本**（相当于让我“远程附身”）
+* 帮你设计 **长期自动运行的任务**（定时、触发式）
+* 把复杂操作压缩成：`run.ps1` / `start.sh`
+
+### 🧠 高阶一点（你会很对胃口）
+
+* 把你的电脑当成一个 **可编排系统**
+* 我负责「逻辑、顺序、约束、兜底方案」
+* 你负责「执行与反馈」
+
+> 换句话说：
+> **我不能直接操控你的电脑，但我可以让你“像被操控了一样高效”**。
+
+如果你愿意，我们可以直接进入实战模式。
+你现在最想让我“接管”的是哪一件事？
+
+* 环境搭建
+* 项目开发
+* 学习系统自动化
+* 文件 / 知识管理
+* 或者直接说一句：**“从现在开始当我的个人智能助理”**
+
+我的护照还有三天过期
+
+收到，这是**高优先级、强时效**的情况。
+
+**现实判断先给你：**
+
+* 护照 **3 天后过期 = 基本等同于“已不可用”**
+* 大多数国家/航司/签证系统都要求：**护照有效期 ≥ 6 个月**
+* 现在能做的事，重点只有一个：**止损 + 快速续命**
+
+---
+
+## 你现在立刻该做的 3 件事（按顺序）
+
+### 1️⃣ 暂停一切“依赖护照”的计划
+
+包括：
+
+* 国际出行 / 机票
+* 签证申请 / 入境
+* 银行、学校、政务中需要护照的事项
+
+👉 原则：**不要再“用它”，只“续它”**
+
+---
+
+### 2️⃣ 走「加急/临时证件」路线（这是唯一现实解）
+
+通常可行的只有两类（以中国护照为例，逻辑对其他国家也类似）：
+
+* **护照加急换发**
+
+  * 理由：护照即将过期（这是正当理由）
+  * 时间：最快 **3–5 个工作日**（具体看地点）
+
+* **旅行证 / 临时证件**
+
+  * 用于：紧急回国 / 紧急身份证明
+  * 有效期短，但能救命
+
+⚠️ 普通换发（7–15 天起）现在**来不及**
+
+---
+
+### 3️⃣ 立刻准备材料（今晚就能做）
+
+不管你明天去哪办，材料是共通的：
+
+* 现有护照（即将过期的那本）
+* 身份证（或国民身份证明）
+* 证件照（电子 + 纸质，按要求）
+* 紧急理由说明（一句话就够）
+
+> 示例理由（够用，不夸张）：
+> **“本人护照即将于三日内过期，存在紧急出行与身份使用风险，申请加急换发。”**
+
+---
+
+## 一个关键问题（只问这一个）
+
+**你现在人在国内，还是在国外？**
+
+* 在国内 → 走 **出入境管理部门加急**
+* 在国外 → 走 **使领馆的加急 / 旅行证**
+
+你只需要回我一句：
+👉 **“国内 / 国外（国家）”**
+
+我可以立刻把接下来 **24–72 小时的最优行动路径** 给你排好，精确到“先干什么、后干什么、哪些是坑”。
+
+把你刚才 OpenClaw 向导里那段 **完整版 manifest（JSON）** 原封不动粘进去就行。我在这里给你一份可直接粘贴的“完整版”（跟你截图里那份一致的结构 + 含所有 scopes 与事件）：
+
+```json
+{
+  "display_information": {
+    "name": "OpenClaw",
+    "description": "OpenClaw connector for OpenClaw"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "OpenClaw",
+      "always_online": false
+    },
+    "app_home": {
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "slash_commands": [
+      {
+        "command": "/openclaw",
+        "description": "Send a message to OpenClaw",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "chat:write",
+        "channels:history",
+        "channels:read",
+        "groups:history",
+        "im:history",
+        "mpim:history",
+        "users:read",
+        "app_mentions:read",
+        "reactions:read",
+        "reactions:write",
+        "pins:read",
+        "pins:write",
+        "emoji:read",
+        "commands",
+        "files:read",
+        "files:write"
+      ]
+    }
+  },
+  "settings": {
+    "socket_mode_enabled": true,
+    "event_subscriptions": {
+      "bot_events": [
+        "app_mention",
+        "message.channels",
+        "message.groups",
+        "message.im",
+        "message.mpim",
+        "reaction_added",
+        "reaction_removed",
+        "member_joined_channel",
+        "member_left_channel",
+        "channel_rename",
+        "pin_added",
+        "pin_removed"
+      ]
+    }
+  }
+}
+```
+
+### 这一屏你要做的事
+
+1. 把 Slack 页面里默认的 `Demo App ... socket_mode_enabled: false` 那段 **全选删掉**
+2. **粘贴上面的 JSON**
+3. 点 **Next**
+
+### 两个“下一步”提醒（别漏）
+
+* **Socket Mode** 打开后还需要你去生成 `xapp-...` 的 app-level token（并给 `connections:write` 权限），否则 Socket Mode 连不上。
+* **Install App to Workspace** 才会给你 `xoxb-...` bot token。
+
+你如果点 Next 之后 Slack 报 “invalid_manifest / unknown field / missing …” 之类，把报错完整复制出来，我直接告诉你该删哪项或改哪个字段。
+
+很好，这一页 **不用填任何东西**。
+这是 Slack 的 **App Credentials 信息页**，你现在要做的是“从这里跳走”，继续完成 **Socket Mode + Token**，而不是在这里配置。
+
+我按**最短、不会走错**的顺序告诉你👇
+
+---
+
+## 这一步你该做什么？
+
+👉 **什么都不用改，也不要复制这里的 Client ID / Secret**
+👉 直接看左侧菜单，继续下一步
+
+> 对 OpenClaw（Socket Mode）来说：
+> **Client ID / Client Secret / Signing Secret / Verification Token 都暂时用不上**
+
+---
+
+## 下一步 1️⃣：开启 Socket Mode + 拿 `xapp-...`
+
+左侧菜单：
+
+**Settings → Socket Mode**
+
+1. 打开 **Enable Socket Mode**
+2. Slack 会提示你创建 **App-Level Token**
+3. 创建时：
+
+   * Token name：随便
+   * **Scope：只选 `connections:write`**
+4. 创建完成后，复制得到：
+
+   ```
+   xapp-xxxxxxxx
+   ```
+
+👉 这是 **SLACK_APP_TOKEN**（非常关键）
+
+---
+
+## 下一步 2️⃣：安装 App，拿 `xoxb-...`
+
+左侧菜单：
+
+**OAuth & Permissions**
+
+1. 确认下方 **Bot Token Scopes** 已经有（你用的是完整版 manifest，已经齐了）
+2. 点击顶部按钮：
+   **Install App to Workspace**
+3. 授权完成后，你会看到：
+
+   ```
+   Bot User OAuth Token
+   xoxb-xxxxxxxx
+   ```
+
+👉 这是 **SLACK_BOT_TOKEN**（同样关键）
+
+---
+
+## 下一步 3️⃣：回到你本机，设置环境变量
+
+如果你在 **Windows PowerShell**：
+
+```powershell
+setx SLACK_APP_TOKEN "xapp-你的token"
+setx SLACK_BOT_TOKEN "xoxb-你的token"
+```
+
+> ⚠️ 注意：`setx` 后要 **新开一个终端窗口** 才会生效
+
+---
+
+## 下一步 4️⃣：回到 OpenClaw
+
+重新运行或继续它的向导，例如：
+
+```bash
+openclaw onboard
+# 或
+openclaw start
+```
+
+如果 token 都对，它会直接连上 Slack，不会再卡在 connector 这一步。
+
+---
+
+## 你现在的状态总结（很关键）
+
+* ✅ Manifest 已创建成功
+* ✅ App 已存在
+* ❌ 还没开启 Socket Mode
+* ❌ 还没生成 `xapp-...`
+* ❌ 还没 Install App 拿 `xoxb-...`
+
+你现在**完全在正确轨道上**，只是正好走到一个“看起来很重要、但其实可以无视”的页面。
+
+---
+
+你下一步如果：
+
+* 在 **Socket Mode** 页面
+* 或 **OAuth & Permissions** 页面
+* 或 OpenClaw 报 token / Slack 连接错误
+
+直接把那一屏截图或报错原文贴出来，我会只告诉你“点哪、复制哪个、不用管哪个”。

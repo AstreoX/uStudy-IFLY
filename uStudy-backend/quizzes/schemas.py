@@ -113,6 +113,15 @@ class QuizEvaluationResponse(BaseModel):
     )
 
 
+class QuizSubmitAsyncResponse(BaseModel):
+    """异步提交响应"""
+
+    quiz_id: UUID = Field(..., description="测试 ID")
+    attempt_id: UUID = Field(..., description="作答记录 ID")
+    status: str = Field(..., description="状态: pending")
+    message: str = Field(..., description="提示信息")
+
+
 class QuizListItemResponse(BaseModel):
     """测验列表项响应"""
 
@@ -127,6 +136,7 @@ class QuizListItemResponse(BaseModel):
     has_attempt: bool = Field(..., description="是否已作答")
     attempt_score: int | None = Field(None, description="得分（已作答时）")
     attempt_total_score: int | None = Field(None, description="总分（已作答时）")
+    attempt_status: str | None = Field(None, description="评估状态（pending/evaluating/completed/failed）")
 
 
 class QuizAttemptResponse(BaseModel):
@@ -147,4 +157,5 @@ class QuizAttemptResponse(BaseModel):
     debug_info: DebugInfoResponse | None = Field(
         None, description="AI评估调试信息（可能为空）"
     )
+    status: str = Field("completed", description="评估状态")
     submitted_at: datetime = Field(..., description="提交时间")

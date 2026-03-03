@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -21,6 +22,7 @@ from quizzes.schemas import (
     QuizAttemptResponse,
     QuizDetailResponse,
     QuizListItemResponse,
+    QuizSubmitAsyncResponse,
     UserAnswerItem,
 )
 
@@ -267,6 +269,117 @@ class QuizService:
 
         return evaluation_result
 
+    async def submit_async(
+        self,
+        user_id: UUID,
+        quiz_id: UUID,
+        answers: list[UserAnswerItem],
+    ) -> QuizSubmitAsyncResponse:
+        """
+        异步提交答卷：立即返回，后台评估
+
+        Args:
+            user_id: 用户 ID
+            quiz_id: 测试 ID
+            answers: 用户答案列表
+
+        Returns:
+            QuizSubmitAsyncResponse
+
+        Raises:
+            QuizNotFoundError: 测试不存在
+            QuizAccessDeniedError: 无权访问
+            QuizAlreadyAttemptedError: 已作答
+        """
+        # 查询 Quiz 并预加载 questions 和 space
+        result = await self.db.execute(
+            select(Quiz)
+            .options(selectinload(Quiz.questions), selectinload(Quiz.space))
+            .where(Quiz.id == quiz_id)
+        )
+        quiz = result.scalar_one_or_none()
+
+        if not quiz:
+            raise QuizNotFoundError(f"测试不存在: {quiz_id}")
+
+        if quiz.space.user_id != user_id:
+            raise QuizAccessDeniedError(f"无权访问该测试: {quiz_id}")
+
+        # 检查是否已经作答过
+        existing_attempt = await self.db.execute(
+            select(QuizAttempt).where(
+                QuizAttempt.quiz_id == quiz_id,
+                QuizAttempt.user_id == user_id,
+            )
+        )
+        if existing_attempt.scalar_one_or_none():
+            raise QuizAlreadyAttemptedError(f"该测试已经作答过: {quiz_id}")
+
+        # 构建答案映射
+        user_answers = {str(item.question_id): item.answer for item in answers}
+
+        # 快照题目数据（避免 DB session 跨边界）
+        questions_snapshot = [
+            {
+                "id": str(q.id),
+                "question_type": q.question_type.value,
+                "question_stem": q.question_stem,
+                "options": q.options,
+                "correct_answer": q.correct_answer,
+                "order_index": q.order_index,
+            }
+            for q in sorted(quiz.questions, key=lambda q: q.order_index)
+        ]
+
+        # 快照 space 信息
+        space_id = quiz.space_id
+        space_name = quiz.space.name if quiz.space else None
+        quiz_topic = quiz.topic
+        quiz_difficulty = quiz.difficulty.value
+
+        # 创建 pending attempt
+        attempt = QuizAttempt(
+            quiz_id=quiz_id,
+            user_id=user_id,
+            status="pending",
+            user_answers_raw=user_answers,
+            score=0,
+            total_score=0,
+            strengths=[],
+            weaknesses=[],
+            suggestions=[],
+            question_results=[],
+        )
+        self.db.add(attempt)
+        await self.db.commit()
+        await self.db.refresh(attempt)
+
+        attempt_id = attempt.id
+
+        # 启动后台评估任务
+        task = asyncio.create_task(
+            _run_background_evaluation(
+                attempt_id=attempt_id,
+                user_id=user_id,
+                quiz_id=quiz_id,
+                quiz_topic=quiz_topic,
+                quiz_difficulty=quiz_difficulty,
+                space_id=space_id,
+                space_name=space_name,
+                questions_snapshot=questions_snapshot,
+                user_answers=user_answers,
+            )
+        )
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+
+        return QuizSubmitAsyncResponse(
+            quiz_id=quiz_id,
+            attempt_id=attempt_id,
+            status="pending",
+            message="提交成功，AI 正在后台评估",
+        )
+
     async def get_quizzes_by_space(
         self,
         user_id: UUID,
@@ -328,6 +441,7 @@ class QuizService:
                     has_attempt=attempt is not None,
                     attempt_score=attempt.score if attempt else None,
                     attempt_total_score=attempt.total_score if attempt else None,
+                    attempt_status=attempt.status if attempt else None,
                 )
             )
 
@@ -424,6 +538,7 @@ class QuizService:
             suggestions=attempt.suggestions,
             question_results=question_results,
             debug_info=debug_info_response,
+            status=attempt.status,
             submitted_at=attempt.submitted_at,
         )
 
@@ -458,3 +573,163 @@ class QuizService:
         # 删除测验（关联的 questions 和 attempts 会级联删除）
         await self.db.execute(delete(Quiz).where(Quiz.id == quiz_id))
         await self.db.commit()
+
+
+async def _run_background_evaluation(
+    *,
+    attempt_id: UUID,
+    user_id: UUID,
+    quiz_id: UUID,
+    quiz_topic: str,
+    quiz_difficulty: str,
+    space_id: UUID,
+    space_name: str | None,
+    questions_snapshot: list[dict],
+    user_answers: dict[str, Any],
+) -> None:
+    """后台执行 AI 评估（fire-and-forget）。使用独立 DB session。"""
+    from db.database import get_scoped_session
+    from notifications.queue import push_notification
+
+    try:
+        # 标记为 evaluating
+        async with get_scoped_session() as session:
+            result = await session.execute(
+                select(QuizAttempt).where(QuizAttempt.id == attempt_id)
+            )
+            attempt = result.scalar_one_or_none()
+            if not attempt:
+                logger.error("Background eval: attempt %s not found", attempt_id)
+                return
+            attempt.status = "evaluating"
+            await session.commit()
+
+        # 调用 AI 评估（与同步流程相同的服务）
+        evaluation_service = QuizEvaluationService(space_id=space_id)
+        evaluation_result = await evaluation_service.evaluate_quiz(
+            quiz_id=quiz_id,
+            quiz_topic=quiz_topic,
+            difficulty_level=quiz_difficulty,
+            questions=questions_snapshot,
+            user_answers=user_answers,
+        )
+
+        # 序列化结果
+        question_results_data = [
+            {
+                "question_id": str(qr.question_id),
+                "order": qr.order,
+                "question_type": qr.question_type,
+                "title": qr.question_stem,
+                "options": qr.options,
+                "status": qr.status,
+                "score": qr.score,
+                "max_score": qr.max_score,
+                "user_answer": qr.user_answer,
+                "correct_answer": qr.correct_answer,
+                "ai_evaluation": qr.ai_evaluation,
+            }
+            for qr in evaluation_result.question_results
+        ]
+
+        debug_info_data = None
+        if evaluation_result.debug_info:
+            debug_info_data = {
+                "steps": [
+                    {
+                        "step_number": s.step_number,
+                        "step_name": s.step_name,
+                        "status": s.status,
+                        "duration_ms": s.duration_ms,
+                        "details": s.details,
+                        "metadata": s.metadata,
+                    }
+                    for s in evaluation_result.debug_info.steps
+                ],
+                "model_name": evaluation_result.debug_info.model_name,
+                "total_duration_ms": evaluation_result.debug_info.total_duration_ms,
+            }
+
+        # 更新 attempt 记录
+        async with get_scoped_session() as session:
+            result = await session.execute(
+                select(QuizAttempt).where(QuizAttempt.id == attempt_id)
+            )
+            attempt = result.scalar_one()
+            attempt.status = "completed"
+            attempt.score = evaluation_result.score
+            attempt.total_score = evaluation_result.total_score
+            attempt.strengths = evaluation_result.strengths
+            attempt.weaknesses = evaluation_result.weaknesses
+            attempt.suggestions = evaluation_result.suggestions
+            attempt.question_results = question_results_data
+            attempt.debug_info = debug_info_data
+            await session.commit()
+
+        # 推送通知
+        await push_notification(user_id, {
+            "type": "quiz_evaluation_complete",
+            "data": {
+                "quiz_id": str(quiz_id),
+                "attempt_id": str(attempt_id),
+                "quiz_topic": quiz_topic,
+                "score": evaluation_result.score,
+                "total_score": evaluation_result.total_score,
+                "status": "completed",
+            },
+        })
+
+        # 记录活动（fire-and-forget）
+        from activity.service import record_quiz_activity
+
+        task = asyncio.create_task(
+            record_quiz_activity(
+                user_id=user_id,
+                quiz_topic=quiz_topic,
+                quiz_space_id=space_id,
+                quiz_space_name=space_name,
+                score=evaluation_result.score,
+                total_score=evaluation_result.total_score,
+            )
+        )
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+
+        logger.info(
+            "Background quiz evaluation completed: attempt=%s score=%d/%d",
+            attempt_id,
+            evaluation_result.score,
+            evaluation_result.total_score,
+        )
+
+    except Exception:
+        logger.exception("Background quiz evaluation failed: attempt=%s", attempt_id)
+
+        # 标记为 failed
+        try:
+            async with get_scoped_session() as session:
+                result = await session.execute(
+                    select(QuizAttempt).where(QuizAttempt.id == attempt_id)
+                )
+                attempt = result.scalar_one_or_none()
+                if attempt:
+                    attempt.status = "failed"
+                    await session.commit()
+        except Exception:
+            logger.exception("Failed to mark attempt as failed: %s", attempt_id)
+
+        # 推送失败通知
+        try:
+            await push_notification(user_id, {
+                "type": "quiz_evaluation_complete",
+                "data": {
+                    "quiz_id": str(quiz_id),
+                    "attempt_id": str(attempt_id),
+                    "quiz_topic": quiz_topic,
+                    "score": 0,
+                    "total_score": 0,
+                    "status": "failed",
+                },
+            })
+        except Exception:
+            logger.exception("Failed to push failure notification: %s", attempt_id)

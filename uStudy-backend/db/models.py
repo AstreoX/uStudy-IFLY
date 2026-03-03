@@ -697,6 +697,14 @@ class QuizAttempt(Base):
         nullable=False,
     )
 
+    # 异步评估状态: pending -> evaluating -> completed / failed
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="completed"
+    )
+
+    # 原始用户答案（异步模式下存储，供后台任务使用）
+    user_answers_raw: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
     # 评估结果
     score: Mapped[int] = mapped_column(Integer, nullable=False)
     total_score: Mapped[int] = mapped_column(Integer, nullable=False)

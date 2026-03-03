@@ -11,6 +11,7 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debia
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
+    libreoffice-impress \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制依赖文件
