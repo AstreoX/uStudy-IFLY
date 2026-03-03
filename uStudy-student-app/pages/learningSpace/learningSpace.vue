@@ -232,6 +232,47 @@
 		<!-- 底部输入栏 -->
 			<view class="input-bar" :style="{ bottom: keyboardHeight > 0 ? keyboardHeight + 'px' : '' }">
 				<!-- 模型选择下拉菜单（向上弹出） -->
+				<!-- 工具模式弹窗（向上弹出） -->
+				<view v-if="showToolMenu" class="tool-menu-backdrop" @click="showToolMenu = false"></view>
+				<view v-if="showToolMenu" class="tool-menu">
+					<view class="tool-menu-header">
+						<text class="tool-menu-title">工具模式</text>
+					</view>
+					<view class="tool-mode-options">
+						<view class="tool-mode-option" :class="{ 'tool-mode-option-active': toolMode === 'auto' }" @click="selectToolMode('auto')">
+							<view class="tool-mode-radio" :class="{ 'tool-mode-radio-checked': toolMode === 'auto' }"></view>
+							<view class="tool-mode-option-info">
+								<text class="tool-mode-option-name">自动模式</text>
+								<text class="tool-mode-option-desc">AI 按需加载工具</text>
+							</view>
+						</view>
+						<view class="tool-mode-option" :class="{ 'tool-mode-option-active': toolMode === 'manual' }" @click="selectToolMode('manual')">
+							<view class="tool-mode-radio" :class="{ 'tool-mode-radio-checked': toolMode === 'manual' }"></view>
+							<view class="tool-mode-option-info">
+								<text class="tool-mode-option-name">手动模式</text>
+								<text class="tool-mode-option-desc">自定义启用工具</text>
+							</view>
+						</view>
+					</view>
+					<view v-if="toolMode === 'manual' && toolCatalog" class="tool-catalog-list">
+						<view v-for="cat in toolCatalog" :key="cat.category" class="tool-catalog-category">
+							<view class="tool-catalog-category-header">
+								<text class="tool-catalog-category-name">{{ cat.category }}</text>
+								<text class="tool-catalog-category-count">{{ getCategoryEnabledCount(cat) }}/{{ cat.tools.length }}</text>
+							</view>
+							<view v-for="tool in cat.tools" :key="tool.name" class="tool-catalog-item" @click="toggleTool(tool.name)">
+								<view class="tool-catalog-checkbox" :class="{ 'tool-catalog-checkbox-checked': isToolEnabled(tool.name) }">
+									<image v-if="isToolEnabled(tool.name)" class="tool-catalog-check-icon" src="/static/icons/phosphor-icons/SVGs/bold/check.svg" mode="aspectFit"></image>
+								</view>
+								<text class="tool-catalog-item-name">{{ tool.summary }}</text>
+							</view>
+						</view>
+					</view>
+					<view v-if="toolMode === 'manual' && toolCatalogLoading" class="tool-catalog-loading">
+						<text class="tool-catalog-loading-text">加载中...</text>
+					</view>
+				</view>
+
 				<view v-if="showModelMenu" class="model-menu-backdrop" @click="showModelMenu = false"></view>
 				<view v-if="showModelMenu" class="model-menu">
 					<view
@@ -307,13 +348,19 @@
 					/>
 
 					<view class="input-bottom-row">
-						<!-- 左侧：模型选择 pill -->
-						<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
-							<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
-							<text class="model-selector-label">{{ selectedModelName }}</text>
-							<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
+						<!-- 左侧：模型选择 pill + 工具模式 pill -->
+						<view class="input-bottom-left">
+							<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
+								<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
+								<text class="model-selector-label">{{ selectedModelName }}</text>
+								<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
+							</view>
+							<view class="tool-mode-btn" @click="toggleToolMenu">
+								<image class="tool-mode-icon" src="/static/icons/phosphor-icons/SVGs/regular/wrench.svg" mode="aspectFit"></image>
+								<text class="tool-mode-label">{{ toolModeLabel }}</text>
+								<image class="tool-mode-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
+							</view>
 						</view>
-						<view v-else class="input-bottom-row-spacer"></view>
 
 						<!-- 右侧：操作按钮 -->
 						<view class="right-actions">
@@ -373,7 +420,7 @@
 </template>
 
 <script>
-	import { getSpaceGraph, getTaskStatus, generateKnowledgeGraph, addSpaceLink, uploadSpaceDocument } from '@/api/space'
+	import { getSpaceGraph, getTaskStatus, generateKnowledgeGraph, addSpaceLink, uploadSpaceDocument, getToolCatalog, updateSpace, getSpace } from '@/api/space'
 	import { getModels } from '@/api/chat'
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
 	import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
@@ -745,6 +792,13 @@
 				selectedModelId: null,
 				showModelMenu: false,
 
+				// 工具模式
+				toolMode: 'auto',
+				enabledTools: null,
+				showToolMenu: false,
+				toolCatalog: null,
+				toolCatalogLoading: false,
+
 				// 静默刷新标志，防止并发刷新
 				isRefreshing: false,
 
@@ -799,6 +853,9 @@
 			selectedModelName() {
 				const model = this.availableModels.find(m => m.id === this.selectedModelId)
 				return model ? model.display_name : ''
+			},
+			toolModeLabel() {
+				return this.toolMode === 'auto' ? '自动' : '手动'
 			}
 		},
 
@@ -819,6 +876,7 @@
 
 		async mounted() {
 			this.loadModels()
+			this.loadSpaceToolMode()
 			try {
 				// 检测用户无障碍偏好
 				// #ifdef H5
@@ -1677,6 +1735,79 @@
 					console.error('[LearningSpace] Failed to load models:', err)
 				}
 			},
+
+			// ========== 工具模式方法 ==========
+			toggleToolMenu() {
+				this.showToolMenu = !this.showToolMenu
+				if (this.showToolMenu && !this.toolCatalog) {
+					this.loadToolCatalog()
+				}
+			},
+			async loadToolCatalog() {
+				if (this.toolCatalogLoading) return
+				this.toolCatalogLoading = true
+				try {
+					const res = await getToolCatalog()
+					this.toolCatalog = res || []
+				} catch (err) {
+					console.error('[LearningSpace] Failed to load tool catalog:', err)
+				} finally {
+					this.toolCatalogLoading = false
+				}
+			},
+			async loadSpaceToolMode() {
+				if (!this.spaceId) return
+				try {
+					const space = await getSpace(this.spaceId)
+					this.toolMode = space.tool_mode || 'auto'
+					this.enabledTools = space.enabled_tools || null
+				} catch (err) {
+					console.error('[LearningSpace] Failed to load space tool mode:', err)
+				}
+			},
+			async selectToolMode(mode) {
+				if (mode === this.toolMode) return
+				const newMode = mode
+				let newEnabledTools = this.enabledTools
+				if (newMode === 'manual' && !this.enabledTools) {
+					if (!this.toolCatalog) await this.loadToolCatalog()
+					const allNames = (this.toolCatalog || []).flatMap(cat => cat.tools.map(t => t.name))
+					newEnabledTools = allNames
+				}
+				this.toolMode = newMode
+				this.enabledTools = newEnabledTools
+				this.saveToolMode()
+			},
+			toggleTool(toolName) {
+				if (!this.enabledTools) return
+				const idx = this.enabledTools.indexOf(toolName)
+				if (idx >= 0) {
+					this.enabledTools = this.enabledTools.filter(n => n !== toolName)
+				} else {
+					this.enabledTools = [...this.enabledTools, toolName]
+				}
+				this.saveToolMode()
+			},
+			isToolEnabled(toolName) {
+				if (!this.enabledTools) return true
+				return this.enabledTools.includes(toolName)
+			},
+			getCategoryEnabledCount(category) {
+				if (!this.enabledTools) return category.tools.length
+				return category.tools.filter(t => this.enabledTools.includes(t.name)).length
+			},
+			async saveToolMode() {
+				if (!this.spaceId) return
+				try {
+					await updateSpace(this.spaceId, {
+						tool_mode: this.toolMode,
+						enabled_tools: this.toolMode === 'manual' ? this.enabledTools : null,
+					})
+				} catch (err) {
+					console.error('[LearningSpace] Failed to save tool mode:', err)
+				}
+			},
+
 			handlePlusClick() {
 				this.showPlusPopup = true
 				this.$nextTick(() => {
@@ -4644,6 +4775,105 @@
 		flex-shrink: 0;
 		margin-left: 16rpx;
 	}
+
+	/* ==================== 底部行左侧容器 ==================== */
+	.input-bottom-left {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+		flex: 1;
+		min-width: 0;
+	}
+
+	/* ==================== 工具模式选择器 ==================== */
+	.tool-mode-btn {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+		padding: 8rpx 16rpx 8rpx 12rpx;
+		background: rgba(255, 255, 255, 0.08);
+		border-radius: 999rpx;
+		cursor: pointer;
+		transition: background 0.15s ease;
+	}
+
+	.tool-mode-btn:active {
+		background: rgba(255, 255, 255, 0.16);
+	}
+
+	.tool-mode-icon {
+		width: 28rpx;
+		height: 28rpx;
+		filter: brightness(0) invert(1);
+		opacity: 0.5;
+		flex-shrink: 0;
+	}
+
+	.tool-mode-label {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.6);
+		white-space: nowrap;
+	}
+
+	.tool-mode-chevron {
+		width: 20rpx;
+		height: 20rpx;
+		filter: brightness(0) invert(1);
+		opacity: 0.35;
+		flex-shrink: 0;
+	}
+
+	.tool-menu-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 199;
+	}
+
+	.tool-menu {
+		position: absolute;
+		bottom: 100%;
+		left: 12rpx;
+		right: 12rpx;
+		max-height: 70vh;
+		overflow-y: auto;
+		z-index: 200;
+		margin-bottom: 8rpx;
+		background: rgba(38, 38, 42, 0.94);
+		-webkit-backdrop-filter: blur(24px) saturate(180%);
+		backdrop-filter: blur(24px) saturate(180%);
+		border: 1rpx solid rgba(255, 255, 255, 0.1);
+		border-radius: 20rpx;
+		padding: 16rpx;
+		box-shadow: 0 -6rpx 24rpx rgba(0, 0, 0, 0.35);
+	}
+
+	.tool-menu-header { padding: 0 8rpx 16rpx 8rpx; }
+	.tool-menu-title { font-size: 28rpx; font-weight: 600; color: rgba(255, 255, 255, 0.9); }
+
+	.tool-mode-options { display: flex; flex-direction: column; gap: 8rpx; margin-bottom: 16rpx; }
+	.tool-mode-option { display: flex; align-items: center; gap: 16rpx; padding: 16rpx 20rpx; border-radius: 16rpx; transition: background 0.15s ease; }
+	.tool-mode-option:active { background: rgba(255, 255, 255, 0.08); }
+	.tool-mode-option-active { background: rgba(255, 255, 255, 0.06); }
+	.tool-mode-radio { width: 32rpx; height: 32rpx; border-radius: 50%; border: 2rpx solid rgba(255, 255, 255, 0.3); flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+	.tool-mode-radio-checked { border-color: #3B82F6; background: #3B82F6; }
+	.tool-mode-radio-checked::after { content: ''; width: 12rpx; height: 12rpx; border-radius: 50%; background: #ffffff; }
+	.tool-mode-option-info { flex: 1; display: flex; flex-direction: column; gap: 4rpx; }
+	.tool-mode-option-name { font-size: 28rpx; font-weight: 500; color: rgba(255, 255, 255, 0.9); }
+	.tool-mode-option-desc { font-size: 22rpx; color: rgba(255, 255, 255, 0.4); }
+
+	.tool-catalog-list { border-top: 1rpx solid rgba(255, 255, 255, 0.08); padding-top: 12rpx; }
+	.tool-catalog-category { margin-bottom: 12rpx; }
+	.tool-catalog-category-header { display: flex; align-items: center; justify-content: space-between; padding: 8rpx 12rpx; }
+	.tool-catalog-category-name { font-size: 24rpx; font-weight: 600; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 1rpx; }
+	.tool-catalog-category-count { font-size: 22rpx; color: rgba(255, 255, 255, 0.3); }
+	.tool-catalog-item { display: flex; align-items: center; gap: 12rpx; padding: 12rpx 12rpx; border-radius: 12rpx; transition: background 0.15s ease; }
+	.tool-catalog-item:active { background: rgba(255, 255, 255, 0.06); }
+	.tool-catalog-checkbox { width: 32rpx; height: 32rpx; border-radius: 8rpx; border: 2rpx solid rgba(255, 255, 255, 0.25); flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+	.tool-catalog-checkbox-checked { border-color: #3B82F6; background: #3B82F6; }
+	.tool-catalog-check-icon { width: 20rpx; height: 20rpx; filter: brightness(0) invert(1); }
+	.tool-catalog-item-name { font-size: 26rpx; color: rgba(255, 255, 255, 0.7); flex: 1; }
+	.tool-catalog-loading { padding: 20rpx; text-align: center; }
+	.tool-catalog-loading-text { font-size: 24rpx; color: rgba(255, 255, 255, 0.4); }
 
 	.input-safe-area {
 		height: env(safe-area-inset-bottom);
