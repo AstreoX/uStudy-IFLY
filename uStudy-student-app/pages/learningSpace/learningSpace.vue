@@ -97,6 +97,15 @@
 					</view>
 				</view>
 			</view>
+
+			<!-- 扩展按钮 -->
+			<view
+				class="expand-node-btn"
+				:class="{ 'expand-node-btn--loading': isExpandingNode }"
+				@click.stop="handleExpandNode"
+			>
+				<text class="expand-node-btn-text">{{ isExpandingNode ? '生成中...' : '扩展' }}</text>
+			</view>
 			<!-- 内联笔记预览 -->
 			<view class="node-notes-inline">
 				<text v-if="nodeNotesLoading" class="node-notes-hint">加载笔记...</text>
@@ -423,7 +432,7 @@
 </template>
 
 <script>
-	import { getSpaceGraph, getTaskStatus, generateKnowledgeGraph, addSpaceLink, uploadSpaceDocument } from '@/api/space'
+	import { getSpaceGraph, getTaskStatus, generateKnowledgeGraph, addSpaceLink, uploadSpaceDocument, expandNode } from '@/api/space'
 	import { getSpaceNotes, getNoteDetail } from '@/api/note'
 	import { getModels } from '@/api/chat'
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
@@ -818,7 +827,10 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				nodeNotesLoading: false,
 				selectedNoteDetail: null,
 				showNoteDetail: false,
-				noteDetailLoading: false
+				noteDetailLoading: false,
+
+				// 节点扩展状态
+				isExpandingNode: false,
 			}
 		},
 
@@ -1994,7 +2006,165 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				// #endif
 			},
 
-			// ========== 笔记方法 ==========
+			// ========== 节点扩展 ==========
+			async handleExpandNode() {
+				if (this.isExpandingNode || !this.selectedNode) return
+				this.isExpandingNode = true
+
+				const parentNode = this.selectedNode
+
+				try {
+					const res = await expandNode(this.spaceId, parentNode.id)
+					const taskId = res.task_id
+
+					// 轮询任务状态（复用 waitForTask，最多 5 分钟）
+					const task = await this.waitForTask(taskId)
+
+					// 重新拉取图谱数据
+					const graphData = await getSpaceGraph(this.spaceId)
+					if (!graphData || !graphData.nodes || graphData.nodes.length === 0) {
+						uni.showToast({ title: '图谱刷新失败，请手动刷新', icon: 'none' })
+						return
+					}
+
+					// 合并新节点并播放动画
+					await this.mergeExpandedNodes(graphData, parentNode)
+
+					const nodeCount = task.node_count || 0
+					uni.showToast({
+						title: nodeCount > 0 ? `已生成 ${nodeCount} 个子节点` : '扩展完成',
+						icon: 'none'
+					})
+				} catch (e) {
+					uni.showToast({ title: e.message || '扩展失败，请重试', icon: 'none' })
+				} finally {
+					this.isExpandingNode = false
+				}
+			},
+
+			/**
+			 * 合并扩展后的图谱数据，识别新节点并播放生长动画
+			 */
+			async mergeExpandedNodes(newGraphData, parentNode) {
+				// 记录当前已有节点 ID 集合
+				const existingIds = new Set(this.nodes.map(n => n.id))
+
+				// 处理新图谱数据（复用 loadGraphData 中的逻辑）
+				const { nodes: rawNodes, edges: rawEdges } = newGraphData
+				const treeEdges = rawEdges.filter(e => e.type === 'knowledge_tree')
+				const parentMap = new Map()
+				const childrenMap = new Map()
+
+				treeEdges.forEach(e => {
+					parentMap.set(e.to_node_id, e.from_node_id)
+					if (!childrenMap.has(e.from_node_id)) childrenMap.set(e.from_node_id, [])
+					childrenMap.get(e.from_node_id).push(e.to_node_id)
+				})
+
+				const roots = rawNodes.filter(n => !parentMap.has(n.id))
+				const levels = new Map()
+				const queue = roots.map(r => ({ id: r.id, level: 0 }))
+				while (queue.length > 0) {
+					const { id, level } = queue.shift()
+					levels.set(id, level)
+					;(childrenMap.get(id) || []).forEach(cid => queue.push({ id: cid, level: level + 1 }))
+				}
+
+				// 构建新的本地节点列表（保留已有节点的 x,y 坐标）
+				const newNodes = rawNodes.map(n => {
+					if (existingIds.has(n.id)) {
+						// 已有节点：保留当前位置
+						return this.nodeMap.get(n.id)
+					}
+					return {
+						id: n.id,
+						label: n.label,
+						level: levels.get(n.id) || 0,
+						mastery: n.mastery,
+						parent: parentMap.get(n.id) || null,
+						collapsed: false,
+						x: parentNode.x, y: parentNode.y,
+						vx: 0, vy: 0,
+						labelLines: [], labelSize: null, labelBox: null, labelAnchor: null,
+						layoutFootprint: 0,
+						targetX: 0, targetY: 0,
+						angle: 0, targetAngle: 0
+					}
+				})
+
+				const addedNodes = newNodes.filter(n => !existingIds.has(n.id))
+				if (addedNodes.length === 0) return
+
+				// 更新 nodes 和 edges
+				this.nodes = newNodes
+				this.edges = rawEdges.map(e => ({ from: e.from_node_id, to: e.to_node_id, type: e.type }))
+
+				// 重建索引和缓存
+				this.rebuildRenderCaches({ refreshVisible: true, refreshChildCount: true })
+				this.invalidateGraphBoundsCache()
+
+				// 重新计算布局（确定新节点目标位置）
+				this.initializeLayout()
+
+				// 记录新节点的目标位置，并将起始位置设为父节点
+				const addedIds = addedNodes.map(n => n.id)
+				addedIds.forEach(id => {
+					const node = this.nodeMap.get(id)
+					if (!node) return
+					node._expandTargetX = node.x
+					node._expandTargetY = node.y
+					node.x = parentNode.x
+					node.y = parentNode.y
+				})
+
+				// 播放生长动画
+				this.runExpandNodeAnimation(addedIds, parentNode)
+			},
+
+			/**
+			 * 新节点从父节点位置生长到目标位置的动画
+			 */
+			runExpandNodeAnimation(newNodeIds, parentNode) {
+				const startTime = Date.now()
+				const duration = 600
+
+				const animate = () => {
+					const elapsed = Date.now() - startTime
+					const t = Math.min(elapsed / duration, 1)
+					// ease-out cubic
+					const eased = 1 - Math.pow(1 - t, 3)
+
+					newNodeIds.forEach((id, i) => {
+						const node = this.nodeMap.get(id)
+						if (!node || node._expandTargetX === undefined) return
+						node.x = parentNode.x + (node._expandTargetX - parentNode.x) * eased
+						node.y = parentNode.y + (node._expandTargetY - parentNode.y) * eased
+					})
+
+					this.drawGraph()
+					this.drawMinimap()
+
+					if (t < 1) {
+						requestAnimationFrame(animate)
+					} else {
+						// 动画结束：固定最终位置
+						newNodeIds.forEach(id => {
+							const node = this.nodeMap.get(id)
+							if (!node) return
+							node.x = node._expandTargetX
+							node.y = node._expandTargetY
+							delete node._expandTargetX
+							delete node._expandTargetY
+						})
+						this.drawGraph()
+						this.drawMinimap()
+					}
+				}
+
+				requestAnimationFrame(animate)
+			},
+
+		// ========== 笔记方法 ==========
 			async openNoteDetail(note) {
 				if (!note?.id) return
 				this.showNoteDetail = true
@@ -5059,6 +5229,29 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		font-weight: 500;
 		color: #818CF8;
 		white-space: nowrap;
+		line-height: 1;
+	}
+
+	/* 节点扩展按钮 */
+	.expand-node-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin: 4rpx 20rpx 8rpx;
+		padding: 8rpx 0;
+		border-radius: 12rpx;
+		background: rgba(99, 102, 241, 0.12);
+		border: 1rpx solid rgba(99, 102, 241, 0.35);
+	}
+
+	.expand-node-btn--loading {
+		opacity: 0.6;
+	}
+
+	.expand-node-btn-text {
+		font-size: 22rpx;
+		color: #818CF8;
+		font-weight: 500;
 		line-height: 1;
 	}
 

@@ -85,6 +85,20 @@ export function deleteSpace(spaceId) {
 }
 
 /**
+ * 扩展知识图谱节点（生成子节点，异步任务）
+ * @param {string} spaceId
+ * @param {string} nodeId
+ * @returns {Promise<Object>} { task_id, status, task_type, created_at }
+ */
+export function expandNode(spaceId, nodeId) {
+  return request({
+    url: `/api/agents/expand-node?space_id=${spaceId}&node_id=${nodeId}`,
+    method: 'POST',
+    data: {}
+  })
+}
+
+/**
  * 触发知识图谱生成（异步任务）
  * @param {string} spaceId - 学习空间 ID
  * @param {Object} data - { topic: string, user_preference?: string }
