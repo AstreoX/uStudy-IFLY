@@ -15,6 +15,12 @@ from usage.models import UsageType
 from usage.recorder import schedule_usage_recording
 from chat.context_collector import IterationData, LLMContextCollector
 from chat.prompt_builder import PromptBuilder
+from chat.tools.catalog import (
+    GET_TOOL_DETAILS_TOOL,
+    execute_get_tool_details,
+    format_catalog_for_prompt,
+    get_tools_for_manual_mode,
+)
 from chat.tools.graph_tools import GRAPH_TOOLS, GraphToolExecutor
 from chat.tools.learning_space_executor import LearningSpaceToolExecutor
 from chat.tools.learning_space_tools import (
@@ -503,6 +509,8 @@ class LLMOrchestrator:
         previous_conversation_context: str | None = None,
         openrouter_model: str | None = None,
         search_channels: dict[str, bool] | None = None,
+        tool_mode: str = "auto",
+        enabled_tools: list[str] | None = None,
     ) -> None:
         """
         Initialize the orchestrator.
@@ -515,12 +523,15 @@ class LLMOrchestrator:
             previous_conversation_context: Previous conversation context for continuity (optional)
             openrouter_model: OpenRouter model ID override (resolved from model_id)
             search_channels: User's search channel settings (channel_name -> enabled)
+            tool_mode: "auto" (AI按需加载) or "manual" (用户自选)
+            enabled_tools: manual 模式下启用的工具名称列表
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
         self.space_id = space_id
         self.space_name = space_name
         self.previous_conversation_context = previous_conversation_context
+        self.tool_mode = tool_mode
 
         # Initialize components
         self.settings = get_settings()
@@ -528,6 +539,8 @@ class LLMOrchestrator:
             model_override=openrouter_model or self.settings.openrouter_model
         )
         self.prompt_builder = PromptBuilder()
+
+        # 所有执行器始终初始化（自动模式下工具定义延迟加载，但执行器预先就位）
         self.graph_tool_executor = GraphToolExecutor(space_id)
         self.quiz_tool_executor = QuizGenerationToolExecutor(
             user_id, conversation_id, space_id
@@ -543,51 +556,26 @@ class LLMOrchestrator:
         self.memory_retriever = MemoryRetriever(user_id, space_id)
 
         # Search channels: default all enabled
-        channels = search_channels or {
+        self._search_channels = search_channels or {
             "web_search_enabled": True,
             "academic_search_enabled": True,
             "encyclopedia_search_enabled": True,
             "course_search_enabled": True,
         }
 
-        # Combined tools list for learning space mode (using new vector memory tools)
-        # Conditionally include web tools and search tools based on user settings
-        self.available_tools = (
-            GRAPH_TOOLS
-            + QUIZ_GENERATION_TOOLS
-            + QUIZ_RESULT_TOOLS
-            + (WEB_TOOLS if channels.get("web_search_enabled", True) else [])
-            + SCHEDULE_TOOLS
-            + RAG_TOOLS
-            + VECTOR_MEMORY_TOOLS
-            + TIME_TOOLS
-            + REVIEW_TOOLS
-        )
-
-        # Conditionally add each search tool based on user settings
+        # Initialize search tool executor
         channel_to_tool = {
             "academic_search_enabled": "academic_search",
             "encyclopedia_search_enabled": "encyclopedia_search",
             "course_search_enabled": "course_search",
         }
-        enabled_search_tools = []
-        for channel_key, tool_name in channel_to_tool.items():
-            if channels.get(channel_key, True):
-                for tool_def in SEARCH_TOOLS:
-                    if tool_def["function"]["name"] == tool_name:
-                        enabled_search_tools.append(tool_def)
-                        break
-
-        self.available_tools = list(self.available_tools) + enabled_search_tools
-
-        # Initialize search tool executor if any search tool is enabled
         any_search_enabled = any(
-            channels.get(k, True) for k in channel_to_tool
+            self._search_channels.get(k, True) for k in channel_to_tool
         )
         self.search_tool_executor = SearchToolExecutor() if any_search_enabled else None
         self._search_tool_names = SEARCH_TOOL_NAMES
 
-        # Tool name to executor mapping
+        # Tool name to executor mapping (used for dispatch regardless of mode)
         self._quiz_tool_names = {"generate_test"}
         self._quiz_result_tool_names = QUIZ_RESULT_TOOL_NAMES
         self._web_tool_names = {"web_search", "web_fetch"}
@@ -596,6 +584,18 @@ class LLMOrchestrator:
         self._vector_memory_tool_names = VECTOR_MEMORY_TOOL_NAMES
         self._time_tool_names = TIME_TOOL_NAMES
         self._review_tool_names = REVIEW_TOOL_NAMES
+
+        # 根据模式初始化 available_tools
+        if tool_mode == "manual":
+            # 手动模式：直接注册用户选择的工具完整定义
+            self.available_tools = get_tools_for_manual_mode(
+                enabled_tools, self._search_channels
+            )
+            self._tool_catalog_text = None
+        else:
+            # 自动模式：仅注册 get_tool_details 元工具
+            self.available_tools = [GET_TOOL_DETAILS_TOOL]
+            self._tool_catalog_text = format_catalog_for_prompt()
 
     async def process_message(
         self,
@@ -656,6 +656,7 @@ class LLMOrchestrator:
             relevant_memories=formatted_memories,
             previous_conversation_context=self.previous_conversation_context,
             reviews_count=reviews_count,
+            tool_catalog=self._tool_catalog_text,
         )
         logger.info(f"[Perf] Build prompt ({len(system_prompt)} chars): {(time.monotonic()-t0)*1000:.0f}ms")
 
@@ -787,7 +788,17 @@ class LLMOrchestrator:
 
                 for tool_call in pending_tool_calls:
                     # Execute tool - dispatch to appropriate executor
-                    if tool_call.name in self._quiz_tool_names:
+                    if tool_call.name == "get_tool_details":
+                        # 自动模式元工具：返回工具 schema + 动态追加工具定义
+                        requested_names = tool_call.arguments.get("tool_names", [])
+                        tool_result, new_tools = execute_get_tool_details(
+                            requested_names,
+                            self.available_tools,
+                            self._search_channels,
+                        )
+                        if new_tools:
+                            self.available_tools = list(self.available_tools) + new_tools
+                    elif tool_call.name in self._quiz_tool_names:
                         tool_result = await self.quiz_tool_executor.execute(
                             tool_call.name,
                             tool_call.arguments,

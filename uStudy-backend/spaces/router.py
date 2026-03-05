@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import get_current_user
+from chat.tools.catalog import get_catalog_for_api
 from db.database import get_db
 from db.models import LearningPathEvent, User
 from spaces.schemas import (
@@ -61,6 +62,17 @@ async def get_spaces(
     """获取当前用户的所有学习空间，按更新时间倒序"""
     service = SpaceService(db)
     return await service.get_user_spaces(user.id)
+
+
+@router.get(
+    "/tool-catalog",
+    summary="获取工具目录",
+)
+async def get_tool_catalog(
+    user: User = Depends(get_current_user),
+) -> list[dict]:
+    """返回按分类组织的工具目录（供前端手动模式 UI 展示）"""
+    return get_catalog_for_api()
 
 
 @router.get(

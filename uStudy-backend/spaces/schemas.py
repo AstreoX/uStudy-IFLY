@@ -50,6 +50,19 @@ class SpaceUpdate(BaseModel):
     memory_sharing_enabled: Optional[bool] = Field(
         None, description="是否开启记忆共享（允许其他空间检索本空间记忆）"
     )
+    tool_mode: Optional[str] = Field(
+        None, description="工具模式：auto / manual"
+    )
+    enabled_tools: Optional[list[str]] = Field(
+        None, description="manual 模式下启用的工具名称数组"
+    )
+
+    @field_validator("tool_mode")
+    @classmethod
+    def validate_tool_mode(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("auto", "manual"):
+            raise ValueError("tool_mode 必须是 auto 或 manual")
+        return v
 
 
 class SpaceResponse(BaseModel):
@@ -62,6 +75,8 @@ class SpaceResponse(BaseModel):
     color: str
     learning_preferences: Optional[dict] = None
     memory_sharing_enabled: bool = False
+    tool_mode: str = "auto"
+    enabled_tools: Optional[list[str]] = None
     created_at: datetime
     updated_at: datetime
 

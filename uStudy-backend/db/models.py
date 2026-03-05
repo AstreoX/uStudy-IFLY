@@ -246,6 +246,18 @@ class Space(Base):
         nullable=False,
         comment="是否开启记忆共享（允许其他空间检索本空间记忆）",
     )
+    tool_mode: Mapped[str] = mapped_column(
+        String(10),
+        default="auto",
+        server_default="auto",
+        nullable=False,
+        comment="工具模式：auto（AI按需加载）/ manual（用户自选）",
+    )
+    enabled_tools: Mapped[Optional[list]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="manual 模式下启用的工具名称数组",
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=func.now(), nullable=False
     )

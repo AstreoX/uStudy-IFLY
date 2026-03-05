@@ -416,6 +416,7 @@ class PromptBuilder:
         relevant_memories: Optional[str] = None,
         previous_conversation_context: Optional[str] = None,
         reviews_count: int = 0,
+        tool_catalog: Optional[str] = None,
     ) -> str:
         """
         Build system prompt for learning space mode.
@@ -426,6 +427,7 @@ class PromptBuilder:
             relevant_memories: Formatted relevant memories from vector search (optional)
             previous_conversation_context: Formatted previous conversation context (optional)
             reviews_count: Number of due/overdue review items in this space
+            tool_catalog: Tool catalog text for auto mode (optional, None for manual mode)
 
         Returns:
             Formatted system prompt string
@@ -435,6 +437,10 @@ class PromptBuilder:
             space_name=space_name,
             reviews_count=reviews_count,
         )
+
+        # 自动模式：注入工具目录到系统提示词
+        if tool_catalog:
+            base_prompt = base_prompt + "\n" + tool_catalog
 
         # 如果有上一次对话上下文（新对话时加载），拼接到提示词
         if previous_conversation_context:

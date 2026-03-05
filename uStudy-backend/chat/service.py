@@ -574,6 +574,8 @@ class ChatService:
                 raise SpaceRequiredError("绑定的学习空间不存在")
 
             space_name = space.name
+            space_tool_mode = getattr(space, "tool_mode", "auto") or "auto"
+            space_enabled_tools = getattr(space, "enabled_tools", None)
             logger.info(f"[Perf] Load space info: {(time.monotonic()-t0)*1000:.0f}ms")
 
             # 6. 对话连续性：检测新对话并加载上一次对话上下文
@@ -633,6 +635,8 @@ class ChatService:
             previous_conversation_context=previous_conversation_context,
             openrouter_model=openrouter_model,
             search_channels=enabled_channels,
+            tool_mode=space_tool_mode,
+            enabled_tools=space_enabled_tools,
         )
 
         queue: asyncio.Queue = asyncio.Queue()
