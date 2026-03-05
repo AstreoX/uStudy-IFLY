@@ -49,19 +49,35 @@
                 <text v-if="getNoteAttachmentCount(note) > 0" class="note-attach-badge">{{ getNoteAttachmentCount(note) }} 附件</text>
               </view>
             </view>
+            <view class="note-item-actions" @click.stop>
+              <view class="note-item-btn" @click.stop="startEditNote(note)">
+                <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
+              </view>
+              <view class="note-item-btn note-item-btn-delete" @click.stop="showDeleteConfirm(note)">
+                <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit" />
+              </view>
+            </view>
           </view>
         </view>
       </view>
     </scroll-view>
 
     <!-- Note Detail Overlay -->
-    <view v-if="showNoteDetail" class="note-detail-overlay" @click="closeNoteDetail">
+    <view v-if="showNoteDetail" class="note-detail-overlay" @click="closeNoteDetail" @touchmove.stop.prevent>
       <view class="note-detail-card" @click.stop>
         <view class="note-detail-header">
           <view class="note-detail-back" @click="closeNoteDetail">
             <image class="note-detail-back-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
           </view>
           <text class="note-detail-title">{{ getNoteTitle(selectedNote) }}</text>
+          <view class="note-detail-actions">
+            <view class="note-item-btn" @click="startEditNote(selectedNote)">
+              <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
+            </view>
+            <view class="note-item-btn note-item-btn-delete" @click="showDeleteConfirm(selectedNote)">
+              <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit" />
+            </view>
+          </view>
         </view>
         <scroll-view class="note-detail-scroll" scroll-y>
           <view v-if="detailLoading" class="note-detail-loading">
@@ -87,6 +103,51 @@
       </view>
     </view>
 
+    <!-- Note Edit Overlay -->
+    <view v-if="showNoteEdit" class="note-detail-overlay note-edit-overlay" @touchmove.stop.prevent>
+      <view class="note-detail-card">
+        <view class="note-detail-header">
+          <view class="note-detail-back" @click="closeNoteEdit">
+            <image class="note-detail-back-icon" src="/static/icons/phosphor-icons/SVGs/regular/x.svg" mode="aspectFit"></image>
+          </view>
+          <text class="note-detail-title">编辑笔记</text>
+          <view class="note-edit-save-btn" @click="saveNoteEdit">
+            <text class="note-edit-save-text">{{ isSaving ? '保存中...' : '保存' }}</text>
+          </view>
+        </view>
+        <input
+          class="note-edit-title-input"
+          v-model="editTitle"
+          type="text"
+          placeholder="笔记标题"
+          maxlength="200"
+          placeholder-style="color: rgba(255,255,255,0.3)"
+        />
+        <scroll-view class="note-detail-scroll" scroll-y>
+          <view class="note-edit-body">
+            <textarea
+              class="note-edit-textarea"
+              v-model="editContent"
+              placeholder="笔记内容（支持 Markdown）"
+              placeholder-style="color: rgba(255,255,255,0.3)"
+              auto-height
+            />
+          </view>
+        </scroll-view>
+      </view>
+    </view>
+
+    <!-- Delete Confirm Modal -->
+    <u-modal
+      :visible="showDeleteModal"
+      title="删除笔记"
+      :content="deleteModalContent"
+      confirm-text="删除"
+      confirm-type="danger"
+      @confirm="doDeleteNote"
+      @close="showDeleteModal = false"
+    />
+
     <!-- Toast -->
     <u-toast
       :visible="toast.visible"
@@ -98,13 +159,15 @@
 </template>
 
 <script>
-import { getSpaceNotes, getNoteDetail } from '@/api/note'
+import { getSpaceNotes, getNoteDetail, updateNote, deleteNote } from '@/api/note'
 import UToast from '@/components/u-toast/u-toast.vue'
+import UModal from '@/components/u-modal/u-modal.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 export default {
   components: {
     UToast,
+    UModal,
     MarkdownRender
   },
 
@@ -118,11 +181,27 @@ export default {
       showNoteDetail: false,
       selectedNote: null,
       detailLoading: false,
+      // edit
+      showNoteEdit: false,
+      editNoteId: null,
+      editTitle: '',
+      editContent: '',
+      isSaving: false,
+      // delete
+      showDeleteModal: false,
+      noteToDelete: null,
+      isDeleting: false,
       toast: {
         visible: false,
         message: '',
         type: 'info'
       }
+    }
+  },
+
+  computed: {
+    deleteModalContent() {
+      return `确定要删除笔记「${this.noteToDelete ? this.getNoteTitle(this.noteToDelete) : ''}」吗？此操作无法撤销。`
     }
   },
 
@@ -226,6 +305,70 @@ export default {
     closeNoteDetail() {
       this.showNoteDetail = false
       this.selectedNote = null
+    },
+
+    // --- Edit ---
+    startEditNote(note) {
+      if (!note) return
+      this.editNoteId = note.id
+      this.editTitle = note.title || ''
+      this.editContent = note.content || ''
+      this.showNoteEdit = true
+    },
+
+    closeNoteEdit() {
+      this.showNoteEdit = false
+    },
+
+    async saveNoteEdit() {
+      if (this.isSaving) return
+      this.isSaving = true
+      try {
+        await updateNote(this.spaceId, this.editNoteId, {
+          title: this.editTitle,
+          content: this.editContent
+        })
+        const idx = this.notes.findIndex(n => n.id === this.editNoteId)
+        if (idx !== -1) {
+          this.notes.splice(idx, 1, { ...this.notes[idx], title: this.editTitle, content: this.editContent })
+        }
+        if (this.selectedNote?.id === this.editNoteId) {
+          this.selectedNote = { ...this.selectedNote, title: this.editTitle, content: this.editContent }
+        }
+        this.showNoteEdit = false
+        this.showCustomToast('已保存', 'success')
+      } catch (e) {
+        this.showCustomToast(e?.message || '保存失败', 'error')
+      } finally {
+        this.isSaving = false
+      }
+    },
+
+    // --- Delete ---
+    showDeleteConfirm(note) {
+      if (!note) return
+      this.noteToDelete = note
+      this.showDeleteModal = true
+    },
+
+    async doDeleteNote() {
+      if (this.isDeleting || !this.noteToDelete) return
+      this.isDeleting = true
+      try {
+        await deleteNote(this.spaceId, this.noteToDelete.id)
+        this.notes = this.notes.filter(n => n.id !== this.noteToDelete.id)
+        if (this.selectedNote?.id === this.noteToDelete.id) {
+          this.showNoteDetail = false
+          this.selectedNote = null
+        }
+        this.showCustomToast('已删除', 'success')
+      } catch (e) {
+        this.showCustomToast(e?.message || '删除失败', 'error')
+      } finally {
+        this.showDeleteModal = false
+        this.noteToDelete = null
+        this.isDeleting = false
+      }
     }
   }
 }
@@ -461,6 +604,52 @@ export default {
   border-radius: 6rpx;
 }
 
+/* Card action buttons */
+.note-item-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 12rpx;
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  align-items: flex-start;
+}
+
+.note-item-btn {
+  width: 52rpx;
+  height: 52rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  border-radius: 12rpx;
+}
+
+.note-item-btn:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.note-item-btn-icon {
+  width: 30rpx;
+  height: 30rpx;
+  filter: brightness(0) invert(1);
+  opacity: 0.7;
+}
+
+.note-item-btn-delete {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.note-item-btn-delete:active {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+.note-item-btn-delete .note-item-btn-icon {
+  filter: brightness(0) invert(1);
+  opacity: 1;
+}
+
 /* Note Detail Overlay */
 .note-detail-overlay {
   position: fixed;
@@ -474,6 +663,10 @@ export default {
   flex-direction: column;
 }
 
+.note-edit-overlay {
+  z-index: 700;
+}
+
 .note-detail-card {
   width: 100%;
   height: 100%;
@@ -484,6 +677,7 @@ export default {
 .note-detail-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 24rpx 32rpx;
   padding-top: calc(100vh * 1.5 / 26);
   border-bottom: 1rpx solid rgba(255, 255, 255, 0.08);
@@ -515,6 +709,12 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.note-detail-actions {
+  display: flex;
+  gap: 12rpx;
+  flex-shrink: 0;
 }
 
 .note-detail-scroll {
@@ -583,5 +783,52 @@ export default {
   margin-top: 32rpx;
   font-size: 22rpx;
   color: rgba(255, 255, 255, 0.3);
+}
+
+/* Edit overlay styles */
+.note-edit-title-input {
+  width: 100%;
+  height: 96rpx;
+  line-height: 96rpx;
+  flex-shrink: 0;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.04);
+  border: none;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
+  padding: 0 32rpx;
+  box-sizing: border-box;
+}
+
+.note-edit-body {
+  padding: 24rpx 32rpx;
+}
+
+.note-edit-textarea {
+  width: 100%;
+  min-height: 400rpx;
+  font-size: 28rpx;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.7;
+  background: transparent;
+  border: none;
+}
+
+.note-edit-save-btn {
+  padding: 12rpx 28rpx;
+  background: rgba(59, 130, 246, 0.2);
+  border: 1rpx solid rgba(59, 130, 246, 0.5);
+  border-radius: 24rpx;
+  flex-shrink: 0;
+}
+
+.note-edit-save-btn:active {
+  background: rgba(59, 130, 246, 0.35);
+}
+
+.note-edit-save-text {
+  font-size: 26rpx;
+  color: #3b82f6;
 }
 </style>

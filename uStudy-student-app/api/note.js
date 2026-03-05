@@ -35,3 +35,31 @@ export function getNoteDetail(spaceId, noteId) {
     method: 'GET'
   })
 }
+
+/**
+ * 更新笔记
+ * @param {string|number} spaceId
+ * @param {string|number} noteId
+ * @param {Object} data - { title, content }
+ * @returns {Promise<Object>}
+ */
+export function updateNote(spaceId, noteId, data) {
+  return request({
+    url: `/api/spaces/${spaceId}/notes/${noteId}`,
+    method: 'PUT',
+    data
+  })
+}
+
+/**
+ * 删除笔记
+ * @param {string|number} spaceId
+ * @param {string|number} noteId
+ * @returns {Promise<void>}
+ */
+export function deleteNote(spaceId, noteId) {
+  return request({
+    url: `/api/spaces/${spaceId}/notes/${noteId}`,
+    method: 'DELETE'
+  })
+}

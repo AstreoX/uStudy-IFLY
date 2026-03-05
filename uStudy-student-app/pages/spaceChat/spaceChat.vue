@@ -375,6 +375,15 @@
 							</view>
 						</view>
 
+						<!-- 笔记创建工具：确认卡片 -->
+						<NoteCreationCard
+							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'create_note'"
+							:key="'note-tool-' + segIdx"
+							:tool-call="seg.toolCall"
+							:space-id="spaceId"
+							:conversation-id="conversationId"
+						/>
+
 						<!-- 非记忆类工具：原有卡片样式 -->
 						<view
 							v-else-if="seg.type === 'tool'"
@@ -826,6 +835,7 @@
 	import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	import PreKnowledgeCard from '@/components/pre-knowledge-card/pre-knowledge-card.vue'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
+	import NoteCreationCard from '@/components/note-creation-card/note-creation-card.vue'
 	import { generateQuiz, getTaskStatus, getSpaceGraph } from '@/api/space'
 	import { createConversation, getConversation, sendMessage as sendChatMessage, executeToolCall, submitFeedback, submitToolResult, getModels } from '@/api/chat'
 	import { connectNotificationStream } from '@/api/notification'
@@ -883,7 +893,11 @@
 		// 多渠道搜索工具
 		academic_search: '学术搜索',
 		encyclopedia_search: '百科搜索',
-		course_search: 'B站课程搜索'
+		course_search: 'B站课程搜索',
+		// 笔记工具
+		create_note: '创建笔记',
+		list_notes: '查看笔记',
+		view_note_detail: '查看笔记详情'
 	}
 
 	// 工具图标映射
@@ -929,7 +943,11 @@
 		// 多渠道搜索工具
 		academic_search: '/static/icons/phosphor-icons/SVGs/regular/graduation-cap.svg',
 		encyclopedia_search: '/static/icons/phosphor-icons/SVGs/regular/books.svg',
-		course_search: '/static/icons/phosphor-icons/SVGs/regular/globe.svg'
+		course_search: '/static/icons/phosphor-icons/SVGs/regular/globe.svg',
+		// 笔记工具
+		create_note: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
+		list_notes: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
+		view_note_detail: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg'
 	}
 
 	// 规划类工具（行内银光掠过效果）
@@ -960,6 +978,7 @@
 			MarkdownRender,
 			PreKnowledgeCard,
 			ImageSourcePicker,
+			NoteCreationCard,
 			// #ifdef APP-PLUS
 			SseRenderjs,
 			// #endif
@@ -2824,7 +2843,7 @@
 
 				const { id, tool, status, success, result, arguments: args } = data
 
-				if (status === 'running' || !status) {
+				if (status === 'running' || status === 'pending_confirmation' || !status) {
 					// 工具开始：关闭等待状态（显示工具卡片）
 					if (msg.isWaitingOutput) {
 						msg.isWaitingOutput = false
@@ -2849,7 +2868,7 @@
 					}
 
 					// 创建工具调用对象
-					const toolCall = { id, tool, arguments: args, status: 'running' }
+					const toolCall = { id, tool, arguments: args, status: status || 'running' }
 
 					// 记忆工具：在创建时就记录开始时间
 					if (MEMORY_TOOLS.has(tool)) {
@@ -2915,13 +2934,45 @@
 			},
 
 			/**
-			 * 处理客户端工具请求（日历操作等）
-			 * 后端通过 SSE 发送 client_tool_request → 前端执行 → POST 结果回后端
+			 * 处理客户端工具请求（日历操作、笔记创建等）
+			 * 后端通过 SSE 发送 client_tool_request → 前端执行或展示确认UI → POST 结果回后端
 			 */
 			async handleClientToolRequest(aiMsgId, data) {
 				const { tool_call_id, tool, params } = data
 
-				// 显示工具卡片 (running 状态)
+				// create_note: 展示确认卡片，由 NoteCreationCard 组件处理确认/取消
+				if (tool === 'create_note') {
+					const msg = this.messages.find(m => m.id === aiMsgId)
+					if (!msg) return
+
+					const existing = this.activeToolCalls.find(tc => tc.id === tool_call_id)
+					if (existing) {
+						// tool_call(running) already created it — update status in-place
+						existing.status = 'pending_confirmation'
+						existing.arguments = params
+
+						// Sync to streamSegments
+						if (msg.streamSegments) {
+							const seg = msg.streamSegments.find(s => s.type === 'tool' && s.toolCall && s.toolCall.id === tool_call_id)
+							if (seg) {
+								seg.toolCall = { ...existing }
+							}
+						}
+					} else {
+						// Fallback: no prior tool_call(running) — create fresh
+						this.handleToolCallEvent(aiMsgId, {
+							id: tool_call_id,
+							tool,
+							status: 'pending_confirmation',
+							arguments: params
+						})
+					}
+
+					this.$forceUpdate()
+					return
+				}
+
+				// 日历工具等：自动执行
 				this.handleToolCallEvent(aiMsgId, {
 					id: tool_call_id,
 					tool,
@@ -2929,7 +2980,6 @@
 					arguments: params
 				})
 
-				// 执行日历工具
 				const calendarResult = await executeCalendarTool(tool, params)
 
 				// POST 结果回后端（带重试）
