@@ -43,6 +43,14 @@
             <text class="item-label">测试管理</text>
             <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
           </view>
+
+          <view class="settings-divider"></view>
+
+          <view class="settings-item" @click="handleNoteManagement">
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/notebook.svg" mode="aspectFit"></image>
+            <text class="item-label">笔记管理</text>
+            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+          </view>
         </view>
       </view>
 
@@ -214,6 +222,12 @@ export default {
     handleTestManagement() {
       uni.navigateTo({
         url: `/pages/quizList/quizList?spaceId=${this.spaceId}&spaceName=${encodeURIComponent(this.spaceName)}`
+      })
+    },
+
+    handleNoteManagement() {
+      uni.navigateTo({
+        url: `/pages/notesList/notesList?spaceId=${this.spaceId}&spaceName=${encodeURIComponent(this.spaceName)}`
       })
     },
 

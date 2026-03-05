@@ -92,7 +92,11 @@
     <view v-if="isUploading" class="upload-overlay">
       <view class="upload-content">
         <view class="upload-spinner"></view>
-        <text class="upload-text">正在上传...</text>
+        <text class="upload-filename">{{ uploadFileName }}</text>
+        <view class="upload-progress-track">
+          <view class="upload-progress-bar" :style="{ width: uploadProgress + '%' }"></view>
+        </view>
+        <text class="upload-text">正在上传... {{ uploadProgress }}%</text>
       </view>
     </view>
 
@@ -436,6 +440,8 @@ export default {
 
       // 上传状态
       isUploading: false,
+      uploadProgress: 0,
+      uploadFileName: '',
 
       // 升级提示弹窗状态
       showUpgradeModal: false,
@@ -863,6 +869,7 @@ export default {
             return
           }
 
+          this.uploadFileName = file.name
           await this.uploadFileH5(file)
         }
       }
@@ -887,6 +894,7 @@ export default {
         if (!this.checkStorageSpace(tempFile.size || 0)) {
           return
         }
+        this.uploadFileName = tempFile.name || '文件'
         await this.uploadFile(tempFile.path)
       } catch (err) {
         if (!isPickerCancel(err)) {
@@ -907,50 +915,69 @@ export default {
       }
 
       this.isUploading = true
-      try {
-        // H5 需要用 FormData 方式上传
+      this.uploadProgress = 0
+      this.uploadFileName = file.name
+
+      return new Promise((resolve, reject) => {
         const formData = new FormData()
         formData.append('file', file)
 
-        const response = await fetch(`${config.API_BASE_URL}/api/spaces/${this.spaceId}/documents/upload`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${tokens.access_token}`
-          },
-          body: formData
-        })
+        const xhr = new XMLHttpRequest()
 
-        if (!response.ok) {
-          let errorMessage = '上传失败'
-          try {
-            const errorData = await response.json()
-            errorMessage = errorData.detail || errorData.message || '上传失败'
-          } catch (e) {
-            errorMessage = response.statusText || '上传失败'
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            this.uploadProgress = Math.round((e.loaded / e.total) * 100)
           }
-          throw new Error(errorMessage)
         }
 
-        this.showCustomToast('上传成功', 'success')
-        await this.loadDocuments()
-      } catch (error) {
-        this.showCustomToast(error.message || '上传失败', 'error')
-      } finally {
-        this.isUploading = false
-      }
+        xhr.onload = async () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            this.showCustomToast('上传成功', 'success')
+            await this.loadDocuments()
+            resolve()
+          } else {
+            let errorMessage = '上传失败'
+            try {
+              const errorData = JSON.parse(xhr.responseText)
+              errorMessage = errorData.detail || errorData.message || '上传失败'
+            } catch (e) {
+              errorMessage = xhr.statusText || '上传失败'
+            }
+            this.showCustomToast(errorMessage, 'error')
+            reject(new Error(errorMessage))
+          }
+          this.isUploading = false
+          this.uploadProgress = 0
+        }
+
+        xhr.onerror = () => {
+          this.showCustomToast('网络错误', 'error')
+          this.isUploading = false
+          this.uploadProgress = 0
+          reject(new Error('网络错误'))
+        }
+
+        xhr.open('POST', `${config.API_BASE_URL}/api/spaces/${this.spaceId}/documents/upload`)
+        xhr.setRequestHeader('Authorization', `Bearer ${tokens.access_token}`)
+        xhr.send(formData)
+      })
     },
 
     // 原生/小程序 上传文件
     async uploadFile(filePath) {
       this.isUploading = true
+      this.uploadProgress = 0
       try {
-        await uploadSpaceDocument(this.spaceId, filePath)
+        await uploadSpaceDocument(this.spaceId, filePath, (res) => {
+          this.uploadProgress = res.progress || 0
+        })
         this.showCustomToast('上传成功', 'success')
         await this.loadDocuments()
       } catch (error) {
         this.showCustomToast(error.message || '上传失败', 'error')
       } finally {
         this.isUploading = false
+        this.uploadProgress = 0
       }
     },
 
@@ -1934,6 +1961,30 @@ export default {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+.upload-filename {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.5);
+  max-width: 400rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-progress-track {
+  width: 400rpx;
+  height: 8rpx;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4rpx;
+  overflow: hidden;
+}
+
+.upload-progress-bar {
+  height: 100%;
+  background: #007AFF;
+  border-radius: 4rpx;
+  transition: width 0.3s ease;
 }
 
 .upload-text {

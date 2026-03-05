@@ -97,6 +97,55 @@
 					</view>
 				</view>
 			</view>
+			<!-- 内联笔记预览 -->
+			<view class="node-notes-inline">
+				<text v-if="nodeNotesLoading" class="node-notes-hint">加载笔记...</text>
+				<text v-else-if="nodeNotes.length === 0" class="node-notes-hint">暂无笔记</text>
+				<view v-else class="node-notes-list">
+					<view
+						v-for="note in nodeNotes"
+						:key="note.id"
+						class="node-notes-item"
+						@click.stop="openNoteDetail(note)"
+					>
+						<text class="node-notes-item-title">{{ getNoteTitle(note) }}</text>
+						<text class="node-notes-item-preview">{{ truncateContent(note.content) }}</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 笔记详情 overlay -->
+		<view v-if="showNoteDetail" class="note-detail-overlay" @click="closeNoteDetail">
+				<view class="note-detail-card" @click.stop>
+					<view class="note-detail-header">
+						<view class="note-detail-back" @click="closeNoteDetail">
+							<image class="note-detail-back-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
+						</view>
+						<text class="note-detail-title">{{ getNoteTitle(selectedNoteDetail) }}</text>
+					</view>
+					<scroll-view class="note-detail-scroll" scroll-y>
+						<view v-if="noteDetailLoading" class="note-detail-loading">
+							<text class="note-detail-loading-text">加载中...</text>
+						</view>
+						<view v-else-if="selectedNoteDetail" class="note-detail-body">
+							<markdown-render v-if="selectedNoteDetail.content" :content="selectedNoteDetail.content" />
+							<text v-else class="note-detail-empty">（无内容）</text>
+							<view v-if="selectedNoteDetail.attachments && selectedNoteDetail.attachments.length" class="note-detail-attachments">
+								<text class="note-detail-attach-label">附件</text>
+								<view
+									v-for="(att, idx) in selectedNoteDetail.attachments"
+									:key="idx"
+									class="note-detail-attach-item"
+								>
+									<image class="note-detail-attach-icon" src="/static/icons/phosphor-icons/SVGs/regular/file.svg" mode="aspectFit"></image>
+									<text class="note-detail-attach-name">{{ getAttachmentDisplayName(att) }}</text>
+								</view>
+							</view>
+							<text class="note-detail-time">创建于 {{ formatNoteDate(selectedNoteDetail.created_at) }}</text>
+						</view>
+					</scroll-view>
+			</view>
 		</view>
 
 		<!-- 操作按钮 -->
@@ -232,47 +281,6 @@
 		<!-- 底部输入栏 -->
 			<view class="input-bar" :style="{ bottom: keyboardHeight > 0 ? keyboardHeight + 'px' : '' }">
 				<!-- 模型选择下拉菜单（向上弹出） -->
-				<!-- 工具模式弹窗（向上弹出） -->
-				<view v-if="showToolMenu" class="tool-menu-backdrop" @click="showToolMenu = false"></view>
-				<view v-if="showToolMenu" class="tool-menu">
-					<view class="tool-menu-header">
-						<text class="tool-menu-title">工具模式</text>
-					</view>
-					<view class="tool-mode-options">
-						<view class="tool-mode-option" :class="{ 'tool-mode-option-active': toolMode === 'auto' }" @click="selectToolMode('auto')">
-							<view class="tool-mode-radio" :class="{ 'tool-mode-radio-checked': toolMode === 'auto' }"></view>
-							<view class="tool-mode-option-info">
-								<text class="tool-mode-option-name">自动模式</text>
-								<text class="tool-mode-option-desc">AI 按需加载工具</text>
-							</view>
-						</view>
-						<view class="tool-mode-option" :class="{ 'tool-mode-option-active': toolMode === 'manual' }" @click="selectToolMode('manual')">
-							<view class="tool-mode-radio" :class="{ 'tool-mode-radio-checked': toolMode === 'manual' }"></view>
-							<view class="tool-mode-option-info">
-								<text class="tool-mode-option-name">手动模式</text>
-								<text class="tool-mode-option-desc">自定义启用工具</text>
-							</view>
-						</view>
-					</view>
-					<view v-if="toolMode === 'manual' && toolCatalog" class="tool-catalog-list">
-						<view v-for="cat in toolCatalog" :key="cat.category" class="tool-catalog-category">
-							<view class="tool-catalog-category-header">
-								<text class="tool-catalog-category-name">{{ cat.category }}</text>
-								<text class="tool-catalog-category-count">{{ getCategoryEnabledCount(cat) }}/{{ cat.tools.length }}</text>
-							</view>
-							<view v-for="tool in cat.tools" :key="tool.name" class="tool-catalog-item" @click="toggleTool(tool.name)">
-								<view class="tool-catalog-checkbox" :class="{ 'tool-catalog-checkbox-checked': isToolEnabled(tool.name) }">
-									<image v-if="isToolEnabled(tool.name)" class="tool-catalog-check-icon" src="/static/icons/phosphor-icons/SVGs/bold/check.svg" mode="aspectFit"></image>
-								</view>
-								<text class="tool-catalog-item-name">{{ tool.summary }}</text>
-							</view>
-						</view>
-					</view>
-					<view v-if="toolMode === 'manual' && toolCatalogLoading" class="tool-catalog-loading">
-						<text class="tool-catalog-loading-text">加载中...</text>
-					</view>
-				</view>
-
 				<view v-if="showModelMenu" class="model-menu-backdrop" @click="showModelMenu = false"></view>
 				<view v-if="showModelMenu" class="model-menu">
 					<view
@@ -348,17 +356,12 @@
 					/>
 
 					<view class="input-bottom-row">
-						<!-- 左侧：模型选择 pill + 工具模式 pill -->
+						<!-- 左侧：模型选择 pill -->
 						<view class="input-bottom-left">
 							<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
 								<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
 								<text class="model-selector-label">{{ selectedModelName }}</text>
 								<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
-							</view>
-							<view class="tool-mode-btn" @click="toggleToolMenu">
-								<image class="tool-mode-icon" src="/static/icons/phosphor-icons/SVGs/regular/wrench.svg" mode="aspectFit"></image>
-								<text class="tool-mode-label">{{ toolModeLabel }}</text>
-								<image class="tool-mode-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
 							</view>
 						</view>
 
@@ -420,11 +423,13 @@
 </template>
 
 <script>
-	import { getSpaceGraph, getTaskStatus, generateKnowledgeGraph, addSpaceLink, uploadSpaceDocument, getToolCatalog, updateSpace, getSpace } from '@/api/space'
+	import { getSpaceGraph, getTaskStatus, generateKnowledgeGraph, addSpaceLink, uploadSpaceDocument } from '@/api/space'
+	import { getSpaceNotes, getNoteDetail } from '@/api/note'
 	import { getModels } from '@/api/chat'
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
 	import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
+import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 	// 掌握度颜色渐变端点 (0-100 分段插值，避免中间棕色)
 	const MASTERY_COLOR_START = { r: 255, g: 50, b: 66 }   // #FF3242 (mastery=0, 珊瑚红)
@@ -625,7 +630,8 @@
 
 	export default {
 		components: {
-			ImageSourcePicker
+			ImageSourcePicker,
+			MarkdownRender
 		},
 		data() {
 			return {
@@ -792,13 +798,6 @@
 				selectedModelId: null,
 				showModelMenu: false,
 
-				// 工具模式
-				toolMode: 'auto',
-				enabledTools: null,
-				showToolMenu: false,
-				toolCatalog: null,
-				toolCatalogLoading: false,
-
 				// 静默刷新标志，防止并发刷新
 				isRefreshing: false,
 
@@ -813,7 +812,13 @@
 				},
 				nodeAnimationStates: new Map(),
 				prefersReducedMotion: false,
-				nodeInteractionScale: null  // 节点交互缩放状态 { nodeId, scale }
+				nodeInteractionScale: null,  // 节点交互缩放状态 { nodeId, scale }
+				// 笔记相关
+				nodeNotes: [],
+				nodeNotesLoading: false,
+				selectedNoteDetail: null,
+				showNoteDetail: false,
+				noteDetailLoading: false
 			}
 		},
 
@@ -854,9 +859,6 @@
 				const model = this.availableModels.find(m => m.id === this.selectedModelId)
 				return model ? model.display_name : ''
 			},
-			toolModeLabel() {
-				return this.toolMode === 'auto' ? '自动' : '手动'
-			}
 		},
 
 		async onLoad(options) {
@@ -876,7 +878,6 @@
 
 		async mounted() {
 			this.loadModels()
-			this.loadSpaceToolMode()
 			try {
 				// 检测用户无障碍偏好
 				// #ifdef H5
@@ -1026,6 +1027,29 @@
 				this.$nextTick(() => {
 					this.adjustTextareaHeight()
 				})
+			},
+			async selectedNodeId(nodeId) {
+				if (!nodeId || !this.spaceId) {
+					this.nodeNotes = []
+					this.nodeNotesLoading = false
+					return
+				}
+				this.nodeNotesLoading = true
+				this.nodeNotes = []
+				try {
+					const notes = await getSpaceNotes(this.spaceId, { nodeId })
+					if (this.selectedNodeId === nodeId) {
+						this.nodeNotes = Array.isArray(notes) ? notes : []
+					}
+				} catch (err) {
+					if (this.selectedNodeId === nodeId) {
+						uni.showToast({ title: err.message || '加载笔记失败', icon: 'none' })
+					}
+				} finally {
+					if (this.selectedNodeId === nodeId) {
+						this.nodeNotesLoading = false
+					}
+				}
 			}
 		},
 
@@ -1736,78 +1760,6 @@
 				}
 			},
 
-			// ========== 工具模式方法 ==========
-			toggleToolMenu() {
-				this.showToolMenu = !this.showToolMenu
-				if (this.showToolMenu && !this.toolCatalog) {
-					this.loadToolCatalog()
-				}
-			},
-			async loadToolCatalog() {
-				if (this.toolCatalogLoading) return
-				this.toolCatalogLoading = true
-				try {
-					const res = await getToolCatalog()
-					this.toolCatalog = res || []
-				} catch (err) {
-					console.error('[LearningSpace] Failed to load tool catalog:', err)
-				} finally {
-					this.toolCatalogLoading = false
-				}
-			},
-			async loadSpaceToolMode() {
-				if (!this.spaceId) return
-				try {
-					const space = await getSpace(this.spaceId)
-					this.toolMode = space.tool_mode || 'auto'
-					this.enabledTools = space.enabled_tools || null
-				} catch (err) {
-					console.error('[LearningSpace] Failed to load space tool mode:', err)
-				}
-			},
-			async selectToolMode(mode) {
-				if (mode === this.toolMode) return
-				const newMode = mode
-				let newEnabledTools = this.enabledTools
-				if (newMode === 'manual' && !this.enabledTools) {
-					if (!this.toolCatalog) await this.loadToolCatalog()
-					const allNames = (this.toolCatalog || []).flatMap(cat => cat.tools.map(t => t.name))
-					newEnabledTools = allNames
-				}
-				this.toolMode = newMode
-				this.enabledTools = newEnabledTools
-				this.saveToolMode()
-			},
-			toggleTool(toolName) {
-				if (!this.enabledTools) return
-				const idx = this.enabledTools.indexOf(toolName)
-				if (idx >= 0) {
-					this.enabledTools = this.enabledTools.filter(n => n !== toolName)
-				} else {
-					this.enabledTools = [...this.enabledTools, toolName]
-				}
-				this.saveToolMode()
-			},
-			isToolEnabled(toolName) {
-				if (!this.enabledTools) return true
-				return this.enabledTools.includes(toolName)
-			},
-			getCategoryEnabledCount(category) {
-				if (!this.enabledTools) return category.tools.length
-				return category.tools.filter(t => this.enabledTools.includes(t.name)).length
-			},
-			async saveToolMode() {
-				if (!this.spaceId) return
-				try {
-					await updateSpace(this.spaceId, {
-						tool_mode: this.toolMode,
-						enabled_tools: this.toolMode === 'manual' ? this.enabledTools : null,
-					})
-				} catch (err) {
-					console.error('[LearningSpace] Failed to save tool mode:', err)
-				}
-			},
-
 			handlePlusClick() {
 				this.showPlusPopup = true
 				this.$nextTick(() => {
@@ -2040,6 +1992,60 @@
 				// #ifndef APP-PLUS
 				uni.navigateTo({ url })
 				// #endif
+			},
+
+			// ========== 笔记方法 ==========
+			async openNoteDetail(note) {
+				if (!note?.id) return
+				this.showNoteDetail = true
+				this.noteDetailLoading = true
+				this.selectedNoteDetail = null
+				try {
+					const detail = await getNoteDetail(this.spaceId, note.id)
+					this.selectedNoteDetail = detail
+				} catch (err) {
+					uni.showToast({ title: err.message || '加载笔记详情失败', icon: 'none' })
+					this.showNoteDetail = false
+				} finally {
+					this.noteDetailLoading = false
+				}
+			},
+
+			closeNoteDetail() {
+				this.showNoteDetail = false
+				this.selectedNoteDetail = null
+			},
+
+			truncateContent(content) {
+				if (!content) return ''
+				return content.length > 100 ? content.substring(0, 100) + '...' : content
+			},
+
+			getNoteTitle(note) {
+				const title = note?.title
+				return typeof title === 'string' && title.trim() ? title.trim() : '未命名笔记'
+			},
+
+			getNoteAttachmentCount(note) {
+				const count = Number(note?.attachment_count)
+				if (Number.isFinite(count) && count > 0) return count
+				return Array.isArray(note?.attachments) ? note.attachments.length : 0
+			},
+
+			getAttachmentDisplayName(att) {
+				if (!att) return '未命名附件'
+				return att.link_title || att.original_filename || att.link_url || att.file_url || '未命名附件'
+			},
+
+			formatNoteDate(dateStr) {
+				if (!dateStr) return ''
+				const date = new Date(dateStr)
+				if (Number.isNaN(date.getTime())) return ''
+				const month = date.getMonth() + 1
+				const day = date.getDate()
+				const hours = date.getHours().toString().padStart(2, '0')
+				const minutes = date.getMinutes().toString().padStart(2, '0')
+				return `${month}月${day}日 ${hours}:${minutes}`
 			},
 
 			onInputFocus() {
@@ -4785,100 +4791,6 @@
 		min-width: 0;
 	}
 
-	/* ==================== 工具模式选择器 ==================== */
-	.tool-mode-btn {
-		display: flex;
-		align-items: center;
-		gap: 8rpx;
-		padding: 8rpx 16rpx 8rpx 12rpx;
-		background: rgba(255, 255, 255, 0.08);
-		border-radius: 999rpx;
-		cursor: pointer;
-		transition: background 0.15s ease;
-	}
-
-	.tool-mode-btn:active {
-		background: rgba(255, 255, 255, 0.16);
-	}
-
-	.tool-mode-icon {
-		width: 28rpx;
-		height: 28rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.5;
-		flex-shrink: 0;
-	}
-
-	.tool-mode-label {
-		font-size: 24rpx;
-		color: rgba(255, 255, 255, 0.6);
-		white-space: nowrap;
-	}
-
-	.tool-mode-chevron {
-		width: 20rpx;
-		height: 20rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.35;
-		flex-shrink: 0;
-	}
-
-	.tool-menu-backdrop {
-		position: fixed;
-		inset: 0;
-		z-index: 199;
-	}
-
-	.tool-menu {
-		position: absolute;
-		bottom: 100%;
-		left: 12rpx;
-		right: 12rpx;
-		max-height: 70vh;
-		overflow-y: auto;
-		z-index: 200;
-		margin-bottom: 8rpx;
-		background: rgba(38, 38, 42, 0.94);
-		-webkit-backdrop-filter: blur(24px) saturate(180%);
-		backdrop-filter: blur(24px) saturate(180%);
-		border: 1rpx solid rgba(255, 255, 255, 0.1);
-		border-radius: 20rpx;
-		padding: 16rpx;
-		box-shadow: 0 -6rpx 24rpx rgba(0, 0, 0, 0.35);
-	}
-
-	.tool-menu-header { padding: 0 8rpx 16rpx 8rpx; }
-	.tool-menu-title { font-size: 28rpx; font-weight: 600; color: rgba(255, 255, 255, 0.9); }
-
-	.tool-mode-options { display: flex; flex-direction: column; gap: 8rpx; margin-bottom: 16rpx; }
-	.tool-mode-option { display: flex; align-items: center; gap: 16rpx; padding: 16rpx 20rpx; border-radius: 16rpx; transition: background 0.15s ease; }
-	.tool-mode-option:active { background: rgba(255, 255, 255, 0.08); }
-	.tool-mode-option-active { background: rgba(255, 255, 255, 0.06); }
-	.tool-mode-radio { width: 32rpx; height: 32rpx; border-radius: 50%; border: 2rpx solid rgba(255, 255, 255, 0.3); flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-	.tool-mode-radio-checked { border-color: #3B82F6; background: #3B82F6; }
-	.tool-mode-radio-checked::after { content: ''; width: 12rpx; height: 12rpx; border-radius: 50%; background: #ffffff; }
-	.tool-mode-option-info { flex: 1; display: flex; flex-direction: column; gap: 4rpx; }
-	.tool-mode-option-name { font-size: 28rpx; font-weight: 500; color: rgba(255, 255, 255, 0.9); }
-	.tool-mode-option-desc { font-size: 22rpx; color: rgba(255, 255, 255, 0.4); }
-
-	.tool-catalog-list { border-top: 1rpx solid rgba(255, 255, 255, 0.08); padding-top: 12rpx; }
-	.tool-catalog-category { margin-bottom: 12rpx; }
-	.tool-catalog-category-header { display: flex; align-items: center; justify-content: space-between; padding: 8rpx 12rpx; }
-	.tool-catalog-category-name { font-size: 24rpx; font-weight: 600; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 1rpx; }
-	.tool-catalog-category-count { font-size: 22rpx; color: rgba(255, 255, 255, 0.3); }
-	.tool-catalog-item { display: flex; align-items: center; gap: 12rpx; padding: 12rpx 12rpx; border-radius: 12rpx; transition: background 0.15s ease; }
-	.tool-catalog-item:active { background: rgba(255, 255, 255, 0.06); }
-	.tool-catalog-checkbox { width: 32rpx; height: 32rpx; border-radius: 8rpx; border: 2rpx solid rgba(255, 255, 255, 0.25); flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-	.tool-catalog-checkbox-checked { border-color: #3B82F6; background: #3B82F6; }
-	.tool-catalog-check-icon { width: 20rpx; height: 20rpx; filter: brightness(0) invert(1); }
-	.tool-catalog-item-name { font-size: 26rpx; color: rgba(255, 255, 255, 0.7); flex: 1; }
-	.tool-catalog-loading { padding: 20rpx; text-align: center; }
-	.tool-catalog-loading-text { font-size: 24rpx; color: rgba(255, 255, 255, 0.4); }
-
-	.input-safe-area {
-		height: env(safe-area-inset-bottom);
-	}
-
 	/* ========== 待发送附件预览 ========== */
 	.pending-attachments-area {
 		display: flex;
@@ -5046,13 +4958,9 @@
 		z-index: 200;
 		transform: translateX(-50%);
 		pointer-events: auto;
-	}
-
-	.node-popup-content {
-		display: flex;
-		align-items: center;
-		gap: 16rpx;
-		padding: 16rpx 20rpx;
+		min-width: 300rpx;
+		max-width: 480rpx;
+		overflow: hidden;
 		background-color: rgba(255, 255, 255, 0.04);
 		-webkit-backdrop-filter: blur(40px) saturate(180%);
 		backdrop-filter: blur(40px) saturate(180%);
@@ -5064,9 +4972,16 @@
 	}
 
 	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-		.node-popup-content {
+		.node-popup {
 			background: rgba(20, 20, 30, 0.85);
 		}
+	}
+
+	.node-popup-content {
+		display: flex;
+		align-items: center;
+		gap: 16rpx;
+		padding: 16rpx 20rpx;
 	}
 
 	.node-popup-name {
@@ -5074,6 +4989,9 @@
 		font-weight: 500;
 		color: #FFFFFF;
 		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	/* 圆环进度条容器 */
@@ -5142,6 +5060,193 @@
 		color: #818CF8;
 		white-space: nowrap;
 		line-height: 1;
+	}
+
+	/* 内联笔记预览 */
+	.node-notes-inline {
+		border-top: 1rpx solid rgba(255, 255, 255, 0.06);
+		padding: 8rpx 20rpx 10rpx;
+	}
+
+	.node-notes-hint {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.35);
+		text-align: center;
+		display: block;
+	}
+
+	.node-notes-list {
+		max-height: 300rpx;
+		overflow-y: auto;
+	}
+
+	.node-notes-item {
+		padding: 8rpx 0;
+	}
+
+	.node-notes-item + .node-notes-item {
+		border-top: 1rpx solid rgba(255, 255, 255, 0.04);
+	}
+
+	.node-notes-item:active {
+		background: rgba(255, 255, 255, 0.06);
+	}
+
+	.node-notes-item-title {
+		font-size: 24rpx;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.85);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		display: block;
+	}
+
+	.node-notes-item-preview {
+		font-size: 20rpx;
+		color: rgba(255, 255, 255, 0.4);
+		margin-top: 4rpx;
+		display: -webkit-box;
+		-webkit-line-clamp: 1;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	/* 笔记详情 overlay */
+	.note-detail-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 600;
+		background: rgba(10, 10, 18, 0.95);
+		display: flex;
+		flex-direction: column;
+	}
+
+	.note-detail-card {
+		width: 100%;
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.note-detail-header {
+		display: flex;
+		align-items: center;
+		padding: 24rpx 32rpx;
+		padding-top: calc(100vh * 1.5 / 26);
+		border-bottom: 1rpx solid rgba(255, 255, 255, 0.08);
+		gap: 16rpx;
+	}
+
+	.note-detail-back {
+		width: 60rpx;
+		height: 60rpx;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.06);
+		flex-shrink: 0;
+	}
+
+	.note-detail-back-icon {
+		width: 40rpx;
+		height: 40rpx;
+		filter: brightness(0) invert(1);
+	}
+
+	.note-detail-title {
+		font-size: 32rpx;
+		font-weight: 600;
+		color: #ffffff;
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.note-detail-scroll {
+		flex: 1;
+	}
+
+	.note-detail-loading {
+		padding: 80rpx 0;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.note-detail-loading-text {
+		font-size: 28rpx;
+		color: rgba(255, 255, 255, 0.5);
+	}
+
+	.note-detail-body {
+		padding: 32rpx;
+	}
+
+	.note-detail-content {
+		font-size: 28rpx;
+		color: rgba(255, 255, 255, 0.85);
+		line-height: 1.8;
+		white-space: pre-wrap;
+		word-break: break-word;
+	}
+
+	.note-detail-empty {
+		font-size: 28rpx;
+		color: rgba(255, 255, 255, 0.35);
+		font-style: italic;
+	}
+
+	.note-detail-attachments {
+		margin-top: 40rpx;
+		padding-top: 24rpx;
+		border-top: 1rpx solid rgba(255, 255, 255, 0.08);
+	}
+
+	.note-detail-attach-label {
+		font-size: 26rpx;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.6);
+		margin-bottom: 16rpx;
+		display: block;
+	}
+
+	.note-detail-attach-item {
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+		padding: 16rpx;
+		background: rgba(255, 255, 255, 0.04);
+		border-radius: 12rpx;
+		margin-bottom: 12rpx;
+	}
+
+	.note-detail-attach-icon {
+		width: 32rpx;
+		height: 32rpx;
+		filter: brightness(0) invert(1);
+		opacity: 0.5;
+		flex-shrink: 0;
+	}
+
+	.note-detail-attach-name {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.6);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.note-detail-time {
+		display: block;
+		margin-top: 32rpx;
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.3);
 	}
 
 	/* 加载遮罩 */

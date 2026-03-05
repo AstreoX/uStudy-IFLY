@@ -130,6 +130,19 @@
 							<text class="memory-tool-text">{{ getMemoryToolText(seg.toolCall.tool) }}</text>
 						</view>
 
+						<!-- 规划类工具 (get_tool_details)：行内银光掠过 -->
+						<view
+							v-else-if="seg.type === 'tool' && isPlanningTool(seg.toolCall.tool)"
+							:key="'planning-tool-' + segIdx"
+							class="planning-tool-inline"
+							:class="{
+								'planning-tool-active': seg.toolCall.status === 'running',
+								'planning-tool-done': seg.toolCall.status === 'done'
+							}"
+						>
+							<text class="planning-tool-text">{{ planningToolText }}</text>
+						</view>
+
 						<!-- 复习事件工具：自定义卡片渲染 -->
 						<view
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'get_review_events'"
@@ -330,24 +343,14 @@
 									class="search-result-item"
 									@click="openSearchResultUrl(item.url)"
 								>
-									<view class="search-result-item-header">
-										<text class="search-result-source-badge"
-											:class="'source-' + (item.source || 'web')">{{ getSourceLabel(item.source || 'web') }}</text>
-										<text class="search-result-title">{{ item.title }}</text>
-									</view>
-									<text v-if="item.snippet" class="search-result-snippet">{{ item.snippet }}</text>
-									<view class="search-result-meta">
-										<text v-if="item.authors" class="search-result-authors">{{ item.authors }}</text>
-										<text v-if="item.year" class="search-result-year">{{ item.year }}</text>
-										<text v-if="item.citation_count" class="search-result-citations">引用 {{ item.citation_count }}</text>
-										<text v-if="item.author_name" class="search-result-author">{{ item.author_name }}</text>
-										<text v-if="item.duration" class="search-result-duration">{{ item.duration }}</text>
-										<text class="search-result-url">{{ formatDisplayUrl(item.url) }}</text>
-									</view>
+									<image class="search-result-favicon"
+										:src="getFaviconUrl(item.url)" mode="aspectFit" />
+									<text class="search-result-title">{{ item.title }}</text>
+									<text class="search-result-domain">{{ formatDisplayUrl(item.url) }}</text>
 								</view>
 
 								<!-- 展开/折叠按钮 -->
-								<view v-if="seg.toolCall.result.results.length > 2"
+								<view v-if="seg.toolCall.result.results.length > 5"
 									class="search-results-toggle"
 									@click="toggleSearchResults(seg.toolCall.id)">
 									<text class="search-results-toggle-text">
@@ -658,62 +661,6 @@
 		<!-- 底部输入栏 -->
 		<view class="input-bar" :style="{ bottom: keyboardHeight > 0 ? keyboardHeight + 'px' : '' }">
 			<!-- 模型选择下拉菜单（向上弹出） -->
-			<!-- 工具模式弹窗（向上弹出） -->
-			<view v-if="showToolMenu" class="tool-menu-backdrop" @click="showToolMenu = false"></view>
-			<view v-if="showToolMenu" class="tool-menu">
-				<view class="tool-menu-header">
-					<text class="tool-menu-title">工具模式</text>
-				</view>
-				<!-- 模式选择 -->
-				<view class="tool-mode-options">
-					<view
-						class="tool-mode-option"
-						:class="{ 'tool-mode-option-active': toolMode === 'auto' }"
-						@click="selectToolMode('auto')"
-					>
-						<view class="tool-mode-radio" :class="{ 'tool-mode-radio-checked': toolMode === 'auto' }"></view>
-						<view class="tool-mode-option-info">
-							<text class="tool-mode-option-name">自动模式</text>
-							<text class="tool-mode-option-desc">AI 按需加载工具</text>
-						</view>
-					</view>
-					<view
-						class="tool-mode-option"
-						:class="{ 'tool-mode-option-active': toolMode === 'manual' }"
-						@click="selectToolMode('manual')"
-					>
-						<view class="tool-mode-radio" :class="{ 'tool-mode-radio-checked': toolMode === 'manual' }"></view>
-						<view class="tool-mode-option-info">
-							<text class="tool-mode-option-name">手动模式</text>
-							<text class="tool-mode-option-desc">自定义启用工具</text>
-						</view>
-					</view>
-				</view>
-				<!-- 手动模式下的工具选择列表 -->
-				<view v-if="toolMode === 'manual' && toolCatalog" class="tool-catalog-list">
-					<view v-for="cat in toolCatalog" :key="cat.category" class="tool-catalog-category">
-						<view class="tool-catalog-category-header">
-							<text class="tool-catalog-category-name">{{ cat.category }}</text>
-							<text class="tool-catalog-category-count">{{ getCategoryEnabledCount(cat) }}/{{ cat.tools.length }}</text>
-						</view>
-						<view
-							v-for="tool in cat.tools"
-							:key="tool.name"
-							class="tool-catalog-item"
-							@click="toggleTool(tool.name)"
-						>
-							<view class="tool-catalog-checkbox" :class="{ 'tool-catalog-checkbox-checked': isToolEnabled(tool.name) }">
-								<image v-if="isToolEnabled(tool.name)" class="tool-catalog-check-icon" src="/static/icons/phosphor-icons/SVGs/bold/check.svg" mode="aspectFit"></image>
-							</view>
-							<text class="tool-catalog-item-name">{{ tool.summary }}</text>
-						</view>
-					</view>
-				</view>
-				<view v-if="toolMode === 'manual' && toolCatalogLoading" class="tool-catalog-loading">
-					<text class="tool-catalog-loading-text">加载中...</text>
-				</view>
-			</view>
-
 			<view v-if="showModelMenu" class="model-menu-backdrop" @click="showModelMenu = false"></view>
 			<view v-if="showModelMenu" class="model-menu">
 				<view
@@ -786,17 +733,12 @@
 				/>
 
 				<view class="input-bottom-row">
-					<!-- 左侧：模型选择 pill + 工具模式 pill -->
+					<!-- 左侧：模型选择 pill -->
 					<view class="input-bottom-left">
 						<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
 							<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
 							<text class="model-selector-label">{{ selectedModelName }}</text>
 							<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
-						</view>
-						<view class="tool-mode-btn" @click="toggleToolMenu">
-							<image class="tool-mode-icon" src="/static/icons/phosphor-icons/SVGs/regular/wrench.svg" mode="aspectFit"></image>
-							<text class="tool-mode-label">{{ toolModeLabel }}</text>
-							<image class="tool-mode-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
 						</view>
 					</view>
 
@@ -884,7 +826,7 @@
 	import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	import PreKnowledgeCard from '@/components/pre-knowledge-card/pre-knowledge-card.vue'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
-	import { generateQuiz, getTaskStatus, getSpaceGraph, getToolCatalog, updateSpace, getSpace } from '@/api/space'
+	import { generateQuiz, getTaskStatus, getSpaceGraph } from '@/api/space'
 	import { createConversation, getConversation, sendMessage as sendChatMessage, executeToolCall, submitFeedback, submitToolResult, getModels } from '@/api/chat'
 	import { connectNotificationStream } from '@/api/notification'
 	import { executeCalendarTool } from '@/utils/calendar'
@@ -989,6 +931,10 @@
 		encyclopedia_search: '/static/icons/phosphor-icons/SVGs/regular/books.svg',
 		course_search: '/static/icons/phosphor-icons/SVGs/regular/globe.svg'
 	}
+
+	// 规划类工具（行内银光掠过效果）
+	const PLANNING_TOOLS = new Set(['get_tool_details'])
+	const PLANNING_TOOL_TEXT = '正在规划下一步……'
 
 	// 记忆类工具集合（使用行内波浪文字而非卡片）
 	const MEMORY_TOOLS = new Set([
@@ -1140,13 +1086,6 @@
 				selectedModelId: null,
 				showModelMenu: false,
 
-				// 工具模式
-				toolMode: 'auto',
-				enabledTools: null,
-				showToolMenu: false,
-				toolCatalog: null,
-				toolCatalogLoading: false,
-
 				// SSE 诊断面板
 				sseDebugLog: [],
 				showSseDebugPanel: false,
@@ -1157,6 +1096,9 @@
 		},
 
 		computed: {
+			planningToolText() {
+				return PLANNING_TOOL_TEXT
+			},
 			isAiStreaming() {
 				return this.messages.some(msg => msg.role === 'ai' && msg.isStreaming)
 			},
@@ -1166,9 +1108,6 @@
 			selectedModelName() {
 				const model = this.availableModels.find(m => m.id === this.selectedModelId)
 				return model ? model.display_name : '模型'
-			},
-			toolModeLabel() {
-				return this.toolMode === 'auto' ? '自动' : '手动'
 			},
 			// 从 debugLogs 提取进度百分比
 			calculatedQuizProgress() {
@@ -1282,9 +1221,8 @@
 				}
 			}
 
-			// 加载模型列表 + 工具模式
+			// 加载模型列表
 			this.loadModels()
-			this.loadSpaceToolMode()
 		},
 
 		onShow() {
@@ -1461,79 +1399,6 @@
 					}
 				} catch (err) {
 					console.error('[SpaceChat] Failed to load models:', err)
-				}
-			},
-
-			// ==================== 工具模式 ====================
-			toggleToolMenu() {
-				this.showToolMenu = !this.showToolMenu
-				if (this.showToolMenu && !this.toolCatalog) {
-					this.loadToolCatalog()
-				}
-			},
-			async loadToolCatalog() {
-				if (this.toolCatalogLoading) return
-				this.toolCatalogLoading = true
-				try {
-					const res = await getToolCatalog()
-					this.toolCatalog = res || []
-				} catch (err) {
-					console.error('[SpaceChat] Failed to load tool catalog:', err)
-				} finally {
-					this.toolCatalogLoading = false
-				}
-			},
-			async loadSpaceToolMode() {
-				if (!this.spaceId) return
-				try {
-					const space = await getSpace(this.spaceId)
-					this.toolMode = space.tool_mode || 'auto'
-					this.enabledTools = space.enabled_tools || null
-				} catch (err) {
-					console.error('[SpaceChat] Failed to load space tool mode:', err)
-				}
-			},
-			async selectToolMode(mode) {
-				if (mode === this.toolMode) return
-				const newMode = mode
-				// 切换到手动模式时默认启用全部工具
-				let newEnabledTools = this.enabledTools
-				if (newMode === 'manual' && !this.enabledTools) {
-					if (!this.toolCatalog) await this.loadToolCatalog()
-					const allNames = (this.toolCatalog || []).flatMap(cat => cat.tools.map(t => t.name))
-					newEnabledTools = allNames
-				}
-				this.toolMode = newMode
-				this.enabledTools = newEnabledTools
-				this.saveToolMode()
-			},
-			toggleTool(toolName) {
-				if (!this.enabledTools) return
-				const idx = this.enabledTools.indexOf(toolName)
-				if (idx >= 0) {
-					this.enabledTools = this.enabledTools.filter(n => n !== toolName)
-				} else {
-					this.enabledTools = [...this.enabledTools, toolName]
-				}
-				this.saveToolMode()
-			},
-			isToolEnabled(toolName) {
-				if (!this.enabledTools) return true
-				return this.enabledTools.includes(toolName)
-			},
-			getCategoryEnabledCount(category) {
-				if (!this.enabledTools) return category.tools.length
-				return category.tools.filter(t => this.enabledTools.includes(t.name)).length
-			},
-			async saveToolMode() {
-				if (!this.spaceId) return
-				try {
-					await updateSpace(this.spaceId, {
-						tool_mode: this.toolMode,
-						enabled_tools: this.toolMode === 'manual' ? this.enabledTools : null,
-					})
-				} catch (err) {
-					console.error('[SpaceChat] Failed to save tool mode:', err)
 				}
 			},
 
@@ -3079,6 +2944,13 @@
 			},
 
 			/**
+			 * 判断是否为规划类工具
+			 */
+			isPlanningTool(toolName) {
+				return PLANNING_TOOLS.has(toolName)
+			},
+
+			/**
 			 * 判断是否为测验成绩类工具
 			 */
 			isQuizResultTool(toolName) {
@@ -3108,7 +2980,12 @@
 				if (this.expandedSearchResults[toolCall.id]) {
 					return results
 				}
-				return results.slice(0, 2)
+				return results.slice(0, 5)
+			},
+
+			getFaviconUrl(url) {
+				try { return new URL(url).origin + '/favicon.ico' }
+				catch { return '' }
 			},
 
 			/**
@@ -4367,6 +4244,60 @@
 		animation: wave-shimmer 2s ease-in-out infinite;
 	}
 
+	/* ========== 规划工具行内银光掠过 ========== */
+	.planning-tool-inline {
+		margin: 8rpx 0;
+		max-height: 0;
+		opacity: 0;
+		overflow: hidden;
+		transition: max-height 0.4s ease, opacity 0.4s ease, margin 0.4s ease;
+	}
+
+	.planning-tool-active {
+		max-height: 60rpx;
+		opacity: 1;
+	}
+
+	.planning-tool-done {
+		max-height: 0;
+		opacity: 0;
+		margin: 0;
+	}
+
+	.planning-tool-text {
+		display: inline-block;
+		font-size: 26rpx;
+		font-style: italic;
+		color: rgba(192, 199, 210, 0.5);
+		background: linear-gradient(
+			90deg,
+			rgba(160, 170, 185, 0.4) 0%,
+			rgba(200, 210, 225, 0.7) 20%,
+			rgba(230, 238, 250, 1) 40%,
+			rgba(200, 210, 225, 0.7) 60%,
+			rgba(160, 170, 185, 0.4) 80%,
+			rgba(160, 170, 185, 0.4) 100%
+		);
+		background-size: 250% 100%;
+		-webkit-background-clip: text;
+		background-clip: text;
+		-webkit-text-fill-color: transparent;
+		animation: planning-shimmer 2s ease-in-out infinite;
+	}
+
+	.planning-tool-done .planning-tool-text {
+		animation: none;
+	}
+
+	@keyframes planning-shimmer {
+		0% {
+			background-position: 100% 50%;
+		}
+		100% {
+			background-position: -100% 50%;
+		}
+	}
+
 	/* ========== 测试题进入卡片 ========== */
 	.test-entry-card {
 		margin-top: 20rpx;
@@ -5328,100 +5259,44 @@
 		flex-shrink: 0;
 	}
 
-	/* ========== 搜索结果卡片 ========== */
-	.search-result-card {
-		max-width: 560rpx;
-	}
-
+	/* ========== 搜索结果列表 ========== */
 	.search-results-list {
 		margin-top: 12rpx;
 		display: flex;
 		flex-direction: column;
-		gap: 8rpx;
+		gap: 0;
 	}
 
 	.search-result-item {
-		background: rgba(255, 255, 255, 0.06);
-		border: 1rpx solid rgba(255, 255, 255, 0.08);
-		border-radius: 12rpx;
-		padding: 12rpx 16rpx;
-	}
-
-	.search-result-item-header {
 		display: flex;
 		align-items: center;
-		gap: 8rpx;
+		gap: 12rpx;
+		padding: 8rpx 0;
 	}
 
-	.search-result-source-badge {
-		font-size: 18rpx;
-		padding: 2rpx 10rpx;
-		border-radius: 6rpx;
+	.search-result-favicon {
+		width: 32rpx;
+		height: 32rpx;
+		border-radius: 50%;
 		flex-shrink: 0;
-		font-weight: 500;
-	}
-
-	.source-academic {
-		color: rgba(168, 85, 247, 0.95);
-		background: rgba(168, 85, 247, 0.15);
-	}
-
-	.source-encyclopedia {
-		color: rgba(59, 130, 246, 0.95);
-		background: rgba(59, 130, 246, 0.15);
-	}
-
-	.source-course {
-		color: rgba(251, 113, 133, 0.95);
-		background: rgba(251, 113, 133, 0.15);
-	}
-
-	.source-web {
-		color: rgba(34, 197, 94, 0.95);
-		background: rgba(34, 197, 94, 0.15);
 	}
 
 	.search-result-title {
-		font-size: 24rpx;
+		font-size: 26rpx;
 		color: rgba(255, 255, 255, 0.85);
 		font-weight: 500;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		flex: 1;
+		min-width: 0;
 	}
 
-	.search-result-snippet {
+	.search-result-domain {
 		font-size: 22rpx;
-		color: rgba(255, 255, 255, 0.5);
-		margin-top: 6rpx;
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-		line-height: 1.4;
-	}
-
-	.search-result-meta {
-		display: flex;
-		align-items: center;
-		gap: 10rpx;
-		margin-top: 6rpx;
-		flex-wrap: wrap;
-	}
-
-	.search-result-authors,
-	.search-result-year,
-	.search-result-citations,
-	.search-result-author,
-	.search-result-duration {
-		font-size: 20rpx;
 		color: rgba(255, 255, 255, 0.4);
-	}
-
-	.search-result-url {
-		font-size: 20rpx;
-		color: rgba(96, 165, 250, 0.7);
+		flex-shrink: 0;
+		margin-left: auto;
 	}
 
 	.search-results-toggle {
@@ -5885,227 +5760,6 @@
 		gap: 8rpx;
 		flex: 1;
 		min-width: 0;
-	}
-
-	/* ==================== 工具模式选择器 ==================== */
-	.tool-mode-btn {
-		display: flex;
-		align-items: center;
-		gap: 8rpx;
-		padding: 8rpx 16rpx 8rpx 12rpx;
-		background: rgba(255, 255, 255, 0.08);
-		border-radius: 999rpx;
-		cursor: pointer;
-		transition: background 0.15s ease;
-	}
-
-	.tool-mode-btn:active {
-		background: rgba(255, 255, 255, 0.16);
-	}
-
-	.tool-mode-icon {
-		width: 28rpx;
-		height: 28rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.5;
-		flex-shrink: 0;
-	}
-
-	.tool-mode-label {
-		font-size: 24rpx;
-		color: rgba(255, 255, 255, 0.6);
-		white-space: nowrap;
-	}
-
-	.tool-mode-chevron {
-		width: 20rpx;
-		height: 20rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.35;
-		flex-shrink: 0;
-	}
-
-	/* 工具菜单弹窗 */
-	.tool-menu-backdrop {
-		position: fixed;
-		inset: 0;
-		z-index: 199;
-	}
-
-	.tool-menu {
-		position: absolute;
-		bottom: 100%;
-		left: 12rpx;
-		right: 12rpx;
-		max-height: 70vh;
-		overflow-y: auto;
-		z-index: 200;
-		margin-bottom: 8rpx;
-		background: rgba(38, 38, 42, 0.94);
-		-webkit-backdrop-filter: blur(24px) saturate(180%);
-		backdrop-filter: blur(24px) saturate(180%);
-		border: 1rpx solid rgba(255, 255, 255, 0.1);
-		border-radius: 20rpx;
-		padding: 16rpx;
-		box-shadow: 0 -6rpx 24rpx rgba(0, 0, 0, 0.35);
-	}
-
-	.tool-menu-header {
-		padding: 0 8rpx 16rpx 8rpx;
-	}
-
-	.tool-menu-title {
-		font-size: 28rpx;
-		font-weight: 600;
-		color: rgba(255, 255, 255, 0.9);
-	}
-
-	/* 模式选择 */
-	.tool-mode-options {
-		display: flex;
-		flex-direction: column;
-		gap: 8rpx;
-		margin-bottom: 16rpx;
-	}
-
-	.tool-mode-option {
-		display: flex;
-		align-items: center;
-		gap: 16rpx;
-		padding: 16rpx 20rpx;
-		border-radius: 16rpx;
-		transition: background 0.15s ease;
-	}
-
-	.tool-mode-option:active {
-		background: rgba(255, 255, 255, 0.08);
-	}
-
-	.tool-mode-option-active {
-		background: rgba(255, 255, 255, 0.06);
-	}
-
-	.tool-mode-radio {
-		width: 32rpx;
-		height: 32rpx;
-		border-radius: 50%;
-		border: 2rpx solid rgba(255, 255, 255, 0.3);
-		flex-shrink: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.tool-mode-radio-checked {
-		border-color: #3B82F6;
-		background: #3B82F6;
-	}
-
-	.tool-mode-radio-checked::after {
-		content: '';
-		width: 12rpx;
-		height: 12rpx;
-		border-radius: 50%;
-		background: #ffffff;
-	}
-
-	.tool-mode-option-info {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		gap: 4rpx;
-	}
-
-	.tool-mode-option-name {
-		font-size: 28rpx;
-		font-weight: 500;
-		color: rgba(255, 255, 255, 0.9);
-	}
-
-	.tool-mode-option-desc {
-		font-size: 22rpx;
-		color: rgba(255, 255, 255, 0.4);
-	}
-
-	/* 工具目录列表 */
-	.tool-catalog-list {
-		border-top: 1rpx solid rgba(255, 255, 255, 0.08);
-		padding-top: 12rpx;
-	}
-
-	.tool-catalog-category {
-		margin-bottom: 12rpx;
-	}
-
-	.tool-catalog-category-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 8rpx 12rpx;
-	}
-
-	.tool-catalog-category-name {
-		font-size: 24rpx;
-		font-weight: 600;
-		color: rgba(255, 255, 255, 0.5);
-		text-transform: uppercase;
-		letter-spacing: 1rpx;
-	}
-
-	.tool-catalog-category-count {
-		font-size: 22rpx;
-		color: rgba(255, 255, 255, 0.3);
-	}
-
-	.tool-catalog-item {
-		display: flex;
-		align-items: center;
-		gap: 12rpx;
-		padding: 12rpx 12rpx;
-		border-radius: 12rpx;
-		transition: background 0.15s ease;
-	}
-
-	.tool-catalog-item:active {
-		background: rgba(255, 255, 255, 0.06);
-	}
-
-	.tool-catalog-checkbox {
-		width: 32rpx;
-		height: 32rpx;
-		border-radius: 8rpx;
-		border: 2rpx solid rgba(255, 255, 255, 0.25);
-		flex-shrink: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.tool-catalog-checkbox-checked {
-		border-color: #3B82F6;
-		background: #3B82F6;
-	}
-
-	.tool-catalog-check-icon {
-		width: 20rpx;
-		height: 20rpx;
-		filter: brightness(0) invert(1);
-	}
-
-	.tool-catalog-item-name {
-		font-size: 26rpx;
-		color: rgba(255, 255, 255, 0.7);
-		flex: 1;
-	}
-
-	.tool-catalog-loading {
-		padding: 20rpx;
-		text-align: center;
-	}
-
-	.tool-catalog-loading-text {
-		font-size: 24rpx;
-		color: rgba(255, 255, 255, 0.4);
 	}
 
 	/* ===== Thinking/Reasoning Section (DeepSeek style) ===== */

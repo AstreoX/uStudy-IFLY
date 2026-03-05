@@ -126,22 +126,12 @@
 								class="search-results-list">
 								<view v-for="(item, idx) in getVisibleSearchResults(seg.toolCall)" :key="idx"
 									class="search-result-item" @click="openSearchResultUrl(item.url)">
-									<view class="search-result-item-header">
-										<text class="search-result-source-badge"
-											:class="'source-' + (item.source || 'web')">{{ getSourceLabel(item.source || 'web') }}</text>
-										<text class="search-result-title">{{ item.title }}</text>
-									</view>
-									<text v-if="item.snippet" class="search-result-snippet">{{ item.snippet }}</text>
-									<view class="search-result-meta">
-										<text v-if="item.authors" class="search-result-authors">{{ item.authors }}</text>
-										<text v-if="item.year" class="search-result-year">{{ item.year }}</text>
-										<text v-if="item.citation_count" class="search-result-citations">引用 {{ item.citation_count }}</text>
-										<text v-if="item.author_name" class="search-result-author">{{ item.author_name }}</text>
-										<text v-if="item.duration" class="search-result-duration">{{ item.duration }}</text>
-										<text class="search-result-url">{{ formatDisplayUrl(item.url) }}</text>
-									</view>
+									<image class="search-result-favicon"
+										:src="getFaviconUrl(item.url)" mode="aspectFit" />
+									<text class="search-result-title">{{ item.title }}</text>
+									<text class="search-result-domain">{{ formatDisplayUrl(item.url) }}</text>
 								</view>
-								<view v-if="seg.toolCall.result.results.length > 2"
+								<view v-if="seg.toolCall.result.results.length > 5"
 									class="search-results-toggle" @click="toggleSearchResults(seg.toolCall.id)">
 									<text class="search-results-toggle-text">
 										{{ isSearchExpanded(seg.toolCall.id) ? '收起' : '展开全部 ' + seg.toolCall.result.results.length + ' 条结果' }}
@@ -1135,7 +1125,12 @@
 				if (this.expandedSearchResults[toolCall.id]) {
 					return results
 				}
-				return results.slice(0, 2)
+				return results.slice(0, 5)
+			},
+
+			getFaviconUrl(url) {
+				try { return new URL(url).origin + '/favicon.ico' }
+				catch { return '' }
 			},
 
 			isSearchExpanded(toolCallId) {
@@ -2588,100 +2583,44 @@
 		}
 	}
 
-	/* ========== 搜索结果卡片 ========== */
-	.search-result-card {
-		max-width: 560rpx;
-	}
-
+	/* ========== 搜索结果列表 ========== */
 	.search-results-list {
 		margin-top: 12rpx;
 		display: flex;
 		flex-direction: column;
-		gap: 8rpx;
+		gap: 0;
 	}
 
 	.search-result-item {
-		background: rgba(255, 255, 255, 0.06);
-		border: 1rpx solid rgba(255, 255, 255, 0.08);
-		border-radius: 12rpx;
-		padding: 12rpx 16rpx;
-	}
-
-	.search-result-item-header {
 		display: flex;
 		align-items: center;
-		gap: 8rpx;
+		gap: 12rpx;
+		padding: 8rpx 0;
 	}
 
-	.search-result-source-badge {
-		font-size: 18rpx;
-		padding: 2rpx 10rpx;
-		border-radius: 6rpx;
+	.search-result-favicon {
+		width: 32rpx;
+		height: 32rpx;
+		border-radius: 50%;
 		flex-shrink: 0;
-		font-weight: 500;
-	}
-
-	.source-academic {
-		color: rgba(168, 85, 247, 0.95);
-		background: rgba(168, 85, 247, 0.15);
-	}
-
-	.source-encyclopedia {
-		color: rgba(59, 130, 246, 0.95);
-		background: rgba(59, 130, 246, 0.15);
-	}
-
-	.source-course {
-		color: rgba(251, 113, 133, 0.95);
-		background: rgba(251, 113, 133, 0.15);
-	}
-
-	.source-web {
-		color: rgba(34, 197, 94, 0.95);
-		background: rgba(34, 197, 94, 0.15);
 	}
 
 	.search-result-title {
-		font-size: 24rpx;
+		font-size: 26rpx;
 		color: rgba(255, 255, 255, 0.85);
 		font-weight: 500;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		flex: 1;
+		min-width: 0;
 	}
 
-	.search-result-snippet {
+	.search-result-domain {
 		font-size: 22rpx;
-		color: rgba(255, 255, 255, 0.5);
-		margin-top: 6rpx;
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-		line-height: 1.4;
-	}
-
-	.search-result-meta {
-		display: flex;
-		align-items: center;
-		gap: 10rpx;
-		margin-top: 6rpx;
-		flex-wrap: wrap;
-	}
-
-	.search-result-authors,
-	.search-result-year,
-	.search-result-citations,
-	.search-result-author,
-	.search-result-duration {
-		font-size: 20rpx;
 		color: rgba(255, 255, 255, 0.4);
-	}
-
-	.search-result-url {
-		font-size: 20rpx;
-		color: rgba(96, 165, 250, 0.7);
+		flex-shrink: 0;
+		margin-left: auto;
 	}
 
 	.search-results-toggle {
