@@ -306,7 +306,9 @@ export default {
 	},
 	data() {
 		return {
-			codeContents: []
+			codeContents: [],
+			cachedHtml: '',
+			_lastContent: ''
 		}
 	},
 	methods: {
@@ -357,6 +359,16 @@ export default {
 				}
 			})
 		},
+		_doParse(text) {
+			try {
+				const latexResult = processLatex(text)
+				const markdownResult = parseSimpleMarkdown(latexResult.text)
+				this.codeContents = markdownResult.codeContents
+				this.cachedHtml = restorePlaceholders(markdownResult.html, latexResult.placeholders)
+			} catch (e) {
+				this.cachedHtml = escapeHtml(text)
+			}
+		},
 		openExternalLink(url) {
 			// #ifdef APP-PLUS
 			plus.runtime.openURL(url)
@@ -376,21 +388,39 @@ export default {
 			})
 		}
 	},
+	watch: {
+		content: {
+			handler(val) {
+				if (!val) {
+					this.cachedHtml = ''
+					this._lastContent = ''
+					return
+				}
+				if (val.startsWith(this._lastContent) && this._lastContent.length > 0) {
+					// Streaming append — debounce re-parse
+					if (this._parseTimer) clearTimeout(this._parseTimer)
+					this._parseTimer = setTimeout(() => {
+						this._parseTimer = null
+						this._doParse(this.content)
+					}, 100)
+				} else {
+					// Full content change — parse immediately
+					this._doParse(val)
+				}
+				this._lastContent = val
+			},
+			immediate: true
+		}
+	},
 	computed: {
 		parsedHtml() {
-			if (!this.content) return ''
-			try {
-				const latexResult = processLatex(this.content)
-				const markdownResult = parseSimpleMarkdown(latexResult.text)
-
-				// 保存代码内容供复制使用
-				this.codeContents = markdownResult.codeContents
-
-				return restorePlaceholders(markdownResult.html, latexResult.placeholders)
-			} catch (e) {
-				console.error('Markdown parse error:', e)
-				return escapeHtml(this.content)
-			}
+			return this.cachedHtml
+		}
+	},
+	beforeDestroy() {
+		if (this._parseTimer) {
+			clearTimeout(this._parseTimer)
+			this._parseTimer = null
 		}
 	}
 }

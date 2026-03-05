@@ -40,13 +40,10 @@
 
 		<!-- 标题区域 -->
 		<view class="header" :class="{ 'header-hidden': isSelectionMode }">
-			<!-- 正常状态：显示当前学习主题 -->
+			<!-- 正常状态：显示 AI 学习建议 -->
 			<template v-if="!isEmptyState">
-				<view class="header-title">
-					<text class="header-text-light">正在学习</text>
-					<text class="header-text-highlight">「{{ currentTopic.name }}」</text>
-				</view>
-				<text class="header-subtitle">下一学习点已就绪</text>
+				<text class="header-title" :class="{ 'suggestion-loading': suggestionLoading && !aiSuggestion }">{{ suggestionDecision }}</text>
+				<text class="header-subtitle" :class="{ 'suggestion-loading': suggestionLoading && !aiSuggestion }">{{ suggestionSubject }}</text>
 			</template>
 
 			<!-- 空状态：交错布局提示 -->
@@ -239,6 +236,7 @@
 <script>
 	import { getMe } from '@/api/auth'
 	import { getSpaces, getSpaceGraph, deleteSpace } from '@/api/space'
+	import { getStudySuggestion } from '@/api/activity'
 	import { getTokens, getCardOrder, setCardOrder, clearAuth } from '@/utils/storage'
 	import { useUserStore } from '@/store/user'
 	import { useUpdateStore } from '@/store/update'
@@ -248,6 +246,45 @@ import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 	import AccountProfile from '@/components/account-profile/account-profile.vue'
 	import UModal from '@/components/u-modal/u-modal.vue'
 	import UToast from '@/components/u-toast/u-toast.vue'
+
+// ── 学习建议时间槽缓存（UTC+8）──
+// 更新时间点：08:00 / 12:00 / 18:00 / 21:00
+function _getCSTComponents() {
+  const now = new Date()
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000
+  const cstMs = utcMs + 8 * 3600 * 1000
+  const d = new Date(cstMs)
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+    hour: d.getUTCHours(),
+    cstMs
+  }
+}
+
+function _getSuggestionSlotKey() {
+  const { year, month, day, hour, cstMs } = _getCSTComponents()
+  const dateStr = `${year}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`
+  const slots = [8, 12, 18, 21]
+  let slot = null
+  for (const s of slots) { if (hour >= s) slot = s }
+  if (slot === null) {
+    const yd = new Date(cstMs - 86400000)
+    const yStr = `${yd.getUTCFullYear()}${String(yd.getUTCMonth() + 1).padStart(2, '0')}${String(yd.getUTCDate()).padStart(2, '0')}`
+    return `suggestion_${yStr}_21`
+  }
+  return `suggestion_${dateStr}_${String(slot).padStart(2, '0')}`
+}
+
+function _cleanOldSuggestionCache(currentKey) {
+  try {
+    const info = uni.getStorageInfoSync()
+    const old = (info.keys || []).filter(k => k.startsWith('suggestion_') && k !== currentKey)
+    old.sort().reverse()
+    old.slice(1).forEach(k => uni.removeStorageSync(k))
+  } catch (_) {}
+}
 
 	export default {
 		components: {
@@ -319,7 +356,10 @@ import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 				bootErrorMessage: '',
 				bootTimeoutId: null,
 				// 到期提醒横幅
-				expiryBannerDismissed: false
+				expiryBannerDismissed: false,
+				// AI 学习建议
+				aiSuggestion: null,
+				suggestionLoading: false
 			}
 		},
 
@@ -399,6 +439,18 @@ import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 				return this.subscriptionExpiryInfo?.dateStr || ''
 			},
 
+			suggestionDecision() {
+				return this.aiSuggestion?.decision || '正在学习'
+			},
+
+			suggestionSubject() {
+				return this.aiSuggestion?.subject || this.currentTopic.name
+			},
+
+			suggestionGuidance() {
+				return this.aiSuggestion?.guidance || '下一学习点已就绪'
+			},
+
 			// 按顺序排列的卡片列表（包含虚拟新建卡片）
 			orderedTopics() {
 				const realCards = this.cardOrder.map(index => ({
@@ -444,6 +496,7 @@ import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 					const loaded = await this.loadSpaces()
 					if (!loaded) return
 
+					this.loadStudySuggestion()  // 非阻塞，后台加载
 					this.bootState = 'ready'
 				} catch (error) {
 					this.setBootError('初始化失败，请重试', error)
@@ -510,6 +563,25 @@ import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 			// 公告关闭
 			onAnnouncementClose({ dontShowAgain }) {
 				this.updateStore.dismissAnnouncement(dontShowAgain)
+			},
+
+			async loadStudySuggestion() {
+				const key = _getSuggestionSlotKey()
+				try {
+					const cached = uni.getStorageSync(key)
+					if (cached) {
+						this.aiSuggestion = JSON.parse(cached)
+						return
+					}
+				} catch (_) {}
+				this.suggestionLoading = true
+				try {
+					const result = await getStudySuggestion()
+					this.aiSuggestion = result
+					uni.setStorageSync(key, JSON.stringify(result))
+					_cleanOldSuggestionCache(key)
+				} catch (_e) {}
+				finally { this.suggestionLoading = false }
 			},
 
 			// 从后端加载学习空间
@@ -1527,9 +1599,9 @@ import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 		top: calc(100vh / 26 * 6);
 		left: 40rpx;
 		transform: translateY(-50%);
-		display: flex;
-		justify-content: flex-start;
-		align-items: baseline;
+		font-size: 48rpx;
+		font-weight: 700;
+		color: #ffffff;
 	}
 
 	.header-text-light {
@@ -1553,16 +1625,20 @@ import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 	.header-subtitle {
 		position: absolute;
 		top: calc(100vh / 26 * 8);
-		left: calc(100% / 12 * 5);
-		height: calc(100vh / 26);
-		display: flex;
-		align-items: center;
-		font-size: 44rpx;
-		font-weight: 600;
-		background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 50%, #ffffff 100%);
-		-webkit-background-clip: text;
-		-webkit-text-fill-color: transparent;
-		background-clip: text;
+		left: calc(100% / 12 * 3);
+		right: 40rpx;
+		font-size: 48rpx;
+		font-weight: 700;
+		color: #ffffff;
+		line-height: 1.3;
+	}
+
+	@keyframes suggestion-pulse {
+		0%, 100% { opacity: 0.4; }
+		50% { opacity: 0.85; }
+	}
+	.suggestion-loading {
+		animation: suggestion-pulse 1.5s ease-in-out infinite;
 	}
 
 	/* ========== 统一卡片容器 ========== */

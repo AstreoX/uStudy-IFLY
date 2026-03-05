@@ -104,7 +104,15 @@
 				:class="{ 'expand-node-btn--loading': isExpandingNode }"
 				@click.stop="handleExpandNode"
 			>
-				<text class="expand-node-btn-text">{{ isExpandingNode ? '生成中...' : '扩展' }}</text>
+				<text v-if="!isExpandingNode" class="expand-node-btn-text">扩展</text>
+				<view v-else class="expand-node-loading">
+				<text class="expand-node-btn-text">扩展中</text>
+				<view class="expand-node-dots">
+					<view class="expand-node-dot"></view>
+					<view class="expand-node-dot"></view>
+					<view class="expand-node-dot"></view>
+				</view>
+			</view>
 			</view>
 			<!-- 内联笔记预览 -->
 			<view class="node-notes-inline">
@@ -5245,7 +5253,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	}
 
 	.expand-node-btn--loading {
-		opacity: 0.6;
+		opacity: 0.8;
 	}
 
 	.expand-node-btn-text {
@@ -5253,6 +5261,42 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		color: #818CF8;
 		font-weight: 500;
 		line-height: 1;
+	}
+
+	.expand-node-loading {
+		display: flex;
+		align-items: center;
+		gap: 6rpx;
+	}
+
+	.expand-node-dots {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+		padding: 4rpx 0;
+	}
+
+	.expand-node-dot {
+		width: 10rpx;
+		height: 10rpx;
+		background-color: #818CF8;
+		border-radius: 50%;
+		animation: expand-dot-bounce 1.4s ease-in-out infinite;
+	}
+
+	.expand-node-dot:nth-child(1) { animation-delay: 0s; }
+	.expand-node-dot:nth-child(2) { animation-delay: 0.2s; }
+	.expand-node-dot:nth-child(3) { animation-delay: 0.4s; }
+
+	@keyframes expand-dot-bounce {
+		0%, 60%, 100% {
+			transform: translateY(0);
+			opacity: 0.4;
+		}
+		30% {
+			transform: translateY(-8rpx);
+			opacity: 1;
+		}
 	}
 
 	/* 内联笔记预览 */

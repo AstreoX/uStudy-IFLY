@@ -130,6 +130,48 @@ import LearningRadar from '@/components/learning-radar/learning-radar.vue'
 import LearningTimeline from '@/components/learning-timeline/learning-timeline.vue'
 import ContinuityDrawer from '@/components/continuity-drawer/continuity-drawer.vue'
 
+// ── 学习建议时间槽缓存（UTC+8）──
+// 更新时间点：08:00 / 12:00 / 18:00 / 21:00
+function _getCSTComponents() {
+  const now = new Date()
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000
+  const cstMs = utcMs + 8 * 3600 * 1000
+  const d = new Date(cstMs)
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+    hour: d.getUTCHours(),
+    cstMs
+  }
+}
+
+function _getSuggestionSlotKey() {
+  const { year, month, day, hour, cstMs } = _getCSTComponents()
+  const dateStr = `${year}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`
+  const slots = [8, 12, 18, 21]
+  let slot = null
+  for (const s of slots) { if (hour >= s) slot = s }
+  if (slot === null) {
+    const yd = new Date(cstMs - 86400000)
+    const yStr = `${yd.getUTCFullYear()}${String(yd.getUTCMonth() + 1).padStart(2, '0')}${String(yd.getUTCDate()).padStart(2, '0')}`
+    return `suggestion_${yStr}_21`
+  }
+  return `suggestion_${dateStr}_${String(slot).padStart(2, '0')}`
+}
+
+function _cleanOldSuggestionCache(currentKey) {
+  try {
+    const info = uni.getStorageInfoSync()
+    const old = (info.keys || []).filter(k => k.startsWith('suggestion_') && k !== currentKey)
+    old.sort().reverse()
+    old.slice(1).forEach(k => uni.removeStorageSync(k))
+  } catch (_) {}
+}
+
+const TIMELINE_CACHE_KEY = 'timeline_cache_v1'
+const TIMELINE_CACHE_TTL = 5 * 60 * 1000
+
 const AVATAR_GRADIENTS = [
   'linear-gradient(135deg, #0F6FFF 0%, #B1DD8B 100%)',
   'linear-gradient(135deg, #A18CD1 0%, #FBC2EB 100%)',
@@ -265,12 +307,25 @@ export default {
     },
 
     async loadActivityTimeline() {
+      // 1. 先查本地缓存（5分钟TTL）
+      try {
+        const raw = uni.getStorageSync(TIMELINE_CACHE_KEY)
+        if (raw) {
+          const { data, ts } = JSON.parse(raw)
+          if (Date.now() - ts < TIMELINE_CACHE_TTL) {
+            this.recentItems = data
+            this.timelineLoading = false
+            return
+          }
+        }
+      } catch (_) {}
+      // 2. 无缓存或已过期，请求 API
       this.timelineLoading = true
       try {
         const result = await getActivityTimeline(1, 20)
         this.recentItems = result.items || []
+        uni.setStorageSync(TIMELINE_CACHE_KEY, JSON.stringify({ data: this.recentItems, ts: Date.now() }))
       } catch (_e) {
-        // Silently fail — show empty
         this.recentItems = []
       } finally {
         this.timelineLoading = false
@@ -288,9 +343,23 @@ export default {
     },
 
     async loadStudySuggestion() {
+      const key = _getSuggestionSlotKey()
+      // 1. 先查本地时间槽缓存
+      try {
+        const cached = uni.getStorageSync(key)
+        if (cached) {
+          this.aiSuggestion = JSON.parse(cached)
+          this.suggestionLoading = false
+          return
+        }
+      } catch (_) {}
+      // 2. 无缓存则请求 API
       this.suggestionLoading = true
       try {
-        this.aiSuggestion = await getStudySuggestion()
+        const result = await getStudySuggestion()
+        this.aiSuggestion = result
+        uni.setStorageSync(key, JSON.stringify(result))
+        _cleanOldSuggestionCache(key)
       } catch (_e) {
         // Silently fail — timeline falls back to heuristic
       } finally {

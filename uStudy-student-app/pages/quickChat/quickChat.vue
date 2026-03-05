@@ -16,7 +16,7 @@
 			class="message-area"
 			scroll-y
 			:scroll-top="scrollTopValue"
-			:scroll-with-animation="true"
+			:scroll-with-animation="scrollAnimationEnabled"
 			@scroll="onScroll"
 			@scrolltoupper="onScrollToTop"
 		>
@@ -501,6 +501,7 @@
 
 				// 滚动控制
 				scrollTopValue: 0,
+				scrollAnimationEnabled: false,
 				isAutoScrollEnabled: true,
 				lastScrollTop: 0,
 				isUserScrolling: false,
@@ -656,6 +657,16 @@
 			if (this.heightCheckTimer) {
 				clearInterval(this.heightCheckTimer)
 				this.heightCheckTimer = null
+			}
+			// #ifdef H5
+			if (this._resizeObserver) {
+				this._resizeObserver.disconnect()
+				this._resizeObserver = null
+			}
+			// #endif
+			if (this._scrollRAF) {
+				cancelAnimationFrame(this._scrollRAF)
+				this._scrollRAF = null
 			}
 			if (this.cancelSSE) {
 				this.cancelSSE()
@@ -1390,15 +1401,30 @@
 				})
 			},
 
+			// 强制触发滚动更新（RAF 防抖，每帧最多一次）
 			forceScrollUpdate(targetScrollTop) {
-				this.scrollTopValue = targetScrollTop + 0.1
-				this.$nextTick(() => {
-					this.scrollTopValue = targetScrollTop
+				if (this._scrollRAF) cancelAnimationFrame(this._scrollRAF)
+				this._scrollRAF = requestAnimationFrame(() => {
+					this._isProgrammaticScroll = true
+					if (this.scrollTopValue === targetScrollTop) {
+						this.scrollTopValue = targetScrollTop + 0.5
+						this.$nextTick(() => { this.scrollTopValue = targetScrollTop })
+					} else {
+						this.scrollTopValue = targetScrollTop
+					}
+					this._scrollRAF = null
 				})
 			},
 
 			onScroll(e) {
 				const currentScrollTop = e.detail.scrollTop
+
+				// 跳过程序触发的滚动事件
+				if (this._isProgrammaticScroll) {
+					this._isProgrammaticScroll = false
+					this.lastScrollTop = currentScrollTop
+					return
+				}
 
 				if (this.scrollTimer) {
 					clearTimeout(this.scrollTimer)
@@ -1462,10 +1488,26 @@
 			startHeightMonitor(msgId) {
 				this.aiStreamingMsgId = msgId
 				this.lastMsgHeight = 0
+				this.scrollAnimationEnabled = false
+
+				// #ifdef H5
+				if (typeof ResizeObserver !== 'undefined') {
+					this.$nextTick(() => {
+						const el = document.querySelector(`#msg-${msgId}`)
+						if (el) {
+							this._resizeObserver = new ResizeObserver(() => {
+								if (this.isAutoScrollEnabled) this.scrollToLatestMessage()
+							})
+							this._resizeObserver.observe(el)
+							return
+						}
+					})
+				}
+				// #endif
 
 				this.heightCheckTimer = setInterval(() => {
 					this.checkHeightChange()
-				}, 100)
+				}, 300)
 			},
 
 			stopHeightMonitor() {
@@ -1473,8 +1515,15 @@
 					clearInterval(this.heightCheckTimer)
 					this.heightCheckTimer = null
 				}
+				// #ifdef H5
+				if (this._resizeObserver) {
+					this._resizeObserver.disconnect()
+					this._resizeObserver = null
+				}
+				// #endif
 				this.aiStreamingMsgId = null
 				this.lastMsgHeight = 0
+				this.scrollAnimationEnabled = true
 			},
 
 			checkHeightChange() {
@@ -2055,6 +2104,10 @@
 		display: flex;
 		flex-direction: column;
 		padding: 12rpx calc(100vw / 24);
+		/* #ifdef H5 */
+		content-visibility: auto;
+		contain-intrinsic-size: auto 120px;
+		/* #endif */
 	}
 
 	.message-row-right {
