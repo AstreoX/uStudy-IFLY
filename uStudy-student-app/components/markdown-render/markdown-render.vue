@@ -126,9 +126,7 @@ function parseSimpleMarkdown(text) {
 	content = content.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
 		const idx = imageBlocks.length
 		const safeAlt = escapeHtml(alt || '图片')
-		imageBlocks.push(
-			`<div style="margin:16rpx 0;"><img src="${url}" alt="${safeAlt}" style="max-width:100%;border-radius:12rpx;" /></div>`
-		)
+		imageBlocks.push('')
 		return `@@IMAGE_BLOCK_${idx}@@`
 	})
 

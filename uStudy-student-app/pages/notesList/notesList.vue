@@ -87,14 +87,22 @@
             <markdown-render v-if="selectedNote.content" :content="selectedNote.content" />
             <text v-else class="note-detail-empty">（无内容）</text>
             <view v-if="selectedNote.attachments && selectedNote.attachments.length" class="note-detail-attachments">
-              <text class="note-detail-attach-label">附件</text>
               <view
                 v-for="(att, idx) in selectedNote.attachments"
                 :key="idx"
-                class="note-detail-attach-item"
+                class="note-detail-attach-item-wrap"
               >
-                <image class="note-detail-attach-icon" src="/static/icons/phosphor-icons/SVGs/regular/file.svg" mode="aspectFit"></image>
-                <text class="note-detail-attach-name">{{ getAttachmentDisplayName(att) }}</text>
+                <image
+                  v-if="att.mime_type && att.mime_type.startsWith('image/')"
+                  :src="getFullAttachmentUrl(att.file_url)"
+                  class="note-detail-attach-image"
+                  mode="widthFix"
+                  @click="previewAttachmentImage(att.file_url)"
+                />
+                <view v-else class="note-detail-attach-item">
+                  <image class="note-detail-attach-icon" src="/static/icons/phosphor-icons/SVGs/regular/file.svg" mode="aspectFit"></image>
+                  <text class="note-detail-attach-name">{{ getAttachmentDisplayName(att) }}</text>
+                </view>
               </view>
             </view>
             <text class="note-detail-time">创建于 {{ formatDate(selectedNote.created_at) }}</text>
@@ -163,6 +171,7 @@ import { getSpaceNotes, getNoteDetail, updateNote, deleteNote } from '@/api/note
 import UToast from '@/components/u-toast/u-toast.vue'
 import UModal from '@/components/u-modal/u-modal.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
+import config from '@/config'
 
 export default {
   components: {
@@ -273,6 +282,19 @@ export default {
     getAttachmentDisplayName(att) {
       if (!att) return '未命名附件'
       return att.link_title || att.original_filename || att.link_url || att.file_url || '未命名附件'
+    },
+
+    getFullAttachmentUrl(path) {
+      if (!path) return ''
+      if (/^https?:\/\//i.test(path)) return path
+      return `${config.API_BASE_URL}${path}`
+    },
+
+    previewAttachmentImage(fileUrl) {
+      const fullUrl = this.getFullAttachmentUrl(fileUrl)
+      if (fullUrl) {
+        uni.previewImage({ urls: [fullUrl], current: fullUrl })
+      }
     },
 
     formatDate(dateStr) {
@@ -745,12 +767,13 @@ export default {
   border-top: 1rpx solid rgba(255, 255, 255, 0.08);
 }
 
-.note-detail-attach-label {
-  font-size: 26rpx;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
-  margin-bottom: 16rpx;
-  display: block;
+.note-detail-attach-item-wrap {
+  margin-bottom: 12rpx;
+}
+
+.note-detail-attach-image {
+  width: 100%;
+  border-radius: 12rpx;
 }
 
 .note-detail-attach-item {
@@ -760,7 +783,6 @@ export default {
   padding: 16rpx;
   background: rgba(255, 255, 255, 0.04);
   border-radius: 12rpx;
-  margin-bottom: 12rpx;
 }
 
 .note-detail-attach-icon {

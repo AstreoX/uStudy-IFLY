@@ -412,6 +412,15 @@
 									@click="previewChartImage(seg.toolCall.result.image_url)"
 								/>
 							</view>
+							<view v-if="seg.toolCall.result?.auto_saved" class="chart-saved-badge">
+								<image class="chart-saved-icon" src="/static/icons/phosphor-icons/SVGs/regular/notebook-white.svg" mode="aspectFit" />
+								<text class="chart-saved-text">已保存为笔记</text>
+								<template v-if="seg.toolCall.result?.node_label">
+									<text class="chart-saved-text chart-saved-node"> · </text>
+									<image class="chart-saved-icon" src="/static/icons/phosphor-icons/SVGs/regular/push-pin-white.svg" mode="aspectFit" />
+									<text class="chart-saved-text chart-saved-node">{{ seg.toolCall.result.node_label }}</text>
+								</template>
+							</view>
 							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
 								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '图表生成失败' }}</text>
 							</view>
@@ -5181,6 +5190,25 @@
 	.chart-preview-img {
 		width: 100%;
 		border-radius: 12rpx;
+	}
+
+	.chart-saved-badge {
+		margin-top: 8rpx;
+		display: flex;
+		align-items: center;
+	}
+
+	.chart-saved-icon {
+		width: 28rpx;
+		height: 28rpx;
+		opacity: 0.5;
+		margin-right: 4rpx;
+		flex-shrink: 0;
+	}
+
+	.chart-saved-text {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.5);
 	}
 
 	/* ========== 复习事件列表 ========== */
