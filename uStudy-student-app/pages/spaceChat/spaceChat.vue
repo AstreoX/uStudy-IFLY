@@ -384,6 +384,39 @@
 							:conversation-id="conversationId"
 						/>
 
+						<!-- 图表生成工具：图片预览卡片 -->
+						<view
+							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'generate_chart'"
+							:key="'chart-tool-' + segIdx"
+							class="tool-call-card"
+							:class="{
+								'tool-call-running': seg.toolCall.status === 'running',
+								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
+								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+							}"
+						>
+							<view class="tool-call-header">
+								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
+								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
+									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
+								<image v-else class="tool-call-status-icon tool-call-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.image_url" class="chart-image-preview">
+								<image
+									:src="getFullImageUrl(seg.toolCall.result.image_url)"
+									mode="widthFix"
+									class="chart-preview-img"
+									@click="previewChartImage(seg.toolCall.result.image_url)"
+								/>
+							</view>
+							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
+								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '图表生成失败' }}</text>
+							</view>
+						</view>
+
 						<!-- 非记忆类工具：原有卡片样式 -->
 						<view
 							v-else-if="seg.type === 'tool'"
@@ -829,6 +862,7 @@
 </template>
 
 <script>
+	import config from '@/config/index.js'
 	import UCapsuleToast from '@/components/u-capsule-toast/u-capsule-toast.vue'
 	import USnackbar from '@/components/u-snackbar/u-snackbar.vue'
 	import UInputModal from '@/components/u-input-modal/u-input-modal.vue'
@@ -897,7 +931,9 @@
 		// 笔记工具
 		create_note: '创建笔记',
 		list_notes: '查看笔记',
-		view_note_detail: '查看笔记详情'
+		view_note_detail: '查看笔记详情',
+		// 图表生成工具
+		generate_chart: '生成图表'
 	}
 
 	// 工具图标映射
@@ -947,7 +983,9 @@
 		// 笔记工具
 		create_note: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
 		list_notes: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
-		view_note_detail: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg'
+		view_note_detail: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
+		// 图表生成工具
+		generate_chart: '/static/icons/phosphor-icons/SVGs/regular/image.svg'
 	}
 
 	// 规划类工具（行内银光掠过效果）
@@ -3021,6 +3059,20 @@
 
 			getToolIcon(toolName) {
 				return TOOL_ICONS[toolName] || '/static/icons/phosphor-icons/SVGs/regular/graph.svg'
+			},
+
+			getFullImageUrl(relativePath) {
+				if (!relativePath) return ''
+				if (relativePath.startsWith('http')) return relativePath
+				return `${config.API_BASE_URL}${relativePath}`
+			},
+
+			previewChartImage(imageUrl) {
+				const fullUrl = this.getFullImageUrl(imageUrl)
+				uni.previewImage({
+					urls: [fullUrl],
+					current: fullUrl
+				})
 			},
 
 			/**
@@ -5117,6 +5169,18 @@
 
 	.tool-call-failed .tool-call-result-text {
 		color: rgba(239, 68, 68, 0.9);
+	}
+
+	/* ========== 图表预览 ========== */
+	.chart-image-preview {
+		margin-top: 12rpx;
+		border-radius: 12rpx;
+		overflow: hidden;
+	}
+
+	.chart-preview-img {
+		width: 100%;
+		border-radius: 12rpx;
 	}
 
 	/* ========== 复习事件列表 ========== */

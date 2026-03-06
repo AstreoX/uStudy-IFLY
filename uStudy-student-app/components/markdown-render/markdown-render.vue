@@ -121,6 +121,17 @@ function parseSimpleMarkdown(text) {
 		return `@@CODE_BLOCK_${idx}@@`
 	})
 
+	// Extract markdown images before escapeHtml
+	const imageBlocks = []
+	content = content.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
+		const idx = imageBlocks.length
+		const safeAlt = escapeHtml(alt || '图片')
+		imageBlocks.push(
+			`<div style="margin:16rpx 0;"><img src="${url}" alt="${safeAlt}" style="max-width:100%;border-radius:12rpx;" /></div>`
+		)
+		return `@@IMAGE_BLOCK_${idx}@@`
+	})
+
 	// Extract tables before escapeHtml (same placeholder pattern as code blocks)
 	const tableBlocks = []
 	content = content.replace(
@@ -237,6 +248,10 @@ function parseSimpleMarkdown(text) {
 
 	for (let i = 0; i < tableBlocks.length; i++) {
 		content = content.split(`@@TABLE_BLOCK_${i}@@`).join(tableBlocks[i])
+	}
+
+	for (let i = 0; i < imageBlocks.length; i++) {
+		content = content.split(`@@IMAGE_BLOCK_${i}@@`).join(imageBlocks[i])
 	}
 
 	return { html: content, codeContents }

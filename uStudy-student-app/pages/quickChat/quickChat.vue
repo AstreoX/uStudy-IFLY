@@ -149,6 +149,39 @@
 							</view>
 						</view>
 
+						<!-- 图表生成工具：图片预览卡片 -->
+						<view
+							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'generate_chart'"
+							:key="'chart-tool-' + segIdx"
+							class="tool-call-card"
+							:class="{
+								'tool-call-running': seg.toolCall.status === 'running',
+								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
+								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+							}"
+						>
+							<view class="tool-call-header">
+								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
+								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
+									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
+								<image v-else class="tool-call-status-icon tool-call-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.image_url" class="chart-image-preview">
+								<image
+									:src="getFullImageUrl(seg.toolCall.result.image_url)"
+									mode="widthFix"
+									class="chart-preview-img"
+									@click="previewChartImage(seg.toolCall.result.image_url)"
+								/>
+							</view>
+							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
+								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '图表生成失败' }}</text>
+							</view>
+						</view>
+
 						<!-- 非记忆类工具：原有卡片样式 -->
 						<view
 							v-else-if="seg.type === 'tool'"
@@ -411,6 +444,7 @@
 </template>
 
 <script>
+	import config from '@/config/index.js'
 	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, submitFeedback, getModels } from '@/api/chat'
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
 	import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
@@ -439,7 +473,9 @@
 		course_search: 'B站课程搜索',
 		// 复习事件工具
 		get_review_events: '查看复习事件',
-		mark_review_completed: '标记复习完成'
+		mark_review_completed: '标记复习完成',
+		// 图表生成工具
+		generate_chart: '生成图表'
 	}
 
 	// 工具图标映射
@@ -456,7 +492,9 @@
 		course_search: '/static/icons/phosphor-icons/SVGs/regular/globe.svg',
 		// 复习事件工具
 		get_review_events: '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg',
-		mark_review_completed: '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg'
+		mark_review_completed: '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg',
+		// 图表生成工具
+		generate_chart: '/static/icons/phosphor-icons/SVGs/regular/image.svg'
 	}
 
 	// 记忆类工具集合（使用行内波浪文字而非卡片）
@@ -1121,6 +1159,20 @@
 
 			getToolIcon(toolName) {
 				return TOOL_ICONS[toolName] || '/static/icons/phosphor-icons/SVGs/regular/folder-simple.svg'
+			},
+
+			getFullImageUrl(relativePath) {
+				if (!relativePath) return ''
+				if (relativePath.startsWith('http')) return relativePath
+				return `${config.API_BASE_URL}${relativePath}`
+			},
+
+			previewChartImage(imageUrl) {
+				const fullUrl = this.getFullImageUrl(imageUrl)
+				uni.previewImage({
+					urls: [fullUrl],
+					current: fullUrl
+				})
 			},
 
 			isMemoryTool(toolName) {
@@ -2373,6 +2425,18 @@
 	.tool-call-result-text {
 		font-size: 24rpx;
 		color: rgba(255, 255, 255, 0.6);
+	}
+
+	/* 图表预览 */
+	.chart-image-preview {
+		margin-top: 12rpx;
+		border-radius: 12rpx;
+		overflow: hidden;
+	}
+
+	.chart-preview-img {
+		width: 100%;
+		border-radius: 12rpx;
 	}
 
 	/* 学习空间列表 */
