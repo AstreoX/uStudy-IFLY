@@ -237,7 +237,9 @@ function connectSSE_H5(fullUrl, method, headers, data, onEvent, onComplete, onCo
         reader.read().then(({ done, value }) => {
           if (done || aborted) {
             console.log('[SSE-H5] Stream ended')
-            onComplete?.()
+            if (!aborted) {
+              onComplete?.()
+            }
             return
           }
 
@@ -592,6 +594,7 @@ export function connectSSE(options) {
   let aborted = false
   let currentAbort = null
   let retried = false
+  let retryPending = false
 
   const wrappedOptions = {
     ...options,
@@ -600,25 +603,33 @@ export function connectSSE(options) {
 
       if (!retried && is401Error(err)) {
         retried = true
+        retryPending = true
         console.log('[SSE] 401 detected, attempting token refresh...')
 
         ensureFreshToken()
           .then(newToken => {
             if (aborted) return
+            retryPending = false
             console.log('[SSE] Token refreshed, retrying SSE connection...')
-            currentAbort = _connectSSEInner(options, newToken)
+            currentAbort = _connectSSEInner(wrappedOptions, newToken)
           })
           .catch(refreshErr => {
+            retryPending = false
             if (aborted) return
             console.error('[SSE] Token refresh failed, redirecting to login...')
             clearAuth()
             uni.reLaunch({ url: '/pages/login/login' })
             options.onConnectionError?.(refreshErr)
+            options.onComplete?.()
           })
         return
       }
 
       options.onConnectionError?.(err)
+    },
+    onComplete: () => {
+      if (retryPending) return
+      options.onComplete?.()
     }
   }
 

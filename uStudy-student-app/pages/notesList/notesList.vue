@@ -63,9 +63,9 @@
     </scroll-view>
 
     <!-- Note Detail Overlay -->
-    <view v-if="showNoteDetail" class="note-detail-overlay" @click="closeNoteDetail" @touchmove.stop.prevent>
+    <view v-if="showNoteDetail" class="note-detail-overlay" @click="closeNoteDetail">
       <view class="note-detail-card" @click.stop>
-        <view class="note-detail-header">
+        <view class="note-detail-header" @touchmove.prevent>
           <view class="note-detail-back" @click="closeNoteDetail">
             <image class="note-detail-back-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
           </view>
@@ -104,9 +104,9 @@
     </view>
 
     <!-- Note Edit Overlay -->
-    <view v-if="showNoteEdit" class="note-detail-overlay note-edit-overlay" @touchmove.stop.prevent>
+    <view v-if="showNoteEdit" class="note-detail-overlay note-edit-overlay">
       <view class="note-detail-card">
-        <view class="note-detail-header">
+        <view class="note-detail-header" @touchmove.prevent>
           <view class="note-detail-back" @click="closeNoteEdit">
             <image class="note-detail-back-icon" src="/static/icons/phosphor-icons/SVGs/regular/x.svg" mode="aspectFit"></image>
           </view>
@@ -719,6 +719,7 @@ export default {
 
 .note-detail-scroll {
   flex: 1;
+  min-height: 0;
 }
 
 .note-detail-loading {
