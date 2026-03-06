@@ -105,10 +105,7 @@ class DocumentProcessingService:
             chunks = chunker.chunk(content, filename=document.original_filename)
             logger.info("切片完成，共 %d 个切片", len(chunks))
 
-            if not chunks:
-                raise ValueError("切片结果为空")
-
-            # 2.5 VLM 后处理（OCR + 图片描述）
+            # 2.5 VLM 后处理（OCR + 图片描述；扫描件可从空列表产出新 chunks）
             if settings.vlm_processing_enabled:
                 try:
                     chunks = await chunker.enrich(
@@ -117,6 +114,9 @@ class DocumentProcessingService:
                     logger.info("VLM 后处理完成，当前共 %d 个切片", len(chunks))
                 except Exception as e:
                     logger.warning("VLM 后处理失败，继续使用原始切片: %s", e)
+
+            if not chunks:
+                raise ValueError("切片结果为空")
 
             # 3. 生成 embedding
             logger.info("开始生成 embedding...")

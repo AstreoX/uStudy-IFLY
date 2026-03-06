@@ -43,6 +43,13 @@ TIER_LIMITS: dict[SubscriptionTier, TierLimits] = {
         storage_per_space_bytes=500 * 1024 * 1024,  # 500 MB
         max_upload_file_bytes=100 * 1024 * 1024,  # 100 MB
     ),
+    SubscriptionTier.ULTRA: TierLimits(
+        max_spaces=None,
+        daily_messages=None,
+        allowed_model_ids=("grok-4-fast", "kimi-k2.5", "gemini-3.1-pro"),
+        storage_per_space_bytes=1024 * 1024 * 1024,  # 1 GB
+        max_upload_file_bytes=200 * 1024 * 1024,  # 200 MB
+    ),
 }
 
 

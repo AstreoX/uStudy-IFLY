@@ -19,6 +19,7 @@ from chat.tools.rag_tools import RAG_TOOLS
 from chat.tools.vector_memory_tools import VECTOR_MEMORY_TOOLS
 from chat.tools.time_tools import TIME_TOOLS
 from chat.tools.review_tools import REVIEW_TOOLS
+from chat.tools.note_tools import NOTE_TOOLS
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ def _build_registry() -> dict[str, dict]:
         VECTOR_MEMORY_TOOLS,
         TIME_TOOLS,
         REVIEW_TOOLS,
+        NOTE_TOOLS,
     ]
     for tool_list in all_tool_lists:
         for tool_def in tool_list:
@@ -60,7 +62,7 @@ class ToolCatalogEntry:
 
 
 TOOL_CATALOG: list[ToolCatalogEntry] = [
-    # ── 知识图谱 (13) ──
+    # ── 知识图谱 (15) ──
     ToolCatalogEntry("get_graph_overview", "知识图谱", "获取知识图谱概览（节点、边、掌握度）"),
     ToolCatalogEntry("add_node", "知识图谱", "添加知识点节点"),
     ToolCatalogEntry("add_edge", "知识图谱", "添加节点关系边"),
@@ -71,9 +73,11 @@ TOOL_CATALOG: list[ToolCatalogEntry] = [
     ToolCatalogEntry("get_parent_nodes", "知识图谱", "获取父节点"),
     ToolCatalogEntry("get_sibling_nodes", "知识图谱", "获取兄弟节点"),
     ToolCatalogEntry("generate_learning_path", "知识图谱", "根据节点序列生成学习路径"),
+    ToolCatalogEntry("extend_learning_path", "知识图谱", "扩展已有学习路径（从末尾节点续接新节点）"),
     ToolCatalogEntry("get_learning_paths", "知识图谱", "获取所有学习路径"),
     ToolCatalogEntry("delete_all_learning_paths", "知识图谱", "删除所有学习路径"),
     ToolCatalogEntry("get_postorder_traversal", "知识图谱", "获取知识树子树的后序遍历"),
+    ToolCatalogEntry("update_learning_path_segment", "知识图谱", "局部更新学习路径（替换首尾节点之间的区间）"),
 
     # ── 测验 (3) ──
     ToolCatalogEntry("generate_test", "测验", "生成正式测试题（异步）"),
@@ -110,6 +114,13 @@ TOOL_CATALOG: list[ToolCatalogEntry] = [
     # ── 复习 (2) ──
     ToolCatalogEntry("get_review_events", "复习", "查看到期/逾期的待复习项"),
     ToolCatalogEntry("mark_review_completed", "复习", "标记复习完成"),
+
+    # ── 笔记 (5) ──
+    ToolCatalogEntry("create_note", "笔记", "创建学习笔记卡片（支持 Markdown 和图片）"),
+    ToolCatalogEntry("list_notes", "笔记", "查看某节点下的笔记列表（标题概览）"),
+    ToolCatalogEntry("view_note_detail", "笔记", "查看笔记完整内容（带行号）"),
+    ToolCatalogEntry("update_note", "笔记", "更新笔记内容（支持按行号局部替换）"),
+    ToolCatalogEntry("delete_note", "笔记", "删除指定笔记"),
 ]
 
 # 按分类组织的目录（用于 API 返回和前端展示）

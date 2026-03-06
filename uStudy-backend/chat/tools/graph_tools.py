@@ -4,8 +4,11 @@ import logging
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import delete as sa_delete
+
 from chat.tools.base import ToolResult
 from db.database import get_scoped_session
+from db.models import Edge, EdgeType
 from graph.service import GraphService
 from graph.exceptions import (
     NodeNotFoundError,
@@ -19,7 +22,7 @@ logger = logging.getLogger(__name__)
 _NODE_NOT_FOUND_HINT = "节点名称必须与知识图谱中已有节点完全匹配，请先调用 get_graph_overview 查看所有节点。"
 
 
-# ============ 10 Knowledge Graph Tools (OpenAI Function Calling Format) ============
+# ============ 15 Knowledge Graph Tools (OpenAI Function Calling Format) ============
 
 
 GRAPH_TOOLS: list[dict[str, Any]] = [
@@ -228,7 +231,25 @@ GRAPH_TOOLS: list[dict[str, Any]] = [
             },
         },
     },
-    # 11. get_learning_paths
+    # 11. extend_learning_path
+    {
+        "type": "function",
+        "function": {
+            "name": "extend_learning_path",
+            "description": "扩展已有学习路径。序列的第一个节点必须是当前路径的末尾节点，后续为新增节点。例如当前路径为 A→B→C，传入 'C,D,E' 即可扩展为 A→B→C→D→E",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "node_sequence": {
+                        "type": "string",
+                        "description": "节点名称序列，用逗号分隔。第一个必须是现有路径末尾节点，如 'C,D,E'",
+                    },
+                },
+                "required": ["node_sequence"],
+            },
+        },
+    },
+    # 12. get_learning_paths
     {
         "type": "function",
         "function": {
@@ -269,6 +290,24 @@ GRAPH_TOOLS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["node_name"],
+            },
+        },
+    },
+    # 14. update_learning_path_segment
+    {
+        "type": "function",
+        "function": {
+            "name": "update_learning_path_segment",
+            "description": "局部更新学习路径的某段区间。传入子路径序列，首尾节点必须是原路径中已有的节点，工具会替换首尾之间的区间。例如：原路径 A→B→C，传入 'B,D,C' 后变为 A→B→D→C。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "node_sequence": {
+                        "type": "string",
+                        "description": "子路径节点序列，逗号分隔。首尾必须是原路径已有节点，中间可以是新节点。如 'B,D,E,C'",
+                    },
+                },
+                "required": ["node_sequence"],
             },
         },
     },
@@ -508,6 +547,7 @@ class GraphToolExecutor:
             "get_learning_paths": self._get_learning_paths,
             "delete_all_learning_paths": self._delete_all_learning_paths,
             "get_postorder_traversal": self._get_postorder_traversal,
+            "update_learning_path_segment": self._update_learning_path_segment,
         }
 
         handler = method_map.get(tool_name)
@@ -1038,4 +1078,184 @@ class GraphToolExecutor:
             success=True,
             data=traversal_path,
             message=f"后序遍历完成，共 {len(traversal_labels)} 个节点",
+        )
+
+    async def _update_learning_path_segment(
+        self, args: dict, graph_service: GraphService
+    ) -> ToolResult:
+        """局部更新学习路径的某段区间"""
+        node_sequence = args.get("node_sequence", "")
+        if not node_sequence:
+            return ToolResult(success=False, data=None, message="节点序列不能为空")
+
+        node_names = [name.strip() for name in node_sequence.split(",")]
+
+        if len(node_names) < 3:
+            return ToolResult(
+                success=False, data=None,
+                message="局部更新至少需要 3 个节点（首尾锚点 + 至少1个中间节点）",
+            )
+
+        # Resolve all node names to objects
+        node_objs = []
+        for name in node_names:
+            node = await graph_service.get_node_by_label(self.space_id, name)
+            if not node:
+                return ToolResult(
+                    success=False, data=None,
+                    message=f"节点不存在: {name}。{_NODE_NOT_FOUND_HINT}",
+                )
+            node_objs.append(node)
+
+        anchor_start_id = str(node_objs[0].id)
+        anchor_end_id = str(node_objs[-1].id)
+        anchor_start_name = node_names[0]
+        anchor_end_name = node_names[-1]
+
+        if anchor_start_id == anchor_end_id:
+            return ToolResult(
+                success=False, data=None,
+                message="首尾锚点不能是同一个节点",
+            )
+
+        # Get current learning path edges
+        graph = await graph_service.get_graph(self.space_id)
+        lp_edges = [e for e in graph["edges"] if e.get("type") == "learning_path"]
+
+        if not lp_edges:
+            return ToolResult(
+                success=False, data=None,
+                message="当前没有学习路径，无法局部更新。请先使用 generate_learning_path 创建路径。",
+            )
+
+        # Build from->to chain mapping
+        next_map: dict[str, str] = {}
+        has_prev: set[str] = set()
+        for edge in lp_edges:
+            next_map[edge["from_node_id"]] = edge["to_node_id"]
+            has_prev.add(edge["to_node_id"])
+
+        # Find path starts (nodes with no predecessor)
+        starts = set(next_map.keys()) - has_prev
+
+        # Rebuild each path chain and locate anchors
+        target_chain: list[str] | None = None
+        anchor_start_idx = -1
+        anchor_end_idx = -1
+
+        for start_id in starts:
+            chain: list[str] = []
+            current = start_id
+            visited: set[str] = set()
+            while current and current not in visited:
+                visited.add(current)
+                chain.append(current)
+                current = next_map.get(current)
+
+            s_idx = -1
+            e_idx = -1
+            for i, nid in enumerate(chain):
+                if nid == anchor_start_id:
+                    s_idx = i
+                if nid == anchor_end_id:
+                    e_idx = i
+
+            if s_idx != -1 and e_idx != -1:
+                target_chain = chain
+                anchor_start_idx = s_idx
+                anchor_end_idx = e_idx
+                break
+
+        # Validate anchor presence
+        if target_chain is None:
+            # Check which anchor is missing
+            all_path_ids = set(next_map.keys()) | has_prev
+            start_in_path = anchor_start_id in all_path_ids
+            end_in_path = anchor_end_id in all_path_ids
+
+            if not start_in_path and not end_in_path:
+                return ToolResult(
+                    success=False, data=None,
+                    message=f"开头节点'{anchor_start_name}'和结尾节点'{anchor_end_name}'都不在任何学习路径中！请先调用 get_learning_paths 查看当前路径。",
+                )
+            if not start_in_path:
+                return ToolResult(
+                    success=False, data=None,
+                    message=f"开头节点'{anchor_start_name}'不在任何学习路径中！请先调用 get_learning_paths 查看当前路径。",
+                )
+            if not end_in_path:
+                return ToolResult(
+                    success=False, data=None,
+                    message=f"结尾节点'{anchor_end_name}'不在任何学习路径中！请先调用 get_learning_paths 查看当前路径。",
+                )
+            # Both in paths but different ones
+            return ToolResult(
+                success=False, data=None,
+                message=f"开头节点'{anchor_start_name}'和结尾节点'{anchor_end_name}'不在同一条学习路径中！",
+            )
+
+        if anchor_end_idx <= anchor_start_idx:
+            return ToolResult(
+                success=False, data=None,
+                message=f"结尾节点'{anchor_end_name}'在开头节点'{anchor_start_name}'之前，请检查顺序！",
+            )
+
+        # Collect old edge IDs to delete (from anchor_start to anchor_end)
+        old_segment_ids = target_chain[anchor_start_idx:anchor_end_idx + 1]
+        edge_ids_to_delete = []
+        # Build edge lookup: (from_id, to_id) -> edge_id
+        edge_lookup: dict[tuple[str, str], str] = {}
+        for edge in lp_edges:
+            edge_lookup[(edge["from_node_id"], edge["to_node_id"])] = edge["id"]
+
+        for i in range(len(old_segment_ids) - 1):
+            key = (old_segment_ids[i], old_segment_ids[i + 1])
+            eid = edge_lookup.get(key)
+            if eid:
+                edge_ids_to_delete.append(eid)
+
+        # Delete old edges in bulk
+        if edge_ids_to_delete:
+            from uuid import UUID as _UUID
+            delete_uuids = [_UUID(eid) for eid in edge_ids_to_delete]
+            await graph_service.db.execute(
+                sa_delete(Edge).where(Edge.id.in_(delete_uuids))
+            )
+
+        # Create new sub-path edges
+        new_node_ids = [node.id for node in node_objs]
+        new_edges = await graph_service.create_learning_path(
+            self.space_id, new_node_ids
+        )
+
+        # Build updated path text for confirmation
+        node_by_id = {n["id"]: n for n in graph["nodes"]}
+        # Reconstruct the full chain: before anchor_start + new segment + after anchor_end
+        before = target_chain[:anchor_start_idx]
+        after = target_chain[anchor_end_idx + 1:]
+        new_middle = [str(n.id) for n in node_objs]
+        full_chain = before + new_middle + after
+
+        path_labels = []
+        for nid in full_chain:
+            node_data = node_by_id.get(nid)
+            if node_data:
+                path_labels.append(node_data["label"])
+            else:
+                # Newly resolved node not in graph snapshot
+                for obj in node_objs:
+                    if str(obj.id) == nid:
+                        path_labels.append(obj.label)
+                        break
+
+        updated_path = "→".join(path_labels)
+
+        return ToolResult(
+            success=True,
+            data={
+                "updated_path": path_labels,
+                "edges_deleted": len(edge_ids_to_delete),
+                "edges_created": len(new_edges),
+            },
+            message=f"成功更新学习路径：{updated_path}（删除 {len(edge_ids_to_delete)} 条旧边，创建 {len(new_edges)} 条新边）",
         )

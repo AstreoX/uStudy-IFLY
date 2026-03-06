@@ -360,6 +360,7 @@ async def _evaluate_mastery_then_expand_path(
                 "data": {
                     "space_id": str(space_id),
                     "new_nodes": result.new_path_nodes,
+                    "junction_node": result.trigger_info["last_node"] if result.trigger_info else None,
                     "message": f"学习路径已自动扩展，新增 {len(result.new_path_nodes)} 个节点",
                 },
             })

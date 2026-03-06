@@ -44,6 +44,7 @@ class SubscriptionTier(str, enum.Enum):
     BASIC = "BASIC"
     PREMIUM = "PREMIUM"
     ALPHA = "ALPHA"  # Alpha 内测用户
+    ULTRA = "ULTRA"  # Ultra 高级用户
 
 
 class MessageRole(str, enum.Enum):
@@ -173,6 +174,14 @@ class BillingCycle(str, enum.Enum):
     YEARLY = "yearly"
 
 
+class NoteAttachmentType(str, enum.Enum):
+    """笔记附件类型"""
+
+    IMAGE = "image"
+    FILE = "file"
+    LINK = "link"
+
+
 # ============ 表模型 ============
 
 
@@ -277,6 +286,9 @@ class Space(Base):
         back_populates="space", cascade="all, delete-orphan"
     )
     documents: Mapped[list["SpaceDocument"]] = relationship(
+        back_populates="space", cascade="all, delete-orphan"
+    )
+    notes: Mapped[list["Note"]] = relationship(
         back_populates="space", cascade="all, delete-orphan"
     )
 
@@ -1503,4 +1515,80 @@ class UserSearchSettings(Base):
 
     __table_args__ = (
         Index("idx_search_settings_user", "user_id", unique=True),
+    )
+
+
+class Note(Base):
+    """笔记卡片表"""
+
+    __tablename__ = "notes"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    node_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("nodes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    title: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # 关系
+    space: Mapped["Space"] = relationship(back_populates="notes")
+    node: Mapped[Optional["Node"]] = relationship()
+    attachments: Mapped[list["NoteAttachment"]] = relationship(
+        back_populates="note", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("ix_notes_space_id", "space_id"),
+        Index("ix_notes_node_id", "node_id"),
+    )
+
+
+class NoteAttachment(Base):
+    """笔记附件表"""
+
+    __tablename__ = "note_attachments"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    note_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("notes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    attachment_type: Mapped[NoteAttachmentType] = mapped_column(
+        Enum(NoteAttachmentType), nullable=False
+    )
+    file_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    original_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    mime_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    link_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
+    link_title: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    note: Mapped["Note"] = relationship(back_populates="attachments")
+
+    __table_args__ = (
+        Index("ix_note_attachments_note_id", "note_id"),
     )

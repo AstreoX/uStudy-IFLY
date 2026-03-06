@@ -44,6 +44,7 @@ from chat.tools.web_tools import WEB_TOOLS, WebToolExecutor
 from chat.tools.search_tools import SEARCH_TOOLS, SEARCH_TOOL_NAMES, SearchToolExecutor
 from chat.tools.time_tools import TIME_TOOLS, TIME_TOOL_NAMES, TimeToolExecutor
 from chat.tools.review_tools import REVIEW_TOOLS, REVIEW_TOOL_NAMES, QUICK_CHAT_REVIEW_TOOLS, ReviewToolExecutor
+from chat.tools.note_tools import NOTE_TOOL_NAMES, NoteToolExecutor
 from review.service import get_due_reviews_count_by_space, get_due_reviews_total
 from db.database import get_scoped_session
 from db.models import LongTermMemory
@@ -551,6 +552,9 @@ class LLMOrchestrator:
         self.time_tool_executor = TimeToolExecutor()
         self.review_tool_executor = ReviewToolExecutor(user_id, space_id)
 
+        # 笔记工具
+        self.note_tool_executor = NoteToolExecutor(user_id, space_id)
+
         # 新向量记忆系统（统一处理长期记忆和空间记忆）
         self.vector_memory_executor = VectorMemoryExecutor(user_id, space_id)
         self.memory_retriever = MemoryRetriever(user_id, space_id)
@@ -584,6 +588,7 @@ class LLMOrchestrator:
         self._vector_memory_tool_names = VECTOR_MEMORY_TOOL_NAMES
         self._time_tool_names = TIME_TOOL_NAMES
         self._review_tool_names = REVIEW_TOOL_NAMES
+        self._note_tool_names = NOTE_TOOL_NAMES
 
         # 根据模式初始化 available_tools
         if tool_mode == "manual":
@@ -855,6 +860,11 @@ class LLMOrchestrator:
                         )
                     elif tool_call.name in self._search_tool_names and self.search_tool_executor:
                         tool_result = await self.search_tool_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
+                    elif tool_call.name in self._note_tool_names:
+                        tool_result = await self.note_tool_executor.execute(
                             tool_call.name,
                             tool_call.arguments,
                         )
