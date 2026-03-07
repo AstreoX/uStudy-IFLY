@@ -372,7 +372,7 @@ function getSchedule(params) {
  * @param {Object} params - { title, start_time, end_time, details }
  * @returns {Object} 添加结果
  */
-function addSchedule(params) {
+export function addSchedule(params) {
   const { title, start_time, end_time, details } = params
   if (!title || !start_time || !end_time) {
     throw new Error('缺少必要参数：title, start_time, end_time')

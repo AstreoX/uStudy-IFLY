@@ -63,6 +63,14 @@
 
           <view class="settings-divider"></view>
 
+          <view class="settings-item" @click="handleCalendarSync">
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/calendar-check.svg" mode="aspectFit"></image>
+            <text class="item-label">同步日历到设备</text>
+            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+          </view>
+
+          <view class="settings-divider"></view>
+
           <view class="settings-item" @click="handleSubscription">
             <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/crown.svg" mode="aspectFit"></image>
             <text class="item-label">订阅管理</text>
@@ -173,6 +181,7 @@ import UActionSheet from '@/components/u-action-sheet/u-action-sheet.vue'
 import UInputModal from '@/components/u-input-modal/u-input-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
 import { goBack } from '@/utils/navigation'
+import { syncWebCalendarToDevice } from '@/utils/calendarSync'
 
 export default {
   components: {
@@ -378,6 +387,34 @@ export default {
 
     handleSearchSettings() {
       uni.navigateTo({ url: '/pages/searchSettings/searchSettings' })
+    },
+
+    async handleCalendarSync() {
+      // #ifndef APP-PLUS
+      this.showCustomToast('日历同步仅支持 Android 设备', 'info')
+      return
+      // #endif
+
+      // #ifdef APP-PLUS
+      try {
+        uni.showLoading({ title: '正在同步日历...' })
+        const result = await syncWebCalendarToDevice((current, total, title) => {
+          uni.showLoading({ title: `同步中 ${current}/${total}` })
+        })
+        uni.hideLoading()
+
+        if (result.synced === 0 && result.failed === 0) {
+          this.showCustomToast('所有日历事件已同步，无需操作', 'success')
+        } else if (result.failed === 0) {
+          this.showCustomToast(`成功同步 ${result.synced} 个事件`, 'success')
+        } else {
+          this.showCustomToast(`同步 ${result.synced} 个，失败 ${result.failed} 个`, 'error')
+        }
+      } catch (err) {
+        uni.hideLoading()
+        this.showCustomToast(err.message || '日历同步失败', 'error')
+      }
+      // #endif
     },
 
     handleSubscription() {
