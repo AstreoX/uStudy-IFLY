@@ -19,8 +19,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Create notes and note_attachments tables."""
-    # Create enum type
-    note_attachment_type = sa.Enum("image", "file", "link", name="noteattachmenttype")
+    # Create enum type (create_type=False prevents SQLAlchemy from auto-creating during table creation)
+    note_attachment_type = sa.Enum("image", "file", "link", name="noteattachmenttype", create_type=False)
     note_attachment_type.create(op.get_bind(), checkfirst=True)
 
     # Create notes table
