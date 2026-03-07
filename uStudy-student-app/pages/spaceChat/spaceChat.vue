@@ -918,6 +918,7 @@
 	import { createConversation, getConversation, sendMessage as sendChatMessage, executeToolCall, submitFeedback, submitToolResult, getModels } from '@/api/chat'
 	import { connectNotificationStream } from '@/api/notification'
 	import { executeCalendarTool } from '@/utils/calendar'
+	import { createCalendarEvent, getCalendarEvents, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendarEvents'
 	import { uploadAttachment, deleteAttachment } from '@/api/attachment'
 	import { PreKnowledgeTagParser } from '@/utils/preKnowledgeParser'
 	import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
@@ -3095,6 +3096,11 @@
 
 				const calendarResult = await executeCalendarTool(tool, params)
 
+				// Dual-write: sync to backend DB (best-effort, don't block)
+				this.syncCalendarToBackend(tool, params, calendarResult).catch(err => {
+					console.warn('Calendar backend sync failed:', err)
+				})
+
 				// POST 结果回后端（带重试）
 				const maxRetries = 3
 				for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -3123,6 +3129,65 @@
 					success: calendarResult.success,
 					result: calendarResult.result || calendarResult.error
 				})
+			},
+
+			/**
+			 * Sync calendar tool results to backend DB (dual-write)
+			 * Best-effort — Android calendar is primary, backend is secondary
+			 */
+			async syncCalendarToBackend(tool, params, calendarResult) {
+				if (!calendarResult.success) return
+
+				try {
+					if (tool === 'add_schedule') {
+						const externalId = calendarResult.result?.id || null
+						await createCalendarEvent({
+							title: params.title,
+							start_time: this.calendarTimeToISO(params.start_time),
+							end_time: this.calendarTimeToISO(params.end_time),
+							details: params.details || null,
+							external_id: externalId ? String(externalId) : null,
+							source_conversation_id: this.conversationId || null
+						})
+					} else if (tool === 'delete_schedule' && params.schedule_id) {
+						// Try to find and delete by external_id
+						const events = await getCalendarEvents(
+							new Date(Date.now() - 365 * 86400000).toISOString(),
+							new Date(Date.now() + 365 * 86400000).toISOString()
+						)
+						const match = (events || []).find(e => e.external_id === String(params.schedule_id))
+						if (match) {
+							await deleteCalendarEvent(match.id)
+						}
+					} else if (tool === 'update_schedule' && params.schedule_id) {
+						const events = await getCalendarEvents(
+							new Date(Date.now() - 365 * 86400000).toISOString(),
+							new Date(Date.now() + 365 * 86400000).toISOString()
+						)
+						const match = (events || []).find(e => e.external_id === String(params.schedule_id))
+						if (match) {
+							const updateData = {}
+							if (params.title) updateData.title = params.title
+							if (params.start_time) updateData.start_time = this.calendarTimeToISO(params.start_time)
+							if (params.end_time) updateData.end_time = this.calendarTimeToISO(params.end_time)
+							if (params.details) updateData.details = params.details
+							await updateCalendarEvent(match.id, updateData)
+						}
+					}
+					// get_schedule doesn't need backend sync
+				} catch (err) {
+					console.warn('syncCalendarToBackend error:', err)
+				}
+			},
+
+			/**
+			 * Convert "YYYY-MM-DD HH:MM" to ISO string
+			 */
+			calendarTimeToISO(timeStr) {
+				if (!timeStr) return new Date().toISOString()
+				const [datePart, timePart] = timeStr.split(' ')
+				if (!datePart || !timePart) return new Date().toISOString()
+				return new Date(`${datePart}T${timePart}:00`).toISOString()
 			},
 
 			/**
