@@ -403,7 +403,9 @@ export default {
         })
         uni.hideLoading()
 
-        if (result.synced === 0 && result.failed === 0) {
+        if (result.total === 0) {
+          this.showCustomToast('未找到日历事件', 'info')
+        } else if (result.synced === 0 && result.failed === 0) {
           this.showCustomToast('所有日历事件已同步，无需操作', 'success')
         } else if (result.failed === 0) {
           this.showCustomToast(`成功同步 ${result.synced} 个事件`, 'success')

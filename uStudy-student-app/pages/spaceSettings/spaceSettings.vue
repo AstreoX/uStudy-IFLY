@@ -51,6 +51,14 @@
             <text class="item-label">笔记管理</text>
             <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
           </view>
+
+          <view class="settings-divider"></view>
+
+          <view class="settings-item" @click="handleShareSpace">
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/upload-simple.svg" mode="aspectFit"></image>
+            <text class="item-label">分享空间</text>
+            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+          </view>
         </view>
       </view>
 
@@ -85,6 +93,29 @@
       </view>
     </view>
 
+    <!-- 分享码弹窗 -->
+    <view
+      v-if="showSharePopup"
+      class="share-popup-overlay"
+      :class="{ 'overlay-show': sharePopupVisible }"
+      @click="closeSharePopup"
+    >
+      <view
+        class="share-popup-card"
+        :class="{ 'dialog-show': sharePopupVisible }"
+        @click.stop
+      >
+        <text class="share-popup-title">分享学习空间</text>
+        <text class="share-popup-hint">将分享码发送给好友，即可导入此空间</text>
+        <view class="share-popup-code-box">
+          <text class="share-popup-code">{{ displayShareCode }}</text>
+        </view>
+        <view class="share-popup-copy-btn" @click="handleCopyShareCode">
+          <text class="share-popup-copy-btn-text">复制分享码</text>
+        </view>
+      </view>
+    </view>
+
     <!-- Delete Confirmation Modal -->
     <u-modal
       :visible="showDeleteModal"
@@ -107,7 +138,7 @@
 </template>
 
 <script>
-import { deleteSpace, getSpace, updateSpace } from '@/api/space'
+import { deleteSpace, getSpace, updateSpace, generateShareCode } from '@/api/space'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
 
@@ -138,7 +169,12 @@ export default {
       ],
       currentColor: '',
       isUpdatingColor: false,
-      pendingColor: ''
+      pendingColor: '',
+      // 分享弹窗
+      showSharePopup: false,
+      sharePopupVisible: false,
+      displayShareCode: '',
+      isGeneratingShareCode: false
     }
   },
 
@@ -228,6 +264,41 @@ export default {
     handleNoteManagement() {
       uni.navigateTo({
         url: `/pages/notesList/notesList?spaceId=${this.spaceId}&spaceName=${encodeURIComponent(this.spaceName)}`
+      })
+    },
+
+    async handleShareSpace() {
+      if (this.isGeneratingShareCode || !this.spaceId) return
+      this.isGeneratingShareCode = true
+      try {
+        const res = await generateShareCode(this.spaceId)
+        this.displayShareCode = res.display_code
+        this.showSharePopup = true
+        this.$nextTick(() => {
+          setTimeout(() => {
+            this.sharePopupVisible = true
+          }, 10)
+        })
+      } catch (err) {
+        this.showCustomToast('生成分享码失败', 'error')
+      } finally {
+        this.isGeneratingShareCode = false
+      }
+    },
+
+    closeSharePopup() {
+      this.sharePopupVisible = false
+      setTimeout(() => {
+        this.showSharePopup = false
+      }, 250)
+    },
+
+    handleCopyShareCode() {
+      uni.setClipboardData({
+        data: this.displayShareCode,
+        success: () => {
+          this.showCustomToast('已复制分享码', 'success')
+        }
       })
     },
 
@@ -523,5 +594,108 @@ export default {
 
 @keyframes spin {
   to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* 分享码弹窗 */
+.share-popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 200ms ease;
+}
+
+.share-popup-overlay.overlay-show {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.share-popup-card {
+  width: 560rpx;
+  background: rgba(20, 20, 30, 0.92);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border: 1rpx solid rgba(255, 255, 255, 0.15);
+  border-radius: 24rpx;
+  box-shadow:
+    0 16rpx 48rpx rgba(0, 0, 0, 0.5),
+    0 0 0 1rpx rgba(255, 255, 255, 0.05) inset;
+  overflow: hidden;
+  transform: translateY(40rpx) scale(0.95);
+  opacity: 0;
+  transition: all 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  padding: 48rpx 40rpx 40rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.share-popup-card.dialog-show {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .share-popup-card {
+    background: rgba(30, 30, 45, 0.98);
+  }
+}
+
+.share-popup-title {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #ffffff;
+  text-align: center;
+  margin-bottom: 16rpx;
+}
+
+.share-popup-hint {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  margin-bottom: 40rpx;
+}
+
+.share-popup-code-box {
+  width: 100%;
+  padding: 32rpx 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  border-radius: 16rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 32rpx;
+}
+
+.share-popup-code {
+  font-size: 56rpx;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 8rpx;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+.share-popup-copy-btn {
+  width: 100%;
+  height: 88rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(135deg, rgba(0, 136, 255, 0.6) 0%, rgba(139, 92, 246, 0.5) 100%);
+  border: 2rpx solid rgba(255, 255, 255, 0.2);
+  border-radius: 44rpx;
+  box-shadow: 0 8rpx 32rpx rgba(0, 136, 255, 0.3);
+}
+
+.share-popup-copy-btn-text {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #ffffff;
 }
 </style>

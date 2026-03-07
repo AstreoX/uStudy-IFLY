@@ -839,6 +839,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 				// 节点扩展状态
 				isExpandingNode: false,
+
 			}
 		},
 

@@ -324,3 +324,20 @@ export function getDocumentProcessingStatus(spaceId, documentId) {
     method: 'GET'
   })
 }
+
+// ============ 空间分享 API ============
+
+export function generateShareCode(spaceId) {
+  return request({
+    url: `/api/spaces/${spaceId}/share-code`,
+    method: 'POST'
+  })
+}
+
+export function importSpaceByCode(shareCode) {
+  return request({
+    url: '/api/spaces/import',
+    method: 'POST',
+    data: { share_code: shareCode }
+  })
+}

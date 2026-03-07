@@ -70,6 +70,18 @@
 					</scroll-view>
 				</view>
 			</view>
+
+			<!-- 分享码导入区域 -->
+			<view class="import-section">
+				<view class="import-divider">
+					<view class="import-divider-line"></view>
+					<text class="import-divider-text">或</text>
+					<view class="import-divider-line"></view>
+				</view>
+				<view class="import-text-btn" @click="showImportModal = true">
+					<text class="import-text-btn-label">通过分享码导入</text>
+				</view>
+			</view>
 		</view>
 
 		<!-- 底部按钮 -->
@@ -82,11 +94,45 @@
 				<text class="create-btn-text">开始学习</text>
 			</view>
 		</view>
+
+		<!-- 分享码导入弹窗 -->
+		<view
+			v-if="showImportModal"
+			class="import-modal-overlay"
+			:class="{ 'overlay-show': showImportModal }"
+			@click="closeImportModal"
+		>
+			<view class="import-modal-card" @click.stop>
+				<text class="import-modal-title">导入学习空间</text>
+				<view class="import-modal-input-wrapper">
+					<input
+						class="import-modal-input"
+						v-model="importCode"
+						placeholder="输入分享码，如 A1B2-C3D4"
+						placeholder-class="input-placeholder"
+						:placeholder-style="placeholderStyle"
+						maxlength="9"
+					/>
+				</view>
+				<view class="import-modal-actions">
+					<view class="import-modal-btn import-modal-btn-cancel" @click="closeImportModal">
+						<text class="import-modal-btn-text">取消</text>
+					</view>
+					<view
+						class="import-modal-btn import-modal-btn-confirm"
+						:class="{ 'import-modal-btn-disabled': isImporting || !importCode.trim() }"
+						@click="handleImport"
+					>
+						<text class="import-modal-btn-text">{{ isImporting ? '导入中...' : '导入' }}</text>
+					</view>
+				</view>
+			</view>
+		</view>
 	</view>
 </template>
 
 <script>
-	import { createSpace, generateKnowledgeGraph } from '@/api/space'
+	import { createSpace, generateKnowledgeGraph, importSpaceByCode } from '@/api/space'
 
 	const ENABLE_AUTO_SCROLL = true
 	const DEBUG_LOOP_SCROLL = false
@@ -122,7 +168,12 @@
 				resumeTimer: null,
 				isInteracting: false,
 				isRepositioning: false,
-				lastTickTs: 0
+				lastTickTs: 0,
+
+				// 分享码导入
+				showImportModal: false,
+				importCode: '',
+				isImporting: false,
 			}
 		},
 
@@ -396,6 +447,29 @@
 				this.isInteracting = false
 				this.isRepositioning = false
 				this.lastTickTs = 0
+			},
+
+			closeImportModal() {
+				this.showImportModal = false
+				this.importCode = ''
+			},
+
+			async handleImport() {
+				const code = this.importCode.trim().replace(/-/g, '')
+				if (!code || this.isImporting) return
+				this.isImporting = true
+				try {
+					const res = await importSpaceByCode(code)
+					this.closeImportModal()
+					uni.redirectTo({
+						url: `/pages/learningSpace/learningSpace?id=${res.id}&name=${encodeURIComponent(res.name)}`
+					})
+				} catch (err) {
+					const errMsg = err?.data?.detail || err?.data?.message || '导入失败，请检查分享码'
+					uni.showToast({ title: errMsg, icon: 'none' })
+				} finally {
+					this.isImporting = false
+				}
 			},
 
 			async handleCreate() {
@@ -699,6 +773,148 @@
 	}
 
 	.preference-tag-selected .tag-text {
+		color: #ffffff;
+	}
+
+	/* ========== 分享码导入区域 ========== */
+	.import-section {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		margin-top: 16rpx;
+		padding-bottom: 200rpx;
+	}
+
+	.import-divider {
+		display: flex;
+		align-items: center;
+		width: 60%;
+		margin-bottom: 20rpx;
+	}
+
+	.import-divider-line {
+		flex: 1;
+		height: 1rpx;
+		background: rgba(255, 255, 255, 0.15);
+	}
+
+	.import-divider-text {
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.4);
+		padding: 0 24rpx;
+	}
+
+	.import-text-btn {
+		padding: 12rpx 32rpx;
+	}
+
+	.import-text-btn-label {
+		font-size: 28rpx;
+		color: rgba(255, 255, 255, 0.55);
+		text-decoration: underline;
+		text-underline-offset: 4rpx;
+	}
+
+	/* ========== 分享码导入弹窗 ========== */
+	.import-modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 300;
+		background: rgba(0, 0, 0, 0);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: background 200ms ease;
+	}
+
+	.import-modal-overlay.overlay-show {
+		background: rgba(0, 0, 0, 0.6);
+	}
+
+	.import-modal-card {
+		width: 560rpx;
+		background: rgba(20, 20, 30, 0.92);
+		-webkit-backdrop-filter: blur(24px) saturate(180%);
+		backdrop-filter: blur(24px) saturate(180%);
+		border: 1rpx solid rgba(255, 255, 255, 0.15);
+		border-radius: 24rpx;
+		box-shadow:
+			0 16rpx 48rpx rgba(0, 0, 0, 0.5),
+			0 0 0 1rpx rgba(255, 255, 255, 0.05) inset;
+		overflow: hidden;
+		padding: 40rpx;
+	}
+
+	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+		.import-modal-card {
+			background: rgba(30, 30, 45, 0.98);
+		}
+	}
+
+	.import-modal-title {
+		font-size: 36rpx;
+		font-weight: 600;
+		color: #ffffff;
+		text-align: center;
+		display: block;
+		margin-bottom: 32rpx;
+	}
+
+	.import-modal-input-wrapper {
+		background: rgba(255, 255, 255, 0.08);
+		border: 1rpx solid rgba(255, 255, 255, 0.15);
+		border-radius: 16rpx;
+		padding: 24rpx 28rpx;
+		margin-bottom: 32rpx;
+	}
+
+	.import-modal-input {
+		width: 100%;
+		font-size: 34rpx;
+		color: #ffffff;
+		background-color: transparent;
+		text-align: center;
+		letter-spacing: 4rpx;
+		font-family: 'Courier New', Courier, monospace;
+	}
+
+	.import-modal-actions {
+		display: flex;
+		gap: 20rpx;
+	}
+
+	.import-modal-btn {
+		flex: 1;
+		height: 84rpx;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		border-radius: 42rpx;
+		transition: all 0.2s ease;
+	}
+
+	.import-modal-btn-cancel {
+		background: rgba(255, 255, 255, 0.08);
+		border: 1rpx solid rgba(255, 255, 255, 0.15);
+	}
+
+	.import-modal-btn-confirm {
+		background: linear-gradient(135deg, rgba(0, 136, 255, 0.6) 0%, rgba(139, 92, 246, 0.5) 100%);
+		border: 2rpx solid rgba(255, 255, 255, 0.2);
+		box-shadow: 0 8rpx 32rpx rgba(0, 136, 255, 0.3);
+	}
+
+	.import-modal-btn-disabled {
+		opacity: 0.5;
+		pointer-events: none;
+	}
+
+	.import-modal-btn-text {
+		font-size: 30rpx;
+		font-weight: 500;
 		color: #ffffff;
 	}
 
