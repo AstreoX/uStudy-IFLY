@@ -18,6 +18,7 @@ const MAX_RETRIES = RETRY_DELAYS.length
  *
  * @param {Object} callbacks
  * @param {Function} [callbacks.onMasteryUpdate] - Called with { node_name, change, new_mastery }
+ * @param {Function} [callbacks.onArtifactReady] - Called with { note_id, space_id, status, title, error_message }
  * @returns {Function} Abort function to close the connection
  */
 export function connectNotificationStream(callbacks) {
@@ -52,6 +53,9 @@ export function connectNotificationStream(callbacks) {
 
         if (eventType === 'mastery_update') {
           callbacks.onMasteryUpdate?.(data)
+        }
+        if (eventType === 'artifact_ready') {
+          callbacks.onArtifactReady?.(data)
         }
       },
       onComplete: () => {

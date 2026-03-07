@@ -268,6 +268,18 @@
 					"animationDuration": 300
 				}
 			}
+		},
+		{
+			"path": "pages/artifactViewer/artifactViewer",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white",
+				"backgroundColor": "#0A0A12",
+				"app-plus": {
+					"animationType": "slide-in-right",
+					"animationDuration": 300
+				}
+			}
 		}
 	],
 	"globalStyle": {

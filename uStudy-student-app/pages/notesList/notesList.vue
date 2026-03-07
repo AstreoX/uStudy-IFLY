@@ -41,8 +41,11 @@
         >
           <view class="note-main">
             <view class="note-info">
-              <text class="note-title">{{ getNoteTitle(note) }}</text>
-              <text class="note-preview">{{ truncateContent(note.content) }}</text>
+              <view class="note-title-row">
+                <text class="note-title">{{ getNoteTitle(note) }}</text>
+                <text v-if="note.note_type === 'interactive_html'" class="note-type-badge">互动演示</text>
+              </view>
+              <text class="note-preview">{{ note.note_type === 'interactive_html' ? '点击查看互动演示' : truncateContent(note.content) }}</text>
               <view class="note-meta">
                 <text class="note-date">{{ formatDate(note.created_at) }}</text>
                 <text v-if="getNoteNodeTag(note)" class="note-node-tag">{{ getNoteNodeTag(note) }}</text>
@@ -50,7 +53,7 @@
               </view>
             </view>
             <view class="note-item-actions" @click.stop>
-              <view class="note-item-btn" @click.stop="startEditNote(note)">
+              <view v-if="note.note_type !== 'interactive_html'" class="note-item-btn" @click.stop="startEditNote(note)">
                 <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
               </view>
               <view class="note-item-btn note-item-btn-delete" @click.stop="showDeleteConfirm(note)">
@@ -71,7 +74,7 @@
           </view>
           <text class="note-detail-title">{{ getNoteTitle(selectedNote) }}</text>
           <view class="note-detail-actions">
-            <view class="note-item-btn" @click="startEditNote(selectedNote)">
+            <view v-if="!selectedNote || selectedNote.note_type !== 'interactive_html'" class="note-item-btn" @click="startEditNote(selectedNote)">
               <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
             </view>
             <view class="note-item-btn note-item-btn-delete" @click="showDeleteConfirm(selectedNote)">
@@ -84,6 +87,12 @@
             <text class="loading-text">加载中...</text>
           </view>
           <view v-else-if="selectedNote" class="note-detail-body">
+            <view v-if="selectedNote.note_type === 'interactive_html'" class="artifact-action-bar">
+              <view class="artifact-view-btn" @click="openArtifactViewer(selectedNote)">
+                <image class="artifact-view-icon" src="/static/icons/phosphor-icons/SVGs/regular/code.svg" mode="aspectFit" />
+                <text class="artifact-view-text">查看演示</text>
+              </view>
+            </view>
             <markdown-render v-if="selectedNote.content" :content="selectedNote.content" />
             <text v-else class="note-detail-empty">（无内容）</text>
             <view v-if="selectedNote.attachments && selectedNote.attachments.length" class="note-detail-attachments">
@@ -217,6 +226,7 @@ export default {
   onLoad(options) {
     this.spaceId = options.spaceId || ''
     this.spaceName = options.spaceName ? decodeURIComponent(options.spaceName) : ''
+    this.pendingOpenNoteId = options.openNoteId || ''
     this.loadNotes()
   },
 
@@ -251,6 +261,15 @@ export default {
         this.loadError = null
         const response = await getSpaceNotes(this.spaceId)
         this.notes = Array.isArray(response) ? response : []
+        // 自动打开指定笔记（从 artifact 卡片跳转）
+        if (this.pendingOpenNoteId) {
+          const targetId = this.pendingOpenNoteId
+          this.pendingOpenNoteId = ''
+          const target = this.notes.find(n => String(n.id) === String(targetId))
+          if (target) {
+            this.$nextTick(() => this.handleNoteClick(target))
+          }
+        }
       } catch (error) {
         this.loadError = error.message || '加载失败，请检查网络后重试'
         this.notes = []
@@ -308,8 +327,20 @@ export default {
       return `${month}月${day}日 ${hours}:${minutes}`
     },
 
+    openArtifactViewer(note) {
+      if (!note?.id) return
+      uni.navigateTo({
+        url: `/pages/artifactViewer/artifactViewer?spaceId=${this.spaceId}&noteId=${note.id}`
+      })
+    },
+
     async handleNoteClick(note) {
       if (!note?.id) return
+      // 互动演示类型直接跳转演示页面
+      if (note.note_type === 'interactive_html') {
+        this.openArtifactViewer(note)
+        return
+      }
       this.showNoteDetail = true
       this.detailLoading = true
       this.selectedNote = null
@@ -577,15 +608,32 @@ export default {
   min-width: 0;
 }
 
+.note-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 10rpx;
+}
+
 .note-title {
   font-size: 30rpx;
   font-weight: 600;
   color: #ffffff;
-  margin-bottom: 10rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  display: block;
+  flex: 1;
+  min-width: 0;
+}
+
+.note-type-badge {
+  font-size: 20rpx;
+  color: rgba(99, 102, 241, 0.9);
+  padding: 4rpx 12rpx;
+  background: rgba(99, 102, 241, 0.12);
+  border-radius: 6rpx;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .note-preview {
@@ -853,5 +901,36 @@ export default {
 .note-edit-save-text {
   font-size: 26rpx;
   color: #3b82f6;
+}
+
+/* Artifact action bar */
+.artifact-action-bar {
+  margin-bottom: 24rpx;
+}
+
+.artifact-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 16rpx 28rpx;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1rpx solid rgba(99, 102, 241, 0.3);
+  border-radius: 16rpx;
+}
+
+.artifact-view-btn:active {
+  background: rgba(99, 102, 241, 0.25);
+}
+
+.artifact-view-icon {
+  width: 32rpx;
+  height: 32rpx;
+  filter: brightness(0) invert(1);
+  opacity: 0.8;
+}
+
+.artifact-view-text {
+  font-size: 26rpx;
+  color: rgba(138, 180, 248, 0.9);
 }
 </style>

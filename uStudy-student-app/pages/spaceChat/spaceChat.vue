@@ -384,6 +384,41 @@
 							:conversation-id="conversationId"
 						/>
 
+						<!-- 交互式演示工具：Artifact 卡片 -->
+						<view
+							v-else-if="seg.type === 'tool' && (seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact')"
+							:key="'artifact-tool-' + segIdx"
+							class="tool-call-card artifact-card"
+							:class="{
+								'tool-call-running': isArtifactGenerating(seg.toolCall),
+								'ac-success': isArtifactSuccess(seg.toolCall),
+								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+							}"
+						>
+							<view class="tool-call-header">
+								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="tool-call-name">{{ getArtifactHeaderText(seg.toolCall) }}</text>
+								<view v-if="isArtifactGenerating(seg.toolCall)" class="tool-call-spinner"></view>
+								<image v-else-if="isArtifactSuccess(seg.toolCall)" class="tool-call-status-icon"
+									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done'" class="tool-call-status-icon tool-call-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+							<view v-if="isArtifactGenerating(seg.toolCall)" class="ac-body">
+								<text class="ac-status-text">正在生成交互演示，完成后会通知你...</text>
+								<view class="ac-progress-bar"><view class="ac-progress-fill"></view></view>
+							</view>
+							<view v-else-if="isArtifactSuccess(seg.toolCall)" class="ac-body">
+								<text class="ac-status-text ac-done-text">交互演示已生成</text>
+								<view class="ac-view-btn" @click="handleViewArtifact(seg.toolCall)">
+									<text class="ac-view-btn-text">查看笔记</text>
+								</view>
+							</view>
+							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="ac-body">
+								<text class="ac-status-text ac-error-text">{{ seg.toolCall.result?.message || '生成失败' }}</text>
+							</view>
+						</view>
+
 						<!-- 图表生成工具：图片预览卡片 -->
 						<view
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'generate_chart'"
@@ -942,7 +977,10 @@
 		list_notes: '查看笔记',
 		view_note_detail: '查看笔记详情',
 		// 图表生成工具
-		generate_chart: '生成图表'
+		generate_chart: '生成图表',
+		// 交互演示工具
+		create_artifact: '创建交互演示',
+		update_artifact: '更新交互演示'
 	}
 
 	// 工具图标映射
@@ -994,7 +1032,10 @@
 		list_notes: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
 		view_note_detail: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
 		// 图表生成工具
-		generate_chart: '/static/icons/phosphor-icons/SVGs/regular/image.svg'
+		generate_chart: '/static/icons/phosphor-icons/SVGs/regular/image.svg',
+		// 交互演示工具
+		create_artifact: '/static/icons/phosphor-icons/SVGs/regular/code.svg',
+		update_artifact: '/static/icons/phosphor-icons/SVGs/regular/code.svg'
 	}
 
 	// 规划类工具（行内银光掠过效果）
@@ -1591,6 +1632,9 @@
 								change: data.change
 							}
 						]
+					},
+					onArtifactReady: (data) => {
+						this.onArtifactReady(data)
 					},
 					onDebugLog: (msg) => {
 						this.addSseDebugLog(msg)
@@ -2301,6 +2345,17 @@
 							msg.segments = segments
 							msg.toolCalls = m.tool_calls
 						}
+						// 修正 artifact 卡片的 generating 状态
+						if (msg.segments) {
+							for (const seg of msg.segments) {
+								if (seg.type === 'tool' && seg.toolCall &&
+									(seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact') &&
+									seg.toolCall.status === 'done' && seg.toolCall.success &&
+									seg.toolCall.result?.status === 'generating') {
+									seg.toolCall = { ...seg.toolCall, result: { ...seg.toolCall.result, status: 'done' } }
+								}
+							}
+						}
 						return msg
 					})
 					this.nextId = this.messages.length + 1
@@ -2818,6 +2873,17 @@
 							msg.segments = segments
 							msg.toolCalls = m.tool_calls
 						}
+						// 修正历史加载中 artifact 卡片的 generating 状态
+						if (msg.segments) {
+							for (const seg of msg.segments) {
+								if (seg.type === 'tool' && seg.toolCall &&
+									(seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact') &&
+									seg.toolCall.status === 'done' && seg.toolCall.success &&
+									seg.toolCall.result?.status === 'generating') {
+									seg.toolCall = { ...seg.toolCall, result: { ...seg.toolCall.result, status: 'done' } }
+								}
+							}
+						}
 						return msg
 					})
 					this.nextId = this.messages.length + 1
@@ -3082,6 +3148,56 @@
 					urls: [fullUrl],
 					current: fullUrl
 				})
+			},
+
+			// ===== Artifact 辅助方法 =====
+			isArtifactGenerating(toolCall) {
+				return toolCall.status === 'running' ||
+					(toolCall.status === 'done' && toolCall.success && toolCall.result?.status === 'generating')
+			},
+			isArtifactSuccess(toolCall) {
+				return toolCall.status === 'done' && toolCall.success && toolCall.result?.status !== 'generating'
+			},
+			getArtifactHeaderText(toolCall) {
+				const title = toolCall.arguments?.title || toolCall.result?.title || '交互演示'
+				return toolCall.tool === 'update_artifact' ? `更新演示「${title}」` : `创建演示「${title}」`
+			},
+			handleViewArtifact(toolCall) {
+				const noteId = toolCall.result?.note_id
+				if (!noteId) return
+				uni.navigateTo({
+					url: `/pages/artifactViewer/artifactViewer?spaceId=${this.spaceId}&noteId=${noteId}`
+				})
+			},
+			onArtifactReady(data) {
+				const { note_id, space_id, status, title, error_message } = data
+				if (String(space_id) !== String(this.spaceId)) return
+				if (note_id) {
+					this.updateArtifactToolCallStatus(note_id, status)
+				}
+				if (status === 'done') {
+					uni.showToast({ title: `「${title || '交互演示'}」已生成`, icon: 'none', duration: 3000 })
+				} else if (status === 'failed') {
+					uni.showToast({ title: '演示生成失败', icon: 'none', duration: 3000 })
+				}
+			},
+			updateArtifactToolCallStatus(noteId, newStatus) {
+				for (const msg of this.messages) {
+					const updateSegments = (segments) => {
+						if (!Array.isArray(segments)) return false
+						for (const seg of segments) {
+							if (seg.type === 'tool' && seg.toolCall &&
+								(seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact') &&
+								seg.toolCall.result?.note_id === noteId) {
+								seg.toolCall = { ...seg.toolCall, result: { ...seg.toolCall.result, status: newStatus } }
+								return true
+							}
+						}
+						return false
+					}
+					if (updateSegments(msg.segments) || updateSegments(msg.streamSegments)) break
+				}
+				this.$forceUpdate()
 			},
 
 			/**
@@ -5178,6 +5294,67 @@
 
 	.tool-call-failed .tool-call-result-text {
 		color: rgba(239, 68, 68, 0.9);
+	}
+
+	/* ========== Artifact 卡片 ========== */
+	.artifact-card.ac-success {
+		border-color: rgba(52, 211, 153, 0.25);
+		background: rgba(52, 211, 153, 0.06);
+	}
+
+	.ac-body {
+		padding: 8rpx 24rpx 20rpx;
+	}
+
+	.ac-status-text {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.45);
+	}
+
+	.ac-done-text {
+		color: rgba(52, 211, 153, 0.7);
+	}
+
+	.ac-error-text {
+		color: rgba(248, 113, 113, 0.7);
+	}
+
+	.ac-progress-bar {
+		margin-top: 12rpx;
+		height: 4rpx;
+		border-radius: 2rpx;
+		background: rgba(255, 255, 255, 0.06);
+		overflow: hidden;
+	}
+
+	.ac-progress-fill {
+		height: 100%;
+		width: 40%;
+		border-radius: 2rpx;
+		background: linear-gradient(90deg, rgba(99, 102, 241, 0.5), rgba(138, 180, 248, 0.6));
+		animation: ac-progress 1.5s ease-in-out infinite;
+	}
+
+	@keyframes ac-progress {
+		0% {
+			transform: translateX(-100%);
+		}
+		100% {
+			transform: translateX(350%);
+		}
+	}
+
+	.ac-view-btn {
+		display: inline-flex;
+		margin-top: 12rpx;
+		padding: 8rpx 20rpx;
+		border-radius: 8rpx;
+		background: rgba(99, 102, 241, 0.15);
+	}
+
+	.ac-view-btn-text {
+		font-size: 24rpx;
+		color: rgba(138, 180, 248, 0.9);
 	}
 
 	/* ========== 图表预览 ========== */
