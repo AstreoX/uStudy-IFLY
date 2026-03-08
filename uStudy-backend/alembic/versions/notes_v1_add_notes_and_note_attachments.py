@@ -18,51 +18,60 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Create notes and note_attachments tables."""
-    # Create enum type (create_type=False prevents SQLAlchemy from auto-creating during table creation)
-    note_attachment_type = sa.Enum("image", "file", "link", name="noteattachmenttype", create_type=False)
-    note_attachment_type.create(op.get_bind(), checkfirst=True)
+    """Create notes and note_attachments tables (idempotent)."""
+    conn = op.get_bind()
 
-    # Create notes table
-    op.create_table(
-        "notes",
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("space_id", sa.UUID(), nullable=False),
-        sa.Column("node_id", sa.UUID(), nullable=True),
-        sa.Column("title", sa.String(200), nullable=True),
-        sa.Column("content", sa.Text(), nullable=True),
-        sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(["space_id"], ["spaces.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["node_id"], ["nodes.id"], ondelete="SET NULL"),
-    )
-    op.create_index("ix_notes_space_id", "notes", ["space_id"])
-    op.create_index("ix_notes_node_id", "notes", ["node_id"])
+    # Create enum type if not exists
+    conn.execute(sa.text("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'noteattachmenttype') THEN
+                CREATE TYPE noteattachmenttype AS ENUM ('image', 'file', 'link');
+            END IF;
+        END$$;
+    """))
 
-    # Create note_attachments table
-    op.create_table(
-        "note_attachments",
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("note_id", sa.UUID(), nullable=False),
-        sa.Column("attachment_type", note_attachment_type, nullable=False),
-        sa.Column("file_url", sa.String(500), nullable=True),
-        sa.Column("original_filename", sa.String(255), nullable=True),
-        sa.Column("file_size", sa.Integer(), nullable=True),
-        sa.Column("mime_type", sa.String(100), nullable=True),
-        sa.Column("link_url", sa.String(2048), nullable=True),
-        sa.Column("link_title", sa.String(500), nullable=True),
-        sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(["note_id"], ["notes.id"], ondelete="CASCADE"),
-    )
-    op.create_index("ix_note_attachments_note_id", "note_attachments", ["note_id"])
+    # Create notes table if not exists
+    conn.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS notes (
+            id UUID NOT NULL PRIMARY KEY,
+            space_id UUID NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+            node_id UUID REFERENCES nodes(id) ON DELETE SET NULL,
+            title VARCHAR(200),
+            content TEXT,
+            sort_order INTEGER DEFAULT 0 NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+        );
+    """))
+
+    # Create indexes if not exist
+    conn.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_notes_space_id ON notes(space_id);"))
+    conn.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_notes_node_id ON notes(node_id);"))
+
+    # Create note_attachments table if not exists
+    conn.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS note_attachments (
+            id UUID NOT NULL PRIMARY KEY,
+            note_id UUID NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+            attachment_type noteattachmenttype NOT NULL,
+            file_url VARCHAR(500),
+            original_filename VARCHAR(255),
+            file_size INTEGER,
+            mime_type VARCHAR(100),
+            link_url VARCHAR(2048),
+            link_title VARCHAR(500),
+            sort_order INTEGER DEFAULT 0 NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+        );
+    """))
+
+    # Create index if not exists
+    conn.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_note_attachments_note_id ON note_attachments(note_id);"))
 
 
 def downgrade() -> None:
     """Drop notes and note_attachments tables."""
     op.drop_table("note_attachments")
     op.drop_table("notes")
-    sa.Enum(name="noteattachmenttype").drop(op.get_bind(), checkfirst=True)
+    op.execute(sa.text("DROP TYPE IF EXISTS noteattachmenttype;"))
