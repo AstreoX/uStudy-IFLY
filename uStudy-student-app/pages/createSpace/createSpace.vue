@@ -461,9 +461,19 @@
 				try {
 					const res = await importSpaceByCode(code)
 					this.closeImportModal()
-					uni.redirectTo({
-						url: `/pages/learningSpace/learningSpace?id=${res.id}&name=${encodeURIComponent(res.name)}`
-					})
+					if (res.is_collaborative) {
+						// Joined a collaborative space — navigate to it
+						uni.showToast({ title: '已加入协作空间', icon: 'success' })
+						setTimeout(() => {
+							uni.redirectTo({
+								url: `/pages/learningSpace/learningSpace?id=${res.id}&name=${encodeURIComponent(res.name)}`
+							})
+						}, 500)
+					} else {
+						uni.redirectTo({
+							url: `/pages/learningSpace/learningSpace?id=${res.id}&name=${encodeURIComponent(res.name)}`
+						})
+					}
 				} catch (err) {
 					const errMsg = err?.data?.detail || err?.data?.message || '导入失败，请检查分享码'
 					uni.showToast({ title: errMsg, icon: 'none' })

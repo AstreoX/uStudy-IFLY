@@ -93,6 +93,45 @@
       </view>
     </view>
 
+    <!-- 分享模式选择弹窗 -->
+    <view
+      v-if="showShareModePopup"
+      class="share-popup-overlay"
+      :class="{ 'overlay-show': shareModePopupVisible }"
+      @click="closeShareModePopup"
+    >
+      <view
+        class="share-popup-card"
+        :class="{ 'dialog-show': shareModePopupVisible }"
+        @click.stop
+      >
+        <text class="share-popup-title">选择分享方式</text>
+        <view class="share-mode-options">
+          <view class="share-mode-option" @click="selectShareMode('clone')">
+            <view class="share-mode-icon-wrap">
+              <image class="share-mode-icon" src="/static/icons/phosphor-icons/SVGs/regular/copy.svg" mode="aspectFit"></image>
+            </view>
+            <view class="share-mode-info">
+              <text class="share-mode-label">创建副本</text>
+              <text class="share-mode-desc">对方导入后获得此空间的副本</text>
+            </view>
+            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+          </view>
+          <view class="settings-divider"></view>
+          <view class="share-mode-option" @click="selectShareMode('collaborative')">
+            <view class="share-mode-icon-wrap">
+              <image class="share-mode-icon" src="/static/icons/phosphor-icons/SVGs/regular/users.svg" mode="aspectFit"></image>
+            </view>
+            <view class="share-mode-info">
+              <text class="share-mode-label">共同学习</text>
+              <text class="share-mode-desc">对方导入后加入此空间一起学习</text>
+            </view>
+            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+          </view>
+        </view>
+      </view>
+    </view>
+
     <!-- 分享码弹窗 -->
     <view
       v-if="showSharePopup"
@@ -106,7 +145,7 @@
         @click.stop
       >
         <text class="share-popup-title">分享学习空间</text>
-        <text class="share-popup-hint">将分享码发送给好友，即可导入此空间</text>
+        <text class="share-popup-hint">{{ currentShareMode === 'collaborative' ? '对方导入后将加入此空间共同学习' : '将分享码发送给好友，即可导入此空间' }}</text>
         <view class="share-popup-code-box">
           <text class="share-popup-code">{{ displayShareCode }}</text>
         </view>
@@ -171,9 +210,12 @@ export default {
       isUpdatingColor: false,
       pendingColor: '',
       // 分享弹窗
+      showShareModePopup: false,
+      shareModePopupVisible: false,
       showSharePopup: false,
       sharePopupVisible: false,
       displayShareCode: '',
+      currentShareMode: 'clone',
       isGeneratingShareCode: false
     }
   },
@@ -267,11 +309,30 @@ export default {
       })
     },
 
-    async handleShareSpace() {
+    handleShareSpace() {
       if (this.isGeneratingShareCode || !this.spaceId) return
+      // Show mode selection popup first
+      this.showShareModePopup = true
+      this.$nextTick(() => {
+        setTimeout(() => {
+          this.shareModePopupVisible = true
+        }, 10)
+      })
+    },
+
+    closeShareModePopup() {
+      this.shareModePopupVisible = false
+      setTimeout(() => {
+        this.showShareModePopup = false
+      }, 250)
+    },
+
+    async selectShareMode(mode) {
+      this.closeShareModePopup()
+      this.currentShareMode = mode
       this.isGeneratingShareCode = true
       try {
-        const res = await generateShareCode(this.spaceId)
+        const res = await generateShareCode(this.spaceId, mode)
         this.displayShareCode = res.display_code
         this.showSharePopup = true
         this.$nextTick(() => {
@@ -594,6 +655,57 @@ export default {
 
 @keyframes spin {
   to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* 分享模式选择 */
+.share-mode-options {
+  width: 100%;
+}
+
+.share-mode-option {
+  display: flex;
+  align-items: center;
+  padding: 28rpx 24rpx;
+}
+
+.share-mode-option:active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.share-mode-icon-wrap {
+  width: 64rpx;
+  height: 64rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 16rpx;
+  margin-right: 20rpx;
+  flex-shrink: 0;
+}
+
+.share-mode-icon {
+  width: 36rpx;
+  height: 36rpx;
+  filter: brightness(0) invert(1);
+}
+
+.share-mode-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.share-mode-label {
+  font-size: 30rpx;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.share-mode-desc {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 /* 分享码弹窗 */
