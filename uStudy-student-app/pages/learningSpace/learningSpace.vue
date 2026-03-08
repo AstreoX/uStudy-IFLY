@@ -5883,7 +5883,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 	.plus-popup {
 		position: fixed;
-		left: calc(100vw / 24);
+		right: calc(100vw / 24);
 		bottom: calc(100vh * 1.5 / 26 + 100rpx);
 		min-width: 280rpx;
 		background: rgba(30, 30, 45, 0.95);
@@ -5938,7 +5938,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 	.popup-arrow {
 		position: absolute;
-		left: 36rpx;
+		right: 36rpx;
 		bottom: -16rpx;
 		width: 0;
 		height: 0;

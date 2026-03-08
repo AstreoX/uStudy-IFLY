@@ -16,7 +16,7 @@
 
       <!-- Score Section -->
       <view class="score-section">
-        <text class="score-value" :style="{ color: scoreColor }" @longpress="debugMode = !debugMode">{{ displayScore }}</text>
+        <text class="score-value" :style="{ color: scoreColor }">{{ displayScore }}</text>
         <text class="score-label">连续性分数</text>
         <text class="score-desc">{{ scoreDescription }}</text>
       </view>
@@ -36,17 +36,6 @@
         <view class="stats-cell">
           <text class="stats-value">{{ scoreData.effective_gap_days }}</text>
           <text class="stats-label">中断天数</text>
-        </view>
-      </view>
-
-      <!-- Debug Panel -->
-      <view v-if="debugMode" class="debug-panel">
-        <text class="debug-title">DEBUG</text>
-        <view class="debug-row" v-for="field in debugFields" :key="field.key">
-          <text class="debug-label">{{ field.label }}</text>
-          <text class="debug-btn" @click="adjustField(field.key, -1)">−</text>
-          <text class="debug-value">{{ scoreData[field.key] }}</text>
-          <text class="debug-btn" @click="adjustField(field.key, 1)">+</text>
         </view>
       </view>
 
@@ -87,12 +76,6 @@ export default {
 
   data() {
     return {
-      debugMode: false,
-      debugFields: [
-        { key: 'current_streak', label: '连续天数' },
-        { key: 'cumulative_active_days', label: '累计学习天' },
-        { key: 'effective_gap_days', label: '中断天数' }
-      ],
       animationVisible: false,
       scoreData: {
         score: 0,
@@ -168,48 +151,6 @@ export default {
       const m = String(date.getMonth() + 1).padStart(2, '0')
       const d = String(date.getDate()).padStart(2, '0')
       return `${y}-${m}-${d}`
-    },
-
-    computeDebugScore(d, g) {
-      if (d <= 0) return 0
-      const dp = Math.pow(d, 1.807)
-      const base = 100 * dp / (dp + 1.5)
-      const penalty = g > 0 ? Math.min(base, 40 * (1 - Math.exp(-0.15 * g))) : 0
-      const score = base - penalty
-      return Math.round(Math.max(0, Math.min(100, score)) * 10) / 10
-    },
-
-    generateDebugCalendar() {
-      const records = []
-      const today = new Date()
-      const streak = this.scoreData.current_streak
-      const gap = this.scoreData.effective_gap_days
-      const total = this.scoreData.cumulative_active_days
-
-      for (let i = 0; i < streak; i++) {
-        const d = new Date(today)
-        d.setDate(d.getDate() - i)
-        records.push({ date: this.formatDate(d), activity_count: 3 })
-      }
-
-      const remaining = Math.max(0, total - streak)
-      let cursor = streak + gap
-      for (let i = 0; i < remaining && cursor < 180; i++) {
-        const d = new Date(today)
-        d.setDate(d.getDate() - cursor)
-        records.push({ date: this.formatDate(d), activity_count: 2 })
-        cursor += 2
-      }
-
-      this.calendarRecords = records
-    },
-
-    adjustField(key, delta) {
-      const val = this.scoreData[key] + delta
-      const updated = { ...this.scoreData, [key]: Math.max(0, val) }
-      updated.score = this.computeDebugScore(updated.cumulative_active_days, updated.effective_gap_days)
-      this.scoreData = updated
-      this.generateDebugCalendar()
     },
 
     close() {
@@ -412,55 +353,5 @@ export default {
   color: rgba(255, 255, 255, 0.8);
   margin-bottom: 16rpx;
   display: block;
-}
-/* Debug Panel */
-.debug-panel {
-  background: rgba(255, 165, 0, 0.08);
-  border: 1rpx solid rgba(255, 165, 0, 0.4);
-  border-radius: 16rpx;
-  padding: 16rpx 20rpx;
-  margin-bottom: 20rpx;
-}
-
-.debug-title {
-  font-size: 20rpx;
-  font-weight: 700;
-  color: rgba(255, 165, 0, 0.8);
-  letter-spacing: 2rpx;
-  margin-bottom: 12rpx;
-  display: block;
-}
-
-.debug-row {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  padding: 8rpx 0;
-}
-
-.debug-label {
-  flex: 1;
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.debug-btn {
-  width: 56rpx;
-  height: 56rpx;
-  line-height: 56rpx;
-  text-align: center;
-  font-size: 32rpx;
-  font-weight: 700;
-  color: rgba(255, 165, 0, 0.9);
-  background: rgba(255, 165, 0, 0.12);
-  border-radius: 12rpx;
-}
-
-.debug-value {
-  width: 80rpx;
-  text-align: center;
-  font-size: 28rpx;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
 }
 </style>

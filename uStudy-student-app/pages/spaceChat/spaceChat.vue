@@ -16,7 +16,6 @@
 			<view class="nav-left" @click="goBack">
 				<image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
 			</view>
-			<text class="debug-btn" @click="toggleSseDebugPanel">DBG</text>
 			<text class="nav-title">{{ spaceTitle }}</text>
 			<view class="nav-right" @click="openSettings">
 				<image class="nav-icon" src="/static/icons/phosphor-icons/PNGs/bold/clock-clockwise-bold.png" mode="aspectFit"></image>
@@ -461,6 +460,59 @@
 							</view>
 						</view>
 
+						<!-- 代码执行工具：代码 + 输出卡片 -->
+						<view
+							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'run_python_code'"
+							:key="'code-tool-' + segIdx"
+							class="tool-call-card code-execution-card"
+							:class="{
+								'tool-call-running': seg.toolCall.status === 'running',
+								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
+								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+							}"
+						>
+							<view class="tool-call-header">
+								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="tool-call-name">{{ seg.toolCall.arguments?.description || getToolDisplayName(seg.toolCall.tool) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
+								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
+									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
+								<image v-else class="tool-call-status-icon tool-call-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+							<!-- Collapsible code block -->
+							<view class="code-block-section">
+								<view class="code-toggle-link" @click="toggleCodeExpand(seg.toolCall.id)">
+									<text class="code-toggle-text">{{ isCodeExpanded(seg.toolCall.id) ? '收起代码' : '查看代码' }}</text>
+									<image class="code-toggle-chevron" :class="{ 'code-toggle-chevron-expanded': isCodeExpanded(seg.toolCall.id) }"
+										src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+								</view>
+								<view class="code-block-wrapper" :class="{ 'code-block-collapsed': !isCodeExpanded(seg.toolCall.id) }">
+									<view class="code-block-pre">
+										<text class="code-block-code">{{ seg.toolCall.arguments?.code || '' }}</text>
+									</view>
+								</view>
+							</view>
+							<!-- Output section -->
+							<view v-if="seg.toolCall.status === 'done'" class="code-output-section">
+								<view v-if="seg.toolCall.result?.stdout" class="code-output-stdout">
+									<text class="code-output-text">{{ seg.toolCall.result.stdout }}</text>
+								</view>
+								<view v-if="seg.toolCall.result?.stderr" class="code-output-stderr">
+									<text class="code-output-text code-output-text-error">{{ seg.toolCall.result.stderr }}</text>
+								</view>
+								<view v-if="seg.toolCall.result?.image_url" class="chart-image-preview">
+									<image
+										:src="getFullImageUrl(seg.toolCall.result.image_url)"
+										mode="widthFix"
+										class="chart-preview-img"
+										@click="previewChartImage(seg.toolCall.result.image_url)"
+									/>
+								</view>
+								<text v-if="!seg.toolCall.success && seg.toolCall.result?.message" class="tool-call-result-text">{{ seg.toolCall.result.message }}</text>
+							</view>
+						</view>
+
 						<!-- 非记忆类工具：原有卡片样式 -->
 						<view
 							v-else-if="seg.type === 'tool'"
@@ -590,7 +642,6 @@
 				'quiz-progress-completing': quizProgressPhase === 'completing',
 				'quiz-progress-done': quizProgressPhase === 'done'
 			}"
-			@click="toggleDebugPanel"
 		>
 			<!-- SVG 圆环进度条 -->
 			<svg class="progress-ring" viewBox="0 0 44 44">
@@ -620,127 +671,6 @@
 					src="/static/icons/phosphor-icons/SVGs/regular/check-circle.svg"
 					mode="aspectFit"
 				/>
-			</view>
-		</view>
-
-		<!-- 调试2号悬浮按钮 (已隐藏) -->
-		<!-- <view class="debug2-fab" @click="toggleDebugToolPanel">
-			<image
-				class="debug2-fab-icon"
-				src="/static/icons/phosphor-icons/SVGs/regular/bug.svg"
-				mode="aspectFit"
-			></image>
-			<view class="debug2-fab-badge">2</view>
-		</view> -->
-
-		<!-- 调试面板弹窗 -->
-		<view v-if="showDebugPanel" class="debug-panel-overlay" @click="toggleDebugPanel">
-			<view class="debug-panel" @click.stop>
-				<view class="debug-panel-header">
-					<text class="debug-panel-title">LLM 调试日志</text>
-					<view class="debug-panel-close" @click="toggleDebugPanel">
-						<image
-							class="debug-panel-close-icon"
-							src="/static/icons/phosphor-icons/SVGs/regular/x.svg"
-							mode="aspectFit"
-						></image>
-					</view>
-				</view>
-
-				<scroll-view
-					class="debug-panel-content"
-					scroll-y
-					:scroll-into-view="debugScrollTarget"
-				>
-					<view v-if="debugLogs.length === 0" class="debug-empty">
-						<text class="debug-empty-text">等待 LLM 响应...</text>
-					</view>
-
-					<view
-						v-for="(log, index) in debugLogs"
-						:key="index"
-						:id="'debug-log-' + index"
-						class="debug-log-item"
-						:class="{ 'debug-log-item-loading': log.status === 'calling_llm' }"
-					>
-						<view class="debug-log-header">
-							<text class="debug-log-iteration">迭代 {{ log.iteration }}</text>
-							<text v-if="log.status === 'calling_llm'" class="debug-log-status-loading">⏳ 调用中</text>
-							<text class="debug-log-time">{{ formatDebugTime(log.timestamp) }}</text>
-						</view>
-						<view class="debug-log-meta">
-							<text class="debug-log-meta-item">工具调用: {{ log.tool_calls_count }}</text>
-							<text class="debug-log-meta-item">进度: {{ log.progress }}</text>
-							<text v-if="log.finish_reason" class="debug-log-meta-item">结束原因: {{ log.finish_reason }}</text>
-						</view>
-						<view v-if="log.llm_content" class="debug-log-content" :class="{ 'debug-log-content-loading': log.status === 'calling_llm' }">
-							<text class="debug-log-content-text">{{ log.llm_content }}</text>
-						</view>
-						<view v-else class="debug-log-content debug-log-content-empty">
-							<text class="debug-log-content-text">(无文本内容，仅工具调用)</text>
-						</view>
-					</view>
-
-					<view id="debug-log-bottom"></view>
-				</scroll-view>
-			</view>
-		</view>
-
-		<!-- SSE 诊断面板 -->
-		<view v-if="showSseDebugPanel" class="sse-debug-panel">
-			<view class="sse-debug-header">
-				<text class="sse-debug-title">SSE Diag</text>
-				<text class="sse-debug-close" @click="showSseDebugPanel = false">X</text>
-			</view>
-			<scroll-view scroll-y class="sse-debug-body">
-				<text v-if="sseDebugLog.length === 0" class="sse-debug-empty">等待 SSE 事件...</text>
-				<text v-for="(log, i) in sseDebugLog" :key="i" class="sse-debug-line">{{ log }}</text>
-			</scroll-view>
-			<view class="sse-debug-actions">
-				<text class="sse-debug-action-btn" @click="debugTriggerNotification">触发假弹窗</text>
-				<text class="sse-debug-action-btn" @click="debugReconnectSse">重连SSE</text>
-				<text class="sse-debug-action-btn" @click="sseDebugLog = []">清空</text>
-			</view>
-		</view>
-
-		<!-- 调试2号面板弹窗 -->
-		<view v-if="showDebugToolPanel" class="debug2-panel-overlay" @click="toggleDebugToolPanel">
-			<view class="debug2-panel" @click.stop>
-				<view class="debug2-panel-header">
-					<text class="debug2-panel-title">调试2号：工具调用</text>
-					<view class="debug2-panel-close" @click="toggleDebugToolPanel">
-						<image
-							class="debug2-panel-close-icon"
-							src="/static/icons/phosphor-icons/SVGs/regular/x.svg"
-							mode="aspectFit"
-						></image>
-					</view>
-				</view>
-
-				<view class="debug2-panel-body">
-					<text class="debug2-section-title">输入 tool_call JSON</text>
-					<textarea
-						class="debug2-input"
-						v-model="debugToolInput"
-						placeholder="粘贴 LLM 实际 tool_call JSON"
-						placeholder-class="debug2-input-placeholder"
-						:disabled="debugToolLoading"
-						:maxlength="-1"
-					/>
-
-					<view class="debug2-actions">
-						<view class="debug2-btn debug2-btn-secondary" @click="clearDebugToolForm">清空</view>
-						<view class="debug2-btn debug2-btn-primary" @click="submitDebugToolCall">
-							{{ debugToolLoading ? '执行中...' : '执行' }}
-						</view>
-					</view>
-
-					<text class="debug2-section-title">原始输出</text>
-					<text v-if="debugToolError" class="debug2-error-text">{{ debugToolError }}</text>
-					<scroll-view class="debug2-output" scroll-y>
-						<text class="debug2-output-text">{{ debugToolOutput || '(无输出)' }}</text>
-					</scroll-view>
-				</view>
 			</view>
 		</view>
 
@@ -915,7 +845,7 @@
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
 	import NoteCreationCard from '@/components/note-creation-card/note-creation-card.vue'
 	import { generateQuiz, getTaskStatus, getSpaceGraph } from '@/api/space'
-	import { createConversation, getConversation, sendMessage as sendChatMessage, executeToolCall, submitFeedback, submitToolResult, getModels } from '@/api/chat'
+	import { createConversation, getConversation, sendMessage as sendChatMessage, submitFeedback, submitToolResult, getModels } from '@/api/chat'
 	import { connectNotificationStream } from '@/api/notification'
 	import { executeCalendarTool } from '@/utils/calendar'
 	import { createCalendarEvent, getCalendarEvents, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendarEvents'
@@ -981,7 +911,9 @@
 		generate_chart: '生成图表',
 		// 交互演示工具
 		create_artifact: '创建交互演示',
-		update_artifact: '更新交互演示'
+		update_artifact: '更新交互演示',
+		// 代码执行工具
+		run_python_code: '执行 Python 代码'
 	}
 
 	// 工具图标映射
@@ -1036,7 +968,9 @@
 		generate_chart: '/static/icons/phosphor-icons/SVGs/regular/image.svg',
 		// 交互演示工具
 		create_artifact: '/static/icons/phosphor-icons/SVGs/regular/code.svg',
-		update_artifact: '/static/icons/phosphor-icons/SVGs/regular/code.svg'
+		update_artifact: '/static/icons/phosphor-icons/SVGs/regular/code.svg',
+		// 代码执行工具
+		run_python_code: '/static/icons/phosphor-icons/SVGs/regular/code.svg'
 	}
 
 	// 规划类工具（行内银光掠过效果）
@@ -1132,22 +1066,13 @@
 				showTestSnackbar: false,
 				snackbarMessage: '测试题已生成',
 
-				// 调试面板相关
-				showDebugPanel: false,
+				// 调试日志（quiz progress indicator 使用）
 				debugLogs: [],
 				isGeneratingQuiz: false,
-				debugScrollTarget: '',
 
 				// 测试生成进度指示器
 				quizProgressPhase: 'idle',  // 'idle' | 'generating' | 'completing' | 'done'
 				quizProgressValue: 0,       // 0-100 进度值
-
-				// 调试2号面板相关
-				showDebugToolPanel: false,
-				debugToolInput: '',
-				debugToolOutput: '',
-				debugToolLoading: false,
-				debugToolError: '',
 
 				// 记忆工具最短显示时间跟踪
 				memoryToolStartTimes: {},    // { toolCallId: timestamp }
@@ -1155,6 +1080,8 @@
 
 				// 搜索结果展开状态
 				expandedSearchResults: {}, // { toolCallId: true }
+				// 代码块展开状态
+				expandedCodeBlocks: {}, // { toolCallId: true }
 
 				// +号弹窗相关
 				showPlusPopup: false,
@@ -1194,10 +1121,6 @@
 				availableModels: [],
 				selectedModelId: null,
 				showModelMenu: false,
-
-				// SSE 诊断面板
-				sseDebugLog: [],
-				showSseDebugPanel: false,
 
 				// 后台监控：最后一条用户消息的发送时间
 				lastUserMessageTimestamp: null
@@ -1575,54 +1498,13 @@
 			},
 
 			// ==================== 掌握分通知 ====================
-			debugTriggerNotification() {
-				this.notificationIdCounter++
-				this.masteryNotifications = [
-					...this.masteryNotifications,
-					{
-						id: this.notificationIdCounter,
-						visible: true,
-						nodeName: '测试节点',
-						change: 5
-					}
-				]
-				this.addSseDebugLog('触发假弹窗')
-			},
-
 			removeMasteryNotification(id) {
 				this.masteryNotifications = this.masteryNotifications.filter(n => n.id !== id)
 			},
 
-			// ==================== SSE 诊断 ====================
-			addSseDebugLog(msg) {
-				const time = new Date().toLocaleTimeString()
-				this.sseDebugLog = [...this.sseDebugLog, `[${time}] ${msg}`]
-			},
-
-			toggleSseDebugPanel() {
-				this.showSseDebugPanel = !this.showSseDebugPanel
-			},
-
-			debugReconnectSse() {
-				this.addSseDebugLog('手动重连...')
-				if (this.notificationAbort) {
-					this.notificationAbort()
-					this.notificationAbort = null
-				}
-				this.setupNotificationStream()
-			},
-
 			setupNotificationStream() {
-				// #ifdef APP-PLUS
-				const hasBus = !!this.$refs.sseRenderjs
-				this.addSseDebugLog(`sseEventBus: ${hasBus ? 'YES' : 'NO'}`)
-				// #endif
-
-				this.addSseDebugLog('连接 notification SSE...')
-
 				this.notificationAbort = connectNotificationStream({
 					onMasteryUpdate: (data) => {
-						this.addSseDebugLog(`收到 mastery_update: ${data.node_name} ${data.change > 0 ? '+' : ''}${data.change}`)
 						this.notificationIdCounter++
 						this.masteryNotifications = [
 							...this.masteryNotifications,
@@ -1636,9 +1518,6 @@
 					},
 					onArtifactReady: (data) => {
 						this.onArtifactReady(data)
-					},
-					onDebugLog: (msg) => {
-						this.addSseDebugLog(msg)
 					}
 				})
 			},
@@ -3346,6 +3225,17 @@
 				}
 			},
 
+			isCodeExpanded(toolCallId) {
+				return !!this.expandedCodeBlocks[toolCallId]
+			},
+
+			toggleCodeExpand(toolCallId) {
+				this.expandedCodeBlocks = {
+					...this.expandedCodeBlocks,
+					[toolCallId]: !this.expandedCodeBlocks[toolCallId]
+				}
+			},
+
 			/**
 			 * 打开搜索结果 URL
 			 */
@@ -3731,73 +3621,6 @@
 				}
 			},
 
-			// ========== 调试面板方法 ==========
-
-			toggleDebugPanel() {
-				this.showDebugPanel = !this.showDebugPanel
-				console.log('[DEBUG] showDebugPanel:', this.showDebugPanel, 'debugLogs:', this.debugLogs.length)
-				if (this.showDebugPanel && this.debugLogs.length > 0) {
-					// 滚动到最新日志
-					this.$nextTick(() => {
-						this.debugScrollTarget = 'debug-log-bottom'
-					})
-				}
-			},
-
-			// ========== 调试2号面板方法 ==========
-
-			toggleDebugToolPanel() {
-				this.showDebugToolPanel = !this.showDebugToolPanel
-			},
-
-			clearDebugToolForm() {
-				if (this.debugToolLoading) return
-				this.debugToolInput = ''
-				this.debugToolOutput = ''
-				this.debugToolError = ''
-			},
-
-			async submitDebugToolCall() {
-				if (this.debugToolLoading) return
-
-				const rawInput = this.debugToolInput.trim()
-				if (!rawInput) {
-					uni.showToast({ title: '请输入 JSON', icon: 'none' })
-					return
-				}
-
-				let payload = null
-				try {
-					payload = JSON.parse(rawInput)
-				} catch (e) {
-					uni.showToast({ title: 'JSON 格式错误', icon: 'none' })
-					return
-				}
-
-				if (!this.spaceId) {
-					uni.showToast({ title: '学习空间 ID 不存在', icon: 'none' })
-					return
-				}
-
-				this.debugToolLoading = true
-				this.debugToolError = ''
-				this.debugToolOutput = ''
-
-				try {
-					const result = await executeToolCall(this.spaceId, payload)
-					this.debugToolOutput = result?.raw_tool_output || ''
-				} catch (err) {
-					const message =
-						err?.data?.detail?.message ||
-						err?.data?.detail ||
-						err?.message ||
-						'执行失败'
-					this.debugToolError = message
-				} finally {
-					this.debugToolLoading = false
-				}
-			},
-
 			updateDebugLogs(logs) {
 				if (!logs || logs.length === 0) return
 
@@ -3811,29 +3634,6 @@
 
 				if (hasLengthChange || hasContentChange) {
 					this.debugLogs = [...logs]
-					// 如果面板打开，滚动到最新
-					if (this.showDebugPanel && hasLengthChange) {
-						this.$nextTick(() => {
-							this.debugScrollTarget = ''
-							setTimeout(() => {
-								this.debugScrollTarget = 'debug-log-bottom'
-							}, 50)
-						})
-					}
-				}
-			},
-
-			formatDebugTime(timestamp) {
-				if (!timestamp) return ''
-				try {
-					const date = new Date(timestamp)
-					return date.toLocaleTimeString('zh-CN', {
-						hour: '2-digit',
-						minute: '2-digit',
-						second: '2-digit'
-					})
-				} catch (e) {
-					return timestamp
 				}
 			},
 
@@ -4107,12 +3907,6 @@
 		justify-content: space-between;
 		padding-left: calc(100vw / 24);
 		padding-right: calc(100vw / 24);
-	}
-
-	.debug-btn {
-		font-size: 22rpx;
-		color: #F59E0B;
-		padding: 8rpx 16rpx;
 	}
 
 	.nav-left {
@@ -4815,350 +4609,6 @@
 		100% { box-shadow: inset 0 1rpx 2rpx rgba(255,255,255,0.1), 0 4rpx 16rpx rgba(0,0,0,0.3), 0 0 0 20rpx rgba(34,197,94,0); }
 	}
 
-	/* ========== 调试面板样式 ========== */
-
-	/* 调试面板遮罩 */
-	.debug-panel-overlay {
-		position: fixed;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background: rgba(0, 0, 0, 0.5);
-		z-index: 300;
-		display: flex;
-		justify-content: center;
-		align-items: center;
-	}
-
-	/* 调试面板 */
-	.debug-panel {
-		width: 90%;
-		max-width: 800rpx;
-		min-height: 300rpx;
-		max-height: 70vh;
-		background: rgba(20, 20, 30, 0.98);
-		-webkit-backdrop-filter: blur(40px) saturate(180%);
-		backdrop-filter: blur(40px) saturate(180%);
-		border-radius: 24rpx;
-		border: 1rpx solid rgba(255, 255, 255, 0.1);
-		overflow: hidden;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.debug-panel-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 24rpx 28rpx;
-		border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
-		background: rgba(255, 136, 0, 0.1);
-	}
-
-	.debug-panel-title {
-		font-size: 30rpx;
-		font-weight: 600;
-		color: #ff8800;
-	}
-
-	.debug-panel-close {
-		width: 56rpx;
-		height: 56rpx;
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.08);
-	}
-
-	.debug-panel-close-icon {
-		width: 32rpx;
-		height: 32rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.7;
-	}
-
-	.debug-panel-content {
-		flex: 1;
-		padding: 20rpx;
-		overflow-y: auto;
-	}
-
-	.debug-empty {
-		padding: 60rpx 20rpx;
-		text-align: center;
-	}
-
-	.debug-empty-text {
-		font-size: 26rpx;
-		color: #666;
-	}
-
-	/* 调试日志条目 */
-	.debug-log-item {
-		background: rgba(255, 255, 255, 0.04);
-		border-radius: 16rpx;
-		padding: 20rpx;
-		margin-bottom: 16rpx;
-		border: 1rpx solid rgba(255, 255, 255, 0.06);
-	}
-
-	.debug-log-item-loading {
-		border-color: rgba(255, 136, 0, 0.3);
-		animation: pulse 1.5s ease-in-out infinite;
-	}
-
-	@keyframes pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.7; }
-	}
-
-	.debug-log-status-loading {
-		font-size: 22rpx;
-		color: #ff8800;
-		margin-left: 12rpx;
-	}
-
-	.debug-log-content-loading {
-		color: #ff8800;
-	}
-
-	.debug-log-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 12rpx;
-	}
-
-	.debug-log-iteration {
-		font-size: 26rpx;
-		font-weight: 600;
-		color: #ff8800;
-	}
-
-	.debug-log-time {
-		font-size: 22rpx;
-		color: #666;
-	}
-
-	.debug-log-meta {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 16rpx;
-		margin-bottom: 12rpx;
-	}
-
-	.debug-log-meta-item {
-		font-size: 22rpx;
-		color: #888;
-		background: rgba(255, 255, 255, 0.06);
-		padding: 4rpx 12rpx;
-		border-radius: 8rpx;
-	}
-
-	.debug-log-content {
-		background: rgba(0, 0, 0, 0.3);
-		border-radius: 12rpx;
-		padding: 16rpx;
-		max-height: 300rpx;
-		overflow-y: auto;
-	}
-
-	.debug-log-content-empty {
-		opacity: 0.5;
-	}
-
-	.debug-log-content-text {
-		font-size: 24rpx;
-		color: #ccc;
-		line-height: 1.5;
-		word-break: break-all;
-		white-space: pre-wrap;
-	}
-
-	/* ========== 调试2号面板样式 ========== */
-
-	.debug2-fab {
-		position: fixed;
-		right: 32rpx;
-		bottom: calc(100vh * 6 / 26);
-		width: 88rpx;
-		height: 88rpx;
-		border-radius: 50%;
-		background: rgba(59, 130, 246, 0.16);
-		-webkit-backdrop-filter: blur(20px) saturate(180%);
-		backdrop-filter: blur(20px) saturate(180%);
-		border: 1rpx solid rgba(59, 130, 246, 0.35);
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		z-index: 210;
-		box-shadow:
-			inset 0 1rpx 2rpx rgba(255, 255, 255, 0.1),
-			0 4rpx 16rpx rgba(0, 0, 0, 0.3);
-	}
-
-	.debug2-fab-icon {
-		width: 44rpx;
-		height: 44rpx;
-		filter: brightness(0) saturate(100%) invert(66%) sepia(36%) saturate(2540%) hue-rotate(197deg) brightness(97%) contrast(96%);
-	}
-
-	.debug2-fab-badge {
-		position: absolute;
-		top: -4rpx;
-		right: -4rpx;
-		min-width: 36rpx;
-		height: 36rpx;
-		padding: 0 8rpx;
-		border-radius: 18rpx;
-		background: #3b82f6;
-		color: #ffffff;
-		font-size: 22rpx;
-		font-weight: 600;
-		display: flex;
-		justify-content: center;
-		align-items: center;
-	}
-
-	.debug2-panel-overlay {
-		position: fixed;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background: rgba(0, 0, 0, 0.55);
-		z-index: 320;
-		display: flex;
-		justify-content: center;
-		align-items: center;
-	}
-
-	.debug2-panel {
-		width: 92%;
-		max-width: 720rpx;
-		max-height: 78vh;
-		background: rgba(16, 18, 28, 0.96);
-		-webkit-backdrop-filter: blur(40px) saturate(180%);
-		backdrop-filter: blur(40px) saturate(180%);
-		border-radius: 24rpx;
-		border: 1rpx solid rgba(255, 255, 255, 0.1);
-		overflow: hidden;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.debug2-panel-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 24rpx 28rpx;
-		border-bottom: 1rpx solid rgba(255, 255, 255, 0.08);
-		background: rgba(59, 130, 246, 0.12);
-	}
-
-	.debug2-panel-title {
-		font-size: 30rpx;
-		font-weight: 600;
-		color: #60a5fa;
-	}
-
-	.debug2-panel-close {
-		width: 56rpx;
-		height: 56rpx;
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.08);
-	}
-
-	.debug2-panel-close-icon {
-		width: 32rpx;
-		height: 32rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.7;
-	}
-
-	.debug2-panel-body {
-		padding: 24rpx;
-		display: flex;
-		flex-direction: column;
-		gap: 16rpx;
-	}
-
-	.debug2-section-title {
-		font-size: 24rpx;
-		color: #a5b4fc;
-		font-weight: 500;
-	}
-
-	.debug2-input {
-		width: 100%;
-		min-height: 180rpx;
-		padding: 16rpx;
-		border-radius: 16rpx;
-		background: rgba(255, 255, 255, 0.06);
-		border: 1rpx solid rgba(255, 255, 255, 0.1);
-		color: #ffffff;
-		font-size: 24rpx;
-		line-height: 1.5;
-	}
-
-	.debug2-input-placeholder {
-		color: rgba(255, 255, 255, 0.4);
-		font-size: 24rpx;
-	}
-
-	.debug2-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: 16rpx;
-	}
-
-	.debug2-btn {
-		min-width: 120rpx;
-		padding: 14rpx 22rpx;
-		border-radius: 999rpx;
-		text-align: center;
-		font-size: 24rpx;
-	}
-
-	.debug2-btn-secondary {
-		background: rgba(255, 255, 255, 0.08);
-		color: #d1d5db;
-		border: 1rpx solid rgba(255, 255, 255, 0.12);
-	}
-
-	.debug2-btn-primary {
-		background: rgba(59, 130, 246, 0.9);
-		color: #ffffff;
-		border: 1rpx solid rgba(59, 130, 246, 0.9);
-	}
-
-	.debug2-error-text {
-		color: #f87171;
-		font-size: 22rpx;
-	}
-
-	.debug2-output {
-		background: rgba(0, 0, 0, 0.35);
-		border-radius: 16rpx;
-		padding: 16rpx;
-		max-height: 280rpx;
-		border: 1rpx solid rgba(255, 255, 255, 0.08);
-	}
-
-	.debug2-output-text {
-		font-size: 22rpx;
-		color: #e5e7eb;
-		line-height: 1.5;
-		word-break: break-all;
-		white-space: pre-wrap;
-		font-family: monospace;
-	}
-
 	/* +号弹窗 */
 	.plus-popup-wrapper {
 		position: fixed;
@@ -5451,6 +4901,94 @@
 	.chart-saved-text {
 		font-size: 22rpx;
 		color: rgba(255, 255, 255, 0.5);
+	}
+
+	/* ========== 代码执行卡片 ========== */
+	.code-execution-card .code-block-section {
+		margin-top: 12rpx;
+	}
+
+	.code-toggle-link {
+		display: flex;
+		align-items: center;
+		gap: 6rpx;
+	}
+
+	.code-toggle-text {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.4);
+	}
+
+	.code-toggle-chevron {
+		width: 24rpx;
+		height: 24rpx;
+		opacity: 0.4;
+		transition: transform 0.2s ease;
+	}
+
+	.code-toggle-chevron-expanded {
+		transform: rotate(180deg);
+	}
+
+	.code-block-wrapper {
+		max-height: 600rpx;
+		overflow: hidden;
+		transition: max-height 0.3s ease, opacity 0.2s ease, margin-top 0.2s ease;
+		opacity: 1;
+		margin-top: 10rpx;
+	}
+
+	.code-block-collapsed {
+		max-height: 0;
+		opacity: 0;
+		margin-top: 0;
+	}
+
+	.code-block-pre {
+		padding: 16rpx 20rpx;
+		background: rgba(0, 0, 0, 0.35);
+		border-radius: 10rpx;
+		overflow-x: auto;
+	}
+
+	.code-block-code {
+		font-family: 'Menlo', 'Consolas', monospace;
+		font-size: 22rpx;
+		line-height: 1.5;
+		color: rgba(255, 255, 255, 0.85);
+		white-space: pre;
+	}
+
+	.code-output-section {
+		margin-top: 12rpx;
+		padding-top: 12rpx;
+		border-top: 1px solid rgba(255, 255, 255, 0.06);
+	}
+
+	.code-output-stdout {
+		padding: 12rpx 16rpx;
+		background: rgba(0, 0, 0, 0.25);
+		border-radius: 10rpx;
+	}
+
+	.code-output-stderr {
+		margin-top: 8rpx;
+		padding: 12rpx 16rpx;
+		background: rgba(220, 38, 38, 0.1);
+		border-radius: 10rpx;
+		border-left: 4rpx solid rgba(220, 38, 38, 0.4);
+	}
+
+	.code-output-text {
+		font-family: 'Menlo', 'Consolas', monospace;
+		font-size: 22rpx;
+		line-height: 1.5;
+		color: rgba(255, 255, 255, 0.8);
+		word-break: break-all;
+	}
+
+	.code-output-text-error {
+		color: rgba(248, 113, 113, 0.9);
 	}
 
 	/* ========== 复习事件列表 ========== */
@@ -5999,61 +5537,6 @@
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 		line-height: 1.4;
-	}
-
-	/* ========== SSE 诊断面板样式 ========== */
-	.sse-debug-panel {
-		position: fixed;
-		top: 160rpx;
-		left: 20rpx;
-		right: 20rpx;
-		max-height: 500rpx;
-		background: rgba(0, 0, 0, 0.92);
-		border-radius: 16rpx;
-		z-index: 9999;
-		padding: 16rpx;
-		border: 1rpx solid rgba(245, 158, 11, 0.3);
-	}
-	.sse-debug-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 8rpx;
-	}
-	.sse-debug-title {
-		color: #F59E0B;
-		font-size: 28rpx;
-		font-weight: bold;
-	}
-	.sse-debug-close {
-		color: #fff;
-		font-size: 28rpx;
-		padding: 8rpx 16rpx;
-	}
-	.sse-debug-body {
-		max-height: 300rpx;
-	}
-	.sse-debug-empty {
-		color: #666;
-		font-size: 22rpx;
-	}
-	.sse-debug-line {
-		color: #22D3EE;
-		font-size: 20rpx;
-		display: block;
-		margin-bottom: 4rpx;
-	}
-	.sse-debug-actions {
-		display: flex;
-		gap: 16rpx;
-		margin-top: 12rpx;
-	}
-	.sse-debug-action-btn {
-		color: #F59E0B;
-		font-size: 24rpx;
-		padding: 8rpx 20rpx;
-		border: 1px solid #F59E0B;
-		border-radius: 8rpx;
 	}
 
 	/* ==================== 模型选择器（底部工具行内） ==================== */

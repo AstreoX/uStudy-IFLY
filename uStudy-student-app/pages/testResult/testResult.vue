@@ -56,10 +56,6 @@
             <image class="trophy-icon" src="/static/icons/phosphor-icons/SVGs/fill/trophy-fill.svg" mode="aspectFit"></image>
             <text class="score-text">{{ score }}/{{ totalScore }}分</text>
           </view>
-          <!-- 调试按钮 -->
-          <view v-if="debugInfo" class="debug-btn" @click="showDebugModal = true">
-            <image class="debug-icon" src="/static/icons/phosphor-icons/SVGs/regular/bug.svg" mode="aspectFit"></image>
-          </view>
         </view>
       </view>
 
@@ -203,69 +199,6 @@
       </view>
     </scroll-view>
 
-    <!-- 调试信息弹窗 -->
-    <view v-if="showDebugModal" class="debug-modal-overlay" @click="showDebugModal = false">
-      <view class="debug-modal" @click.stop>
-        <view class="debug-modal-header">
-          <text class="debug-modal-title">AI 评估流程日志</text>
-          <view class="debug-modal-close" @click="showDebugModal = false">
-            <image
-              class="debug-modal-close-icon"
-              src="/static/icons/phosphor-icons/SVGs/regular/x.svg"
-              mode="aspectFit"
-            ></image>
-          </view>
-        </view>
-
-        <scroll-view class="debug-modal-content" scroll-y>
-          <!-- 总耗时 -->
-          <view class="debug-summary">
-            <text class="debug-summary-text">模型: {{ debugInfo.model_name }}</text>
-            <text class="debug-summary-text">总耗时: {{ (debugInfo.total_duration_ms / 1000).toFixed(1) }}s</text>
-          </view>
-
-          <!-- 步骤列表 -->
-          <view
-            v-for="step in debugInfo.steps"
-            :key="step.step_number"
-            class="debug-step"
-            :class="'debug-step-' + step.status"
-          >
-            <view class="debug-step-header">
-              <view class="debug-step-number">[{{ step.step_number }}]</view>
-              <text class="debug-step-name">{{ step.step_name }}</text>
-              <view class="debug-step-status">
-                <image
-                  v-if="step.status === 'success'"
-                  class="debug-step-status-icon"
-                  src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg"
-                  mode="aspectFit"
-                ></image>
-                <image
-                  v-else-if="step.status === 'failed'"
-                  class="debug-step-status-icon debug-step-status-failed"
-                  src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg"
-                  mode="aspectFit"
-                ></image>
-                <image
-                  v-else
-                  class="debug-step-status-icon debug-step-status-skipped"
-                  src="/static/icons/phosphor-icons/SVGs/fill/minus-circle-fill.svg"
-                  mode="aspectFit"
-                ></image>
-              </view>
-            </view>
-            <view class="debug-step-details">
-              <text
-                v-for="(detail, idx) in step.details"
-                :key="idx"
-                class="debug-step-detail"
-              >{{ detail }}</text>
-            </view>
-          </view>
-        </scroll-view>
-      </view>
-    </view>
   </view>
 </template>
 
@@ -285,8 +218,6 @@ export default {
       suggestions: [],
       questionResults: [],
       loading: true,
-      debugInfo: null,
-      showDebugModal: false,
       scoreRingDrawTimer: null
     }
   },
@@ -432,10 +363,6 @@ export default {
         correctAnswerDisplay: this.formatAnswer(qr.question_type, qr.correct_answer)
       }))
 
-      // 提取调试信息
-      if (result.debug_info) {
-        this.debugInfo = result.debug_info
-      }
     },
 
     /**
@@ -1064,185 +991,5 @@ export default {
   transform: rotate(180deg);
 }
 
-/* ========== 调试按钮 ========== */
-.debug-btn {
-  position: absolute;
-  top: 8rpx;
-  right: 8rpx;
-  width: 56rpx;
-  height: 56rpx;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  border-radius: 50%;
-  background: rgba(139, 92, 246, 0.2);
-  border: 1rpx solid rgba(139, 92, 246, 0.4);
-}
 
-.debug-icon {
-  width: 32rpx;
-  height: 32rpx;
-  filter: brightness(0) saturate(100%) invert(48%) sepia(79%) saturate(2476%) hue-rotate(238deg) brightness(98%) contrast(91%);
-}
-
-/* ========== 调试弹窗样式 ========== */
-.debug-modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
-  z-index: 300;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.debug-modal {
-  width: 90%;
-  max-width: 680rpx;
-  max-height: 75vh;
-  background: rgba(20, 20, 30, 0.95);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
-  border-radius: 24rpx;
-  border: 1rpx solid rgba(139, 92, 246, 0.3);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.debug-modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 24rpx 28rpx;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
-  background: rgba(139, 92, 246, 0.1);
-}
-
-.debug-modal-title {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: rgba(139, 92, 246, 1);
-}
-
-.debug-modal-close {
-  width: 56rpx;
-  height: 56rpx;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.debug-modal-close-icon {
-  width: 32rpx;
-  height: 32rpx;
-  filter: brightness(0) invert(1);
-  opacity: 0.7;
-}
-
-.debug-modal-content {
-  flex: 1;
-  padding: 20rpx;
-  overflow-y: auto;
-  box-sizing: border-box;
-}
-
-/* 总耗时摘要 */
-.debug-summary {
-  display: flex;
-  justify-content: space-between;
-  padding: 16rpx 20rpx;
-  background: rgba(139, 92, 246, 0.1);
-  border-radius: 12rpx;
-  margin-bottom: 20rpx;
-  box-sizing: border-box;
-}
-
-.debug-summary-text {
-  font-size: 24rpx;
-  color: rgba(139, 92, 246, 0.9);
-  word-break: break-word;
-}
-
-/* 步骤样式 */
-.debug-step {
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 16rpx;
-  padding: 20rpx;
-  margin-bottom: 16rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.06);
-  box-sizing: border-box;
-  overflow: hidden;
-}
-
-.debug-step-success {
-  border-color: rgba(134, 239, 172, 0.3);
-}
-
-.debug-step-failed {
-  border-color: rgba(239, 68, 68, 0.3);
-}
-
-.debug-step-skipped {
-  border-color: rgba(255, 255, 255, 0.1);
-  opacity: 0.7;
-}
-
-.debug-step-header {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-  margin-bottom: 12rpx;
-}
-
-.debug-step-number {
-  font-size: 26rpx;
-  font-weight: 600;
-  color: rgba(139, 92, 246, 1);
-}
-
-.debug-step-name {
-  flex: 1;
-  font-size: 26rpx;
-  font-weight: 500;
-  color: #ffffff;
-}
-
-.debug-step-status {
-  flex-shrink: 0;
-}
-
-.debug-step-status-icon {
-  width: 36rpx;
-  height: 36rpx;
-  filter: brightness(0) saturate(100%) invert(85%) sepia(25%) saturate(556%) hue-rotate(85deg) brightness(96%) contrast(92%);
-}
-
-.debug-step-status-failed {
-  filter: brightness(0) saturate(100%) invert(44%) sepia(78%) saturate(2349%) hue-rotate(337deg) brightness(97%) contrast(93%);
-}
-
-.debug-step-status-skipped {
-  filter: brightness(0) invert(1);
-  opacity: 0.4;
-}
-
-.debug-step-details {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-  padding-left: 8rpx;
-}
-
-.debug-step-detail {
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.7);
-  line-height: 1.5;
-  word-break: break-word;
-}
 </style>
