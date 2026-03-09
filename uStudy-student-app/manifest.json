@@ -2,8 +2,8 @@
     "name" : "uStudy",
     "appid" : "__UNI__87BF873",
     "description" : "",
-    "versionName" : "1.4.4",
-    "versionCode" : "144",
+    "versionName" : "1.4.5",
+    "versionCode" : "145",
     "transformPx" : false,
     /* 5+App特有相关 */
     "app-plus" : {
@@ -57,10 +57,10 @@
             },
             "icons" : {
                 "android" : {
-                    "hdpi" : "uStudy-LOGO3.png",
-                    "xhdpi" : "uStudy-LOGO3.png",
-                    "xxhdpi" : "uStudy-LOGO3.png",
-                    "xxxhdpi" : "uStudy-LOGO3.png"
+                    "hdpi" : "LOGO.png",
+                    "xhdpi" : "LOGO.png",
+                    "xxhdpi" : "LOGO.png",
+                    "xxxhdpi" : "LOGO.png"
                 }
             },
             /* SDK配置 */
