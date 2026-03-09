@@ -325,7 +325,7 @@ class NoteToolExecutor:
         numbered_content = "\n".join(numbered_lines)
 
         attachments = [
-            {"id": str(a.id), "file_name": a.file_name, "file_url": a.file_url}
+            {"id": str(a.id), "file_name": a.original_filename, "file_url": a.file_url}
             for a in (note.attachments or [])
         ]
 
@@ -362,17 +362,17 @@ class NoteToolExecutor:
         line_start = args.get("line_start")
         line_end = args.get("line_end")
 
-        # Read current note
-        async with get_scoped_session() as db:
-            note_service = NoteService(db)
-            note = await note_service.get_note(self.user_id, self.space_id, note_id)
-
         # Build final content
         if line_start is not None:
             if line_end is None:
                 line_end = line_start
 
-            lines = (note.content or "").split("\n")
+            # Need current content for line-based editing
+            async with get_scoped_session() as db:
+                note_service = NoteService(db)
+                current = await note_service.get_note(self.user_id, self.space_id, note_id)
+
+            lines = (current.content or "").split("\n")
             total = len(lines)
 
             if line_start < 1 or line_end < line_start or line_end > total:
@@ -390,10 +390,11 @@ class NoteToolExecutor:
         else:
             final_content = new_content
 
-        # Update via service
-        update_data = NoteUpdate(content=final_content)
+        # Build update data via constructor so model_fields_set is correct
+        update_kwargs: dict[str, Any] = {"content": final_content}
         if title is not None:
-            update_data.title = title
+            update_kwargs["title"] = title
+        update_data = NoteUpdate(**update_kwargs)
 
         async with get_scoped_session() as db:
             note_service = NoteService(db)
