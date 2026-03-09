@@ -23,9 +23,39 @@
 			</view>
 		</view>
 
+		<view v-if="isCollaborative" class="collab-filter-wrap">
+			<view class="collab-filter-trigger" @tap.stop="toggleMemberDropdown">
+				<view class="collab-filter-dot" :style="{ backgroundColor: selectedMemberColor }"></view>
+				<text class="collab-filter-label">{{ selectedMemberName }}</text>
+				<text class="collab-filter-arrow">{{ showMemberDropdown ? '▴' : '▾' }}</text>
+			</view>
+			<view v-if="showMemberDropdown" class="collab-dropdown-menu">
+				<view
+					class="collab-member-item"
+					:class="{ 'collab-member-item-active': !selectedMemberUserId }"
+					@tap.stop="selectMemberFilter(null)"
+				>
+					<view class="collab-filter-dot" :style="{ backgroundColor: selfMemberColor }"></view>
+					<text class="collab-member-name">我</text>
+				</view>
+				<view
+					v-for="member in filterableMembers"
+					:key="member.user_id"
+					class="collab-member-item"
+					:class="{ 'collab-member-item-active': member.user_id === selectedMemberUserId }"
+					@tap.stop="selectMemberFilter(member.user_id)"
+				>
+					<view class="collab-filter-dot" :style="{ backgroundColor: member.color || '#0088FF' }"></view>
+					<text class="collab-member-name">{{ member.nickname }}</text>
+				</view>
+			</view>
+		</view>
+		<view v-if="showMemberDropdown" class="collab-dropdown-mask" @tap="closeMemberDropdown"></view>
+
 		<!-- 小地图 -->
 		<view
 			class="minimap-container"
+			:class="{ 'minimap-container-collab': isCollaborative }"
 			@touchstart.stop.prevent="onMinimapTouchStart"
 			@touchmove.stop.prevent="onMinimapTouchMove"
 			@touchend.stop="onMinimapTouchEnd"
@@ -440,10 +470,11 @@
 </template>
 
 <script>
-	import { getSpaceGraph, getTaskStatus, generateKnowledgeGraph, addSpaceLink, uploadSpaceDocument, expandNode } from '@/api/space'
+	import { getSpace, getSpaceGraph, getSpaceMembers, getTaskStatus, generateKnowledgeGraph, addSpaceLink, uploadSpaceDocument, expandNode } from '@/api/space'
 	import { getSpaceNotes, getNoteDetail } from '@/api/note'
 	import { getModels } from '@/api/chat'
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
+	import { useUserStore } from '@/store/user'
 	import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
@@ -645,6 +676,11 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		return { nodes, edges }
 	}
 
+	const FOREIGN_GRAPH_NODE_ALPHA = 0.56
+	const FOREIGN_GRAPH_SELECTED_NODE_ALPHA = 0.70
+	const FOREIGN_GRAPH_EDGE_ALPHA = 0.38
+	const FOREIGN_GRAPH_PATH_EDGE_ALPHA = 0.58
+
 	export default {
 		components: {
 			ImageSourcePicker,
@@ -661,6 +697,12 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				plusPopupVisible: false,
 				showImageSourcePicker: false,
 				spaceTitle: '学习空间',
+				isCollaborative: false,
+				userRole: '',
+				spaceMembers: [],
+				selectedMemberUserId: null,
+				showMemberDropdown: false,
+				currentUserId: '',
 				inputText: '',
 				textareaHeight: 'auto',
 				textareaOverflow: 'hidden',
@@ -880,6 +922,37 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				const model = this.availableModels.find(m => m.id === this.selectedModelId)
 				return model ? model.display_name : ''
 			},
+
+			filterableMembers() {
+				return (this.spaceMembers || []).filter(member => String(member.user_id) !== String(this.currentUserId || ''))
+			},
+
+			selfMemberColor() {
+				const self = this.spaceMembers.find(member => String(member.user_id) === String(this.currentUserId || ''))
+				return self?.color || '#0088FF'
+			},
+
+			selectedMemberColor() {
+				if (!this.selectedMemberUserId) {
+					return this.selfMemberColor
+				}
+				const member = this.spaceMembers.find(item => String(item.user_id) === String(this.selectedMemberUserId))
+				return member?.color || '#0088FF'
+			},
+
+			pathHighlightColor() {
+				return this.selectedMemberColor || '#0088FF'
+			},
+
+			isForeignGraphView() {
+				return this.selectedMemberUserId !== null && String(this.selectedMemberUserId) !== String(this.currentUserId || '')
+			},
+
+			selectedMemberName() {
+				if (!this.selectedMemberUserId) return '我'
+				const member = this.spaceMembers.find(item => String(item.user_id) === String(this.selectedMemberUserId))
+				return member?.nickname || '我'
+			},
 		},
 
 		async onLoad(options) {
@@ -892,6 +965,8 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 			if (options.taskId) {
 				this.taskId = options.taskId
 			}
+			const userStore = useUserStore()
+			this.currentUserId = userStore.user?.id || ''
 
 			// 监听学习路径更新事件
 			uni.$on('learningPathUpdated', this.handleLearningPathUpdated)
@@ -923,6 +998,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 				// 从后端加载图谱数据
 				if (this.spaceId) {
+					await this.loadCollaborationContext()
 					this.isLoading = true
 					this.loadingText = '正在加载知识图谱...'
 					await this.loadGraphData(0)
@@ -988,6 +1064,9 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 			// 没有 spaceId，跳过
 			if (!this.spaceId) return
+
+			this.closeMemberDropdown()
+			this.loadCollaborationContext()
 
 			// 静默刷新图谱数据
 			this.refreshGraphData()
@@ -1436,7 +1515,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				const RETRY_DELAYS = [1000, 2000, 3000, 4000, 5000, 5000, 5000, 5000]
 
 				try {
-					const { nodes, edges } = await getSpaceGraph(this.spaceId)
+					const { nodes, edges } = await getSpaceGraph(this.spaceId, this.getGraphTargetUserId())
 
 					// 检测空图谱情况 + 重试逻辑
 					if (!nodes || nodes.length === 0) {
@@ -1539,13 +1618,13 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 			/**
 			 * 静默刷新图谱数据（用于 onShow 时刷新，不显示 loading）
 			 */
-			async refreshGraphData() {
+			async refreshGraphData(throwOnError = false) {
 				// 防止并发刷新
 				if (this.isRefreshing) return
 				this.isRefreshing = true
 
 				try {
-					const { nodes, edges } = await getSpaceGraph(this.spaceId)
+					const { nodes, edges } = await getSpaceGraph(this.spaceId, this.getGraphTargetUserId())
 
 					// 数据为空则跳过
 					if (!nodes || nodes.length === 0) return
@@ -1631,6 +1710,9 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 					this.drawGraph()
 					this.drawMinimap()
 				} catch (err) {
+					if (throwOnError) {
+						throw err
+					}
 					// 静默刷新失败，不显示错误，保留现有数据
 					// #ifdef DEBUG
 					// console.warn('静默刷新图谱失败:', err)
@@ -1779,6 +1861,77 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				} catch (err) {
 					console.error('[LearningSpace] Failed to load models:', err)
 				}
+			},
+
+			async loadCollaborationContext() {
+				if (!this.spaceId) return
+				try {
+					const space = await getSpace(this.spaceId)
+					this.isCollaborative = !!space?.is_collaborative
+					this.userRole = space?.user_role || ''
+					if (!this.isCollaborative) {
+						this.spaceMembers = []
+						this.selectedMemberUserId = null
+						return
+					}
+
+					const members = await getSpaceMembers(this.spaceId)
+					const memberList = members?.data || members || []
+					this.spaceMembers = Array.isArray(memberList) ? memberList : []
+					const selectedExists = this.spaceMembers.some(
+						member => String(member.user_id) === String(this.selectedMemberUserId || '')
+					)
+					if (!selectedExists) {
+						this.selectedMemberUserId = null
+					}
+				} catch (err) {
+					this.isCollaborative = false
+					this.userRole = ''
+					this.spaceMembers = []
+					this.selectedMemberUserId = null
+				}
+			},
+
+			toggleMemberDropdown() {
+				if (!this.isCollaborative) return
+				this.showMemberDropdown = !this.showMemberDropdown
+			},
+
+			closeMemberDropdown() {
+				this.showMemberDropdown = false
+			},
+
+			async selectMemberFilter(userId) {
+				const normalizedUserId = userId || null
+				if (String(normalizedUserId || '') === String(this.selectedMemberUserId || '')) {
+					this.closeMemberDropdown()
+					return
+				}
+
+				const previousUserId = this.selectedMemberUserId
+				this.selectedMemberUserId = normalizedUserId
+				this.closeMemberDropdown()
+				this.selectedNodeId = null
+				this.nodeNotes = []
+				this.nodeNotesLoading = false
+
+				const previousLoadingState = this.isLoading
+				const previousLoadingText = this.loadingText
+				this.isLoading = true
+				this.loadingText = '正在切换成员视角...'
+				try {
+					await this.refreshGraphData(true)
+				} catch (err) {
+					this.selectedMemberUserId = previousUserId
+					uni.showToast({ title: err.message || '切换成员视角失败', icon: 'none' })
+				} finally {
+					this.isLoading = previousLoadingState
+					this.loadingText = previousLoadingText
+				}
+			},
+
+			getGraphTargetUserId() {
+				return this.selectedMemberUserId || null
 			},
 
 			handlePlusClick() {
@@ -3624,11 +3777,12 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 					pathEdges: []
 				}
 				let renderedCount = 0
+				const regularEdgeAlpha = (!interactionMode && this.isPathHighlightOn)
+					? 0.15
+					: (this.isForeignGraphView ? FOREIGN_GRAPH_EDGE_ALPHA : 1)
+				const pathEdgeAlpha = this.isForeignGraphView ? FOREIGN_GRAPH_PATH_EDGE_ALPHA : 1
 
-				// 路径高亮时，非路径边变暗
-				if (!interactionMode && this.isPathHighlightOn) {
-					ctx.setGlobalAlpha(0.15)
-				}
+				ctx.setGlobalAlpha(regularEdgeAlpha)
 
 				// 1. 绘制知识树边（灰色实线 - 树形骨架）
 				buckets.treeEdges.forEach(edge => {
@@ -3675,7 +3829,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 				// 恢复透明度后再绘制路径边
 				if (!interactionMode && this.isPathHighlightOn) {
-					ctx.setGlobalAlpha(1.0)
+					ctx.setGlobalAlpha(pathEdgeAlpha)
 				}
 
 				// 3. 绘制学习路径边（蓝色实线 + 中间箭头）
@@ -3694,12 +3848,13 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 					})
 				}
 
+				ctx.setGlobalAlpha(1.0)
 				return renderedCount
 			},
 
 			// 绘制学习路径边（蓝色实线 + 中间箭头）
 			drawPathEdge(ctx, x1, y1, x2, y2) {
-				const color = '#0088FF'
+				const color = this.pathHighlightColor
 				const lineWidth = 3
 
 				// 绘制实线
@@ -3851,9 +4006,11 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 				// 路径高亮时，非路径节点变暗（选中节点始终清晰）
 				const isDimmed = !interactionMode && this.isPathHighlightOn && !isOnPath && !isSelected
-				if (isDimmed) {
-					ctx.setGlobalAlpha(0.25)
-				}
+				const nodeAlpha = isDimmed
+					? 0.25
+					: (this.isForeignGraphView ? (isSelected ? FOREIGN_GRAPH_SELECTED_NODE_ALPHA : FOREIGN_GRAPH_NODE_ALPHA) : 1)
+				const pathRingAlpha = this.isForeignGraphView ? FOREIGN_GRAPH_PATH_EDGE_ALPHA : 1
+				ctx.setGlobalAlpha(nodeAlpha)
 
 				const fillColor = node.fillColor || (node.mastery == null ? UNMASTERED_NODE_COLOR : getMasteryColor(node.mastery))
 
@@ -3896,6 +4053,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 				// 选中节点：白色描边轮廓（加粗）
 				if (isSelected) {
+					ctx.setGlobalAlpha(1.0)
 					ctx.beginPath()
 					ctx.arc(node.x, node.y, radius + 6, 0, Math.PI * 2)
 					ctx.setStrokeStyle('#FFFFFF')
@@ -3905,9 +4063,10 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 				// 路径节点：蓝色描边（非选中时）
 				if (!skipHeavyVisual && isOnPath && !isSelected) {
+					ctx.setGlobalAlpha(pathRingAlpha)
 					ctx.beginPath()
 					ctx.arc(node.x, node.y, radius + 5, 0, Math.PI * 2)
-					ctx.setStrokeStyle('#0088FF')
+					ctx.setStrokeStyle(this.pathHighlightColor)
 					ctx.setLineWidth(2)
 					ctx.stroke()
 				}
@@ -3925,14 +4084,12 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				if (!skipHeavyVisual && node.collapsed) {
 					const childCount = this.getChildCount(node.id)
 					if (childCount > 0) {
+						ctx.setGlobalAlpha(nodeAlpha)
 						this.drawBadge(ctx, node.x + radius - 2, node.y - radius + 2, childCount)
 					}
 				}
 
-				// 恢复透明度
-				if (isDimmed) {
-					ctx.setGlobalAlpha(1.0)
-				}
+				ctx.setGlobalAlpha(1.0)
 			},
 
 			drawBadge(ctx, x, y, count) {
@@ -4022,7 +4179,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						ctx.beginPath()
 						ctx.moveTo(x1, y1)
 						ctx.lineTo(x2, y2)
-						ctx.setStrokeStyle('#0088FF')
+						ctx.setStrokeStyle(this.pathHighlightColor)
 						ctx.setLineWidth(1)
 						ctx.stroke()
 					})
@@ -4038,7 +4195,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						ctx.setGlobalAlpha(0.25)
 					}
 
-					const dotColor = isOnPath ? '#0088FF' : (node.level === 0 ? '#9CA3AF' : '#6B7280')
+					const dotColor = isOnPath ? this.pathHighlightColor : (node.level === 0 ? '#9CA3AF' : '#6B7280')
 					const dotRadius = node.level === 0 ? 3 : (node.level === 1 ? 2.5 : 2)
 
 					ctx.beginPath()
@@ -4605,6 +4762,95 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		color: #ffffff;
 	}
 
+	.collab-filter-wrap {
+		position: fixed;
+		top: calc(100vh * 3.6 / 26);
+		right: calc(100vw / 24);
+		z-index: 112;
+		min-width: 184rpx;
+	}
+
+	.collab-filter-trigger {
+		min-width: 184rpx;
+		height: 68rpx;
+		padding: 0 22rpx;
+		border-radius: 999rpx;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 14rpx;
+		background: rgba(18, 22, 34, 0.74);
+		-webkit-backdrop-filter: blur(32px) saturate(180%);
+		backdrop-filter: blur(32px) saturate(180%);
+		border: 1rpx solid rgba(255, 255, 255, 0.12);
+		box-shadow: 0 14rpx 36rpx rgba(0, 0, 0, 0.2);
+	}
+
+	.collab-filter-dot {
+		width: 18rpx;
+		height: 18rpx;
+		border-radius: 50%;
+		flex-shrink: 0;
+		box-shadow: 0 0 12rpx rgba(255, 255, 255, 0.28);
+	}
+
+	.collab-filter-label {
+		flex: 1;
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.88);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.collab-filter-arrow {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.55);
+	}
+
+	.collab-dropdown-mask {
+		position: fixed;
+		inset: 0;
+		z-index: 111;
+		background: transparent;
+	}
+
+	.collab-dropdown-menu {
+		position: absolute;
+		top: 80rpx;
+		right: 0;
+		z-index: 113;
+		width: 260rpx;
+		padding: 12rpx;
+		border-radius: 24rpx;
+		background: rgba(18, 22, 34, 0.92);
+		-webkit-backdrop-filter: blur(32px) saturate(180%);
+		backdrop-filter: blur(32px) saturate(180%);
+		border: 1rpx solid rgba(255, 255, 255, 0.12);
+		box-shadow: 0 22rpx 60rpx rgba(0, 0, 0, 0.26);
+	}
+
+	.collab-member-item {
+		display: flex;
+		align-items: center;
+		gap: 14rpx;
+		padding: 18rpx 16rpx;
+		border-radius: 18rpx;
+	}
+
+	.collab-member-item-active {
+		background: rgba(91, 140, 255, 0.16);
+	}
+
+	.collab-member-name {
+		flex: 1;
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.88);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
 	/* 小地图容器 */
 	.minimap-container {
 		position: fixed;
@@ -4620,6 +4866,10 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		border-radius: 16rpx;
 		overflow: hidden;
 		pointer-events: auto;
+	}
+
+	.minimap-container-collab {
+		top: calc(100vh * 4.55 / 26);
 	}
 
 	.minimap-canvas {

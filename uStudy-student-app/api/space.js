@@ -63,11 +63,16 @@ export function updateSpace(spaceId, data) {
 /**
  * 获取学习空间的知识图谱
  * @param {string} spaceId - 学习空间 ID
+ * @param {string|null} targetUserId - 协作空间中指定查看的成员 ID
  * @returns {Promise<Object>} { nodes: NodeResponse[], edges: EdgeResponse[] }
  */
-export function getSpaceGraph(spaceId) {
+export function getSpaceGraph(spaceId, targetUserId = null) {
+  const query = [`_t=${Date.now()}`]
+  if (targetUserId) {
+    query.push(`target_user_id=${encodeURIComponent(targetUserId)}`)
+  }
   return request({
-    url: `/api/spaces/${spaceId}/graph?_t=${Date.now()}`,
+    url: `/api/spaces/${spaceId}/graph?${query.join('&')}`,
     method: 'GET'
   })
 }
@@ -368,5 +373,31 @@ export function removeSpaceMember(spaceId, userId) {
   return request({
     url: `/api/spaces/${spaceId}/members/${userId}`,
     method: 'DELETE'
+  })
+}
+
+/**
+ * 更新成员权限
+ * @param {string} spaceId
+ * @param {string} userId
+ * @param {Object} data - { can_edit_graph?: boolean }
+ */
+export function updateMemberPermission(spaceId, userId, data) {
+  return request({
+    url: `/api/spaces/${spaceId}/members/${userId}`,
+    method: 'PATCH',
+    data
+  })
+}
+
+/**
+ * 获取协作空间排行榜
+ * @param {string} spaceId
+ * @returns {Promise<Array>}
+ */
+export function getSpaceLeaderboard(spaceId) {
+  return request({
+    url: `/api/spaces/${spaceId}/leaderboard`,
+    method: 'GET'
   })
 }

@@ -46,6 +46,10 @@
                 <text v-if="note.note_type === 'interactive_html'" class="note-type-badge">互动演示</text>
               </view>
               <text class="note-preview">{{ note.note_type === 'interactive_html' ? '点击查看互动演示' : truncateContent(note.content) }}</text>
+              <view v-if="isCollaborative && note.creator_nickname" class="note-creator">
+                <view class="note-creator-dot" :style="{ backgroundColor: getCreatorColor(note.creator_user_id) }"></view>
+                <text class="note-creator-name">{{ note.creator_nickname }}</text>
+              </view>
               <view class="note-meta">
                 <text class="note-date">{{ formatDate(note.created_at) }}</text>
                 <text v-if="getNoteNodeTag(note)" class="note-node-tag">{{ getNoteNodeTag(note) }}</text>
@@ -53,10 +57,10 @@
               </view>
             </view>
             <view class="note-item-actions" @click.stop>
-              <view v-if="note.note_type !== 'interactive_html'" class="note-item-btn" @click.stop="startEditNote(note)">
+              <view v-if="note.note_type !== 'interactive_html' && canEditNote(note)" class="note-item-btn" @click.stop="startEditNote(note)">
                 <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
               </view>
-              <view class="note-item-btn note-item-btn-delete" @click.stop="showDeleteConfirm(note)">
+              <view v-if="canEditNote(note)" class="note-item-btn note-item-btn-delete" @click.stop="showDeleteConfirm(note)">
                 <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit" />
               </view>
             </view>
@@ -74,10 +78,10 @@
           </view>
           <text class="note-detail-title">{{ getNoteTitle(selectedNote) }}</text>
           <view class="note-detail-actions">
-            <view v-if="!selectedNote || selectedNote.note_type !== 'interactive_html'" class="note-item-btn" @click="startEditNote(selectedNote)">
+            <view v-if="(!selectedNote || selectedNote.note_type !== 'interactive_html') && canEditNote(selectedNote)" class="note-item-btn" @click="startEditNote(selectedNote)">
               <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
             </view>
-            <view class="note-item-btn note-item-btn-delete" @click="showDeleteConfirm(selectedNote)">
+            <view v-if="canEditNote(selectedNote)" class="note-item-btn note-item-btn-delete" @click="showDeleteConfirm(selectedNote)">
               <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit" />
             </view>
           </view>
@@ -177,6 +181,8 @@
 
 <script>
 import { getSpaceNotes, getNoteDetail, updateNote, deleteNote } from '@/api/note'
+import { getSpace, getSpaceMembers } from '@/api/space'
+import { useUserStore } from '@/store/user'
 import UToast from '@/components/u-toast/u-toast.vue'
 import UModal from '@/components/u-modal/u-modal.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
@@ -196,6 +202,10 @@ export default {
       loading: true,
       loadError: null,
       notes: [],
+      isCollaborative: false,
+      userRole: '',
+      currentUserId: '',
+      spaceMembers: [],
       showNoteDetail: false,
       selectedNote: null,
       detailLoading: false,
@@ -227,10 +237,13 @@ export default {
     this.spaceId = options.spaceId || ''
     this.spaceName = options.spaceName ? decodeURIComponent(options.spaceName) : ''
     this.pendingOpenNoteId = options.openNoteId || ''
+    this.currentUserId = useUserStore().user?.id || ''
+    this.loadCollaborationContext()
     this.loadNotes()
   },
 
   onShow() {
+    this.loadCollaborationContext()
     if (this.spaceId && !this.loading) {
       this.loadNotes()
     }
@@ -247,6 +260,25 @@ export default {
         uni.navigateBack({ delta: 1 })
       } else {
         uni.reLaunch({ url: '/pages/index/index' })
+      }
+    },
+
+    async loadCollaborationContext() {
+      if (!this.spaceId) return
+      try {
+        const space = await getSpace(this.spaceId)
+        this.isCollaborative = !!space?.is_collaborative
+        this.userRole = space?.user_role || ''
+        if (!this.isCollaborative) {
+          this.spaceMembers = []
+          return
+        }
+        const members = await getSpaceMembers(this.spaceId)
+        this.spaceMembers = members?.data || members || []
+      } catch (error) {
+        this.isCollaborative = false
+        this.userRole = ''
+        this.spaceMembers = []
       }
     },
 
@@ -327,6 +359,19 @@ export default {
       return `${month}月${day}日 ${hours}:${minutes}`
     },
 
+    canEditNote(note) {
+      if (!note) return false
+      if (!this.isCollaborative) return true
+      if (this.userRole === 'owner') return true
+      return String(note.creator_user_id || '') === String(this.currentUserId || '')
+    },
+
+    getCreatorColor(creatorUserId) {
+      if (!creatorUserId) return '#666666'
+      const member = this.spaceMembers.find(item => String(item.user_id) === String(creatorUserId))
+      return member?.color || '#666666'
+    },
+
     openArtifactViewer(note) {
       if (!note?.id) return
       uni.navigateTo({
@@ -362,7 +407,7 @@ export default {
 
     // --- Edit ---
     startEditNote(note) {
-      if (!note) return
+      if (!note || !this.canEditNote(note)) return
       this.editNoteId = note.id
       this.editTitle = note.title || ''
       this.editContent = note.content || ''
@@ -399,13 +444,17 @@ export default {
 
     // --- Delete ---
     showDeleteConfirm(note) {
-      if (!note) return
+      if (!note || !this.canEditNote(note)) return
       this.noteToDelete = note
       this.showDeleteModal = true
     },
 
     async doDeleteNote() {
       if (this.isDeleting || !this.noteToDelete) return
+      if (!this.canEditNote(this.noteToDelete)) {
+        this.showCustomToast('当前仅可编辑或删除自己的笔记', 'error')
+        return
+      }
       this.isDeleting = true
       try {
         await deleteNote(this.spaceId, this.noteToDelete.id)
@@ -644,6 +693,25 @@ export default {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.note-creator {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-bottom: 12rpx;
+}
+
+.note-creator-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.note-creator-name {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .note-meta {

@@ -141,6 +141,10 @@
               <text v-if="doc.doc_type === 'link'" class="document-url">{{ doc.url }}</text>
               <text v-else-if="doc.file_size" class="document-size">{{ formatFileSize(doc.file_size) }}</text>
             </view>
+            <view v-if="isCollaborative && doc.creator_nickname" class="document-creator">
+              <view class="creator-dot" :style="{ backgroundColor: getCreatorColor(doc.creator_user_id) }"></view>
+              <text class="document-creator-name">{{ doc.creator_nickname }}</text>
+            </view>
             <!-- 处理状态行 (仅文档类型显示) -->
             <view v-if="doc.doc_type === 'document'" class="document-status-row">
               <!-- 状态 Badge -->
@@ -163,7 +167,7 @@
               </view>
             </view>
           </view>
-          <view class="document-action delete-btn" @click.stop="showDeleteConfirm(doc)">
+          <view v-if="canDeleteDocument(doc)" class="document-action delete-btn" @click.stop="showDeleteConfirm(doc)">
             <image class="delete-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit"></image>
           </view>
         </view>
@@ -229,7 +233,7 @@
 </template>
 
 <script>
-import { getSpaceDocuments, deleteSpaceDocument, addSpaceLink, uploadSpaceDocument, getDocumentProcessingStatus } from '@/api/space'
+import { getSpace, getSpaceDocuments, getSpaceMembers, deleteSpaceDocument, addSpaceLink, uploadSpaceDocument, getDocumentProcessingStatus } from '@/api/space'
 import config from '@/config'
 import { getTokens } from '@/utils/storage'
 import { useUserStore } from '@/store/user'
@@ -250,6 +254,10 @@ export default {
       loading: true,
       loadError: null,
       documents: [],
+      isCollaborative: false,
+      userRole: '',
+      currentUserId: '',
+      spaceMembers: [],
       showDeleteModal: false,
       docToDelete: null,
       isDeleting: false,
@@ -426,12 +434,15 @@ export default {
   onLoad(options) {
     this.spaceId = options.spaceId || ''
     this.spaceName = options.spaceName ? decodeURIComponent(options.spaceName) : ''
+    this.currentUserId = useUserStore().user?.id || ''
     this.loadUserTier()
+    this.loadCollaborationContext()
     this.loadDocuments()
   },
 
   onShow() {
     this.loadUserTier()
+    this.loadCollaborationContext()
     if (this.spaceId && !this.loading) {
       this.loadDocuments()
     }
@@ -447,6 +458,25 @@ export default {
       const rawTier = userStore.user?.subscription_tier?.toUpperCase() || 'FREE'
       const tierMap = { BASIC: 'PLUS', PREMIUM: 'ULTRA' }
       this.userTier = tierMap[rawTier] || rawTier
+    },
+
+    async loadCollaborationContext() {
+      if (!this.spaceId) return
+      try {
+        const space = await getSpace(this.spaceId)
+        this.isCollaborative = !!space?.is_collaborative
+        this.userRole = space?.user_role || ''
+        if (!this.isCollaborative) {
+          this.spaceMembers = []
+          return
+        }
+        const members = await getSpaceMembers(this.spaceId)
+        this.spaceMembers = members?.data || members || []
+      } catch (error) {
+        this.isCollaborative = false
+        this.userRole = ''
+        this.spaceMembers = []
+      }
     },
 
     goBack() {
@@ -566,6 +596,18 @@ export default {
       return `${month}月${day}日 ${hours}:${minutes}`
     },
 
+    canDeleteDocument(doc) {
+      if (!this.isCollaborative) return true
+      if (this.userRole === 'owner') return true
+      return String(doc?.creator_user_id || '') === String(this.currentUserId || '')
+    },
+
+    getCreatorColor(creatorUserId) {
+      if (!creatorUserId) return '#666666'
+      const member = this.spaceMembers.find(item => String(item.user_id) === String(creatorUserId))
+      return member?.color || '#666666'
+    },
+
     handleDocClick(doc) {
       // 只有链接类型才响应点击
       if (doc.doc_type !== 'link') return
@@ -590,12 +632,17 @@ export default {
     },
 
     showDeleteConfirm(doc) {
+      if (!this.canDeleteDocument(doc)) return
       this.docToDelete = doc
       this.showDeleteModal = true
     },
 
     async doDeleteDocument() {
       if (this.isDeleting || !this.docToDelete) return
+      if (!this.canDeleteDocument(this.docToDelete)) {
+        this.showCustomToast('当前仅可删除自己上传的资料', 'error')
+        return
+      }
       this.isDeleting = true
 
       try {
@@ -1170,6 +1217,25 @@ export default {
   align-items: center;
   gap: 4rpx;
   min-width: 0;
+}
+
+.document-creator {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 10rpx;
+}
+
+.creator-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.document-creator-name {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .document-type {
