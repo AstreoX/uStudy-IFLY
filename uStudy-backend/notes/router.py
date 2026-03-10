@@ -35,7 +35,7 @@ def _handle_note_error(e: Exception) -> None:
     raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
 
-@router.post("/", response_model=NoteResponse, status_code=201)
+@router.post("", response_model=NoteResponse, status_code=201)
 async def create_note(
     space_id: UUID,
     request: NoteCreate,
@@ -50,7 +50,7 @@ async def create_note(
         _handle_note_error(e)
 
 
-@router.get("/", response_model=list[NoteListItem])
+@router.get("", response_model=list[NoteListItem])
 async def list_notes(
     space_id: UUID,
     node_id: Optional[UUID] = Query(None, description="筛选某节点的笔记"),
