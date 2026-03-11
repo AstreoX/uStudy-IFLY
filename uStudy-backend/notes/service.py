@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from db.models import Note, NoteAttachment, NoteAttachmentType, Space
+from db.models import Node, Note, NoteAttachment, NoteAttachmentType, Space
 from notes.exceptions import NoteAccessDeniedError, NoteNotFoundError
 from notes.schemas import (
     AddLinkRequest,
@@ -92,10 +92,12 @@ class NoteService:
             select(
                 Note,
                 func.count(NoteAttachment.id).label("attachment_count"),
+                Node.label.label("node_label"),
             )
+            .outerjoin(Node, Node.id == Note.node_id)
             .outerjoin(NoteAttachment, NoteAttachment.note_id == Note.id)
             .where(Note.space_id == space_id)
-            .group_by(Note.id)
+            .group_by(Note.id, Node.label)
             .order_by(Note.sort_order.asc(), Note.created_at.desc())
         )
 
@@ -112,6 +114,7 @@ class NoteService:
                 id=note.id,
                 space_id=note.space_id,
                 node_id=note.node_id,
+                node_label=node_label,
                 title=note.title,
                 content=note.content,
                 sort_order=note.sort_order,
@@ -119,14 +122,20 @@ class NoteService:
                 updated_at=note.updated_at,
                 attachment_count=count,
             )
-            for note, count in rows
+            for note, count, node_label in rows
         ]
 
     async def get_note(
         self, user_id: UUID, space_id: UUID, note_id: UUID
     ) -> NoteResponse:
         note = await self._get_note_with_access_check(user_id, space_id, note_id)
-        return NoteResponse.model_validate(note)
+        resp = NoteResponse.model_validate(note)
+        if note.node_id:
+            node_result = await self.db.execute(
+                select(Node.label).where(Node.id == note.node_id)
+            )
+            resp.node_label = node_result.scalar_one_or_none()
+        return resp
 
     async def update_note(
         self, user_id: UUID, space_id: UUID, note_id: UUID, request: NoteUpdate

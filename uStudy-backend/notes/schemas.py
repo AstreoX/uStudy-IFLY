@@ -54,6 +54,7 @@ class NoteResponse(BaseModel):
     id: UUID
     space_id: UUID
     node_id: Optional[UUID] = None
+    node_label: Optional[str] = None
     title: Optional[str] = None
     content: Optional[str] = None
     sort_order: int = 0
@@ -68,6 +69,7 @@ class NoteListItem(BaseModel):
     id: UUID
     space_id: UUID
     node_id: Optional[UUID] = None
+    node_label: Optional[str] = None
     title: Optional[str] = None
     content: Optional[str] = None
     sort_order: int = 0
