@@ -498,14 +498,14 @@
 
 <script>
 	import config from '@/config/index.js'
-	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, submitFeedback, getModels } from '@/api/chat'
+	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, submitFeedback, getModels, getStreamingStatus } from '@/api/chat'
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
 	import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	import UInputModal from '@/components/u-input-modal/u-input-modal.vue'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
 	import { goBack } from '@/utils/navigation'
 	import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
-	import { setSseEventBus, clearSseEventBus, handleSseEvents, handleSseComplete, handleSseError } from '@/utils/sse'
+	import { setSseEventBus, clearSseEventBus, handleSseEvents, handleSseComplete, handleSseError, connectSSE } from '@/utils/sse'
 	import { savePendingMessage, getPendingMessages, removePendingMessage, savePendingMessagesFromArray, clearPendingMessages } from '@/utils/messageDraft'
 	import { startBackgroundMonitor, stopBackgroundMonitor, getActiveMonitor } from '@/utils/backgroundChatMonitor'
 	// #ifdef APP-PLUS
@@ -864,10 +864,27 @@
 				return monitor && monitor.conversationId === this.conversationId
 			},
 
+			/**
+			 * 从后台恢复时的处理
+			 * 优先从 Redis 获取流式状态，避免丢失正在生成的内容
+			 */
 			async recoverFromBackground() {
 				if (!this.conversationId) return
 
+				console.log('[QuickChat] recoverFromBackground start')
+
 				try {
+					// 1. 先检查 Redis 流式状态
+					const status = await getStreamingStatus(this.conversationId)
+					console.log('[QuickChat] Redis status:', status.is_streaming, 'content length:', status.partial_content?.length)
+
+					if (status.is_streaming || status.partial_content) {
+						// AI 仍在生成或有缓存内容，从 Redis 恢复
+						this.resumeStreamingFromRedis(status)
+						return
+					}
+
+					// 2. Redis 缓存已过期，从数据库加载完整对话
 					const result = await getConversation(this.conversationId)
 					this.messages = result.messages.map((m, i) => ({
 						id: i + 1,
@@ -880,12 +897,86 @@
 					clearPendingMessages(this.conversationId)
 					this.$nextTick(() => this.scrollToLatestMessage())
 				} catch (err) {
-					// Recovery failed — leave current messages as-is
+					console.warn('[QuickChat] recoverFromBackground failed:', err)
+					// 恢复失败时保留当前消息，不覆盖
 				} finally {
 					this.activeToolCalls = []
-					this.cancelSSE = null
 					this.stopHeightMonitor()
 				}
+			},
+
+			/**
+			 * 从 Redis 流式状态恢复
+			 */
+			resumeStreamingFromRedis(status) {
+				// 找到正在流式的 AI 消息
+				let aiMsg = this.messages.find(m => m.role === 'ai' && m.isStreaming)
+
+				if (!aiMsg && status.partial_content) {
+					// 页面状态可能丢失，根据 Redis 数据创建 AI 消息
+					aiMsg = {
+						id: this.nextId++,
+						role: 'ai',
+						content: '',
+						isStreaming: true,
+					}
+					this.messages.push(aiMsg)
+				}
+
+				if (!aiMsg) return
+
+				// 更新已生成的内容
+				aiMsg.content = status.partial_content || ''
+				if (status.partial_thinking) {
+					aiMsg.thinkingContent = status.partial_thinking
+				}
+
+				console.log('[QuickChat] Restored content from Redis, length:', aiMsg.content.length)
+
+				// 如果 AI 仍在生成，重连 SSE
+				if (status.is_streaming) {
+					this.reconnectToResumeStream(aiMsg, aiMsg.content.length)
+				} else {
+					// 已完成，标记结束
+					aiMsg.isStreaming = false
+					this.cancelSSE = null
+				}
+
+				this.$nextTick(() => this.scrollToLatestMessage())
+			},
+
+			/**
+			 * 重连到 resume-stream 端点继续接收
+			 */
+			reconnectToResumeStream(aiMsg, offset) {
+				console.log('[QuickChat] Reconnecting to resume-stream, offset:', offset)
+
+				this.cancelSSE = connectSSE({
+					url: `/api/conversations/${this.conversationId}/resume-stream?offset=${offset}`,
+					method: 'GET',
+					onEvent: (eventType, data) => {
+						if (eventType === 'text_delta') {
+							aiMsg.content += data.content || ''
+						} else if (eventType === 'thinking_delta') {
+							aiMsg.thinkingContent = (aiMsg.thinkingContent || '') + (data.content || '')
+						} else if (eventType === 'done') {
+							aiMsg.isStreaming = false
+							// done 事件的 content 是完整内容，如果有且不是续传就用它
+							if (data.content && !data.resumed) {
+								aiMsg.content = data.content
+							}
+						}
+					},
+					onComplete: () => {
+						aiMsg.isStreaming = false
+						this.cancelSSE = null
+						stopBackgroundMonitor()
+					},
+					onError: (err) => {
+						console.warn('[QuickChat] Resume SSE error:', err)
+						// 重连失败不标记错误，后台监控会继续处理
+					},
+				})
 			},
 
 			// ==================== Renderjs SSE 事件处理 ====================
@@ -1948,6 +2039,21 @@
 									userMsg.isFailed = true
 								}
 							}
+						},
+
+						onReconnecting: (attempt) => {
+							console.log(`[QuickChat] Reconnecting attempt ${attempt}`)
+							uni.showToast({
+								title: `重连中 (${attempt}/3)...`,
+								icon: 'loading',
+								duration: 10000,
+								mask: false
+							})
+						},
+
+						onReconnected: () => {
+							console.log('[QuickChat] Reconnected successfully')
+							uni.hideToast()
 						},
 
 						onComplete: () => {

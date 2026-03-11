@@ -3,16 +3,26 @@
  *
  * App 级别的单例服务，当用户在 AI 流式回复过程中切屏或退出对话时，
  * 启动轮询检查 AI 是否已完成回复，完成后发送系统级通知。
+ *
+ * 优化策略：
+ * - 使用 Redis streaming-status API（更快）
+ * - 智能轮询间隔：前 30 秒每 3 秒，之后每 8 秒
+ * - 最长轮询 5 分钟
+ * - Redis 缓存过期时回退到数据库查询
  */
-import { request } from '@/utils/request'
+import { getStreamingStatus, checkReplyStatus } from '@/api/chat'
+
+// 轮询配置
+const FAST_POLL_INTERVAL = 3000   // 前 30 秒：每 3 秒
+const SLOW_POLL_INTERVAL = 8000   // 之后：每 8 秒
+const FAST_POLL_DURATION = 30000  // 30 秒后切换到慢速
+const MAX_POLL_TIME = 300000      // 最多轮询 5 分钟
 
 // 全局状态
 let pollingTimer = null
 let maxTimer = null
 let activeMonitor = null
-
-const POLL_INTERVAL = 5000   // 每 5 秒检查一次
-const MAX_POLL_TIME = 120000 // 最多轮询 2 分钟
+let startTime = 0
 
 /**
  * 开始后台监控 AI 回复
@@ -29,27 +39,72 @@ export function startBackgroundMonitor(options) {
 	stopBackgroundMonitor()
 
 	activeMonitor = { ...options }
-	const afterTs = options.userMessageTimestamp / 1000  // 转 Unix seconds
+	startTime = Date.now()
 
-	pollingTimer = setInterval(async () => {
-		try {
-			const result = await request({
-				url: `/api/conversations/${options.conversationId}/reply-status`,
-				method: 'GET',
-				data: { after: afterTs },
-			})
-			console.log('[BackgroundMonitor] Poll result:', result.has_reply, 'preview:', result.preview?.substring(0, 30))
-			if (result.has_reply) {
-				showSystemNotification(options, result.preview)
-				stopBackgroundMonitor()
-			}
-		} catch (err) {
-			console.warn('[BackgroundMonitor] Poll failed:', err?.message || err)
+	// 开始智能轮询
+	scheduleNextPoll()
+
+	// 5 分钟后自动停止（省电）
+	maxTimer = setTimeout(() => {
+		console.log('[BackgroundMonitor] Max poll time reached, stopping')
+		stopBackgroundMonitor()
+	}, MAX_POLL_TIME)
+}
+
+/**
+ * 调度下一次轮询（智能间隔）
+ */
+function scheduleNextPoll() {
+	if (!activeMonitor) return
+
+	const elapsed = Date.now() - startTime
+	const interval = elapsed < FAST_POLL_DURATION ? FAST_POLL_INTERVAL : SLOW_POLL_INTERVAL
+
+	pollingTimer = setTimeout(async () => {
+		await doPoll()
+		if (activeMonitor) {
+			scheduleNextPoll()
 		}
-	}, POLL_INTERVAL)
+	}, interval)
+}
 
-	// 2 分钟后自动停止（省电）
-	maxTimer = setTimeout(() => stopBackgroundMonitor(), MAX_POLL_TIME)
+/**
+ * 执行一次轮询检查
+ */
+async function doPoll() {
+	if (!activeMonitor) return
+	const { conversationId, userMessageTimestamp } = activeMonitor
+
+	try {
+		// 优先使用 Redis streaming-status（更快）
+		const status = await getStreamingStatus(conversationId)
+
+		// AI 已完成：is_streaming=false 且有内容
+		if (status.partial_content && !status.is_streaming) {
+			const preview = status.partial_content.substring(0, 50)
+			console.log('[BackgroundMonitor] AI completed (Redis), preview:', preview)
+			showSystemNotification(activeMonitor, preview)
+			stopBackgroundMonitor()
+			return
+		}
+
+		// 仍在生成，继续轮询
+		if (status.is_streaming) {
+			console.log('[BackgroundMonitor] Still streaming, continue polling')
+			return
+		}
+
+		// Redis 缓存可能已过期（返回空），回退到数据库查询
+		const afterTs = userMessageTimestamp / 1000
+		const reply = await checkReplyStatus(conversationId, afterTs)
+		console.log('[BackgroundMonitor] Fallback to DB, has_reply:', reply.has_reply)
+		if (reply.has_reply) {
+			showSystemNotification(activeMonitor, reply.preview)
+			stopBackgroundMonitor()
+		}
+	} catch (err) {
+		console.warn('[BackgroundMonitor] Poll failed:', err?.message || err)
+	}
 }
 
 /**
@@ -57,7 +112,7 @@ export function startBackgroundMonitor(options) {
  */
 export function stopBackgroundMonitor() {
 	if (pollingTimer) {
-		clearInterval(pollingTimer)
+		clearTimeout(pollingTimer)
 		pollingTimer = null
 	}
 	if (maxTimer) {
@@ -65,6 +120,7 @@ export function stopBackgroundMonitor() {
 		maxTimer = null
 	}
 	activeMonitor = null
+	startTime = 0
 }
 
 /**

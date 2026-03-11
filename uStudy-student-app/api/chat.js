@@ -1,5 +1,5 @@
 import { request } from '@/utils/request'
-import { connectSSE } from '@/utils/sse'
+import { connectSSE, connectSSEWithResume } from '@/utils/sse'
 
 /**
  * 获取可用模型列表
@@ -106,10 +106,17 @@ function parseQuotaError(errMessage) {
  *   - onError(message): 错误事件
  *   - onQuotaError(info): 配额超限错误事件
  *   - onComplete(): 连接关闭
+ *   - onReconnecting(attempt): 正在重连（仅 enableResume=true 时）
+ *   - onReconnected(): 重连成功（仅 enableResume=true 时）
  * @param {Array<string>} attachmentIds - 附件ID列表（可选）
+ * @param {string} modelId - 模型 ID（可选）
+ * @param {Object} options - 额外选项
+ *   - enableResume: boolean - 是否启用断点续传（默认 true）
  * @returns {Function} 取消函数
  */
-export function sendMessage(conversationId, content, callbacks, attachmentIds = null, modelId = null) {
+export function sendMessage(conversationId, content, callbacks, attachmentIds = null, modelId = null, options = {}) {
+  const { enableResume = true } = options
+
   const requestData = { content }
   if (attachmentIds && attachmentIds.length > 0) {
     requestData.attachment_ids = attachmentIds
@@ -118,45 +125,66 @@ export function sendMessage(conversationId, content, callbacks, attachmentIds = 
     requestData.model_id = modelId
   }
 
+  const onEvent = (eventType, data) => {
+    switch (eventType) {
+      case 'text_delta':
+        callbacks.onTextDelta?.(data.content)
+        break
+      case 'thinking_delta':
+        callbacks.onThinking?.(data.content)
+        break
+      case 'tool_call':
+        callbacks.onToolCall?.(data)
+        break
+      case 'client_tool_request':
+        callbacks.onClientToolRequest?.(data)
+        break
+      case 'title':
+        callbacks.onTitle?.(data.title)
+        break
+      case 'done':
+        callbacks.onDone?.(data.content)
+        break
+      case 'error':
+        callbacks.onError?.(data.message)
+        break
+    }
+  }
+
+  const onConnectionError = (err) => {
+    const quotaErr = parseQuotaError(err.message || String(err))
+    if (quotaErr) {
+      callbacks.onQuotaError?.(quotaErr)
+      if (!callbacks.onQuotaError) callbacks.onError?.(quotaErr.message)
+    } else {
+      callbacks.onError?.(err.message || '连接失败')
+    }
+  }
+
+  // 使用带断点续传的 SSE 连接
+  if (enableResume) {
+    return connectSSEWithResume({
+      url: `/api/conversations/${conversationId}/messages`,
+      conversationId,
+      method: 'POST',
+      data: requestData,
+      onEvent,
+      onComplete: () => callbacks.onComplete?.(),
+      onConnectionError,
+      onReconnecting: callbacks.onReconnecting,
+      onReconnected: callbacks.onReconnected,
+      getStreamingStatus: (convId) => getStreamingStatus(convId),
+    })
+  }
+
+  // 不启用断点续传时使用普通 SSE 连接
   return connectSSE({
     url: `/api/conversations/${conversationId}/messages`,
     method: 'POST',
     data: requestData,
-    onEvent: (eventType, data) => {
-      switch (eventType) {
-        case 'text_delta':
-          callbacks.onTextDelta?.(data.content)
-          break
-        case 'thinking_delta':
-          callbacks.onThinking?.(data.content)
-          break
-        case 'tool_call':
-          callbacks.onToolCall?.(data)
-          break
-        case 'client_tool_request':
-          callbacks.onClientToolRequest?.(data)
-          break
-        case 'title':
-          callbacks.onTitle?.(data.title)
-          break
-        case 'done':
-          callbacks.onDone?.(data.content)
-          break
-        case 'error':
-          callbacks.onError?.(data.message)
-          break
-      }
-    },
+    onEvent,
     onComplete: () => callbacks.onComplete?.(),
-    onConnectionError: (err) => {
-      const quotaErr = parseQuotaError(err.message || String(err))
-      if (quotaErr) {
-        callbacks.onQuotaError?.(quotaErr)
-        if (!callbacks.onQuotaError) callbacks.onError?.(quotaErr.message)
-      } else {
-        callbacks.onError?.(err.message || '连接失败')
-      }
-    }
+    onConnectionError,
   })
 }
 
@@ -229,10 +257,17 @@ export function updateConversation(conversationId, data) {
  *   - onDone(fullContent): 完成事件
  *   - onError(message): 错误事件
  *   - onComplete(): 连接关闭
+ *   - onReconnecting(attempt): 正在重连（仅 enableResume=true 时）
+ *   - onReconnected(): 重连成功（仅 enableResume=true 时）
  * @param {Array<string>} attachmentIds - 附件ID列表（可选）
+ * @param {string} modelId - 模型 ID（可选）
+ * @param {Object} options - 额外选项
+ *   - enableResume: boolean - 是否启用断点续传（默认 true）
  * @returns {Function} 取消函数
  */
-export function sendQuickChatMessage(conversationId, content, callbacks, attachmentIds = null, modelId = null) {
+export function sendQuickChatMessage(conversationId, content, callbacks, attachmentIds = null, modelId = null, options = {}) {
+  const { enableResume = true } = options
+
   const requestData = { content }
   if (attachmentIds && attachmentIds.length > 0) {
     requestData.attachment_ids = attachmentIds
@@ -241,45 +276,66 @@ export function sendQuickChatMessage(conversationId, content, callbacks, attachm
     requestData.model_id = modelId
   }
 
+  const onEvent = (eventType, data) => {
+    switch (eventType) {
+      case 'text_delta':
+        callbacks.onTextDelta?.(data.content)
+        break
+      case 'thinking_delta':
+        callbacks.onThinking?.(data.content)
+        break
+      case 'tool_call':
+        callbacks.onToolCall?.(data)
+        break
+      case 'client_tool_request':
+        callbacks.onClientToolRequest?.(data)
+        break
+      case 'title':
+        callbacks.onTitle?.(data.title)
+        break
+      case 'done':
+        callbacks.onDone?.(data.content)
+        break
+      case 'error':
+        callbacks.onError?.(data.message)
+        break
+    }
+  }
+
+  const onConnectionError = (err) => {
+    const quotaErr = parseQuotaError(err.message || String(err))
+    if (quotaErr) {
+      callbacks.onQuotaError?.(quotaErr)
+      if (!callbacks.onQuotaError) callbacks.onError?.(quotaErr.message)
+    } else {
+      callbacks.onError?.(err.message || '连接失败')
+    }
+  }
+
+  // 使用带断点续传的 SSE 连接
+  if (enableResume) {
+    return connectSSEWithResume({
+      url: `/api/quick-chat/conversations/${conversationId}/messages`,
+      conversationId,
+      method: 'POST',
+      data: requestData,
+      onEvent,
+      onComplete: () => callbacks.onComplete?.(),
+      onConnectionError,
+      onReconnecting: callbacks.onReconnecting,
+      onReconnected: callbacks.onReconnected,
+      getStreamingStatus: (convId) => getStreamingStatus(convId),
+    })
+  }
+
+  // 不启用断点续传时使用普通 SSE 连接
   return connectSSE({
     url: `/api/quick-chat/conversations/${conversationId}/messages`,
     method: 'POST',
     data: requestData,
-    onEvent: (eventType, data) => {
-      switch (eventType) {
-        case 'text_delta':
-          callbacks.onTextDelta?.(data.content)
-          break
-        case 'thinking_delta':
-          callbacks.onThinking?.(data.content)
-          break
-        case 'tool_call':
-          callbacks.onToolCall?.(data)
-          break
-        case 'client_tool_request':
-          callbacks.onClientToolRequest?.(data)
-          break
-        case 'title':
-          callbacks.onTitle?.(data.title)
-          break
-        case 'done':
-          callbacks.onDone?.(data.content)
-          break
-        case 'error':
-          callbacks.onError?.(data.message)
-          break
-      }
-    },
+    onEvent,
     onComplete: () => callbacks.onComplete?.(),
-    onConnectionError: (err) => {
-      const quotaErr = parseQuotaError(err.message || String(err))
-      if (quotaErr) {
-        callbacks.onQuotaError?.(quotaErr)
-        if (!callbacks.onQuotaError) callbacks.onError?.(quotaErr.message)
-      } else {
-        callbacks.onError?.(err.message || '连接失败')
-      }
-    }
+    onConnectionError,
   })
 }
 
@@ -319,5 +375,42 @@ export function submitFeedback(feedbackData) {
     url: '/api/feedback/submit',
     method: 'POST',
     data: feedbackData
+  })
+}
+
+// ==================== 流式状态与断点续传 API ====================
+
+/**
+ * 查询流式传输状态
+ *
+ * 用于客户端断连后检查 AI 是否仍在生成回复，以及获取已生成的部分内容。
+ *
+ * @param {string} conversationId - 对话 ID
+ * @returns {Promise<Object>}
+ *   - is_streaming: boolean - 是否正在流式传输
+ *   - partial_content: string|null - 已生成的文本内容
+ *   - partial_thinking: string|null - 已生成的思考内容
+ *   - tool_calls: Array - 工具调用记录
+ *   - updated_at: number|null - 最后更新时间戳
+ */
+export function getStreamingStatus(conversationId) {
+  return request({
+    url: `/api/conversations/${conversationId}/streaming-status`,
+    method: 'GET'
+  })
+}
+
+/**
+ * 检查 AI 是否已回复（轻量级轮询端点）
+ *
+ * @param {string} conversationId - 对话 ID
+ * @param {number} after - 用户消息发送时间戳 (Unix seconds)
+ * @returns {Promise<Object>} { has_reply: boolean, preview: string }
+ */
+export function checkReplyStatus(conversationId, after) {
+  return request({
+    url: `/api/conversations/${conversationId}/reply-status`,
+    method: 'GET',
+    data: { after }
   })
 }

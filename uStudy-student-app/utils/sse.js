@@ -640,3 +640,199 @@ export function connectSSE(options) {
     currentAbort?.()
   }
 }
+
+// ==================== 断点续传配置 ====================
+
+const DEFAULT_RECONNECT_CONFIG = {
+  enabled: true,
+  maxAttempts: 3,
+  initialDelay: 1000,
+  backoffMultiplier: 2,
+  maxDelay: 10000,
+}
+
+/**
+ * 简单的 sleep 函数
+ */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/**
+ * 带断点续传的 SSE 连接
+ *
+ * 在普通 SSE 连接基础上，增加自动重连和断点续传能力：
+ * 1. 断连后自动尝试重连（指数退避）
+ * 2. 调用后端 API 查询流式状态
+ * 3. 如果仍在流式传输，从断点继续接收
+ *
+ * @param {Object} options
+ * @param {string} options.url - SSE 请求路径
+ * @param {string} options.conversationId - 对话 ID，用于查询状态和断点续传
+ * @param {string} [options.method='POST'] - HTTP 方法
+ * @param {Object} options.data - 请求体
+ * @param {Function} options.onEvent - SSE 事件回调 (eventType, data)
+ * @param {Function} [options.onComplete] - 连接正常关闭回调
+ * @param {Function} [options.onConnectionError] - 连接错误回调
+ * @param {Function} [options.onReconnecting] - 正在重连回调 (attempt)
+ * @param {Function} [options.onReconnected] - 重连成功回调
+ * @param {Object} [options.reconnect] - 重连配置
+ * @param {Function} [options.getStreamingStatus] - 获取流式状态的函数 (conversationId) => Promise
+ * @returns {Function} 取消函数
+ */
+export function connectSSEWithResume(options) {
+  const {
+    url,
+    conversationId,
+    method = 'POST',
+    data,
+    onEvent,
+    onComplete,
+    onConnectionError,
+    onReconnecting,
+    onReconnected,
+    reconnect = DEFAULT_RECONNECT_CONFIG,
+    getStreamingStatus,
+  } = options
+
+  let receivedContentLength = 0  // 已接收的文本字符数
+  let reconnectAttempts = 0
+  let aborted = false
+  let currentCancel = null
+  let doneReceived = false
+
+  // 包装 onEvent，跟踪接收进度
+  const wrappedOnEvent = (eventType, eventData) => {
+    if (eventType === 'text_delta' && eventData?.content) {
+      receivedContentLength += eventData.content.length
+    }
+    if (eventType === 'done') {
+      doneReceived = true
+    }
+    onEvent?.(eventType, eventData)
+  }
+
+  // 异常断连处理
+  const handleDisconnect = async () => {
+    if (aborted || doneReceived) {
+      onComplete?.()
+      return
+    }
+
+    // 检查是否需要重连
+    if (!reconnect.enabled || reconnectAttempts >= reconnect.maxAttempts) {
+      console.warn('[SSE-Resume] Max reconnect attempts reached or reconnect disabled')
+      onConnectionError?.(new Error('连接中断，请刷新重试'))
+      onComplete?.()
+      return
+    }
+
+    reconnectAttempts++
+    const delay = Math.min(
+      reconnect.initialDelay * Math.pow(reconnect.backoffMultiplier, reconnectAttempts - 1),
+      reconnect.maxDelay
+    )
+
+    console.log(`[SSE-Resume] Attempting reconnect ${reconnectAttempts}/${reconnect.maxAttempts} in ${delay}ms`)
+    onReconnecting?.(reconnectAttempts)
+
+    await sleep(delay)
+
+    if (aborted) {
+      return
+    }
+
+    // 查询流式状态
+    if (!getStreamingStatus) {
+      console.warn('[SSE-Resume] No getStreamingStatus function provided, cannot resume')
+      onConnectionError?.(new Error('无法恢复连接'))
+      onComplete?.()
+      return
+    }
+
+    try {
+      const status = await getStreamingStatus(conversationId)
+      console.log('[SSE-Resume] Streaming status:', status)
+
+      if (aborted) {
+        return
+      }
+
+      if (!status.is_streaming) {
+        // 流式已完成
+        if (status.partial_content) {
+          // 补发剩余内容
+          const alreadyReceived = receivedContentLength
+          if (status.partial_content.length > alreadyReceived) {
+            const remaining = status.partial_content.slice(alreadyReceived)
+            onEvent?.('text_delta', { content: remaining })
+          }
+          onEvent?.('done', { content: status.partial_content, resumed: true })
+        } else {
+          onEvent?.('done', { content: '', resumed: true, cache_expired: true })
+        }
+        onReconnected?.()
+        onComplete?.()
+        return
+      }
+
+      // 仍在流式传输，从断点继续
+      console.log(`[SSE-Resume] Resuming from offset ${receivedContentLength}`)
+      currentCancel = connectSSE({
+        url: url.replace(/\/messages$/, `/resume-stream?offset=${receivedContentLength}`),
+        method: 'GET',
+        data: null,
+        onEvent: wrappedOnEvent,
+        onComplete: () => {
+          if (!doneReceived && !aborted) {
+            // 断连了但没收到 done，继续尝试重连
+            handleDisconnect()
+          } else {
+            reconnectAttempts = 0
+            onReconnected?.()
+            onComplete?.()
+          }
+        },
+        onConnectionError: (err) => {
+          console.error('[SSE-Resume] Resume connection error:', err)
+          handleDisconnect()
+        },
+      })
+    } catch (err) {
+      console.error('[SSE-Resume] Failed to get streaming status:', err)
+      handleDisconnect()
+    }
+  }
+
+  // 初始连接
+  currentCancel = connectSSE({
+    url,
+    method,
+    data,
+    onEvent: wrappedOnEvent,
+    onComplete: () => {
+      if (!doneReceived && !aborted) {
+        // 连接断开但没收到 done 事件，触发重连
+        console.log('[SSE-Resume] Connection closed without done event, attempting reconnect')
+        handleDisconnect()
+      } else {
+        onComplete?.()
+      }
+    },
+    onConnectionError: (err) => {
+      console.error('[SSE-Resume] Initial connection error:', err)
+      // 401 等错误由 connectSSE 内部处理，其他错误尝试重连
+      if (!is401Error(err)) {
+        handleDisconnect()
+      } else {
+        onConnectionError?.(err)
+      }
+    },
+  })
+
+  // 返回取消函数
+  return () => {
+    aborted = true
+    currentCancel?.()
+  }
+}
