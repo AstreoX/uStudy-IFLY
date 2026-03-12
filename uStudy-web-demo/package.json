@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/AstreoX/uStudy-web#readme",
   "dependencies": {
+    "docx-preview": "^0.3.7",
     "katex": "^0.16.33"
   }
 }

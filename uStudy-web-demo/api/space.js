@@ -80,6 +80,21 @@ export function submitQuiz(quizId, data) {
 }
 
 /**
+ * 异步提交答卷（web 端使用，不等待 AI 评估完成）
+ * @param {string} quizId
+ * @param {{answers: Array<{question_id: string, answer: any}>}} data
+ * @returns {Promise<{quiz_id: string, attempt_id: string, status: string, message: string}>}
+ */
+export function submitQuizAsync(quizId, data) {
+  return request({
+    url: `/api/quizzes/${quizId}/submit?async=true`,
+    method: 'POST',
+    data,
+    timeout: 30000
+  })
+}
+
+/**
  * 获取空间测验列表
  * @param {string} spaceId
  * @returns {Promise<Array>}
@@ -211,6 +226,41 @@ export function getDocumentProcessingStatus(spaceId, documentId) {
 }
 
 /**
+ * 获取单个学习空间详情
+ * @param {string} spaceId
+ */
+export function getSpace(spaceId) {
+  return request({
+    url: `/api/spaces/${spaceId}`,
+    method: 'GET'
+  })
+}
+
+/**
+ * 更新学习空间
+ * @param {string} spaceId
+ * @param {Object} data
+ */
+export function updateSpace(spaceId, data) {
+  return request({
+    url: `/api/spaces/${spaceId}`,
+    method: 'PATCH',
+    data
+  })
+}
+
+/**
+ * 获取工具目录
+ * @returns {Promise<Array>}
+ */
+export function getToolCatalog() {
+  return request({
+    url: '/api/spaces/tool-catalog',
+    method: 'GET'
+  })
+}
+
+/**
  * 查询异步任务状态
  * @param {string} taskId - 任务 ID
  * @returns {Promise<Object>} AgentTaskResultResponse
@@ -218,6 +268,42 @@ export function getDocumentProcessingStatus(spaceId, documentId) {
 export function getTaskStatus(taskId) {
   return request({
     url: `/api/agents/tasks/${taskId}`,
+    method: 'GET'
+  })
+}
+
+/**
+ * 获取学习空间笔记列表
+ * @param {string|number} spaceId
+ * @param {Object} [options]
+ * @param {string|number} [options.nodeId] - 按节点筛选
+ * @param {boolean} [options.freeOnly] - 仅返回自由笔记
+ * @returns {Promise<Array>}
+ */
+export function getSpaceNotes(spaceId, { nodeId, freeOnly } = {}) {
+  let url = `/api/spaces/${spaceId}/notes`
+  const params = []
+  if (nodeId !== undefined && nodeId !== null && nodeId !== '') {
+    params.push(`node_id=${encodeURIComponent(nodeId)}`)
+  }
+  if (freeOnly) params.push('free_only=true')
+  if (params.length) url += '?' + params.join('&')
+
+  return request({
+    url,
+    method: 'GET'
+  })
+}
+
+/**
+ * 获取笔记详情
+ * @param {string|number} spaceId
+ * @param {string|number} noteId
+ * @returns {Promise<Object>}
+ */
+export function getNoteDetail(spaceId, noteId) {
+  return request({
+    url: `/api/spaces/${spaceId}/notes/${noteId}`,
     method: 'GET'
   })
 }

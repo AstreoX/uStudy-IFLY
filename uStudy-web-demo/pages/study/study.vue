@@ -83,6 +83,11 @@
                 :space-id="spaceId"
                 :key="`quiz-panel-${spaceId || 'none'}`"
               />
+              <NotesPanel
+                v-else-if="activeTab === 'notes'"
+                :space-id="spaceId"
+                :key="`notes-panel-${spaceId || 'none'}`"
+              />
               <template v-else-if="activeTab === 'browser'">
                 <!-- #ifdef H5 -->
                 <view class="browser-panel">
@@ -191,6 +196,20 @@
             :index="toast.index"
             @close="removeMasteryNotification(toast.id)"
           />
+
+          <!-- Quiz evaluation completion notifications -->
+          <UQuizNotification
+            v-for="notif in quizEvaluationNotifications"
+            :key="'quiz-notif-' + notif.id"
+            :visible="notif.visible"
+            :quizTopic="notif.quizTopic"
+            :score="notif.score"
+            :totalScore="notif.totalScore"
+            :status="notif.status"
+            :index="notif.index"
+            @click="handleQuizNotificationClick(notif)"
+            @close="removeQuizNotification(notif.id)"
+          />
           <view class="panel-chat-inner">
             <!-- Chat Panel Header -->
             <view class="chat-panel-header">
@@ -290,6 +309,62 @@
                 </transition>
               </view>
 
+              <!-- Tool mode selector -->
+              <view v-if="spaceId" class="tool-selector-wrap">
+                <view class="tool-selector-btn" @tap="toggleToolMenu">
+                  <svg viewBox="0 0 256 256" class="tool-selector-icon">
+                    <path d="M232,96l-29.3,29.3a8.1,8.1,0,0,1-5.7,2.3H160.3a8,8,0,0,0-5.6,2.3L138.3,146a8.1,8.1,0,0,1-5.7,2.3H119.8a7.7,7.7,0,0,0-5.6,2.3l-32,32a8.1,8.1,0,0,0,0,11.4l31.2,31.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                    <path d="M29.7,218.3a8.1,8.1,0,0,0,11.4,0l69.6-69.6a8,8,0,0,1,5.6-2.3H117a8,8,0,0,0,5.7-2.4l50.7-50.7a8,8,0,0,1,5.6-2.3h26.3a8.1,8.1,0,0,0,5.7-2.3L232,68" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                  </svg>
+                  <text class="tool-selector-label">{{ toolModeLabel }}</text>
+                  <svg viewBox="0 0 256 256" class="tool-selector-chevron">
+                    <polyline points="208 96 128 176 48 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="20"/>
+                  </svg>
+                </view>
+                <transition name="model-menu-fade">
+                  <view v-if="showToolMenu" class="tool-menu tool-menu-down">
+                    <view class="tool-menu-header">
+                      <text class="tool-menu-title">工具模式</text>
+                    </view>
+                    <view class="tool-mode-options">
+                      <view class="tool-mode-option" :class="{ 'tool-mode-option-active': toolMode === 'auto' }" @tap="selectToolMode('auto')">
+                        <view class="tool-mode-radio" :class="{ 'tool-mode-radio-checked': toolMode === 'auto' }"></view>
+                        <view class="tool-mode-option-info">
+                          <text class="tool-mode-option-name">自动模式</text>
+                          <text class="tool-mode-option-desc">AI 按需加载工具</text>
+                        </view>
+                      </view>
+                      <view class="tool-mode-option" :class="{ 'tool-mode-option-active': toolMode === 'manual' }" @tap="selectToolMode('manual')">
+                        <view class="tool-mode-radio" :class="{ 'tool-mode-radio-checked': toolMode === 'manual' }"></view>
+                        <view class="tool-mode-option-info">
+                          <text class="tool-mode-option-name">手动模式</text>
+                          <text class="tool-mode-option-desc">自定义启用工具</text>
+                        </view>
+                      </view>
+                    </view>
+                    <view v-if="toolMode === 'manual' && toolCatalog" class="tool-catalog-list">
+                      <view v-for="cat in toolCatalog" :key="cat.category" class="tool-catalog-category">
+                        <view class="tool-catalog-category-header">
+                          <text class="tool-catalog-category-name">{{ cat.category }}</text>
+                          <text class="tool-catalog-category-count">{{ getCategoryEnabledCount(cat) }}/{{ cat.tools.length }}</text>
+                        </view>
+                        <view v-for="tool in cat.tools" :key="tool.name" class="tool-catalog-item" @tap="toggleTool(tool.name)">
+                          <view class="tool-catalog-checkbox" :class="{ 'tool-catalog-checkbox-checked': isToolEnabled(tool.name) }">
+                            <svg v-if="isToolEnabled(tool.name)" viewBox="0 0 256 256" class="tool-catalog-check-icon">
+                              <polyline points="40 144 96 200 216 80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+                            </svg>
+                          </view>
+                          <text class="tool-catalog-item-name">{{ tool.summary }}</text>
+                        </view>
+                      </view>
+                    </view>
+                    <view v-if="toolMode === 'manual' && toolCatalogLoading" class="tool-catalog-loading">
+                      <text class="tool-catalog-loading-text">加载中...</text>
+                    </view>
+                  </view>
+                </transition>
+              </view>
+
               <view
                 class="chat-header-btn"
                 :class="{ 'chat-header-btn-disabled': !spaceId }"
@@ -301,6 +376,9 @@
                 </svg>
               </view>
             </view>
+
+            <!-- Tool menu backdrop -->
+            <view v-if="showToolMenu" class="tool-menu-backdrop" @tap="showToolMenu = false"></view>
 
             <!-- Messages Area -->
             <scroll-view
@@ -413,6 +491,18 @@
                         <text class="memory-tool-text">{{ getMemoryToolText(seg.toolCall.tool) }}</text>
                       </view>
 
+                      <!-- Planning tools (get_tool_details): inline silver shimmer -->
+                      <view
+                        v-else-if="isPlanningTool(seg.toolCall.tool)"
+                        class="planning-tool-inline"
+                        :class="{
+                          'planning-tool-active': seg.toolCall.status === 'running',
+                          'planning-tool-done': seg.toolCall.status === 'done'
+                        }"
+                      >
+                        <text class="planning-tool-text">{{ planningToolText }}</text>
+                      </view>
+
                       <!-- Search tools: structured result card -->
                       <view
                         v-else-if="isSearchTool(seg.toolCall.tool)"
@@ -435,22 +525,12 @@
                           class="search-results-list">
                           <view v-for="(item, idx) in getVisibleSearchResults(seg.toolCall)" :key="idx"
                             class="search-result-item" @click="openSearchResultUrl(item.url)">
-                            <view class="search-result-item-header">
-                              <text class="search-result-source-badge"
-                                :class="'source-' + (item.source || 'web')">{{ getSourceLabel(item.source || 'web') }}</text>
-                              <text class="search-result-title">{{ item.title }}</text>
-                            </view>
-                            <text v-if="item.snippet" class="search-result-snippet">{{ item.snippet }}</text>
-                            <view class="search-result-meta">
-                              <text v-if="item.authors" class="search-result-authors">{{ item.authors }}</text>
-                              <text v-if="item.year" class="search-result-year">{{ item.year }}</text>
-                              <text v-if="item.citation_count" class="search-result-citations">引用 {{ item.citation_count }}</text>
-                              <text v-if="item.author_name" class="search-result-author">{{ item.author_name }}</text>
-                              <text v-if="item.duration" class="search-result-duration">{{ item.duration }}</text>
-                              <text class="search-result-url">{{ formatDisplayUrl(item.url) }}</text>
-                            </view>
+                            <image class="search-result-favicon"
+                              :src="getFaviconUrl(item.url)" mode="aspectFit" />
+                            <text class="search-result-title">{{ item.title }}</text>
+                            <text class="search-result-domain">{{ formatDisplayUrl(item.url) }}</text>
                           </view>
-                          <view v-if="seg.toolCall.result.results.length > 2"
+                          <view v-if="seg.toolCall.result.results.length > 5"
                             class="search-results-toggle" @click="toggleSearchResults(seg.toolCall.id)">
                             <text class="search-results-toggle-text">
                               {{ isSearchExpanded(seg.toolCall.id) ? '收起' : '展开全部 ' + seg.toolCall.result.results.length + ' 条结果' }}
@@ -649,10 +729,12 @@ import KnowledgeGraph from '@/components/graph/KnowledgeGraph.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 import StudyMaterialsPanel from '@/components/study/StudyMaterialsPanel.vue'
 import QuizPanel from '@/components/study/quiz/QuizPanel.vue'
+import NotesPanel from '@/components/study/notes/NotesPanel.vue'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UMasteryToast from '@/components/u-mastery-toast/u-mastery-toast.vue'
+import UQuizNotification from '@/components/u-quiz-notification/u-quiz-notification.vue'
 import { connectNotificationStream } from '@/api/notification'
-import { getSpaces, deleteSpace, getTaskStatus, generateKnowledgeGraph } from '@/api/space'
+import { getSpaces, deleteSpace, getTaskStatus, generateKnowledgeGraph, getToolCatalog, updateSpace, getSpace } from '@/api/space'
 import { createConversation, getSpaceConversations, getConversation, sendMessage, uploadAttachment, deleteAttachment, getModels } from '@/api/chat'
 import { useUserStore } from '@/store/user'
 import { useSpacesStore } from '@/store/spaces'
@@ -670,6 +752,7 @@ const TOOL_DISPLAY_NAMES = {
   get_parent_nodes: 'Get Parent Nodes',
   get_sibling_nodes: 'Get Siblings',
   generate_learning_path: 'Generate Path',
+  extend_learning_path: 'Extend Path',
   get_learning_paths: 'Get Paths',
   delete_all_learning_paths: 'Delete Paths',
   get_postorder_traversal: 'Traverse Graph',
@@ -700,8 +783,13 @@ const GRAPH_MUTATING_TOOLS = new Set([
   'delete_edge',
   'update_mastery',
   'generate_learning_path',
+  'extend_learning_path',
   'delete_all_learning_paths'
 ])
+
+// Planning tools (shown as inline shimmer text that fades out)
+const PLANNING_TOOLS = new Set(['get_tool_details'])
+const PLANNING_TOOL_TEXT = '正在规划下一步……'
 
 // Memory tools (shown as inline shimmer text, not cards)
 const MEMORY_TOOLS = new Set([
@@ -733,7 +821,7 @@ const TOOL_ICON_MAP = {
   get_graph_overview: 'graph', add_node: 'graph', add_edge: 'graph',
   delete_node: 'graph', delete_edge: 'graph', update_mastery: 'graph',
   get_child_nodes: 'graph', get_parent_nodes: 'graph', get_sibling_nodes: 'graph',
-  generate_learning_path: 'graph', get_learning_paths: 'graph',
+  generate_learning_path: 'graph', extend_learning_path: 'graph', get_learning_paths: 'graph',
   delete_all_learning_paths: 'graph', get_postorder_traversal: 'graph',
   get_schedule: 'calendar', add_schedule: 'calendar',
   delete_schedule: 'calendar', update_schedule: 'calendar',
@@ -748,7 +836,7 @@ const DEFAULT_BROWSER_URL = 'https://www.wikipedia.org'
 const BROWSER_LOAD_TIMEOUT_MS = 8000
 
 export default {
-  components: { HomeSidebar, KnowledgeGraph, MarkdownRender, StudyMaterialsPanel, QuizPanel, UModal, UMasteryToast },
+  components: { HomeSidebar, KnowledgeGraph, MarkdownRender, StudyMaterialsPanel, QuizPanel, NotesPanel, UModal, UMasteryToast, UQuizNotification },
   data() {
     return {
       sidebarCollapsed: false,
@@ -825,6 +913,13 @@ export default {
       selectedModelId: null,
       showModelMenu: false,
 
+      // Tool mode
+      toolMode: 'auto',
+      enabledTools: null,
+      showToolMenu: false,
+      toolCatalog: null,
+      toolCatalogLoading: false,
+
       // Space delete
       isDeletingSpace: false,
       showDeleteSpaceModal: false,
@@ -835,6 +930,10 @@ export default {
       masteryNotifications: [],
       notificationAbort: null,
       notificationIdCounter: 0,
+
+      // Quiz evaluation notifications
+      quizEvaluationNotifications: [],
+      quizNotificationIdCounter: 0,
 
       // Quiz generation polling
       isGeneratingQuiz: false,
@@ -849,6 +948,9 @@ export default {
     }
   },
   computed: {
+    planningToolText() {
+      return PLANNING_TOOL_TEXT
+    },
     activeTabInfo() {
       return this.tabs.find(t => t.id === this.activeTab) || this.tabs[0]
     },
@@ -869,6 +971,9 @@ export default {
     selectedModelName() {
       const model = this.availableModels.find(m => m.id === this.selectedModelId)
       return model ? model.display_name : 'Model'
+    },
+    toolModeLabel() {
+      return this.toolMode === 'auto' ? '自动' : '手动'
     },
     chatInputMaxHeight() {
       const base = this.chatInputLineHeight * this.chatInputMaxLines + this.chatInputVerticalPadding
@@ -896,6 +1001,7 @@ export default {
         this.graphGenerating = true
       }
       await this.loadSpaceInfo()
+      this.loadSpaceToolMode()
       this.initConversation()
       if (this.graphTaskId) {
         this.pollGraphTask(this.graphTaskId)
@@ -948,7 +1054,9 @@ export default {
     // ==================== Mastery Notifications ====================
     setupNotificationStream() {
       this.notificationAbort = connectNotificationStream({
-        onMasteryUpdate: (data) => this.onMasteryUpdate(data)
+        onMasteryUpdate: (data) => this.onMasteryUpdate(data),
+        onQuizEvaluationComplete: (data) => this.onQuizEvaluationComplete(data),
+        onLearningPathExpanded: (data) => this.onLearningPathExpanded(data)
       })
     },
 
@@ -969,6 +1077,50 @@ export default {
 
     removeMasteryNotification(id) {
       this.masteryNotifications = this.masteryNotifications.filter(n => n.id !== id)
+    },
+
+    // ==================== Learning Path Expansion Notifications ====================
+    onLearningPathExpanded(data) {
+      const { space_id, new_nodes, junction_node } = data
+      if (space_id !== this.spaceId) return
+
+      const animationPath = junction_node
+        ? [junction_node, ...new_nodes]
+        : new_nodes
+      if (animationPath.length > 0) {
+        this.handleLearningPathAnimation(animationPath)
+      }
+    },
+
+    // ==================== Quiz Evaluation Notifications ====================
+    onQuizEvaluationComplete(data) {
+      const { quiz_id, quiz_topic, score, total_score, status: evalStatus } = data
+      this.quizNotificationIdCounter++
+      const id = this.quizNotificationIdCounter
+      const index = this.quizEvaluationNotifications.length
+      this.quizEvaluationNotifications = [
+        ...this.quizEvaluationNotifications,
+        { id, visible: true, quizId: quiz_id, quizTopic: quiz_topic, score, totalScore: total_score, status: evalStatus, index }
+      ]
+
+      // 如果当前在 quizzes tab，自动刷新列表
+      if (this.activeTab === 'quizzes' && this.$refs.quizPanel) {
+        this.$refs.quizPanel.loadQuizzes()
+      }
+    },
+
+    handleQuizNotificationClick(notification) {
+      this.removeQuizNotification(notification.id)
+      this.activeTab = 'quizzes'
+      this.$nextTick(() => {
+        if (this.$refs.quizPanel) {
+          this.$refs.quizPanel.navigateToQuizResult(notification.quizId)
+        }
+      })
+    },
+
+    removeQuizNotification(id) {
+      this.quizEvaluationNotifications = this.quizEvaluationNotifications.filter(n => n.id !== id)
     },
 
     // ==================== Knowledge Graph Generation Polling ====================
@@ -1046,6 +1198,77 @@ export default {
         }
       } catch (err) {
         console.error('[StudyPage] Failed to load models:', err)
+      }
+    },
+
+    // ==================== Tool Mode ====================
+    toggleToolMenu() {
+      this.showToolMenu = !this.showToolMenu
+      if (this.showToolMenu && !this.toolCatalog) {
+        this.loadToolCatalog()
+      }
+    },
+    async loadToolCatalog() {
+      if (this.toolCatalogLoading) return
+      this.toolCatalogLoading = true
+      try {
+        const res = await getToolCatalog()
+        this.toolCatalog = res || []
+      } catch (err) {
+        console.error('[StudyPage] Failed to load tool catalog:', err)
+      } finally {
+        this.toolCatalogLoading = false
+      }
+    },
+    async loadSpaceToolMode() {
+      if (!this.spaceId) return
+      try {
+        const space = await getSpace(this.spaceId)
+        this.toolMode = space.tool_mode || 'auto'
+        this.enabledTools = space.enabled_tools || null
+      } catch (err) {
+        console.error('[StudyPage] Failed to load space tool mode:', err)
+      }
+    },
+    async selectToolMode(mode) {
+      if (mode === this.toolMode) return
+      let newEnabledTools = this.enabledTools
+      if (mode === 'manual' && !this.enabledTools) {
+        if (!this.toolCatalog) await this.loadToolCatalog()
+        const allNames = (this.toolCatalog || []).flatMap(cat => cat.tools.map(t => t.name))
+        newEnabledTools = allNames
+      }
+      this.toolMode = mode
+      this.enabledTools = newEnabledTools
+      this.saveToolMode()
+    },
+    toggleTool(toolName) {
+      if (!this.enabledTools) return
+      const idx = this.enabledTools.indexOf(toolName)
+      if (idx >= 0) {
+        this.enabledTools = this.enabledTools.filter(n => n !== toolName)
+      } else {
+        this.enabledTools = [...this.enabledTools, toolName]
+      }
+      this.saveToolMode()
+    },
+    isToolEnabled(toolName) {
+      if (!this.enabledTools) return true
+      return this.enabledTools.includes(toolName)
+    },
+    getCategoryEnabledCount(category) {
+      if (!this.enabledTools) return category.tools.length
+      return category.tools.filter(t => this.enabledTools.includes(t.name)).length
+    },
+    async saveToolMode() {
+      if (!this.spaceId) return
+      try {
+        await updateSpace(this.spaceId, {
+          tool_mode: this.toolMode,
+          enabled_tools: this.toolMode === 'manual' ? this.enabledTools : null,
+        })
+      } catch (err) {
+        console.error('[StudyPage] Failed to save tool mode:', err)
       }
     },
 
@@ -1322,6 +1545,7 @@ export default {
 
       this.spaceId = spaceId
       await this.loadSpaceInfo()
+      this.loadSpaceToolMode()
       this.initConversation()
     },
 
@@ -1954,7 +2178,7 @@ export default {
         }
 
         if (success && GRAPH_MUTATING_TOOLS.has(tool)) {
-          if (tool === 'generate_learning_path' && result?.path?.length > 0) {
+          if ((tool === 'generate_learning_path' || tool === 'extend_learning_path') && result?.path?.length > 0) {
             this.handleLearningPathAnimation(result.path)
           } else {
             this.scheduleGraphRefresh()
@@ -2152,6 +2376,10 @@ export default {
       return MEMORY_TOOLS.has(toolName)
     },
 
+    isPlanningTool(toolName) {
+      return PLANNING_TOOLS.has(toolName)
+    },
+
     isSearchTool(toolName) {
       return ['web_search', 'academic_search', 'encyclopedia_search', 'course_search'].includes(toolName)
     },
@@ -2159,7 +2387,12 @@ export default {
     getVisibleSearchResults(toolCall) {
       const results = toolCall.result?.results || []
       if (this.expandedSearchResults[toolCall.id]) return results
-      return results.slice(0, 2)
+      return results.slice(0, 5)
+    },
+
+    getFaviconUrl(url) {
+      try { return new URL(url).origin + '/favicon.ico' }
+      catch { return '' }
     },
 
     isSearchExpanded(toolCallId) {
@@ -3366,49 +3599,82 @@ export default {
   100% { background-position: -100% 50%; }
 }
 
-/* Search Result Cards */
-.search-result-card {
-  max-width: 420px;
+/* Planning Tool Inline (get_tool_details) */
+.planning-tool-inline {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 0;
+  overflow: hidden;
+  transition: max-height 0.4s ease, opacity 0.4s ease, margin 0.4s ease;
 }
 
+.planning-tool-active {
+  max-height: 30px;
+  opacity: 1;
+}
+
+.planning-tool-done {
+  max-height: 0;
+  opacity: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.planning-tool-text {
+  font-size: 13px;
+  font-style: italic;
+  color: rgba(192, 199, 210, 0.5);
+}
+
+.planning-tool-active .planning-tool-text {
+  background: linear-gradient(
+    90deg,
+    rgba(160, 170, 185, 0.4) 0%,
+    rgba(200, 210, 225, 0.7) 20%,
+    rgba(230, 238, 250, 1) 40%,
+    rgba(200, 210, 225, 0.7) 60%,
+    rgba(160, 170, 185, 0.4) 80%,
+    rgba(160, 170, 185, 0.4) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: planning-shimmer 2s ease-in-out infinite;
+}
+
+@keyframes planning-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: -100% 50%; }
+}
+
+/* Search Result List */
 .search-results-list {
   margin-top: 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
 }
 
 .search-result-item {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .search-result-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
 }
 
-.search-result-item-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.search-result-source-badge {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 4px;
+.search-result-favicon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
   flex-shrink: 0;
-  font-weight: 500;
 }
-
-.source-academic { color: rgba(168, 85, 247, 0.95); background: rgba(168, 85, 247, 0.15); }
-.source-encyclopedia { color: rgba(59, 130, 246, 0.95); background: rgba(59, 130, 246, 0.15); }
-.source-course { color: rgba(251, 113, 133, 0.95); background: rgba(251, 113, 133, 0.15); }
-.source-web { color: rgba(34, 197, 94, 0.95); background: rgba(34, 197, 94, 0.15); }
 
 .search-result-title {
   font-size: 13px;
@@ -3418,39 +3684,14 @@ export default {
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+  min-width: 0;
 }
 
-.search-result-snippet {
+.search-result-domain {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
-  margin-top: 4px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  line-height: 1.4;
-}
-
-.search-result-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  flex-wrap: wrap;
-}
-
-.search-result-authors,
-.search-result-year,
-.search-result-citations,
-.search-result-author,
-.search-result-duration {
-  font-size: 11px;
   color: rgba(255, 255, 255, 0.4);
-}
-
-.search-result-url {
-  font-size: 11px;
-  color: rgba(96, 165, 250, 0.7);
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .search-results-toggle {
@@ -4357,5 +4598,252 @@ textarea.chat-input-textarea {
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* ==================== Tool Mode Selector ==================== */
+.tool-selector-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.tool-selector-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  height: 28px;
+  box-sizing: border-box;
+}
+
+.tool-selector-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tool-selector-icon {
+  width: 13px;
+  height: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
+}
+
+.tool-selector-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+}
+
+.tool-selector-chevron {
+  width: 10px;
+  height: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+}
+
+/* Tool menu dropdown */
+.tool-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  background: rgba(22, 22, 42, 0.96);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px;
+  min-width: 260px;
+  max-width: 320px;
+  z-index: 100;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.tool-menu-down {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
+
+.tool-menu-header {
+  margin-bottom: 8px;
+}
+
+.tool-menu-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.tool-mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.tool-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.tool-mode-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tool-mode-option-active {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.tool-mode-option-active:hover {
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.tool-mode-radio {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  flex-shrink: 0;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.tool-mode-radio-checked {
+  border-color: #60A5FA;
+  background: #60A5FA;
+  box-shadow: inset 0 0 0 3px rgba(22, 22, 42, 0.96);
+}
+
+.tool-mode-option-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tool-mode-option-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.tool-mode-option-desc {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* Tool catalog list (manual mode) */
+.tool-catalog-list {
+  max-height: 280px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 8px;
+}
+
+.tool-catalog-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.tool-catalog-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+}
+
+.tool-catalog-category {
+  margin-bottom: 8px;
+}
+
+.tool-catalog-category:last-child {
+  margin-bottom: 0;
+}
+
+.tool-catalog-category-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 4px 4px 6px;
+}
+
+.tool-catalog-category-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tool-catalog-category-count {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.tool-catalog-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.tool-catalog-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tool-catalog-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.tool-catalog-checkbox-checked {
+  background: #60A5FA;
+  border-color: #60A5FA;
+}
+
+.tool-catalog-check-icon {
+  width: 10px;
+  height: 10px;
+  color: #fff;
+}
+
+.tool-catalog-item-name {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-catalog-loading {
+  padding: 12px 0;
+  text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 8px;
+}
+
+.tool-catalog-loading-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.tool-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
 }
 </style>

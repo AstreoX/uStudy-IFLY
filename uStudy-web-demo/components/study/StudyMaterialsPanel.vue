@@ -225,10 +225,7 @@
             <text class="preview-text-content">{{ previewTextContent }}</text>
           </scroll-view>
 
-          <view
-            v-else-if="previewKind === 'pdf' || previewKind === 'doc' || previewKind === 'docx'"
-            class="preview-frame-wrap"
-          >
+          <view v-else-if="previewKind === 'pdf'" class="preview-frame-wrap">
             <!-- #ifdef H5 -->
             <iframe
               v-if="previewIframeUrl"
@@ -246,6 +243,29 @@
               </view>
             </view>
             <!-- #endif -->
+          </view>
+
+          <!-- #ifdef H5 -->
+          <scroll-view v-else-if="previewKind === 'docx'" class="preview-docx-scroll" scroll-y>
+            <view ref="docxContainer" class="preview-docx-container"></view>
+          </scroll-view>
+          <!-- #endif -->
+
+          <!-- #ifndef H5 -->
+          <view v-else-if="previewKind === 'docx'" class="preview-state">
+            <text class="preview-state-title">当前平台不支持内嵌预览</text>
+            <view class="preview-state-btn" @tap="downloadPreviewFile">
+              <text class="preview-state-btn-text">下载文件</text>
+            </view>
+          </view>
+          <!-- #endif -->
+
+          <view v-else-if="previewKind === 'doc'" class="preview-state">
+            <text class="preview-state-title">.doc 格式暂不支持在线预览</text>
+            <text class="preview-state-sub">请下载后使用 Word 打开查看</text>
+            <view class="preview-state-btn" @tap="downloadPreviewFile">
+              <text class="preview-state-btn-text">下载文件</text>
+            </view>
           </view>
 
           <view v-else class="preview-state">
@@ -316,6 +336,11 @@ import config from '@/config'
 import { useUserStore } from '@/store/user'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
+
+// #ifdef H5
+let renderAsync = null
+import('docx-preview').then(m => { renderAsync = m.renderAsync }).catch(() => {})
+// #endif
 
 const POLLING_INTERVAL_MS = 5000
 const INITIAL_POLLING_WINDOW_MS = 5 * 60 * 1000
@@ -672,7 +697,7 @@ export default {
       // #ifdef H5
       const input = document.createElement('input')
       input.type = 'file'
-      input.accept = '.pdf,.doc,.docx,.txt'
+      input.accept = '.pdf,.doc,.docx,.txt,.xlsx,.xls,.pptx,.ppt,.md,.html,.htm,.csv,.epub'
       input.onchange = async (event) => {
         const file = event?.target?.files?.[0]
         if (!file) return
@@ -685,9 +710,9 @@ export default {
         }
 
         const ext = (file.name.split('.').pop() || '').toLowerCase()
-        const validExtensions = ['pdf', 'doc', 'docx', 'txt']
+        const validExtensions = ['pdf', 'doc', 'docx', 'txt', 'xlsx', 'xls', 'pptx', 'ppt', 'md', 'html', 'htm', 'csv', 'epub']
         if (!validExtensions.includes(ext)) {
-          this.showCustomToast('仅支持 PDF、DOC、DOCX、TXT 文件', 'error')
+          this.showCustomToast('不支持该文件格式', 'error')
           return
         }
 
@@ -867,9 +892,6 @@ export default {
       if (ext === 'docx') return 'docx'
       return 'unsupported'
     },
-    buildWordPreviewUrl(fileUrl) {
-      return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fileUrl)}`
-    },
     startIframePreview(url, withTimeout = true) {
       this.previewFrameLoaded = false
       this.previewIframeUrl = url
@@ -923,6 +945,34 @@ export default {
 
       this.startIframePreview(fileUrl, false)
     },
+    async loadDocxPreview(fileUrl) {
+      if (!renderAsync) {
+        throw new Error('docx-preview 库加载失败，请刷新页面后重试')
+      }
+
+      const response = await fetch(fileUrl, { method: 'GET' })
+      if (!response.ok) {
+        throw new Error(`文档加载失败 (${response.status})`)
+      }
+      const arrayBuffer = await response.arrayBuffer()
+
+      await this.$nextTick()
+      const container = this.$refs.docxContainer
+      if (!container) throw new Error('预览容器未就绪')
+
+      await renderAsync(arrayBuffer, container, null, {
+        className: 'docx-preview-wrapper',
+        inWrapper: true,
+        ignoreWidth: false,
+        ignoreHeight: true,
+        ignoreFonts: false,
+        breakPages: true,
+        ignoreLastRenderedPageBreak: true,
+        experimental: false,
+        trimXmlDeclaration: true,
+        useBase64URL: true,
+      })
+    },
     async openPreview(doc) {
       if (doc?.doc_type !== 'document') return
 
@@ -956,8 +1006,15 @@ export default {
           return
         }
 
-        if (previewKind === 'doc' || previewKind === 'docx') {
-          this.startIframePreview(this.buildWordPreviewUrl(fileUrl))
+        if (previewKind === 'docx') {
+          await this.loadDocxPreview(fileUrl)
+          this.previewLoading = false
+          return
+        }
+
+        if (previewKind === 'doc') {
+          this.previewLoading = false
+          this.previewError = '.doc 格式暂不支持在线预览，请下载后查看。'
           return
         }
 
@@ -1552,6 +1609,20 @@ export default {
   height: 100%;
   border: none;
   background: #fff;
+}
+
+.preview-docx-scroll {
+  width: 100%;
+  height: 100%;
+  background: #f5f5f5;
+}
+
+.preview-docx-container {
+  min-height: 100%;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .storage-container {

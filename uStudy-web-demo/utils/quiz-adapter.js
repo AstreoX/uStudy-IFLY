@@ -131,7 +131,8 @@ export function mapEvaluationResult(result) {
     weaknesses: Array.isArray(result?.weaknesses) ? result.weaknesses : [],
     suggestions: Array.isArray(result?.suggestions) ? result.suggestions : [],
     questionResults,
-    debugInfo: result?.debug_info || null
+    debugInfo: result?.debug_info || null,
+    status: result?.status || 'completed'
   }
 }
 

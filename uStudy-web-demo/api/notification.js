@@ -17,6 +17,8 @@ const MAX_RETRIES = RETRY_DELAYS.length
  *
  * @param {Object} callbacks
  * @param {Function} [callbacks.onMasteryUpdate] - Called with { node_name, change, new_mastery }
+ * @param {Function} [callbacks.onQuizEvaluationComplete] - Called with { quiz_id, attempt_id, quiz_topic, score, total_score, status }
+ * @param {Function} [callbacks.onLearningPathExpanded] - Called with { space_id, new_nodes, junction_node, message }
  * @param {Function} [callbacks.onDebugLog] - Optional debug logger
  * @returns {Function} Abort function to close the connection and stop retries
  */
@@ -49,6 +51,14 @@ export function connectNotificationStream(callbacks) {
 
         if (eventType === 'mastery_update') {
           callbacks.onMasteryUpdate?.(data)
+        }
+
+        if (eventType === 'quiz_evaluation_complete') {
+          callbacks.onQuizEvaluationComplete?.(data)
+        }
+
+        if (eventType === 'learning_path_expanded') {
+          callbacks.onLearningPathExpanded?.(data)
         }
       },
       onComplete: () => {

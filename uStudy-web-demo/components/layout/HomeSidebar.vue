@@ -44,7 +44,7 @@
           class="submenu-container"
           :style="{ maxHeight: studyExpanded ? '400px' : '0px', opacity: studyExpanded ? 1 : 0 }"
         >
-          <view class="submenu-list">
+          <view class="submenu-scroll">
             <!-- Loading -->
             <view v-if="spacesLoading" class="submenu-empty">
               <text class="submenu-empty-text">Loading...</text>
@@ -66,7 +66,8 @@
               <text class="space-name">{{ space.name }}</text>
               <text class="space-progress">{{ spaceProgress[space.id] || 0 }}%</text>
             </view>
-            <!-- Create space button -->
+          </view>
+          <view class="submenu-footer">
             <view class="submenu-divider"></view>
             <view class="submenu-create" @tap="handleCreateSpace">
               <text class="submenu-create-plus">+</text>
@@ -599,10 +600,26 @@ export default {
 .submenu-container {
   overflow: hidden;
   transition: max-height 0.25s ease, opacity 0.2s ease;
+  display: flex;
+  flex-direction: column;
 }
 
-.submenu-list {
-  padding: 4px 0 4px 0;
+.submenu-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.submenu-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.submenu-footer {
+  flex-shrink: 0;
+  padding-bottom: 4px;
 }
 
 .submenu-empty {

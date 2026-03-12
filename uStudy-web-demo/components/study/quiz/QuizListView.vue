@@ -46,7 +46,14 @@
               <text class="quiz-date">{{ formatQuizDate(quiz.created_at) }}</text>
             </view>
             <view class="quiz-status">
-              <view v-if="quiz.has_attempt" class="status-completed">
+              <view v-if="quiz.has_attempt && (quiz.attempt_status === 'pending' || quiz.attempt_status === 'evaluating')" class="status-evaluating">
+                <view class="evaluating-dot" />
+                <text class="status-tag status-evaluating-text">评估中...</text>
+              </view>
+              <view v-else-if="quiz.has_attempt && quiz.attempt_status === 'failed'" class="status-failed">
+                <text class="status-tag status-failed-text">评估失败</text>
+              </view>
+              <view v-else-if="quiz.has_attempt" class="status-completed">
                 <text class="status-score">{{ quiz.attempt_score }}/{{ quiz.attempt_total_score }}</text>
                 <text class="status-tag">已作答</text>
               </view>
@@ -255,11 +262,40 @@ export default {
 }
 
 .status-completed,
-.status-pending {
+.status-pending,
+.status-evaluating,
+.status-failed {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 6rpx;
+}
+
+.status-evaluating {
+  flex-direction: row;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.evaluating-dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #60a5fa;
+  animation: evaluatingPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes evaluatingPulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.status-evaluating-text {
+  color: #93c5fd;
+}
+
+.status-failed-text {
+  color: #fca5a5;
 }
 
 .status-score {

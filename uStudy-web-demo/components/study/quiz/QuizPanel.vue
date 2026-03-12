@@ -55,7 +55,7 @@ import {
   getQuizAttempt,
   getQuizDetail,
   getQuizzesBySpace,
-  submitQuiz
+  submitQuizAsync
 } from '@/api/space'
 import {
   buildSubmitAnswersPayload,
@@ -178,11 +178,16 @@ export default {
       if (!quiz?.id) return
 
       this.activeQuiz = quiz
-      if (quiz.has_attempt) {
+      const inProgress = quiz.attempt_status === 'pending' || quiz.attempt_status === 'evaluating'
+      if (quiz.has_attempt && !inProgress) {
         await this.loadQuizResult(quiz.id)
         return
       }
-      await this.loadQuizDetail(quiz.id)
+      if (!quiz.has_attempt) {
+        await this.loadQuizDetail(quiz.id)
+        return
+      }
+      // inProgress: stay on list, quiz already shows "评估中..."
     },
     async loadQuizDetail(quizId) {
       this.viewMode = 'answer'
@@ -231,12 +236,9 @@ export default {
       try {
         this.submittingAnswers = true
         const payload = buildSubmitAnswersPayload(this.quizDetail.questions, userAnswers)
-        const response = await submitQuiz(this.activeQuiz.id, payload)
-        this.resultData = mapEvaluationResult(response)
-        this.resultError = ''
-        this.resultLoading = false
-        this.viewMode = 'result'
-        this.loadQuizzes()
+        await submitQuizAsync(this.activeQuiz.id, payload)
+        this.showToast('提交成功，AI 正在后台评估', 'success')
+        this.backToList()
       } catch (error) {
         if (isQuizAlreadyAttemptedError(error)) {
           this.showToast('该测验已作答，正在跳转到评估结果', 'info')
@@ -247,6 +249,11 @@ export default {
       } finally {
         this.submittingAnswers = false
       }
+    },
+    navigateToQuizResult(quizId) {
+      if (!quizId) return
+      this.activeQuiz = { id: quizId }
+      this.loadQuizResult(quizId)
     },
     backToList() {
       this.viewMode = 'list'

@@ -617,6 +617,7 @@ export default {
 .dots-inner {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10rpx;
   padding: 0 4rpx;
 }

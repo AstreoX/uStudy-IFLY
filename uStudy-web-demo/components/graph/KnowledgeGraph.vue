@@ -35,6 +35,88 @@
           </view>
         </view>
       </view>
+      <!-- 内联笔记预览 -->
+      <view class="kg-notes-inline">
+        <text v-if="nodeNotesLoading" class="kg-notes-hint">加载笔记...</text>
+        <text v-else-if="nodeNotes.length === 0" class="kg-notes-hint">暂无笔记</text>
+        <view v-else class="kg-notes-list">
+          <view
+            v-for="note in nodeNotes"
+            :key="note.id"
+            class="kg-notes-item"
+            @click.stop="handleNoteClick(note)"
+          >
+            <text class="kg-notes-item-title">{{ getNoteTitle(note) }}</text>
+            <text class="kg-notes-item-preview">{{ truncateContent(note.content) }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- Note preview popup -->
+    <view
+      v-if="previewNote || previewNoteLoading || previewNoteError"
+      class="kg-note-overlay"
+      @click.self="closeNotePreview"
+    >
+      <view class="kg-note-preview" @click.stop>
+        <!-- Header -->
+        <view class="kg-note-preview-header">
+          <text class="kg-note-preview-title">
+            {{ previewNote ? getNoteTitle(previewNote) : '加载中...' }}
+          </text>
+          <view class="kg-note-preview-close" @click="closeNotePreview">
+            <text class="kg-note-preview-close-icon">×</text>
+          </view>
+        </view>
+
+        <!-- Loading -->
+        <view v-if="previewNoteLoading" class="kg-note-preview-status">
+          <view class="kg-spinner"></view>
+          <text class="kg-loading-text">加载笔记...</text>
+        </view>
+
+        <!-- Error -->
+        <view v-else-if="previewNoteError" class="kg-note-preview-status">
+          <text class="kg-note-preview-error-text">{{ previewNoteError }}</text>
+        </view>
+
+        <!-- Content -->
+        <scroll-view v-else-if="previewNote" class="kg-note-preview-body" scroll-y>
+          <view v-if="getPreviewNodeTag(previewNote)" class="kg-note-preview-tag">
+            <text class="kg-note-preview-tag-text">{{ getPreviewNodeTag(previewNote) }}</text>
+          </view>
+
+          <view v-if="previewNote.content" class="kg-note-preview-content">
+            <MarkdownRender :content="previewNote.content" />
+          </view>
+          <text v-else class="kg-note-preview-empty">（无内容）</text>
+
+          <view
+            v-if="previewNote.attachments && previewNote.attachments.length"
+            class="kg-note-preview-attachments"
+          >
+            <text class="kg-note-preview-attach-label">附件</text>
+            <view
+              v-for="(att, idx) in previewNote.attachments"
+              :key="att.id || idx"
+              class="kg-note-preview-attach-item"
+            >
+              <text class="kg-note-preview-attach-name">{{ getPreviewAttachmentName(att) }}</text>
+            </view>
+          </view>
+
+          <view class="kg-note-preview-meta">
+            <text class="kg-note-preview-meta-text">创建于 {{ formatNoteDate(previewNote.created_at) }}</text>
+            <text
+              v-if="previewNote.updated_at && previewNote.updated_at !== previewNote.created_at"
+              class="kg-note-preview-meta-text"
+            >
+              更新于 {{ formatNoteDate(previewNote.updated_at) }}
+            </text>
+          </view>
+        </scroll-view>
+      </view>
     </view>
 
     <!-- Loading state -->
@@ -67,7 +149,7 @@
 </template>
 
 <script>
-import { getSpaceGraph } from '@/api/space'
+import { getSpaceGraph, getSpaceNotes, getNoteDetail } from '@/api/space'
 import { getMasteryColor, getMasteryGlowColor } from '@/utils/mastery-colors'
 import {
   buildTreeFromEdges, computeLayout, getNodeBaseRadius,
@@ -79,15 +161,19 @@ import {
   drawPathHighlightRipple, drawAnimatedPathEdge,
   PATH_RIPPLE_DURATION, PATH_EDGE_GROW_DURATION
 } from '@/utils/graph-renderer'
+import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 export default {
+  components: {
+    MarkdownRender
+  },
   props: {
     spaceId: { type: [String, Number], default: null },
     pathHighlight: { type: Boolean, default: false },
     generating: { type: Boolean, default: false }
   },
 
-  emits: ['node-selected', 'graph-loaded', 'retry', 'quick-learn'],
+  emits: ['node-selected', 'graph-loaded', 'retry', 'quick-learn', 'note-selected'],
 
   data() {
     return {
@@ -151,7 +237,16 @@ export default {
       minimapHeight: 120,
       minimapPending: false,
       lastMinimapRenderAt: 0,
-      isMinimapDragging: false
+      isMinimapDragging: false,
+
+      // Node notes
+      nodeNotes: [],
+      nodeNotesLoading: false,
+
+      // Note preview popup
+      previewNote: null,
+      previewNoteLoading: false,
+      previewNoteError: ''
     }
   },
 
@@ -188,15 +283,53 @@ export default {
     pathHighlight() {
       this.requestRender()
       this.requestMinimapRender(true)
+    },
+    async selectedNodeId(nodeId) {
+      // Close note preview when node selection changes
+      this.previewNote = null
+      this.previewNoteLoading = false
+      this.previewNoteError = ''
+
+      if (!nodeId || !this.spaceId) {
+        this.nodeNotes = []
+        this.nodeNotesLoading = false
+        return
+      }
+      this.nodeNotesLoading = true
+      this.nodeNotes = []
+      try {
+        const notes = await getSpaceNotes(this.spaceId, { nodeId })
+        if (this.selectedNodeId === nodeId) {
+          this.nodeNotes = Array.isArray(notes) ? notes : []
+        }
+      } catch {
+        if (this.selectedNodeId === nodeId) {
+          this.nodeNotes = []
+        }
+      } finally {
+        if (this.selectedNodeId === nodeId) {
+          this.nodeNotesLoading = false
+        }
+      }
     }
   },
 
   mounted() {
     this.initCanvas()
     if (this.spaceId) this.loadAndRender()
+    this._onKeyDown = (e) => {
+      if (e.key === 'Escape' && (this.previewNote || this.previewNoteLoading || this.previewNoteError)) {
+        this.closeNotePreview()
+      }
+    }
+    window.addEventListener('keydown', this._onKeyDown)
   },
 
   beforeUnmount() {
+    if (this._onKeyDown) {
+      window.removeEventListener('keydown', this._onKeyDown)
+      this._onKeyDown = null
+    }
     this.highlightAnimationRunning = false
     this.highlightedNodes.clear()
     this.pathAnimationRunning = false
@@ -246,6 +379,69 @@ export default {
     handleQuickLearn() {
       if (!this.selectedNode) return
       this.$emit('quick-learn', { node: this.selectedNode })
+    },
+
+    getNoteTitle(note) {
+      const title = note?.title
+      return typeof title === 'string' && title.trim() ? title.trim() : '未命名笔记'
+    },
+
+    truncateContent(content) {
+      if (!content) return ''
+      return content.length > 80 ? content.substring(0, 80) + '...' : content
+    },
+
+    async handleNoteClick(note) {
+      this.$emit('note-selected', { note, nodeId: this.selectedNodeId })
+      if (!note?.id || !this.spaceId) return
+
+      const requestedId = note.id
+      this._previewRequestId = requestedId
+      this.previewNote = null
+      this.previewNoteLoading = true
+      this.previewNoteError = ''
+
+      try {
+        const detail = await getNoteDetail(this.spaceId, requestedId)
+        if (this._previewRequestId === requestedId) {
+          this.previewNote = detail
+        }
+      } catch (error) {
+        if (this._previewRequestId === requestedId) {
+          this.previewNoteError = error?.message || '加载笔记详情失败'
+        }
+      } finally {
+        if (this._previewRequestId === requestedId) {
+          this.previewNoteLoading = false
+        }
+      }
+    },
+
+    closeNotePreview() {
+      this._previewRequestId = null
+      this.previewNote = null
+      this.previewNoteLoading = false
+      this.previewNoteError = ''
+    },
+
+    getPreviewNodeTag(note) {
+      return note?.node_label || ''
+    },
+
+    getPreviewAttachmentName(att) {
+      if (!att) return '未命名附件'
+      return att.link_title || att.original_filename || att.link_url || att.file_url || '未命名附件'
+    },
+
+    formatNoteDate(dateStr) {
+      if (!dateStr) return ''
+      const date = new Date(dateStr)
+      if (Number.isNaN(date.getTime())) return ''
+      const month = date.getMonth() + 1
+      const day = date.getDate()
+      const hours = date.getHours().toString().padStart(2, '0')
+      const minutes = date.getMinutes().toString().padStart(2, '0')
+      return `${month}月${day}日 ${hours}:${minutes}`
     },
 
     // --- Canvas initialization ---
@@ -1300,7 +1496,14 @@ export default {
   position: absolute;
   transform: translateX(-50%);
   z-index: 10;
-  pointer-events: none;
+  pointer-events: auto;
+  min-width: 200px;
+  max-width: 320px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid rgba(226, 232, 240, 0.16);
+  border-radius: 12px;
+  backdrop-filter: blur(12px);
 }
 
 .kg-popup-content {
@@ -1309,12 +1512,7 @@ export default {
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  background: rgba(15, 23, 42, 0.88);
-  border: 1px solid rgba(226, 232, 240, 0.16);
-  border-radius: 12px;
-  backdrop-filter: blur(12px);
   white-space: nowrap;
-  pointer-events: auto;
 }
 
 .kg-popup-name {
@@ -1494,6 +1692,51 @@ export default {
   color: rgba(59, 130, 246, 0.9);
 }
 
+/* Inline notes */
+.kg-notes-inline {
+  border-top: 1px solid rgba(226, 232, 240, 0.08);
+  padding: 6px 14px 8px;
+}
+.kg-notes-hint {
+  font-size: 12px;
+  color: rgba(241, 245, 249, 0.35);
+  display: block;
+  text-align: center;
+}
+.kg-notes-list {
+  max-height: 150px;
+  overflow-y: auto;
+}
+.kg-notes-item {
+  padding: 5px 0;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.kg-notes-item + .kg-notes-item {
+  border-top: 1px solid rgba(226, 232, 240, 0.06);
+}
+.kg-notes-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.kg-notes-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(241, 245, 249, 0.85);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kg-notes-item-preview {
+  font-size: 11px;
+  color: rgba(241, 245, 249, 0.4);
+  margin-top: 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* Minimap */
 .kg-minimap {
   position: absolute;
@@ -1510,5 +1753,157 @@ export default {
   overflow: hidden;
   pointer-events: auto;
   cursor: crosshair;
+}
+
+/* Note preview overlay */
+.kg-note-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.kg-note-preview {
+  width: 70%;
+  max-width: 680px;
+  max-height: 80%;
+  display: flex;
+  flex-direction: column;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(226, 232, 240, 0.16);
+  border-radius: 16px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+
+.kg-note-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.08);
+  flex-shrink: 0;
+}
+
+.kg-note-preview-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #F1F5F9;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 12px;
+}
+
+.kg-note-preview-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.kg-note-preview-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.kg-note-preview-close-icon {
+  font-size: 20px;
+  color: rgba(241, 245, 249, 0.5);
+  line-height: 1;
+}
+
+.kg-note-preview-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 20px;
+}
+
+.kg-note-preview-error-text {
+  font-size: 13px;
+  color: rgba(255, 100, 100, 0.7);
+}
+
+.kg-note-preview-body {
+  flex: 1;
+  padding: 20px 24px;
+}
+
+.kg-note-preview-tag {
+  display: inline-block;
+  margin-bottom: 14px;
+}
+
+.kg-note-preview-tag-text {
+  font-size: 12px;
+  color: rgba(129, 140, 248, 0.9);
+  padding: 3px 10px;
+  background: rgba(129, 140, 248, 0.12);
+  border-radius: 6px;
+}
+
+.kg-note-preview-content {
+  font-size: 14px;
+  color: rgba(241, 245, 249, 0.85);
+  line-height: 1.8;
+  word-break: break-word;
+}
+
+.kg-note-preview-empty {
+  display: block;
+  font-size: 14px;
+  color: rgba(241, 245, 249, 0.35);
+}
+
+.kg-note-preview-attachments {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(226, 232, 240, 0.08);
+}
+
+.kg-note-preview-attach-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(241, 245, 249, 0.5);
+  margin-bottom: 10px;
+}
+
+.kg-note-preview-attach-item {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+
+.kg-note-preview-attach-name {
+  font-size: 12px;
+  color: rgba(241, 245, 249, 0.6);
+}
+
+.kg-note-preview-meta {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kg-note-preview-meta-text {
+  font-size: 11px;
+  color: rgba(241, 245, 249, 0.3);
 }
 </style>
