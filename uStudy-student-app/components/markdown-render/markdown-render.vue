@@ -279,6 +279,22 @@ function processLatex(text) {
 	// KaTeX 块级公式内联样式
 	const katexBlockStyle = 'display:block; text-align:center; margin:16px 0; padding:12px; overflow-x:auto; max-width:100%;'
 
+	// 块级公式 \[...\]（标准 LaTeX display math）
+	processed = processed.replace(/\\\[([\s\S]*?)\\\]/g, (match, formula) => {
+		const rendered = renderLatex(formula.trim(), true)
+		const key = `@@LATEX_BLOCK_${placeholders.length}@@`
+		placeholders.push({ key, html: `<div class="katex-block" style="${katexBlockStyle}">${rendered}</div>` })
+		return `\n${key}\n`
+	})
+
+	// 行内公式 \(...\)（标准 LaTeX inline math）
+	processed = processed.replace(/\\\(([\s\S]*?)\\\)/g, (match, formula) => {
+		const rendered = renderLatex(formula.trim(), false)
+		const key = `@@LATEX_INLINE_${placeholders.length}@@`
+		placeholders.push({ key, html: `<span class="katex-inline">${rendered}</span>` })
+		return key
+	})
+
 	processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
 		const rendered = renderLatex(formula.trim(), true)
 		const key = `@@LATEX_BLOCK_${placeholders.length}@@`
