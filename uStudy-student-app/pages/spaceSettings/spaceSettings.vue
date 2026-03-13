@@ -258,7 +258,7 @@ import { goBack } from '@/utils/navigation'
 const ICON_SRC = {
   back: '/static/icons/phosphor-icons/SVGs/regular/caret-left.svg',
   share: '/static/icons/lucide/user-round-plus.svg',
-  chat: '/static/icons/lucide/messages-square.svg',
+  chat: '/static/icons/history.svg',
   knowledge: '/static/icons/lucide/database.svg',
   quiz: '/static/icons/phosphor-icons/SVGs/regular/exam.svg',
   note: '/static/icons/lucide/notebook-pen.svg',

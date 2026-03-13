@@ -1,16 +1,17 @@
 <template>
-  <view v-if="visible" class="u-action-sheet-wrapper" @touchmove.stop.prevent>
+  <view v-if="visible" class="u-action-sheet-wrapper">
     <!-- Overlay -->
     <view
       class="u-action-sheet-overlay"
       :class="{ 'overlay-show': animationVisible }"
       @click="handleCancel"
+      @touchmove.stop.prevent
     ></view>
 
     <!-- Sheet Container -->
     <view class="u-action-sheet-container" :class="{ 'sheet-show': animationVisible }">
       <!-- Items -->
-      <view class="u-action-sheet-items">
+      <scroll-view class="u-action-sheet-items" scroll-y>
         <view
           v-for="(item, index) in items"
           :key="index"
@@ -27,7 +28,7 @@
           ></image>
           <text class="item-text">{{ item.text }}</text>
         </view>
-      </view>
+      </scroll-view>
 
       <!-- Cancel Button -->
       <view class="u-action-sheet-cancel" @click="handleCancel">
@@ -152,6 +153,7 @@ export default {
 }
 
 .u-action-sheet-items {
+  max-height: 60vh;
   background: rgba(20, 20, 30, 0.92);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);

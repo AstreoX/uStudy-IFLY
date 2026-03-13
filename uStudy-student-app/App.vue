@@ -36,7 +36,17 @@
 						const data = typeof msg.payload === 'string'
 							? JSON.parse(msg.payload)
 							: msg.payload
-						if (!data || !data.conversationId) return
+						if (!data) return
+
+						// 测试评估完成通知 → 跳转结果页
+						if (data.type === 'quiz_evaluation' && data.quizId) {
+							uni.navigateTo({
+								url: `/pages/testResult/testResult?quizId=${data.quizId}&fromList=true`
+							})
+							return
+						}
+
+						if (!data.conversationId) return
 
 						stopBackgroundMonitor()
 

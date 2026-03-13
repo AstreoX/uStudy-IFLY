@@ -206,6 +206,18 @@ export function submitToolResult(conversationId, data) {
   })
 }
 
+/**
+ * 回滚最后一轮对话（删除最后一条用户消息及其后续AI回复）
+ * @param {string} conversationId - 对话 ID
+ * @returns {Promise<Object>} { deleted_count: number }
+ */
+export function rollbackLastMessage(conversationId) {
+  return request({
+    url: `/api/conversations/${conversationId}/rollback`,
+    method: 'POST'
+  })
+}
+
 // ==================== Quick Chat API ====================
 
 /**

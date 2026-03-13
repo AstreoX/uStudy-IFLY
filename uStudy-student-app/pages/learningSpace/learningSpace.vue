@@ -195,15 +195,6 @@
 			</view>
 		</view>
 
-		<!-- 操作按钮 -->
-		<view class="action-buttons">
-			<view class="action-btn" :class="{ 'action-btn-active': isPathHighlightOn }" @click="togglePathHighlight">
-				<image class="action-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/path.svg" mode="aspectFit"></image>
-			</view>
-			<view class="action-btn" @click="handleAddFile">
-				<image class="action-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/link.svg" mode="aspectFit"></image>
-			</view>
-		</view>
 
 		<!-- 添加文件弹窗 -->
 		<view v-if="showAddFilePopup" class="add-file-popup-wrapper" @click="closeAddFilePopup">
@@ -213,12 +204,12 @@
 				@click.stop
 			>
 				<view class="popup-option" @click="handleAddDocument">
-					<image class="popup-option-icon" src="/static/icons/phosphor-icons/SVGs/regular/file-text.svg" mode="aspectFit" />
+					<image class="popup-option-icon" src="/static/icons/file-text.svg" mode="aspectFit" />
 					<text class="popup-option-text">添加文档</text>
 				</view>
 				<view class="popup-divider"></view>
 				<view class="popup-option" @click="handleAddLink">
-					<image class="popup-option-icon" src="/static/icons/phosphor-icons/SVGs/regular/link.svg" mode="aspectFit" />
+					<image class="popup-option-icon" src="/static/icons/link.svg" mode="aspectFit" />
 					<text class="popup-option-text">添加链接</text>
 				</view>
 				<!-- 小箭头指向按钮 -->
@@ -346,6 +337,18 @@
 							<text class="model-menu-item-desc">{{ m.locked ? '升级订阅解锁' : m.description }}</text>
 						</view>
 						<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
+					</view>
+				</view>
+
+				<!-- 操作按钮 -->
+				<view class="action-buttons">
+					<view class="path-pill" :class="{ 'path-pill-active': isPathHighlightOn }" @click="togglePathHighlight">
+						<image class="path-pill-icon" src="/static/icons/route.svg" mode="aspectFit"></image>
+						<text class="path-pill-label">学习路径</text>
+					</view>
+					<view class="path-pill" @click="handleAddFile">
+						<image class="path-pill-icon" src="/static/icons/file-input.svg" mode="aspectFit"></image>
+						<text class="path-pill-label">添加知识库</text>
 					</view>
 				</view>
 
@@ -4907,23 +4910,20 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 	/* 操作按钮 */
 	.action-buttons {
-		position: fixed;
-		bottom: calc(100vh * 4.5 / 26);
-		left: 0;
-		right: 0;
-		z-index: 100;
 		display: flex;
 		justify-content: space-between;
-		padding: 0 calc(100vw / 24);
+		margin-bottom: 16rpx;
 	}
 
-	.action-btn {
-		width: 108rpx;
-		height: 108rpx;
+	/* pill 按钮 */
+	.path-pill {
 		display: flex;
-		justify-content: center;
+		flex-direction: row;
 		align-items: center;
-		border-radius: 50%;
+		gap: 10rpx;
+		height: 76rpx;
+		padding: 0 28rpx 0 20rpx;
+		border-radius: 38rpx;
 		background-color: rgba(255, 255, 255, 0.06);
 		-webkit-backdrop-filter: blur(40px) saturate(180%);
 		backdrop-filter: blur(40px) saturate(180%);
@@ -4936,7 +4936,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		transition: all 0.2s ease;
 	}
 
-	.action-btn-active {
+	.path-pill-active {
 		background-color: rgba(0, 136, 255, 0.75);
 		border: 1rpx solid rgba(255, 255, 255, 0.2);
 		outline: 1rpx solid rgba(0, 136, 255, 0.3);
@@ -4947,15 +4947,22 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	}
 
 	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-		.action-btn {
+		.path-pill {
 			background: rgba(80, 80, 95, 0.65);
 		}
 	}
 
-	.action-btn-icon {
-		width: 66rpx;
-		height: 66rpx;
+	.path-pill-icon {
+		width: 40rpx;
+		height: 40rpx;
 		filter: brightness(0) invert(1);
+	}
+
+	.path-pill-label {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.9);
+		font-weight: 500;
+		line-height: 1;
 	}
 
 	.perf-debug-panel {
@@ -5932,14 +5939,10 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		right: calc(100vw / 24);
 		bottom: calc(100vh * 3 / 26 + 120rpx);
 		min-width: 280rpx;
-		background: rgba(30, 30, 45, 0.95);
-		-webkit-backdrop-filter: blur(40px) saturate(180%);
-		backdrop-filter: blur(40px) saturate(180%);
-		border: 1rpx solid rgba(255, 255, 255, 0.15);
+		background: rgb(41, 41, 41);
+		border: 2rpx solid rgba(255, 255, 255, 0.06);
 		border-radius: 20rpx;
-		box-shadow:
-			0 12rpx 40rpx rgba(0, 0, 0, 0.4),
-			0 0 0 1rpx rgba(255, 255, 255, 0.05) inset;
+		box-shadow: 0 12rpx 40rpx rgba(0, 0, 0, 0.3);
 		overflow: hidden;
 		transform: translateY(20rpx) scale(0.9);
 		opacity: 0;
@@ -5951,52 +5954,8 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		opacity: 1;
 	}
 
-	.popup-option {
-		display: flex;
-		align-items: center;
-		padding: 28rpx 32rpx;
-		transition: background 150ms ease;
-	}
-
-	.popup-option:active {
-		background: rgba(255, 255, 255, 0.08);
-	}
-
-	.popup-option-icon {
-		width: 44rpx;
-		height: 44rpx;
-		margin-right: 24rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.85;
-	}
-
-	.popup-option-text {
-		font-size: 30rpx;
-		color: rgba(255, 255, 255, 0.9);
-		font-weight: 500;
-	}
-
-	.popup-divider {
-		height: 1rpx;
-		background: rgba(255, 255, 255, 0.1);
-		margin: 0 24rpx;
-	}
-
-	.popup-arrow {
-		position: absolute;
-		right: 36rpx;
-		bottom: -16rpx;
-		width: 0;
-		height: 0;
-		border-left: 16rpx solid transparent;
-		border-right: 16rpx solid transparent;
-		border-top: 16rpx solid rgba(30, 30, 45, 0.95);
-	}
-
-	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-		.add-file-popup {
-			background: rgba(40, 40, 55, 0.98);
-		}
+	.add-file-popup .popup-arrow {
+		border-top-color: rgb(41, 41, 41);
 	}
 
 	/* 添加链接对话框 - 与 u-modal 风格一致 */

@@ -1,5 +1,11 @@
 <template>
   <view class="settings-page">
+    <view class="settings-bg">
+      <view class="bg-mesh"></view>
+      <view class="bg-glow bg-glow-blue"></view>
+      <view class="bg-glow bg-glow-violet"></view>
+    </view>
+
     <!-- Navigation Bar -->
     <view class="settings-nav-bar">
       <view class="nav-left" @click="goBack">
@@ -15,7 +21,7 @@
       <view class="settings-section">
         <view class="settings-card">
           <view class="settings-item" @click="handleChatHistory">
-            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg" mode="aspectFit"></image>
+            <image class="item-icon" src="/static/icons/history.svg" mode="aspectFit"></image>
             <text class="item-label">对话记录</text>
             <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
           </view>
@@ -134,8 +140,7 @@ export default {
     handleBindSpace() {
       this.spaceSelectItems = this.availableSpaces.map(space => ({
         key: space.id,
-        text: space.name,
-        icon: 'books'
+        text: space.name
       }))
       this.spaceSelectItems.push({
         key: 'create',
@@ -216,9 +221,52 @@ export default {
 .settings-page {
   width: 100%;
   min-height: 100vh;
-  background-color: rgb(24, 24, 24);
+  background-color: rgb(29, 30, 32);
   position: relative;
   overflow: hidden;
+}
+
+.settings-bg {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.bg-mesh {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background:
+    radial-gradient(circle at 82% 14%, rgba(74, 108, 247, 0.08) 0%, rgba(74, 108, 247, 0) 32%),
+    radial-gradient(circle at 12% 100%, rgba(99, 102, 241, 0.05) 0%, rgba(99, 102, 241, 0) 36%);
+}
+
+.bg-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(130rpx);
+  opacity: 0.2;
+}
+
+.bg-glow-blue {
+  top: 120rpx;
+  right: -90rpx;
+  width: 320rpx;
+  height: 320rpx;
+  background: rgba(74, 108, 247, 0.12);
+}
+
+.bg-glow-violet {
+  bottom: 180rpx;
+  left: -90rpx;
+  width: 280rpx;
+  height: 280rpx;
+  background: rgba(123, 97, 255, 0.08);
 }
 
 /* Navigation Bar */

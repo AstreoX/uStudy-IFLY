@@ -62,6 +62,23 @@
 							<text class="message-text">{{ msg.content }}</text>
 						</view>
 					</view>
+
+					<!-- 用户消息操作图标 -->
+					<view v-if="!isAiStreaming" class="user-msg-actions">
+						<image
+							class="user-msg-action-icon"
+							src="/static/icons/phosphor-icons/SVGs/regular/copy.svg"
+							mode="aspectFit"
+							@click="copyMessage(msg)"
+						></image>
+						<image
+							v-if="isLastUserMessage(msg)"
+							class="user-msg-action-icon"
+							src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg"
+							mode="aspectFit"
+							@click="editMessage(msg)"
+						></image>
+					</view>
 				</template>
 
 				<!-- AI消息：保持原有结构 -->
@@ -242,6 +259,29 @@
 								</view>
 								<text v-if="!seg.toolCall.success && seg.toolCall.result?.message" class="tool-call-result-text">{{ seg.toolCall.result.message }}</text>
 							</view>
+						</view>
+
+						<!-- 学习空间查询工具：行内胶囊指示器 -->
+						<view
+							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'view_learning_spaces'"
+							:key="'space-query-' + segIdx"
+							class="space-query-pill"
+							:class="{
+								'space-query-running': seg.toolCall.status === 'running',
+								'space-query-done': seg.toolCall.status === 'done'
+							}"
+						>
+							<image class="space-query-icon"
+								src="/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg"
+								mode="aspectFit" />
+							<text class="space-query-text">
+								{{ seg.toolCall.status === 'running' ? '正在查询学习空间' : '已查询学习空间' }}
+							</text>
+							<view v-if="seg.toolCall.status === 'running'" class="space-query-spinner"></view>
+							<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+								class="space-query-check"
+								src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg"
+								mode="aspectFit" />
 						</view>
 
 						<!-- 非记忆类工具：原有卡片样式 -->
@@ -510,7 +550,7 @@
 
 <script>
 	import config from '@/config/index.js'
-	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, submitFeedback, getModels, getStreamingStatus } from '@/api/chat'
+	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, submitFeedback, getModels, getStreamingStatus, rollbackLastMessage } from '@/api/chat'
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
 	import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	import UInputModal from '@/components/u-input-modal/u-input-modal.vue'
@@ -2156,6 +2196,36 @@
 				})
 			},
 
+			isLastUserMessage(msg) {
+				for (let i = this.messages.length - 1; i >= 0; i--) {
+					if (this.messages[i].role === 'user') {
+						return this.messages[i].id === msg.id
+					}
+				}
+				return false
+			},
+
+			async editMessage(msg) {
+				if (this.isAiStreaming) return
+
+				// 1. 回填内容到输入框
+				this.inputText = msg.content
+
+				// 2. 调用后端 rollback API
+				if (this.conversationId) {
+					try {
+						await rollbackLastMessage(this.conversationId)
+					} catch (err) {
+						console.error('Rollback failed:', err)
+					}
+				}
+
+				// 3. 前端删除该消息及其后的所有消息
+				const msgIdx = this.messages.findIndex(m => m.id === msg.id)
+				if (msgIdx >= 0) {
+					this.messages.splice(msgIdx)
+				}
+			},
 
 			onScrollToTop() {
 				// 预留：加载更多历史消息
@@ -2557,6 +2627,50 @@
 		}
 	}
 
+	/* 学习空间查询工具 - 胶囊指示器 */
+	.space-query-pill {
+		display: flex;
+		align-items: center;
+		gap: 16rpx;
+		padding: 16rpx 24rpx;
+		background-color: #171412;
+		border: 1rpx solid #3A302A;
+		border-radius: 24rpx;
+		margin: 12rpx 0;
+	}
+
+	.space-query-icon {
+		width: 32rpx;
+		height: 32rpx;
+		filter: invert(42%) sepia(93%) saturate(1352%) hue-rotate(213deg) brightness(99%) contrast(94%);
+	}
+
+	.space-query-text {
+		flex: 1;
+		font-size: 26rpx;
+		font-weight: 500;
+		color: #C8BCAE;
+	}
+
+	.space-query-spinner {
+		width: 28rpx;
+		height: 28rpx;
+		border: 2rpx solid rgba(74, 108, 247, 0.3);
+		border-top-color: #4A6CF7;
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	.space-query-check {
+		width: 28rpx;
+		height: 28rpx;
+		filter: invert(42%) sepia(93%) saturate(1352%) hue-rotate(213deg) brightness(99%) contrast(94%);
+	}
+
+	.space-query-done {
+		opacity: 0.6;
+	}
+
 	.tool-call-status-icon {
 		width: 28rpx;
 		height: 28rpx;
@@ -2779,6 +2893,21 @@
 		filter: brightness(0) invert(0.45) sepia(0.15);
 	}
 
+	/* 用户消息操作图标 */
+	.user-msg-actions {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 24rpx;
+		margin-top: 8rpx;
+	}
+
+	.user-msg-action-icon {
+		width: 32rpx;
+		height: 32rpx;
+		opacity: 1;
+		filter: brightness(0) invert(0.45) sepia(0.15);
+	}
 
 	/* 底部输入栏 - 透明悬浮 */
 	.input-bar {

@@ -89,6 +89,31 @@
 							<text class="message-text">{{ msg.content }}</text>
 						</view>
 					</view>
+
+					<!-- 用户消息操作图标 -->
+					<view v-if="!isAiStreaming" class="user-msg-actions">
+						<view class="user-msg-action-btn copy-btn" @click="copyMessage(msg)">
+							<image
+								class="user-msg-action-icon copy-icon-default"
+								:class="{ 'copy-icon-hide': msg.copySuccess }"
+								src="/static/icons/phosphor-icons/SVGs/regular/copy.svg"
+								mode="aspectFit"
+							></image>
+							<image
+								class="user-msg-action-icon copy-icon-check"
+								:class="{ 'copy-icon-show': msg.copySuccess }"
+								src="/static/icons/phosphor-icons/SVGs/regular/check.svg"
+								mode="aspectFit"
+							></image>
+						</view>
+						<image
+							v-if="isLastUserMessage(msg)"
+							class="user-msg-action-icon"
+							src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg"
+							mode="aspectFit"
+							@click="editMessage(msg)"
+						></image>
+					</view>
 				</template>
 
 				<!-- AI消息：保持原有结构 -->
@@ -544,9 +569,39 @@
 									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
 							</view>
 
+							<!-- 测试题评估中卡片 -->
+							<view
+								v-if="msg.type === 'tool-request' && msg.toolState === 'evaluating'"
+								class="quiz-entry-card quiz-entry-card--evaluating"
+							>
+								<view class="quiz-entry-icon-wrap quiz-entry-icon-wrap--evaluating">
+									<image class="quiz-entry-icon quiz-evaluating-pulse" src="/static/icons/phosphor-icons/SVGs/regular/brain.svg" mode="aspectFit" />
+								</view>
+								<view class="quiz-entry-text-col">
+									<text class="quiz-entry-title">{{ spaceTitle }} · 测试题</text>
+									<text class="quiz-entry-meta quiz-entry-meta--evaluating">AI 正在评估中…</text>
+								</view>
+							</view>
+
+							<!-- 测试题评估完成卡片 -->
+							<view
+								v-else-if="msg.type === 'tool-request' && msg.toolState === 'evaluated'"
+								class="quiz-entry-card quiz-entry-card--evaluated"
+								@click="navigateToResult(msg.quizId)"
+							>
+								<view class="quiz-entry-icon-wrap quiz-entry-icon-wrap--evaluated">
+									<text class="quiz-score-number">{{ msg.quizScore || 0 }}</text>
+								</view>
+								<view class="quiz-entry-text-col">
+									<text class="quiz-entry-title">{{ spaceTitle }} · 测试题</text>
+									<text class="quiz-entry-meta quiz-entry-meta--evaluated">评估完成，点击查看详情</text>
+								</view>
+								<image class="quiz-entry-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit" />
+							</view>
+
 							<!-- 测试题进入卡片（紧跟指示器下方） -->
 							<view
-								v-if="msg.type === 'tool-request' && msg.toolState === 'pending'"
+								v-else-if="msg.type === 'tool-request' && msg.toolState === 'pending'"
 								class="quiz-entry-card"
 								@click="navigateToTest(msg.id)"
 							>
@@ -614,9 +669,39 @@
 						<text class="wave-loading-text">正在调用生成测试Agent</text>
 					</view>
 
+					<!-- 测试题评估中卡片 (evaluating 状态，仅旧路径) -->
+					<view
+						v-if="msg.type === 'tool-request' && msg.toolState === 'evaluating' && !hasQuizGenSegment(msg)"
+						class="quiz-entry-card quiz-entry-card--evaluating"
+					>
+						<view class="quiz-entry-icon-wrap quiz-entry-icon-wrap--evaluating">
+							<image class="quiz-entry-icon quiz-evaluating-pulse" src="/static/icons/phosphor-icons/SVGs/regular/brain.svg" mode="aspectFit" />
+						</view>
+						<view class="quiz-entry-text-col">
+							<text class="quiz-entry-title">{{ spaceTitle }} · 测试题</text>
+							<text class="quiz-entry-meta quiz-entry-meta--evaluating">AI 正在评估中…</text>
+						</view>
+					</view>
+
+					<!-- 测试题评估完成卡片 (evaluated 状态，仅旧路径) -->
+					<view
+						v-else-if="msg.type === 'tool-request' && msg.toolState === 'evaluated' && !hasQuizGenSegment(msg)"
+						class="quiz-entry-card quiz-entry-card--evaluated"
+						@click="navigateToResult(msg.quizId)"
+					>
+						<view class="quiz-entry-icon-wrap quiz-entry-icon-wrap--evaluated">
+							<text class="quiz-score-number">{{ msg.quizScore || 0 }}</text>
+						</view>
+						<view class="quiz-entry-text-col">
+							<text class="quiz-entry-title">{{ spaceTitle }} · 测试题</text>
+							<text class="quiz-entry-meta quiz-entry-meta--evaluated">评估完成，点击查看详情</text>
+						</view>
+						<image class="quiz-entry-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit" />
+					</view>
+
 					<!-- 测试题进入卡片 (pending 状态，仅旧路径无 generate_test 工具段时显示) -->
 					<view
-						v-if="msg.type === 'tool-request' && msg.toolState === 'pending' && !hasQuizGenSegment(msg)"
+						v-else-if="msg.type === 'tool-request' && msg.toolState === 'pending' && !hasQuizGenSegment(msg)"
 						class="quiz-entry-card"
 						@click="navigateToTest(msg.id)"
 					>
@@ -631,32 +716,53 @@
 					</view>
 
 					<!-- AI 消息操作图标 (流式输出完成后显示，排除未完成的工具请求) -->
-					<view v-if="msg.role === 'ai' && !msg.isStreaming && (msg.type !== 'tool-request' || msg.toolState === 'accepted' || msg.toolState === 'rejected')" class="ai-msg-actions">
-						<image
-							class="ai-msg-action-icon"
-							src="/static/icons/phosphor-icons/SVGs/regular/copy.svg"
-							mode="aspectFit"
-							@click="copyMessage(msg)"
-						></image>
-						<image
-							class="ai-msg-action-icon"
-							src="/static/icons/phosphor-icons/SVGs/regular/flag.svg"
-							mode="aspectFit"
-							@click="openFeedbackModal(msg)"
-						></image>
-						<view class="more-btn-wrapper">
+					<view v-if="msg.role === 'ai' && !msg.isStreaming && (msg.type !== 'tool-request' || msg.toolState === 'accepted' || msg.toolState === 'rejected' || msg.toolState === 'evaluating' || msg.toolState === 'evaluated')" class="ai-msg-actions">
+						<view class="ai-msg-action-btn copy-btn" @click="copyMessage(msg)">
+							<image
+								class="ai-msg-action-icon copy-icon-default"
+								:class="{ 'copy-icon-hide': msg.copySuccess }"
+								src="/static/icons/phosphor-icons/SVGs/regular/copy.svg"
+								mode="aspectFit"
+							></image>
+							<image
+								class="ai-msg-action-icon copy-icon-check"
+								:class="{ 'copy-icon-show': msg.copySuccess }"
+								src="/static/icons/phosphor-icons/SVGs/regular/check.svg"
+								mode="aspectFit"
+							></image>
+						</view>
+						<view
+							class="ai-msg-action-btn"
+							:class="{ 'action-btn-active': msg.userReaction === 'like' }"
+							@click="reactToMessage(msg, 'like')"
+						>
 							<image
 								class="ai-msg-action-icon"
-								src="/static/icons/phosphor-icons/SVGs/regular/dots-three.svg"
+								src="/static/icons/phosphor-icons/SVGs/regular/thumbs-up.svg"
 								mode="aspectFit"
-								@click.stop="toggleMorePopup(msg.id)"
 							></image>
-							<view class="more-popup" :class="{ 'more-popup-visible': activeMoreMsgId === msg.id }" @click.stop>
-								<view class="more-popup-item" @click="addToMemory(msg)">
-									<image class="more-popup-icon" src="/static/icons/phosphor-icons/SVGs/regular/brain.svg" mode="aspectFit"></image>
-									<text class="more-popup-text">添加到记忆库</text>
-								</view>
-							</view>
+						</view>
+						<view
+							class="ai-msg-action-btn"
+							:class="{ 'action-btn-active': msg.userReaction === 'dislike' }"
+							@click="reactToMessage(msg, 'dislike')"
+						>
+							<image
+								class="ai-msg-action-icon"
+								src="/static/icons/phosphor-icons/SVGs/regular/thumbs-down.svg"
+								mode="aspectFit"
+							></image>
+						</view>
+						<view
+							class="ai-msg-action-btn"
+							:class="{ 'action-btn-active': msg.isBookmarked }"
+							@click="toggleBookmark(msg)"
+						>
+							<image
+								class="ai-msg-action-icon"
+								src="/static/icons/phosphor-icons/SVGs/regular/bookmark-simple.svg"
+								mode="aspectFit"
+							></image>
 						</view>
 					</view>
 				</view>
@@ -673,9 +779,9 @@
 		<u-snackbar
 			:visible="showTestSnackbar"
 			:message="snackbarMessage"
-			actionText="进入"
+			:actionText="snackbarActionType === 'view_result' ? '查看' : '进入'"
 			actionIcon="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg"
-			:duration="4000"
+			:duration="snackbarActionType === 'view_result' ? 6000 : 4000"
 			@action="handleSnackbarAction"
 			@close="showTestSnackbar = false"
 		></u-snackbar>
@@ -894,7 +1000,7 @@
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
 	import NoteCreationCard from '@/components/note-creation-card/note-creation-card.vue'
 	import { generateQuiz, getTaskStatus, getSpaceGraph } from '@/api/space'
-	import { createConversation, getConversation, sendMessage as sendChatMessage, submitFeedback, submitToolResult, getModels, getStreamingStatus } from '@/api/chat'
+	import { createConversation, getConversation, sendMessage as sendChatMessage, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage } from '@/api/chat'
 	import { connectNotificationStream } from '@/api/notification'
 	import { executeCalendarTool } from '@/utils/calendar'
 	import { createCalendarEvent, getCalendarEvents, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendarEvents'
@@ -904,6 +1010,7 @@
 	import { setSseEventBus, clearSseEventBus, handleSseEvents, handleSseComplete, handleSseError, connectSSE } from '@/utils/sse'
 	import { savePendingMessage, getPendingMessages, removePendingMessage, savePendingMessagesFromArray, clearPendingMessages } from '@/utils/messageDraft'
 	import { startBackgroundMonitor, stopBackgroundMonitor, getActiveMonitor } from '@/utils/backgroundChatMonitor'
+	import { consumeAllPending } from '@/utils/quizEvaluationBus'
 	// #ifdef APP-PLUS
 	import SseRenderjs from '@/components/sse-renderjs/sse-renderjs.vue'
 	// #endif
@@ -1114,6 +1221,8 @@
 				// 测试题 Snackbar 相关
 				showTestSnackbar: false,
 				snackbarMessage: '测试题已生成',
+				snackbarActionType: 'enter_quiz', // 'enter_quiz' | 'view_result'
+				pendingEvalQuizId: null,
 
 				// 调试日志（quiz progress indicator 使用）
 				debugLogs: [],
@@ -1304,6 +1413,9 @@
 
 			// 加载模型列表
 			this.loadModels()
+
+			// 监听测试评估完成事件
+			uni.$on('quizEvaluationDone', this.handleQuizEvaluationDone)
 		},
 
 		onShow() {
@@ -1329,6 +1441,12 @@
 			// 页面显示时，合并本地缓存的待同步消息（历史加载中不重复 merge）
 			if (this.conversationId && !this.isLoadingHistory) {
 				this.mergePendingMessages()
+			}
+
+			// 检查已完成的后台测试评估结果（处理 race condition：API 可能在 onShow 之前返回）
+			const pendingEvals = consumeAllPending()
+			for (const quizId in pendingEvals) {
+				this.handleQuizEvaluationDone({ quizId, ...pendingEvals[quizId] })
 			}
 		},
 
@@ -1398,6 +1516,9 @@
 			// #ifdef APP-PLUS
 			clearSseEventBus()
 			// #endif
+
+			// 清理测试评估监听
+			uni.$off('quizEvaluationDone', this.handleQuizEvaluationDone)
 
 			// 标记组件销毁（取消异步操作）
 			this.isComponentDestroyed = true
@@ -3726,23 +3847,78 @@
 			copyMessage(msg) {
 				uni.setClipboardData({
 					data: msg.content,
-					success() {
-						uni.showToast({ title: '已复制', icon: 'success' })
+					showToast: false,
+					success: () => {
+						this.$set(msg, 'copySuccess', true)
+						setTimeout(() => {
+							this.$set(msg, 'copySuccess', false)
+						}, 1500)
 					}
 				})
 			},
 
-			toggleMorePopup(msgId) {
-				this.activeMoreMsgId = this.activeMoreMsgId === msgId ? null : msgId
+			isLastUserMessage(msg) {
+				for (let i = this.messages.length - 1; i >= 0; i--) {
+					if (this.messages[i].role === 'user') {
+						return this.messages[i].id === msg.id
+					}
+				}
+				return false
 			},
 
-			closeMorePopup() {
-				this.activeMoreMsgId = null
+			async editMessage(msg) {
+				if (this.isAiStreaming) return
+
+				// 1. 回填内容到输入框
+				this.inputText = msg.content
+
+				// 2. 调用后端 rollback API
+				if (this.conversationId) {
+					try {
+						await rollbackLastMessage(this.conversationId)
+					} catch (err) {
+						console.error('Rollback failed:', err)
+					}
+				}
+
+				// 3. 前端删除该消息及其后的所有消息
+				const msgIdx = this.messages.findIndex(m => m.id === msg.id)
+				if (msgIdx >= 0) {
+					this.messages.splice(msgIdx)
+				}
 			},
 
-			addToMemory(msg) {
-				this.activeMoreMsgId = null
-				uni.showToast({ title: '已添加到记忆库', icon: 'none' })
+			reactToMessage(msg, reaction) {
+				const current = msg.userReaction
+				const newReaction = current === reaction ? null : reaction
+				this.$set(msg, 'userReaction', newReaction)
+
+				// Only send feedback when setting a reaction (not when clearing)
+				if (!newReaction) return
+
+				const conversationHistory = this.messages.map(m => ({
+					role: m.role,
+					content: m.content,
+					created_at: m.created_at || new Date().toISOString(),
+					toolCalls: m.toolCalls || null,
+					segments: m.segments || null
+				}))
+
+				submitFeedback({
+					conversation_id: this.conversationId,
+					message_id: msg.serverId || null,
+					chat_mode: 'space_chat',
+					space_name: this.spaceTitle,
+					feedback_type: newReaction === 'like' ? 'positive' : 'negative',
+					feedback_content: newReaction === 'like' ? '👍 用户点赞了此回复' : '👎 用户点踩了此回复',
+					conversation_history: conversationHistory
+				}).catch(() => {
+					// Silent failure — don't affect UI
+				})
+			},
+
+			toggleBookmark(msg) {
+				this.$set(msg, 'isBookmarked', !msg.isBookmarked)
 			},
 
 			onScrollToTop() {
@@ -3913,7 +4089,17 @@
 			// 显示测试题进入 Snackbar
 			showTestEntrySnackbar() {
 				this.snackbarMessage = '测试题已生成'
+				this.snackbarActionType = 'enter_quiz'
 				this.showTestSnackbar = true
+			},
+
+			// 跳转到评估结果页面
+			navigateToResult(quizId) {
+				if (quizId) {
+					uni.navigateTo({
+						url: `/pages/testResult/testResult?quizId=${quizId}&fromList=true`
+					})
+				}
 			},
 
 			// 跳转到测试页面
@@ -3934,9 +4120,55 @@
 				}
 			},
 
+			// 处理后台测试评估完成
+			handleQuizEvaluationDone({ quizId, status, result, error }) {
+				if (this.isComponentDestroyed) return
+
+				const msg = this.messages.find(m => m.quizId === quizId)
+
+				// 评估中：卡片变为不可点击的等待状态
+				if (status === 'evaluating') {
+					if (msg) {
+						msg.toolState = 'evaluating'
+					}
+					return
+				}
+
+				// 评估完成或已作答：卡片变为结果卡片
+				if (status === 'success' || status === 'already_attempted') {
+					if (msg) {
+						msg.toolState = 'evaluated'
+						if (status === 'success' && result) {
+							msg.quizScore = result.score != null ? result.score : 0
+							msg.quizTotalScore = result.total_score != null ? result.total_score : 0
+						}
+					}
+				}
+
+				if (status === 'success') {
+					this.pendingEvalQuizId = quizId
+					this.snackbarMessage = '测试评估完成'
+					this.snackbarActionType = 'view_result'
+					this.showTestSnackbar = true
+				} else if (status === 'already_attempted') {
+					this.pendingEvalQuizId = quizId
+					this.snackbarMessage = '该测验已作答，点击查看结果'
+					this.snackbarActionType = 'view_result'
+					this.showTestSnackbar = true
+				} else if (status === 'error') {
+					uni.showToast({ title: error || '评估失败', icon: 'none', duration: 3000 })
+				}
+			},
+
 			// Snackbar 操作按钮点击
 			handleSnackbarAction() {
 				this.showTestSnackbar = false
+				if (this.snackbarActionType === 'view_result' && this.pendingEvalQuizId) {
+					uni.navigateTo({
+						url: `/pages/testResult/testResult?quizId=${this.pendingEvalQuizId}&fromList=true`
+					})
+					return
+				}
 				if (this.activeToolMsgId) {
 					this.navigateToTest(this.activeToolMsgId)
 				}
@@ -4254,83 +4486,121 @@
 	.ai-msg-actions {
 		display: flex;
 		align-items: center;
-		gap: 24rpx;
+		gap: 4rpx;
 		margin-top: 12rpx;
 	}
 
+	.ai-msg-action-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 12rpx;
+		transition: background-color 0.15s ease, transform 0.1s ease;
+	}
+
+	.ai-msg-action-btn:active {
+		transform: scale(0.88);
+		background-color: rgba(255, 255, 255, 0.08);
+	}
+
 	.ai-msg-action-icon {
+		width: 30rpx;
+		height: 30rpx;
+		opacity: 0.4;
+		filter: brightness(0) invert(1);
+		transition: opacity 0.15s ease, filter 0.15s ease;
+	}
+
+	.action-btn-active .ai-msg-action-icon {
+		opacity: 1;
+		filter: brightness(0) invert(1);
+	}
+
+	/* 复制按钮：两个图标叠加 crossfade */
+	.copy-btn {
+		position: relative;
+	}
+
+	.copy-icon-default,
+	.copy-icon-check {
+		position: absolute;
+		transition: opacity 0.25s ease, transform 0.25s ease;
+	}
+
+	.copy-icon-default {
+		opacity: 0.4;
+		transform: scale(1);
+	}
+
+	.copy-icon-default.copy-icon-hide {
+		opacity: 0;
+		transform: scale(0.6);
+	}
+
+	.copy-icon-check {
+		opacity: 0;
+		transform: scale(0.6);
+	}
+
+	.copy-icon-check.copy-icon-show {
+		opacity: 1;
+		transform: scale(1);
+		filter: brightness(0) invert(0.45) sepia(1) saturate(8) hue-rotate(90deg);
+	}
+
+	/* 用户消息操作图标 */
+	.user-msg-actions {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 24rpx;
+		margin-top: 8rpx;
+	}
+
+	.user-msg-action-btn {
+		position: relative;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 32rpx;
+		height: 32rpx;
+	}
+
+	.user-msg-action-icon {
 		width: 32rpx;
 		height: 32rpx;
 		opacity: 1;
 		filter: brightness(0) invert(0.45) sepia(0.15);
 	}
 
-	/* 三个点按钮容器 */
-	.more-btn-wrapper {
-		position: relative;
-		overflow: visible;
-	}
-
-	/* 弹出卡片 */
-	.more-popup {
+	.user-msg-action-btn .copy-icon-default,
+	.user-msg-action-btn .copy-icon-check {
 		position: absolute;
-		bottom: calc(100% + 12rpx);
-		left: 0;
-		min-width: 280rpx;
-		background-color: #2a2a2a;
-		border-radius: 16rpx;
-		padding: 0;
-		z-index: 200;
-		box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.5);
-		opacity: 0;
-		transform: scale(0.85) translateY(8rpx);
-		pointer-events: none;
-		transition: opacity 0.2s ease, transform 0.2s ease;
-		transform-origin: bottom left;
+		transition: opacity 0.25s ease, transform 0.25s ease;
 	}
 
-	.more-popup-visible {
+	.user-msg-action-btn .copy-icon-default {
 		opacity: 1;
-		transform: scale(1) translateY(0);
-		pointer-events: auto;
+		filter: brightness(0) invert(0.45) sepia(0.15);
+		transform: scale(1);
 	}
 
-	.more-popup-item {
-		display: flex;
-		align-items: center;
-		gap: 16rpx;
-		padding: 14rpx 24rpx;
-	}
-
-	.more-popup-icon {
-		width: 36rpx;
-		height: 36rpx;
-		filter: brightness(0) invert(1);
-		flex-shrink: 0;
-	}
-
-	.more-popup-text {
-		font-size: 28rpx;
-		color: rgb(248, 248, 248);
-		white-space: nowrap;
-	}
-
-	/* 透明遮罩 */
-	.popup-overlay {
-		position: fixed;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		z-index: 150;
-		pointer-events: none;
+	.user-msg-action-btn .copy-icon-default.copy-icon-hide {
 		opacity: 0;
-		transition: opacity 0.15s ease;
+		transform: scale(0.6);
 	}
 
-	.popup-overlay-visible {
-		pointer-events: auto;
+	.user-msg-action-btn .copy-icon-check {
+		opacity: 0;
+		transform: scale(0.6);
+	}
+
+	.user-msg-action-btn .copy-icon-check.copy-icon-show {
 		opacity: 1;
+		transform: scale(1);
+		filter: brightness(0) invert(0.45) sepia(1) saturate(8) hue-rotate(90deg);
 	}
 
 	.message-text {
@@ -4788,6 +5058,55 @@
 		flex-shrink: 0;
 		filter: brightness(0) invert(1);
 		opacity: 0.4;
+	}
+
+	/* ========== 测试题评估中卡片变体 ========== */
+	.quiz-entry-card--evaluating {
+		border-color: rgba(255, 183, 77, 0.2);
+		background: rgba(255, 183, 77, 0.06);
+		cursor: default;
+	}
+
+	.quiz-entry-icon-wrap--evaluating {
+		background: rgba(255, 183, 77, 0.12);
+	}
+
+	.quiz-evaluating-pulse {
+		filter: invert(72%) sepia(58%) saturate(1000%) hue-rotate(1deg) brightness(103%) contrast(101%);
+		animation: quizPulse 1.5s ease-in-out infinite;
+	}
+
+	@keyframes quizPulse {
+		0%, 100% { opacity: 0.4; }
+		50% { opacity: 1; }
+	}
+
+	.quiz-entry-meta--evaluating {
+		color: rgba(255, 183, 77, 0.7);
+	}
+
+	/* ========== 测试题评估完成卡片变体 ========== */
+	.quiz-entry-card--evaluated {
+		border-color: rgba(76, 175, 80, 0.2);
+		background: rgba(76, 175, 80, 0.06);
+	}
+
+	.quiz-entry-card--evaluated:active {
+		background: rgba(76, 175, 80, 0.12);
+	}
+
+	.quiz-entry-icon-wrap--evaluated {
+		background: rgba(76, 175, 80, 0.15);
+	}
+
+	.quiz-score-number {
+		font-size: 28rpx;
+		font-weight: 700;
+		color: #4CAF50;
+	}
+
+	.quiz-entry-meta--evaluated {
+		color: rgba(76, 175, 80, 0.7);
 	}
 
 	/* ========== 测试题生成进度指示器样式 ========== */

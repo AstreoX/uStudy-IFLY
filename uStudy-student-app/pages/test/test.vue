@@ -187,11 +187,27 @@
         </view>
       </view>
     </template>
+
+    <!-- 提交成功浮层 -->
+    <view v-if="showSubmitSuccess" class="submit-overlay" @touchmove.stop.prevent>
+      <view class="submit-overlay-bg" :class="{ 'overlay-bg-show': submitOverlayAnimated }"></view>
+      <view class="submit-overlay-card" :class="{ 'overlay-card-show': submitOverlayAnimated }">
+        <view class="submit-success-icon-wrap">
+          <image class="submit-success-icon" src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
+        </view>
+        <text class="submit-success-title">提交成功</text>
+        <text class="submit-success-desc">答卷已提交，AI 正在后台评估中，完成后会通知你</text>
+        <view class="submit-success-btn" @click="handleSuccessConfirm">
+          <text class="submit-success-btn-text">返回</text>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
 <script>
 import { getQuizDetail, submitQuiz } from '@/api/space'
+import { setPendingEvaluation } from '@/utils/quizEvaluationBus'
 
 export default {
   data() {
@@ -199,6 +215,8 @@ export default {
       msgId: null,
       quizId: null,
       isLoading: true,
+      showSubmitSuccess: false,
+      submitOverlayAnimated: false,
       loadError: null,
       currentIndex: 0,
       userAnswers: {},
@@ -348,6 +366,14 @@ export default {
       uni.navigateBack({
         delta: 1
       })
+    },
+
+    handleSuccessConfirm() {
+      this.submitOverlayAnimated = false
+      setTimeout(() => {
+        this.showSubmitSuccess = false
+        uni.navigateBack()
+      }, 200)
     },
 
     handleTouchStart(e) {
@@ -547,74 +573,54 @@ export default {
     /**
      * 提交答卷到后端进行评估
      */
-    async submitToBackend() {
-      try {
-        uni.showLoading({
-          title: '正在评估...',
-          mask: true
-        })
+    submitToBackend() {
+      // 构建提交数据，转换为后端格式
+      const answers = this.questions.map(q => {
+        const userAnswer = this.userAnswers[q.id]
+        let answer = null
 
-        // 构建提交数据，转换为后端格式
-        const answers = this.questions.map(q => {
-          const userAnswer = this.userAnswers[q.id]
-          let answer = null
-
-          if (q.type === 'single') {
-            // 单选题: { index: number }
-            answer = userAnswer !== undefined ? { index: userAnswer } : null
-          } else if (q.type === 'multiple') {
-            // 多选题: { indices: number[] }
-            answer = Array.isArray(userAnswer) && userAnswer.length > 0
-              ? { indices: userAnswer }
-              : null
-          } else if (q.type === 'truefalse') {
-            // 判断题: { value: boolean }
-            answer = userAnswer !== undefined ? { value: userAnswer } : null
-          } else if (q.type === 'shortanswer') {
-            // 简答题: { text: string }
-            answer = userAnswer ? { text: userAnswer } : null
-          }
-
-          return {
-            question_id: q.id,
-            answer: answer
-          }
-        })
-
-        const response = await submitQuiz(this.quizId, { answers })
-
-        uni.hideLoading()
-
-        // 将评估结果存入全局缓存，传递给结果页
-        uni.setStorageSync('quizEvaluationResult', response)
-
-        // 跳转到结果页
-        uni.redirectTo({
-          url: `/pages/testResult/testResult?quizId=${this.quizId}`
-        })
-      } catch (error) {
-        uni.hideLoading()
-
-        // 处理 409 冲突错误（已作答过）
-        if (error.statusCode === 409 || error.code === 'QUIZ_ALREADY_ATTEMPTED') {
-          uni.showModal({
-            title: '提示',
-            content: '该测验已经作答过，将为您跳转到评估结果页面',
-            showCancel: false,
-            success: () => {
-              uni.redirectTo({
-                url: `/pages/testResult/testResult?quizId=${this.quizId}&fromList=true`
-              })
-            }
-          })
-          return
+        if (q.type === 'single') {
+          answer = userAnswer !== undefined ? { index: userAnswer } : null
+        } else if (q.type === 'multiple') {
+          answer = Array.isArray(userAnswer) && userAnswer.length > 0
+            ? { indices: userAnswer }
+            : null
+        } else if (q.type === 'truefalse') {
+          answer = userAnswer !== undefined ? { value: userAnswer } : null
+        } else if (q.type === 'shortanswer') {
+          answer = userAnswer ? { text: userAnswer } : null
         }
 
-        uni.showToast({
-          title: error.message || '提交失败，请重试',
-          icon: 'none'
+        return {
+          question_id: q.id,
+          answer: answer
+        }
+      })
+
+      const quizId = this.quizId
+
+      // 立即通知 spaceChat 进入评估中状态（卡片变为不可点击）
+      setPendingEvaluation(quizId, { status: 'evaluating' })
+
+      // Fire-and-forget: submit in background
+      submitQuiz(quizId, { answers })
+        .then(response => {
+          uni.setStorageSync('quizEvaluationResult', response)
+          setPendingEvaluation(quizId, { status: 'success', result: response })
         })
-      }
+        .catch(error => {
+          if (error.statusCode === 409 || error.code === 'QUIZ_ALREADY_ATTEMPTED') {
+            setPendingEvaluation(quizId, { status: 'already_attempted' })
+          } else {
+            setPendingEvaluation(quizId, { status: 'error', error: error.message || '评估失败，请重试' })
+          }
+        })
+
+      // 显示自定义成功浮层
+      this.showSubmitSuccess = true
+      this.$nextTick(() => {
+        setTimeout(() => { this.submitOverlayAnimated = true }, 10)
+      })
     }
   }
 }
@@ -1074,5 +1080,112 @@ export default {
     transform: translateX(0);
     opacity: 1;
   }
+}
+
+/* ========== 提交成功浮层 ========== */
+.submit-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.submit-overlay-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0);
+  transition: background 250ms ease;
+}
+
+.submit-overlay-bg.overlay-bg-show {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.submit-overlay-card {
+  position: relative;
+  width: 560rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 56rpx 48rpx 40rpx;
+  background: rgba(28, 28, 38, 0.92);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-radius: 28rpx;
+  box-shadow:
+    0 20rpx 60rpx rgba(0, 0, 0, 0.5),
+    0 0 0 1rpx rgba(255, 255, 255, 0.04) inset;
+  transform: translateY(40rpx) scale(0.95);
+  opacity: 0;
+  transition: all 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.submit-overlay-card.overlay-card-show {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.submit-success-icon-wrap {
+  width: 96rpx;
+  height: 96rpx;
+  margin-bottom: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(76, 175, 80, 0.12);
+}
+
+.submit-success-icon {
+  width: 56rpx;
+  height: 56rpx;
+  filter: invert(56%) sepia(43%) saturate(580%) hue-rotate(87deg) brightness(96%) contrast(88%);
+}
+
+.submit-success-title {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 16rpx;
+}
+
+.submit-success-desc {
+  font-size: 28rpx;
+  color: rgba(255, 255, 255, 0.55);
+  text-align: center;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.submit-success-btn {
+  width: 100%;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(74, 108, 247, 0.15);
+  border: 1rpx solid rgba(74, 108, 247, 0.3);
+  border-radius: 18rpx;
+  transition: all 0.15s ease;
+}
+
+.submit-success-btn:active {
+  transform: scale(0.97);
+  background: rgba(74, 108, 247, 0.25);
+}
+
+.submit-success-btn-text {
+  font-size: 32rpx;
+  font-weight: 500;
+  color: rgba(74, 108, 247, 1);
 }
 </style>
