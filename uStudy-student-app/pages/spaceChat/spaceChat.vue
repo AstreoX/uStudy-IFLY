@@ -506,27 +506,59 @@
 							</view>
 						</view>
 
-						<!-- 测试题生成工具：指示器胶囊 -->
+						<!-- 测试题生成工具：指示器 + 进入卡片 -->
 						<view
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'generate_test'"
 							:key="'quiz-gen-' + segIdx"
-							class="quiz-gen-indicator"
-							:class="{
-								'quiz-gen-running': seg.toolCall.status === 'running',
-								'quiz-gen-done': seg.toolCall.status === 'done' && seg.toolCall.success,
-								'quiz-gen-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
-							}"
+							class="quiz-gen-wrap"
 						>
-							<image class="quiz-gen-indicator-icon"
-								src="/static/icons/phosphor-icons/SVGs/regular/list-checks.svg" mode="aspectFit" />
-							<text class="quiz-gen-indicator-text">
-								{{ seg.toolCall.status === 'running' ? '正在生成测试题...' : (seg.toolCall.success ? '已生成测试题' : '测试题生成失败') }}
-							</text>
-							<view v-if="seg.toolCall.status === 'running'" class="quiz-gen-indicator-spinner"></view>
-							<image v-else-if="seg.toolCall.success" class="quiz-gen-status-icon"
-								src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
-							<image v-else class="quiz-gen-status-icon quiz-gen-status-failed"
-								src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							<!-- 指示器 pill -->
+							<view class="quiz-gen-indicator"
+								:class="{
+									'quiz-gen-running': seg.toolCall.status === 'running',
+									'quiz-gen-polling': seg.toolCall.status === 'done' && seg.toolCall.success && msg.quizGenerating,
+									'quiz-gen-done': seg.toolCall.status === 'done' && seg.toolCall.success && !msg.quizGenerating,
+									'quiz-gen-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+							>
+								<!-- 左侧：加载中显示 spinner，完成/失败显示图标 -->
+								<view v-if="seg.toolCall.status === 'running' || (seg.toolCall.status === 'done' && seg.toolCall.success && msg.quizGenerating)"
+									class="quiz-gen-indicator-spinner"
+									:class="{ 'quiz-gen-spinner-amber': seg.toolCall.status === 'done' && msg.quizGenerating }"></view>
+								<image v-else class="quiz-gen-indicator-icon"
+									src="/static/icons/lucide/list-checks.svg" mode="aspectFit" />
+								<!-- 文字 -->
+								<text class="quiz-gen-indicator-text">
+									{{ seg.toolCall.status === 'running'
+										? '启动测试题生成任务中…'
+										: (seg.toolCall.success
+											? (msg.quizGenerating ? '正在后台生成测试题…' : '已生成测试题')
+											: '测试题生成失败') }}
+								</text>
+								<!-- 右侧：完成显示绿色勾，失败显示红叉 -->
+								<image v-if="seg.toolCall.status === 'done' && seg.toolCall.success && !msg.quizGenerating"
+									class="quiz-gen-status-icon"
+									src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="quiz-gen-status-icon quiz-gen-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- 测试题进入卡片（紧跟指示器下方） -->
+							<view
+								v-if="msg.type === 'tool-request' && msg.toolState === 'pending'"
+								class="quiz-entry-card"
+								@click="navigateToTest(msg.id)"
+							>
+								<view class="quiz-entry-icon-wrap">
+									<image class="quiz-entry-icon" src="/static/icons/phosphor-icons/SVGs/regular/brain.svg" mode="aspectFit" />
+								</view>
+								<view class="quiz-entry-text-col">
+									<text class="quiz-entry-title">{{ spaceTitle }} · 测试题</text>
+									<text class="quiz-entry-meta">点击进入测试</text>
+								</view>
+								<image class="quiz-entry-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit" />
+							</view>
 						</view>
 
 						<!-- 非记忆类工具：原有卡片样式 -->
@@ -582,9 +614,9 @@
 						<text class="wave-loading-text">正在调用生成测试Agent</text>
 					</view>
 
-					<!-- 测试题进入卡片 (pending 状态) -->
+					<!-- 测试题进入卡片 (pending 状态，仅旧路径无 generate_test 工具段时显示) -->
 					<view
-						v-if="msg.type === 'tool-request' && msg.toolState === 'pending'"
+						v-if="msg.type === 'tool-request' && msg.toolState === 'pending' && !hasQuizGenSegment(msg)"
 						class="quiz-entry-card"
 						@click="navigateToTest(msg.id)"
 					>
@@ -3314,6 +3346,14 @@
 			},
 
 			/**
+			 * 判断消息是否包含 generate_test 工具段（用于避免重复渲染进入卡片）
+			 */
+			hasQuizGenSegment(msg) {
+				const segs = msg.segments || msg.streamSegments || []
+				return segs.some(s => s.type === 'tool' && s.toolCall && s.toolCall.tool === 'generate_test')
+			},
+
+			/**
 			 * 获取难度显示文字
 			 */
 			getDifficultyLabel(difficulty) {
@@ -3914,6 +3954,8 @@
 
 				// 启用调试模式（显示调试按钮）- 使用统一方法
 				this.startQuizGeneration()
+				// 标记消息正在后台生成测试题（驱动指示器 pill 黄色状态）
+				this.$set(this.messages[msgIndex], 'quizGenerating', true)
 
 				try {
 					// 轮询任务状态
@@ -3921,6 +3963,8 @@
 					if (this.isComponentDestroyed) return
 
 					if (result.status === 'done' && result.quiz_id) {
+						// 停止后台生成标记（指示器变为绿色完成态）
+						this.messages[msgIndex].quizGenerating = false
 						// 成功：设置消息类型和状态以显示测试卡片
 						this.activeQuizId = result.quiz_id
 						this.activeToolMsgId = aiMsgId
@@ -3933,6 +3977,7 @@
 						this.showTestEntrySnackbar()
 					} else if (result.status === 'failed') {
 						// 失败：在消息内容后追加错误信息
+						this.messages[msgIndex].quizGenerating = false
 						const currentContent = this.messages[msgIndex].content || ''
 						this.messages[msgIndex].content =
 							currentContent + `\n\n测试生成失败：${result.error_message || '未知错误'}`
@@ -3940,6 +3985,7 @@
 				} catch (error) {
 					console.error('测试生成轮询失败:', error)
 					if (msgIndex >= 0 && this.messages[msgIndex]) {
+						this.messages[msgIndex].quizGenerating = false
 						const currentContent = this.messages[msgIndex].content || ''
 						this.messages[msgIndex].content =
 							currentContent + `\n\n轮询失败：${error.message || '网络错误'}`
@@ -3949,6 +3995,10 @@
 					if (this.quizProgressPhase !== 'completing' && this.quizProgressPhase !== 'done') {
 						this.isGeneratingQuiz = false
 						this.quizProgressPhase = 'idle'
+					}
+					// 确保 quizGenerating 标记被清除
+					if (msgIndex >= 0 && this.messages[msgIndex]) {
+						this.messages[msgIndex].quizGenerating = false
 					}
 					if (!this.isComponentDestroyed) {
 						this.scrollToLatestMessage()
@@ -4592,25 +4642,38 @@
 	}
 
 	/* ========== 测试题生成工具指示器 ========== */
+	.quiz-gen-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 14rpx;
+	}
+
 	.quiz-gen-indicator {
 		display: flex;
 		align-items: center;
-		gap: 14rpx;
-		padding: 14rpx 20rpx;
+		gap: 16rpx;
+		padding: 16rpx 24rpx;
 		background: rgba(255, 255, 255, 0.04);
 		border: 1rpx solid rgba(255, 255, 255, 0.08);
-		border-radius: 20rpx;
+		border-radius: 24rpx;
 		transition: all 0.25s ease;
 	}
 
+	/* 状态1：启动测试题生成任务中（蓝色） */
 	.quiz-gen-running {
 		border-color: rgba(74, 108, 247, 0.3);
 		background: rgba(74, 108, 247, 0.06);
 	}
 
+	/* 状态2：正在后台生成测试题（黄色） */
+	.quiz-gen-polling {
+		border-color: rgba(234, 179, 8, 0.3);
+		background: rgba(234, 179, 8, 0.06);
+	}
+
+	/* 状态3：已生成测试题（中性底色，参考 Pencil 设计） */
 	.quiz-gen-done {
-		border-color: rgba(61, 138, 90, 0.3);
-		background: rgba(61, 138, 90, 0.06);
+		/* 无额外色调，保持基础中性风格 */
 	}
 
 	.quiz-gen-failed {
@@ -4618,9 +4681,10 @@
 		background: rgba(239, 68, 68, 0.05);
 	}
 
+	/* list-checks 图标：蓝色 #4A6CF7 */
 	.quiz-gen-indicator-icon {
-		width: 28rpx;
-		height: 28rpx;
+		width: 32rpx;
+		height: 32rpx;
 		flex-shrink: 0;
 		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
 	}
@@ -4628,20 +4692,18 @@
 	.quiz-gen-indicator-text {
 		flex: 1;
 		font-size: 26rpx;
+		font-weight: 500;
 		color: rgba(255, 255, 255, 0.7);
 	}
 
-	.quiz-gen-running .quiz-gen-indicator-text {
+	.quiz-gen-running .quiz-gen-indicator-text,
+	.quiz-gen-polling .quiz-gen-indicator-text {
 		color: rgba(255, 255, 255, 0.8);
 	}
 
-	.quiz-gen-done .quiz-gen-indicator-text {
-		color: rgba(255, 255, 255, 0.75);
-	}
-
 	.quiz-gen-indicator-spinner {
-		width: 24rpx;
-		height: 24rpx;
+		width: 28rpx;
+		height: 28rpx;
 		border: 2rpx solid rgba(74, 108, 247, 0.3);
 		border-top-color: #4A6CF7;
 		border-radius: 50%;
@@ -4649,11 +4711,18 @@
 		flex-shrink: 0;
 	}
 
+	/* 黄色 spinner */
+	.quiz-gen-spinner-amber {
+		border-color: rgba(234, 179, 8, 0.3);
+		border-top-color: #EAB308;
+	}
+
+	/* circle-check 图标：绿色 #3D8A5A */
 	.quiz-gen-status-icon {
 		width: 28rpx;
 		height: 28rpx;
 		flex-shrink: 0;
-		filter: invert(45%) sepia(60%) saturate(600%) hue-rotate(100deg) brightness(95%) contrast(90%);
+		filter: invert(48%) sepia(30%) saturate(900%) hue-rotate(100deg) brightness(85%) contrast(90%);
 	}
 
 	.quiz-gen-status-failed {
