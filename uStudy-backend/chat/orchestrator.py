@@ -402,6 +402,7 @@ class QuickChatOrchestrator:
                             "success": tool_result.success,
                             "result": tool_result.data,
                             "message": tool_result.message,
+                            "arguments": tool_call.arguments,
                             "display_name": metadata["display_name"],
                             "requires_confirmation": False,
                         },
@@ -897,6 +898,7 @@ class LLMOrchestrator:
                             "success": tool_result.success,
                             "result": tool_result.data,
                             "message": tool_result.message,
+                            "arguments": tool_call.arguments,
                         },
                     }
 
