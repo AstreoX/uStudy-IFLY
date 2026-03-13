@@ -19,7 +19,7 @@
 			</view>
 			<text class="nav-title">{{ spaceTitle }}</text>
 			<view class="nav-right" @click="openSettings">
-				<image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/sliders-horizontal.svg" mode="aspectFit"></image>
+				<image class="nav-icon" src="/static/icons/lucide/sliders-horizontal.svg" mode="aspectFit"></image>
 			</view>
 		</view>
 
@@ -340,12 +340,12 @@
 						}"
 						@click="selectModel(m.id)"
 					>
+						<view class="model-menu-accent"></view>
 						<view class="model-menu-item-info">
 							<text class="model-menu-item-name">{{ m.display_name }}</text>
 							<text class="model-menu-item-desc">{{ m.locked ? '升级订阅解锁' : m.description }}</text>
 						</view>
 						<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
-						<image v-else-if="m.id === selectedModelId" class="model-menu-check" src="/static/icons/phosphor-icons/SVGs/bold/check.svg" mode="aspectFit"></image>
 					</view>
 				</view>
 
@@ -385,12 +385,16 @@
 						</view>
 					</view>
 
+					<view class="custom-placeholder-row">
+						<image class="placeholder-sparkle-icon" src="/static/icons/phosphor-icons/SVGs/fill/sparkle-fill.svg" mode="aspectFit"></image>
+						<text v-if="!inputText" class="placeholder-text">有问题，尽管问</text>
+					</view>
+
 					<textarea
 						ref="textareaRef"
 						class="input-field"
 						v-model="inputText"
-						placeholder="有问题，尽管问"
-						placeholder-class="input-placeholder"
+						placeholder=""
 						:maxlength="-1"
 						:adjust-position="false"
 						confirm-type="send"
@@ -417,11 +421,10 @@
 							<view class="input-action" @click="handlePlusClick">
 								<image class="input-action-icon" src="/static/icons/phosphor-icons/SVGs/regular/plus.svg" mode="aspectFit"></image>
 							</view>
-							<view class="input-action send-btn-wrapper" @click="sendMessage">
+							<view class="input-action send-btn-wrapper" :class="{ 'send-btn-disabled': !canSend }" @click="sendMessage">
 								<image
 									class="input-action-icon send-action-icon"
-									:class="{ 'send-btn-disabled': !canSend }"
-									src="/static/icons/phosphor-icons/SVGs Flat/fill/arrow-circle-up-fill.svg"
+									src="/static/icons/lucide/arrow-up.svg"
 									mode="aspectFit"
 								></image>
 							</view>
@@ -4106,7 +4109,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				ctx.fill()
 
 				// 绘制数字
-				ctx.setFillStyle('#FFFFFF')
+				ctx.setFillStyle('rgb(248, 248, 248)')
 				ctx.setFontSize(9)
 				ctx.setTextAlign('center')
 				ctx.setTextBaseline('middle')
@@ -4663,7 +4666,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		display: flex;
 		flex-direction: column;
 		height: 100vh;
-		background-color: rgb(24, 24, 24);
+		background-color: rgb(29, 30, 32);
 		overflow: hidden;
 	}
 
@@ -4694,9 +4697,9 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		z-index: -1;
 		background: linear-gradient(
 			to bottom,
-			rgba(10, 10, 10, 0.6) 0%,
-			rgba(10, 10, 10, 0.45) 50%,
-			rgba(10, 10, 10, 0) 100%
+			rgba(29, 30, 32, 0.72) 0%,
+			rgba(29, 30, 32, 0.56) 50%,
+			rgba(29, 30, 32, 0) 100%
 		);
 		-webkit-backdrop-filter: blur(24px) saturate(150%);
 		backdrop-filter: blur(24px) saturate(150%);
@@ -4709,9 +4712,9 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		.space-nav-bar::before {
 			background: linear-gradient(
 				to bottom,
-				rgba(10, 10, 10, 0.95) 0%,
-				rgba(10, 10, 10, 0.8) 50%,
-				rgba(10, 10, 10, 0) 100%
+				rgba(29, 30, 32, 0.95) 0%,
+				rgba(29, 30, 32, 0.82) 50%,
+				rgba(29, 30, 32, 0) 100%
 			);
 		}
 	}
@@ -4733,7 +4736,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 			inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
 			0 2rpx 12rpx rgba(0, 0, 0, 0.25);
 		transition: all 0.2s ease;
-		color: #ffffff;
+		color: rgb(248, 248, 248);
 	}
 
 	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
@@ -4759,7 +4762,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.nav-title {
 		font-size: 34rpx;
 		font-weight: 600;
-		color: #ffffff;
+		color: rgb(248, 248, 248);
 	}
 
 	.collab-filter-wrap {
@@ -4998,32 +5001,21 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 	.input-card {
 		width: 100%;
-		background-color: rgba(255, 255, 255, 0.06);
-		-webkit-backdrop-filter: blur(40px) saturate(180%);
-		backdrop-filter: blur(40px) saturate(180%);
-		border-radius: 32rpx;
-		border: 1rpx solid rgba(255, 255, 255, 0.1);
-		outline: 1rpx solid rgba(255, 255, 255, 0.04);
-		outline-offset: 1rpx;
-		box-shadow:
-			inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
-			0 2rpx 12rpx rgba(0, 0, 0, 0.25);
+		position: relative;
+		background-color: rgb(36, 36, 36);
+		border-radius: 40rpx;
+		border: 2rpx solid rgba(255, 255, 255, 0.06);
+		box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.18);
 		overflow: hidden;
-	}
-
-	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-		.input-card {
-			background-color: rgba(80, 80, 95, 0.65);
-		}
 	}
 
 	.input-field {
 		width: 100%;
 		font-size: 28rpx;
-		color: #ffffff;
+		color: rgb(248, 248, 248);
 		min-height: 40rpx;
 		line-height: 1.4;
-		padding: 24rpx 28rpx 16rpx;
+		padding: 24rpx 28rpx 12rpx 72rpx;
 		box-sizing: border-box;
 		resize: none;
 		overflow-y: hidden;
@@ -5033,7 +5025,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: 0 12rpx 12rpx 12rpx;
+		padding: 0 12rpx 8rpx 12rpx;
 	}
 
 	.input-bottom-row-spacer {
@@ -5043,37 +5035,70 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.right-actions {
 		display: flex;
 		align-items: center;
+		gap: 16rpx;
 	}
 
 	.input-action {
-		width: 72rpx;
-		height: 72rpx;
+		width: 64rpx;
+		height: 64rpx;
 		flex-shrink: 0;
 		display: flex;
 		justify-content: center;
 		align-items: center;
+		background: rgb(52, 52, 54);
+		border: 1.5rpx solid rgba(255, 255, 255, 0.1);
+		border-radius: 50%;
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.05),
+			0 2rpx 10rpx rgba(0, 0, 0, 0.14);
 	}
 
 	.input-action-icon {
-		width: 48rpx;
-		height: 48rpx;
-		filter: brightness(0) invert(1);
+		width: 36rpx;
+		height: 36rpx;
+		filter: brightness(0) invert(0.72) sepia(0.08);
+	}
+
+	.send-btn-wrapper {
+		background: #4A6CF7;
+		border-color: transparent;
+		box-shadow: 0 4rpx 14rpx rgba(74, 108, 247, 0.28);
 	}
 
 	.send-btn-wrapper .send-action-icon {
-		width: 72rpx !important;
-		height: 72rpx !important;
-		transform: scale(1.0);
-		transform-origin: center center;
+		width: 36rpx !important;
+		height: 36rpx !important;
+		filter: none !important;
 		display: block;
 	}
 
 	.send-btn-disabled {
-		opacity: 0.3;
+		opacity: 0.5;
 	}
 
 	.input-placeholder {
-		color: #9ca3af;
+		color: #A79D92;
+		font-size: 28rpx;
+	}
+
+	.custom-placeholder-row {
+		position: absolute;
+		top: 24rpx;
+		left: 28rpx;
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+		pointer-events: none;
+		z-index: 1;
+	}
+
+	.placeholder-sparkle-icon {
+		width: 32rpx;
+		height: 32rpx;
+	}
+
+	.placeholder-text {
+		color: #A79D92;
 		font-size: 28rpx;
 	}
 
@@ -5083,27 +5108,31 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		align-items: center;
 		gap: 8rpx;
 		padding: 8rpx 16rpx 8rpx 12rpx;
-		background: rgba(255, 255, 255, 0.08);
+		background: rgb(46, 46, 48);
+		border: 1.5rpx solid rgba(255, 255, 255, 0.08);
 		border-radius: 999rpx;
 		cursor: pointer;
 		transition: background 0.15s ease;
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+			0 2rpx 8rpx rgba(0, 0, 0, 0.12);
 	}
 
 	.model-selector-btn:active {
-		background: rgba(255, 255, 255, 0.16);
+		background: rgb(56, 56, 59);
 	}
 
 	.model-selector-icon {
 		width: 28rpx;
 		height: 28rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.5;
+		filter: brightness(0) invert(0.58) sepia(0.2);
+		opacity: 1;
 		flex-shrink: 0;
 	}
 
 	.model-selector-label {
 		font-size: 24rpx;
-		color: rgba(255, 255, 255, 0.6);
+		color: #C8BCAE;
 		white-space: nowrap;
 		max-width: 280rpx;
 		overflow: hidden;
@@ -5113,8 +5142,8 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.model-selector-chevron {
 		width: 20rpx;
 		height: 20rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.35;
+		filter: brightness(0) invert(0.45) sepia(0.15);
+		opacity: 1;
 		flex-shrink: 0;
 	}
 
@@ -5134,29 +5163,49 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		max-width: 80%;
 		z-index: 200;
 		margin-bottom: 8rpx;
-		background: rgba(38, 38, 42, 0.94);
-		-webkit-backdrop-filter: blur(24px) saturate(180%);
-		backdrop-filter: blur(24px) saturate(180%);
-		border: 1rpx solid rgba(255, 255, 255, 0.1);
+		background: rgb(41, 41, 41);
+		border: 2rpx solid rgba(255, 255, 255, 0.06);
 		border-radius: 20rpx;
 		padding: 6rpx;
-		box-shadow: 0 -6rpx 24rpx rgba(0, 0, 0, 0.35);
+		box-shadow: 0 -6rpx 24rpx rgba(0, 0, 0, 0.25);
 	}
 
 	.model-menu-item {
 		display: flex;
 		align-items: center;
 		padding: 20rpx 24rpx;
+		border: 1.5rpx solid transparent;
 		border-radius: 16rpx;
 		transition: background 0.15s ease;
 	}
 
 	.model-menu-item:active {
-		background: rgba(255, 255, 255, 0.08);
+		background: rgb(44, 44, 44);
 	}
 
 	.model-menu-item-active {
-		background: rgba(255, 255, 255, 0.08);
+		background: rgba(74, 108, 247, 0.18);
+		border-color: rgba(74, 108, 247, 0.42);
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.05),
+			0 4rpx 12rpx rgba(74, 108, 247, 0.12);
+	}
+
+	.model-menu-accent {
+		width: 8rpx;
+		height: 42rpx;
+		margin-right: 18rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.06);
+		opacity: 0;
+		flex-shrink: 0;
+		transition: opacity 0.15s ease, background 0.15s ease;
+	}
+
+	.model-menu-item-active .model-menu-accent {
+		background: linear-gradient(180deg, #7A93FF 0%, #4A6CF7 100%);
+		box-shadow: 0 0 12rpx rgba(74, 108, 247, 0.35);
+		opacity: 1;
 	}
 
 	.model-menu-item-info {
@@ -5170,28 +5219,23 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.model-menu-item-name {
 		font-size: 28rpx;
 		font-weight: 500;
-		color: rgba(255, 255, 255, 0.9);
+		color: #C8BCAE;
 	}
 
 	.model-menu-item-active .model-menu-item-name {
-		color: #ffffff;
+		color: rgb(248, 248, 248);
+	}
+
+	.model-menu-item-active .model-menu-item-desc {
+		color: rgba(205, 216, 255, 0.78);
 	}
 
 	.model-menu-item-desc {
 		font-size: 22rpx;
-		color: rgba(255, 255, 255, 0.4);
+		color: #7E746B;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-	}
-
-	.model-menu-check {
-		width: 32rpx;
-		height: 32rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.7;
-		flex-shrink: 0;
-		margin-left: 16rpx;
 	}
 
 	.model-menu-item-locked {
@@ -5205,8 +5249,8 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.model-menu-lock {
 		width: 28rpx;
 		height: 28rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.5;
+		filter: brightness(0) invert(0.45) sepia(0.15);
+		opacity: 1;
 		flex-shrink: 0;
 		margin-left: 16rpx;
 	}
@@ -5359,7 +5403,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 	.uploading-info .file-name {
 		font-size: 20rpx;
-		color: #ffffff;
+		color: rgb(248, 248, 248);
 		text-align: center;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -5416,7 +5460,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.node-popup-name {
 		font-size: 26rpx;
 		font-weight: 500;
-		color: #FFFFFF;
+		color: rgb(248, 248, 248);
 		flex: 1;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -5456,7 +5500,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.mastery-ring-text {
 		font-size: 16rpx;
 		font-weight: 600;
-		color: #FFFFFF;
+		color: rgb(248, 248, 248);
 	}
 
 	/* 锁图标样式 */
@@ -5649,7 +5693,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.note-detail-title {
 		font-size: 32rpx;
 		font-weight: 600;
-		color: #ffffff;
+		color: rgb(248, 248, 248);
 		flex: 1;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -5839,7 +5883,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.failed-title {
 		font-size: 36rpx;
 		font-weight: 600;
-		color: #fff;
+		color: rgb(248, 248, 248);
 		margin-bottom: 12rpx;
 	}
 
@@ -5859,7 +5903,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.regenerate-btn-text {
 		font-size: 32rpx;
 		font-weight: 500;
-		color: #fff;
+		color: rgb(248, 248, 248);
 	}
 
 	.regenerate-btn-disabled {
@@ -6005,7 +6049,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		padding: 40rpx 40rpx 0;
 		font-size: 36rpx;
 		font-weight: 600;
-		color: #ffffff;
+		color: rgb(248, 248, 248);
 		text-align: center;
 		display: block;
 	}
@@ -6037,7 +6081,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		border-radius: 12rpx;
 		padding: 0 24rpx;
 		font-size: 30rpx;
-		color: #ffffff;
+		color: rgb(248, 248, 248);
 		box-sizing: border-box;
 	}
 
@@ -6136,14 +6180,10 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		right: calc(100vw / 24);
 		bottom: calc(100vh * 1.5 / 26 + 100rpx);
 		min-width: 280rpx;
-		background: rgba(30, 30, 45, 0.95);
-		-webkit-backdrop-filter: blur(40px) saturate(180%);
-		backdrop-filter: blur(40px) saturate(180%);
-		border: 1rpx solid rgba(255, 255, 255, 0.15);
+		background: rgb(41, 41, 41);
+		border: 2rpx solid rgba(255, 255, 255, 0.06);
 		border-radius: 20rpx;
-		box-shadow:
-			0 12rpx 40rpx rgba(0, 0, 0, 0.4),
-			0 0 0 1rpx rgba(255, 255, 255, 0.05) inset;
+		box-shadow: 0 12rpx 40rpx rgba(0, 0, 0, 0.3);
 		overflow: hidden;
 		transform: translateY(20rpx) scale(0.9);
 		opacity: 0;
@@ -6163,26 +6203,26 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	}
 
 	.popup-option:active {
-		background: rgba(255, 255, 255, 0.08);
+		background: rgb(44, 44, 44);
 	}
 
 	.popup-option-icon {
 		width: 44rpx;
 		height: 44rpx;
 		margin-right: 24rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.85;
+		filter: brightness(0) invert(0.58) sepia(0.2);
+		opacity: 1;
 	}
 
 	.popup-option-text {
 		font-size: 30rpx;
-		color: rgba(255, 255, 255, 0.9);
+		color: #C8BCAE;
 		font-weight: 500;
 	}
 
 	.popup-divider {
 		height: 1rpx;
-		background: rgba(255, 255, 255, 0.1);
+		background: rgba(255, 255, 255, 0.06);
 		margin: 0 24rpx;
 	}
 
@@ -6194,12 +6234,6 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		height: 0;
 		border-left: 16rpx solid transparent;
 		border-right: 16rpx solid transparent;
-		border-top: 16rpx solid rgba(30, 30, 45, 0.95);
-	}
-
-	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-		.plus-popup {
-			background: rgba(40, 40, 55, 0.98);
-		}
+		border-top: 16rpx solid rgb(41, 41, 41);
 	}
 </style>

@@ -1,12 +1,25 @@
 <template>
   <view class="chat-history-page">
+    <view class="history-bg">
+      <view class="bg-mesh"></view>
+      <view class="bg-glow bg-glow-blue"></view>
+      <view class="bg-glow bg-glow-violet"></view>
+    </view>
+
     <!-- Navigation Bar -->
     <view class="nav-bar">
-      <view class="nav-left" @click="goBack">
-        <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
+      <view class="nav-main">
+        <view class="nav-left" @click="goBack">
+          <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
+        </view>
+        <view class="nav-title-wrap">
+          <text class="nav-title-main">快速对话记录</text>
+          <text class="nav-title-sub">快速对话</text>
+        </view>
       </view>
-      <text class="nav-title">快速对话记录</text>
-      <view class="nav-right-placeholder"></view>
+      <view class="nav-right" @click="handleSearch">
+        <image class="nav-icon nav-icon-search" src="/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg" mode="aspectFit"></image>
+      </view>
     </view>
 
     <!-- Loading State -->
@@ -146,6 +159,10 @@ export default {
       this.showDeleteModal = true
     },
 
+    handleSearch() {
+      this.showCustomToast('搜索功能暂未开放', 'info')
+    },
+
     async doDeleteConversation() {
       if (this.isDeleting || !this.selectedConvId) return
       this.isDeleting = true
@@ -170,6 +187,7 @@ export default {
       if (!dateStr) return ''
 
       const date = new Date(dateStr)
+      if (Number.isNaN(date.getTime())) return ''
       const now = new Date()
       const diffMs = now - date
       const diffMins = Math.floor(diffMs / (1000 * 60))
@@ -187,10 +205,15 @@ export default {
       } else if (diffDays < 7) {
         return `${diffDays}天前`
       } else {
-        return date.toLocaleDateString('zh-CN', {
-          month: 'numeric',
-          day: 'numeric'
-        })
+        const year = date.getFullYear()
+        const month = date.getMonth() + 1
+        const day = date.getDate()
+
+        if (year !== now.getFullYear()) {
+          return `${year}年${month}月${day}日`
+        }
+
+        return `${month}月${day}日`
       }
     }
   }
@@ -201,9 +224,52 @@ export default {
 .chat-history-page {
   width: 100%;
   min-height: 100vh;
-  background-color: #0A0A0A;
+  background-color: rgb(29, 30, 32);
   position: relative;
   overflow: hidden;
+}
+
+.history-bg {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.bg-mesh {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background:
+    radial-gradient(circle at 82% 14%, rgba(74, 108, 247, 0.08) 0%, rgba(74, 108, 247, 0) 32%),
+    radial-gradient(circle at 12% 100%, rgba(99, 102, 241, 0.05) 0%, rgba(99, 102, 241, 0) 36%);
+}
+
+.bg-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(130rpx);
+  opacity: 0.2;
+}
+
+.bg-glow-blue {
+  top: 120rpx;
+  right: -90rpx;
+  width: 320rpx;
+  height: 320rpx;
+  background: rgba(74, 108, 247, 0.12);
+}
+
+.bg-glow-violet {
+  bottom: 180rpx;
+  left: -90rpx;
+  width: 280rpx;
+  height: 280rpx;
+  background: rgba(123, 97, 255, 0.08);
 }
 
 /* Navigation Bar */
@@ -214,11 +280,51 @@ export default {
   right: 0;
   z-index: 100;
   padding-top: calc(100vh * 1.5 / 26);
+  padding-bottom: calc(100vh * 0.5 / 26);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding-left: calc(100vw / 24);
   padding-right: calc(100vw / 24);
+}
+
+.nav-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: -70rpx;
+  z-index: -1;
+  background: linear-gradient(
+    to bottom,
+    rgba(29, 30, 32, 0.56) 0%,
+    rgba(29, 30, 32, 0.4) 50%,
+    rgba(29, 30, 32, 0) 100%
+  );
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .nav-bar::before {
+    background: linear-gradient(
+      to bottom,
+      rgba(29, 30, 32, 0.82) 0%,
+      rgba(29, 30, 32, 0.66) 50%,
+      rgba(29, 30, 32, 0) 100%
+    );
+  }
+}
+
+.nav-main {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  min-width: 0;
+  flex: 1;
 }
 
 .nav-left {
@@ -228,7 +334,7 @@ export default {
   justify-content: center;
   align-items: center;
   border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.06);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
   border: 1rpx solid rgba(255, 255, 255, 0.1);
@@ -245,9 +351,37 @@ export default {
   }
 }
 
-.nav-right-placeholder {
+.nav-right {
   width: 72rpx;
   height: 72rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  outline: 1rpx solid rgba(255, 255, 255, 0.04);
+  outline-offset: 1rpx;
+  box-shadow:
+    inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
+    0 2rpx 12rpx rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .nav-right {
+    background: rgba(80, 80, 95, 0.65);
+  }
+}
+
+.nav-title-wrap {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4rpx;
 }
 
 .nav-icon {
@@ -256,10 +390,25 @@ export default {
   filter: brightness(0) invert(1);
 }
 
-.nav-title {
+.nav-icon-search {
+  filter: brightness(0) invert(1);
+}
+
+.nav-title-main {
   font-size: 34rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: rgb(248, 248, 248);
+  line-height: 1.2;
+}
+
+.nav-title-sub {
+  max-width: 100%;
+  font-size: 22rpx;
+  line-height: 1.25;
+  color: rgba(248, 248, 248, 0.52);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Loading State */
@@ -291,7 +440,7 @@ export default {
 
 .loading-text {
   font-size: 28rpx;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(248, 248, 248, 0.56);
 }
 
 /* Empty State */
@@ -317,39 +466,40 @@ export default {
 
 .empty-text {
   font-size: 32rpx;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgb(248, 248, 248);
   font-weight: 500;
 }
 
 .empty-hint {
   font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(248, 248, 248, 0.46);
 }
 
 .empty-action {
   margin-top: 32rpx;
   padding: 20rpx 48rpx;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
+  background: rgb(46, 46, 48);
+  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
   border-radius: 48rpx;
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+    0 2rpx 8rpx rgba(0, 0, 0, 0.12);
 }
 
 .empty-action:active {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgb(56, 56, 59);
 }
 
 .empty-action-text {
   font-size: 28rpx;
-  color: #ffffff;
+  color: rgb(248, 248, 248);
   font-weight: 500;
 }
 
 /* Conversation List */
 .conversation-list {
   position: absolute;
-  top: calc(100vh * 3.5 / 26);
+  top: calc(100vh * 4.2 / 26);
   left: 0;
   right: 0;
   bottom: 0;
@@ -388,7 +538,7 @@ export default {
 .conv-title {
   flex: 1;
   font-size: 30rpx;
-  color: #ffffff;
+  color: rgb(248, 248, 248);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

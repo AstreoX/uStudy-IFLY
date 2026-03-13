@@ -311,66 +311,59 @@
 							</view>
 						</view>
 
-						<!-- 搜索类工具：结构化搜索结果卡片 -->
+						<!-- 搜索类工具：来源卡片 -->
 						<view
 							v-else-if="seg.type === 'tool' && isSearchTool(seg.toolCall.tool)"
 							:key="'search-tool-' + segIdx"
-							class="tool-call-card search-result-card"
-							:class="{
-								'tool-call-running': seg.toolCall.status === 'running',
-								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
-								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
-							}"
+							class="search-tool-wrap"
 						>
-							<!-- Header -->
-							<view class="tool-call-header">
-								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
-								<text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
-								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
-								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
-									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
-								<image v-else class="tool-call-status-icon tool-call-status-failed"
-									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							<!-- 指示器 -->
+							<view class="search-indicator"
+								:class="{
+									'search-indicator-running': seg.toolCall.status === 'running',
+									'search-indicator-expanded': seg.toolCall.status === 'done' && isSearchExpanded(seg.toolCall.id),
+									'search-indicator-collapsed': seg.toolCall.status === 'done' && !isSearchExpanded(seg.toolCall.id)
+								}"
+								@click="toggleSearchResults(seg.toolCall.id)">
+								<image class="search-indicator-globe"
+									src="/static/icons/phosphor-icons/SVGs/regular/globe.svg" mode="aspectFit" />
+								<text class="search-indicator-text">
+									{{ seg.toolCall.status === 'running'
+										? (getToolDisplayName(seg.toolCall.tool) + '...')
+										: '已搜索 ' + (seg.toolCall.result?.results?.length || 0) + ' 个来源' }}
+								</text>
+								<view v-if="seg.toolCall.status === 'running'" class="search-indicator-spinner"></view>
+								<image v-else class="search-indicator-chevron"
+									:class="{ 'search-chevron-up': isSearchExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
 							</view>
 
-							<!-- 搜索结果列表 -->
-							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.results?.length"
-								class="search-results-list">
-								<view
-									v-for="(item, idx) in getVisibleSearchResults(seg.toolCall)"
-									:key="idx"
-									class="search-result-item"
-									@click="openSearchResultUrl(item.url)"
-								>
-									<image class="search-result-favicon"
-										:src="getFaviconUrl(item.url)" mode="aspectFit" />
-									<text class="search-result-title">{{ item.title }}</text>
-									<text class="search-result-domain">{{ formatDisplayUrl(item.url) }}</text>
+							<!-- 来源卡片横向滚动 -->
+							<scroll-view
+								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.results?.length && isSearchExpanded(seg.toolCall.id)"
+								class="search-sources-scroll" scroll-x :show-scrollbar="false">
+								<view class="search-sources-row">
+									<view v-for="(item, idx) in seg.toolCall.result.results" :key="idx"
+										class="search-source-card" @click="openSearchResultUrl(item.url)">
+										<view class="search-source-head">
+											<view class="search-source-num">
+												<text class="search-source-num-text">{{ idx + 1 }}</text>
+											</view>
+											<text class="search-source-site">{{ formatDisplayUrl(item.url) }}</text>
+										</view>
+										<text class="search-source-title">{{ item.title }}</text>
+									</view>
 								</view>
-
-								<!-- 展开/折叠按钮 -->
-								<view v-if="seg.toolCall.result.results.length > 5"
-									class="search-results-toggle"
-									@click="toggleSearchResults(seg.toolCall.id)">
-									<text class="search-results-toggle-text">
-										{{ isSearchExpanded(seg.toolCall.id) ? '收起' : '展开全部 ' + seg.toolCall.result.results.length + ' 条结果' }}
-									</text>
-									<image class="search-results-toggle-icon"
-										:src="isSearchExpanded(seg.toolCall.id)
-											? '/static/icons/phosphor-icons/SVGs/regular/arrow-up.svg'
-											: '/static/icons/phosphor-icons/SVGs/regular/caret-down.svg'"
-										mode="aspectFit" />
-								</view>
-							</view>
+							</scroll-view>
 
 							<!-- 无结果 -->
-							<view v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" class="tool-call-result">
-								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '未找到相关结果' }}</text>
+							<view v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success && !seg.toolCall.result?.results?.length" class="search-tool-empty">
+								<text class="search-tool-empty-text">{{ seg.toolCall.result?.message || '未找到相关结果' }}</text>
 							</view>
 
 							<!-- 失败 -->
-							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
-								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '搜索失败' }}</text>
+							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="search-tool-error">
+								<text class="search-tool-error-text">{{ seg.toolCall.result?.message || '搜索失败' }}</text>
 							</view>
 						</view>
 
@@ -513,6 +506,29 @@
 							</view>
 						</view>
 
+						<!-- 测试题生成工具：指示器胶囊 -->
+						<view
+							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'generate_test'"
+							:key="'quiz-gen-' + segIdx"
+							class="quiz-gen-indicator"
+							:class="{
+								'quiz-gen-running': seg.toolCall.status === 'running',
+								'quiz-gen-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+								'quiz-gen-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+							}"
+						>
+							<image class="quiz-gen-indicator-icon"
+								src="/static/icons/phosphor-icons/SVGs/regular/list-checks.svg" mode="aspectFit" />
+							<text class="quiz-gen-indicator-text">
+								{{ seg.toolCall.status === 'running' ? '正在生成测试题...' : (seg.toolCall.success ? '已生成测试题' : '测试题生成失败') }}
+							</text>
+							<view v-if="seg.toolCall.status === 'running'" class="quiz-gen-indicator-spinner"></view>
+							<image v-else-if="seg.toolCall.success" class="quiz-gen-status-icon"
+								src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
+							<image v-else class="quiz-gen-status-icon quiz-gen-status-failed"
+								src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+						</view>
+
 						<!-- 非记忆类工具：原有卡片样式 -->
 						<view
 							v-else-if="seg.type === 'tool'"
@@ -569,19 +585,17 @@
 					<!-- 测试题进入卡片 (pending 状态) -->
 					<view
 						v-if="msg.type === 'tool-request' && msg.toolState === 'pending'"
-						class="test-entry-card"
+						class="quiz-entry-card"
 						@click="navigateToTest(msg.id)"
 					>
-						<view class="test-card-icon-wrapper">
-							<image class="test-card-icon" src="/static/icons/phosphor-icons/SVGs/regular/exam.svg" mode="aspectFit"></image>
+						<view class="quiz-entry-icon-wrap">
+							<image class="quiz-entry-icon" src="/static/icons/phosphor-icons/SVGs/regular/brain.svg" mode="aspectFit" />
 						</view>
-						<view class="test-card-content">
-							<text class="test-card-title">测试题已生成</text>
-							<text class="test-card-desc">点击进入测试</text>
+						<view class="quiz-entry-text-col">
+							<text class="quiz-entry-title">{{ spaceTitle }} · 测试题</text>
+							<text class="quiz-entry-meta">点击进入测试</text>
 						</view>
-						<view class="test-card-arrow">
-							<image class="test-card-arrow-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
-						</view>
+						<image class="quiz-entry-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit" />
 					</view>
 
 					<!-- AI 消息操作图标 (流式输出完成后显示，排除未完成的工具请求) -->
@@ -689,12 +703,12 @@
 					}"
 					@click="selectModel(m.id)"
 				>
+					<view class="model-menu-accent"></view>
 					<view class="model-menu-item-info">
 						<text class="model-menu-item-name">{{ m.display_name }}</text>
 						<text class="model-menu-item-desc">{{ m.locked ? '升级订阅解锁' : m.description }}</text>
 					</view>
 					<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
-					<image v-else-if="m.id === selectedModelId" class="model-menu-check" src="/static/icons/phosphor-icons/SVGs/bold/check.svg" mode="aspectFit"></image>
 				</view>
 			</view>
 
@@ -731,12 +745,16 @@
 					</view>
 				</view>
 
+				<view class="custom-placeholder-row">
+					<image class="placeholder-sparkle-icon" src="/static/icons/phosphor-icons/SVGs/fill/sparkle-fill.svg" mode="aspectFit"></image>
+					<text v-if="!inputText" class="placeholder-text">有问题，尽管问</text>
+				</view>
+
 				<textarea
 					ref="textareaRef"
 					class="input-field"
 					v-model="inputText"
-					placeholder="有问题，尽管问"
-					placeholder-class="input-placeholder"
+					placeholder=""
 					:maxlength="-1"
 					:adjust-position="false"
 					confirm-type="send"
@@ -763,7 +781,7 @@
 						<view class="input-action" @click="handlePlusClick">
 							<image class="input-action-icon" src="/static/icons/phosphor-icons/SVGs/regular/plus.svg" mode="aspectFit"></image>
 						</view>
-						<view class="input-action send-btn-wrapper" @click="handleRightButtonClick">
+						<view class="input-action send-btn-wrapper" :class="{ 'send-btn-disabled': !canSend && !isAiStreaming }" @click="handleRightButtonClick">
 							<!-- AI正在回复 → 停止按钮 -->
 							<view v-if="isAiStreaming" class="stop-btn">
 								<view class="stop-btn-inner"></view>
@@ -772,8 +790,7 @@
 							<image
 								v-else
 								class="input-action-icon send-action-icon"
-								:class="{ 'send-btn-disabled': !canSend }"
-								src="/static/icons/phosphor-icons/SVGs Flat/fill/arrow-circle-up-fill.svg"
+								src="/static/icons/lucide/arrow-up.svg"
 								mode="aspectFit"
 							></image>
 						</view>
@@ -2556,10 +2573,24 @@
 					onQuotaError: (info) => {
 						this.flushThinkingBuffer()
 						this.flushTypewriter()
-						uni.showToast({ title: info.message || '配额已达上限', icon: 'none', duration: 3000 })
+						const isDaily = info.code === 'DAILY_MESSAGE_QUOTA_EXCEEDED'
+						const shortText = isDaily ? '今日消息已用完' : '配额已达上限'
+						uni.showModal({
+							title: '配额已达上限',
+							content: isDaily
+								? '今日消息次数已用完，明日自动重置。升级后可无限对话'
+								: (info.message || '当前套餐不支持此功能，升级后可使用'),
+							confirmText: '去升级',
+							cancelText: '知道了',
+							success: (res) => {
+								if (res.confirm) {
+									uni.navigateTo({ url: '/pages/subscription/subscription' })
+								}
+							}
+						})
 						const msg = this.messages.find(m => m.id === aiMsgId)
 						if (msg) {
-							msg.content = info.message || '配额已达上限'
+							msg.content = shortText
 							msg.isWaitingOutput = false
 							msg.isStreaming = false
 							msg.isError = true
@@ -2769,10 +2800,24 @@
 					onQuotaError: (info) => {
 						this.flushThinkingBuffer()
 						this.flushTypewriter()
-						uni.showToast({ title: info.message || '配额已达上限', icon: 'none', duration: 3000 })
+						const isDaily = info.code === 'DAILY_MESSAGE_QUOTA_EXCEEDED'
+						const shortText = isDaily ? '今日消息已用完' : '配额已达上限'
+						uni.showModal({
+							title: '配额已达上限',
+							content: isDaily
+								? '今日消息次数已用完，明日自动重置。升级后可无限对话'
+								: (info.message || '当前套餐不支持此功能，升级后可使用'),
+							confirmText: '去升级',
+							cancelText: '知道了',
+							success: (res) => {
+								if (res.confirm) {
+									uni.navigateTo({ url: '/pages/subscription/subscription' })
+								}
+							}
+						})
 						const aiMsg = this.messages.find(m => m.id === aiMsgId)
 						if (aiMsg) {
-							aiMsg.content = info.message || '配额已达上限'
+							aiMsg.content = shortText
 							aiMsg.isWaitingOutput = false
 							aiMsg.isStreaming = false
 							aiMsg.isError = true
@@ -3303,16 +3348,13 @@
 			 * 搜索结果是否展开
 			 */
 			isSearchExpanded(toolCallId) {
-				return !!this.expandedSearchResults[toolCallId]
+				return this.expandedSearchResults[toolCallId] !== false
 			},
 
-			/**
-			 * 切换搜索结果展开/折叠
-			 */
 			toggleSearchResults(toolCallId) {
 				this.expandedSearchResults = {
 					...this.expandedSearchResults,
-					[toolCallId]: !this.expandedSearchResults[toolCallId]
+					[toolCallId]: this.expandedSearchResults[toolCallId] === false
 				}
 			},
 
@@ -3981,7 +4023,7 @@
 		display: flex;
 		flex-direction: column;
 		height: 100vh;
-		background-color: rgb(24, 24, 24);
+		background-color: rgb(29, 30, 32);
 		overflow: hidden;
 	}
 
@@ -4041,7 +4083,7 @@
 	.nav-title {
 		font-size: 34rpx;
 		font-weight: 600;
-		color: #ffffff;
+		color: rgb(248, 248, 248);
 		max-width: 60%;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -4106,7 +4148,7 @@
 
 	.avatar-text {
 		font-size: 22rpx;
-		color: #ffffff;
+		color: rgb(248, 248, 248);
 		font-weight: 600;
 	}
 
@@ -4147,10 +4189,9 @@
 	}
 
 	.bubble-user {
-		background-color: #2d2d2d;
-		border-radius: calc(100vh * 1.3 / 26 / 2);
-		min-height: calc(100vh * 1.3 / 26);
-		padding: 16rpx 28rpx;
+		background-color: #4A6CF7;
+		border-radius: 32rpx 8rpx 32rpx 32rpx;
+		padding: 24rpx 28rpx;
 		max-width: none;
 		min-width: 0;
 	}
@@ -4171,7 +4212,7 @@
 		width: 32rpx;
 		height: 32rpx;
 		opacity: 1;
-		filter: brightness(0) invert(1) brightness(0.75);
+		filter: brightness(0) invert(0.45) sepia(0.15);
 	}
 
 	/* 三个点按钮容器 */
@@ -4220,7 +4261,7 @@
 
 	.more-popup-text {
 		font-size: 28rpx;
-		color: #ffffff;
+		color: rgb(248, 248, 248);
 		white-space: nowrap;
 	}
 
@@ -4244,7 +4285,7 @@
 
 	.message-text {
 		font-size: 30rpx;
-		color: #ffffff;
+		color: rgb(248, 248, 248);
 		line-height: 1.6;
 	}
 
@@ -4288,32 +4329,21 @@
 
 	.input-card {
 		width: 100%;
-		background-color: rgba(255, 255, 255, 0.06);
-		-webkit-backdrop-filter: blur(40px) saturate(180%);
-		backdrop-filter: blur(40px) saturate(180%);
-		border-radius: 32rpx;
-		border: 1rpx solid rgba(255, 255, 255, 0.1);
-		outline: 1rpx solid rgba(255, 255, 255, 0.04);
-		outline-offset: 1rpx;
-		box-shadow:
-			inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
-			0 2rpx 12rpx rgba(0, 0, 0, 0.25);
+		position: relative;
+		background-color: rgb(36, 36, 36);
+		border-radius: 40rpx;
+		border: 2rpx solid rgba(255, 255, 255, 0.06);
+		box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.18);
 		overflow: hidden;
-	}
-
-	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-		.input-card {
-			background-color: rgba(80, 80, 95, 0.65);
-		}
 	}
 
 	.input-field {
 		width: 100%;
 		font-size: 28rpx;
-		color: #ffffff;
+		color: rgb(248, 248, 248);
 		min-height: 40rpx;
 		line-height: 1.4;
-		padding: 24rpx 28rpx 16rpx;
+		padding: 24rpx 28rpx 12rpx 72rpx;
 		box-sizing: border-box;
 		resize: none;
 		overflow-y: hidden;
@@ -4323,7 +4353,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: 0 12rpx 12rpx 12rpx;
+		padding: 0 12rpx 8rpx 12rpx;
 	}
 
 	.input-bottom-row-spacer {
@@ -4333,28 +4363,40 @@
 	.right-actions {
 		display: flex;
 		align-items: center;
+		gap: 16rpx;
 	}
 
 	.input-action {
-		width: 72rpx;
-		height: 72rpx;
+		width: 64rpx;
+		height: 64rpx;
 		flex-shrink: 0;
 		display: flex;
 		justify-content: center;
 		align-items: center;
+		background: rgb(52, 52, 54);
+		border: 1.5rpx solid rgba(255, 255, 255, 0.1);
+		border-radius: 50%;
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.05),
+			0 2rpx 10rpx rgba(0, 0, 0, 0.14);
 	}
 
 	.input-action-icon {
-		width: 48rpx;
-		height: 48rpx;
-		filter: brightness(0) invert(1);
+		width: 36rpx;
+		height: 36rpx;
+		filter: brightness(0) invert(0.72) sepia(0.08);
+	}
+
+	.send-btn-wrapper {
+		background: #4A6CF7;
+		border-color: transparent;
+		box-shadow: 0 4rpx 14rpx rgba(74, 108, 247, 0.28);
 	}
 
 	.send-btn-wrapper .send-action-icon {
-		width: 72rpx !important;
-		height: 72rpx !important;
-		transform: scale(1.0);
-		transform-origin: center center;
+		width: 36rpx !important;
+		height: 36rpx !important;
+		filter: none !important;
 		display: block;
 	}
 
@@ -4389,11 +4431,32 @@
 
 	/* 发送按钮禁用状态 */
 	.send-btn-disabled {
-		opacity: 0.3;
+		opacity: 0.5;
 	}
 
 	.input-placeholder {
-		color: #9ca3af;
+		color: #A79D92;
+		font-size: 28rpx;
+	}
+
+	.custom-placeholder-row {
+		position: absolute;
+		top: 24rpx;
+		left: 28rpx;
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+		pointer-events: none;
+		z-index: 1;
+	}
+
+	.placeholder-sparkle-icon {
+		width: 32rpx;
+		height: 32rpx;
+	}
+
+	.placeholder-text {
+		color: #A79D92;
 		font-size: 28rpx;
 	}
 
@@ -4528,73 +4591,134 @@
 		}
 	}
 
-	/* ========== 测试题进入卡片 ========== */
-	.test-entry-card {
-		margin-top: 20rpx;
-		background: rgba(255, 255, 255, 0.08);
-		border: 1rpx solid rgba(255, 255, 255, 0.12);
+	/* ========== 测试题生成工具指示器 ========== */
+	.quiz-gen-indicator {
+		display: flex;
+		align-items: center;
+		gap: 14rpx;
+		padding: 14rpx 20rpx;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
 		border-radius: 20rpx;
-		padding: 24rpx;
-		-webkit-backdrop-filter: blur(20px);
-		backdrop-filter: blur(20px);
+		transition: all 0.25s ease;
+	}
+
+	.quiz-gen-running {
+		border-color: rgba(74, 108, 247, 0.3);
+		background: rgba(74, 108, 247, 0.06);
+	}
+
+	.quiz-gen-done {
+		border-color: rgba(61, 138, 90, 0.3);
+		background: rgba(61, 138, 90, 0.06);
+	}
+
+	.quiz-gen-failed {
+		border-color: rgba(239, 68, 68, 0.2);
+		background: rgba(239, 68, 68, 0.05);
+	}
+
+	.quiz-gen-indicator-icon {
+		width: 28rpx;
+		height: 28rpx;
+		flex-shrink: 0;
+		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
+	}
+
+	.quiz-gen-indicator-text {
+		flex: 1;
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.7);
+	}
+
+	.quiz-gen-running .quiz-gen-indicator-text {
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.quiz-gen-done .quiz-gen-indicator-text {
+		color: rgba(255, 255, 255, 0.75);
+	}
+
+	.quiz-gen-indicator-spinner {
+		width: 24rpx;
+		height: 24rpx;
+		border: 2rpx solid rgba(74, 108, 247, 0.3);
+		border-top-color: #4A6CF7;
+		border-radius: 50%;
+		animation: tool-spin 0.8s linear infinite;
+		flex-shrink: 0;
+	}
+
+	.quiz-gen-status-icon {
+		width: 28rpx;
+		height: 28rpx;
+		flex-shrink: 0;
+		filter: invert(45%) sepia(60%) saturate(600%) hue-rotate(100deg) brightness(95%) contrast(90%);
+	}
+
+	.quiz-gen-status-failed {
+		filter: invert(40%) sepia(90%) saturate(2000%) hue-rotate(345deg) brightness(90%) contrast(95%);
+	}
+
+	/* ========== 测试题进入卡片 ========== */
+	.quiz-entry-card {
+		margin-top: 20rpx;
 		display: flex;
 		align-items: center;
 		gap: 20rpx;
+		padding: 20rpx 24rpx;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
 		transition: all 0.15s ease;
 	}
 
-	.test-entry-card:active {
+	.quiz-entry-card:active {
 		transform: scale(0.98);
-		background: rgba(255, 255, 255, 0.12);
+		background: rgba(255, 255, 255, 0.08);
 	}
 
-	.test-card-icon-wrapper {
-		width: 64rpx;
-		height: 64rpx;
+	.quiz-entry-icon-wrap {
+		width: 72rpx;
+		height: 72rpx;
 		display: flex;
 		justify-content: center;
 		align-items: center;
+		border-radius: 18rpx;
+		background: rgba(74, 108, 247, 0.1);
 		flex-shrink: 0;
 	}
 
-	.test-card-icon {
-		width: 64rpx;
-		height: 64rpx;
-		filter: brightness(0) invert(1);
+	.quiz-entry-icon {
+		width: 36rpx;
+		height: 36rpx;
+		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
 	}
 
-	.test-card-content {
+	.quiz-entry-text-col {
 		flex: 1;
 		display: flex;
 		flex-direction: column;
-		gap: 6rpx;
+		gap: 4rpx;
 	}
 
-	.test-card-title {
-		font-size: 30rpx;
-		color: #ffffff;
+	.quiz-entry-title {
+		font-size: 28rpx;
 		font-weight: 600;
+		color: rgba(255, 255, 255, 0.92);
 	}
 
-	.test-card-desc {
+	.quiz-entry-meta {
 		font-size: 24rpx;
-		color: #9ca3af;
+		color: rgba(255, 255, 255, 0.45);
 	}
 
-	.test-card-arrow {
-		width: 48rpx;
-		height: 48rpx;
-		display: flex;
-		justify-content: center;
-		align-items: center;
+	.quiz-entry-chevron {
+		width: 36rpx;
+		height: 36rpx;
 		flex-shrink: 0;
-	}
-
-	.test-card-arrow-icon {
-		width: 32rpx;
-		height: 32rpx;
 		filter: brightness(0) invert(1);
-		opacity: 0.6;
+		opacity: 0.4;
 	}
 
 	/* ========== 测试题生成进度指示器样式 ========== */
@@ -4715,14 +4839,10 @@
 		right: calc(100vw / 24);
 		bottom: calc(100vh * 1.5 / 26 + 100rpx);
 		min-width: 280rpx;
-		background: rgba(30, 30, 45, 0.95);
-		-webkit-backdrop-filter: blur(40px) saturate(180%);
-		backdrop-filter: blur(40px) saturate(180%);
-		border: 1rpx solid rgba(255, 255, 255, 0.15);
+		background: rgb(41, 41, 41);
+		border: 2rpx solid rgba(255, 255, 255, 0.06);
 		border-radius: 20rpx;
-		box-shadow:
-			0 12rpx 40rpx rgba(0, 0, 0, 0.4),
-			0 0 0 1rpx rgba(255, 255, 255, 0.05) inset;
+		box-shadow: 0 12rpx 40rpx rgba(0, 0, 0, 0.3);
 		overflow: hidden;
 		transform: translateY(20rpx) scale(0.9);
 		opacity: 0;
@@ -4742,26 +4862,26 @@
 	}
 
 	.popup-option:active {
-		background: rgba(255, 255, 255, 0.08);
+		background: rgb(44, 44, 44);
 	}
 
 	.popup-option-icon {
 		width: 44rpx;
 		height: 44rpx;
 		margin-right: 24rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.85;
+		filter: brightness(0) invert(0.58) sepia(0.2);
+		opacity: 1;
 	}
 
 	.popup-option-text {
 		font-size: 30rpx;
-		color: rgba(255, 255, 255, 0.9);
+		color: #C8BCAE;
 		font-weight: 500;
 	}
 
 	.popup-divider {
 		height: 1rpx;
-		background: rgba(255, 255, 255, 0.1);
+		background: rgba(255, 255, 255, 0.06);
 		margin: 0 24rpx;
 	}
 
@@ -4773,14 +4893,9 @@
 		height: 0;
 		border-left: 16rpx solid transparent;
 		border-right: 16rpx solid transparent;
-		border-top: 16rpx solid rgba(30, 30, 45, 0.95);
+		border-top: 16rpx solid rgb(41, 41, 41);
 	}
 
-	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-		.plus-popup {
-			background: rgba(40, 40, 55, 0.98);
-		}
-	}
 
 	/* ========== 工具调用卡片 ========== */
 	.tool-calls-container {
@@ -5325,64 +5440,163 @@
 		flex-shrink: 0;
 	}
 
-	/* ========== 搜索结果列表 ========== */
-	.search-results-list {
-		margin-top: 12rpx;
-		display: flex;
-		flex-direction: column;
-		gap: 0;
+	/* ========== 搜索来源卡片 ========== */
+	.search-tool-wrap {
+		margin: 12rpx 0;
 	}
 
-	.search-result-item {
+	.search-indicator {
 		display: flex;
 		align-items: center;
-		gap: 12rpx;
-		padding: 8rpx 0;
+		gap: 14rpx;
+		padding: 14rpx 20rpx;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 20rpx;
 	}
 
-	.search-result-favicon {
-		width: 32rpx;
-		height: 32rpx;
-		border-radius: 50%;
-		flex-shrink: 0;
+	.search-indicator-running {
+		border-color: rgba(74, 108, 247, 0.3);
+		background: rgba(74, 108, 247, 0.06);
 	}
 
-	.search-result-title {
-		font-size: 26rpx;
-		color: rgba(255, 255, 255, 0.85);
-		font-weight: 500;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		flex: 1;
-		min-width: 0;
+	.search-indicator-expanded {
+		background: rgba(74, 108, 247, 0.08);
+		border-color: rgba(74, 108, 247, 0.25);
 	}
 
-	.search-result-domain {
-		font-size: 22rpx;
-		color: rgba(255, 255, 255, 0.4);
-		flex-shrink: 0;
-		margin-left: auto;
+	.search-indicator-collapsed {
+		background: rgba(255, 255, 255, 0.03);
+		border-color: rgba(255, 255, 255, 0.06);
 	}
 
-	.search-results-toggle {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 6rpx;
-		padding: 10rpx 0;
-		margin-top: 4rpx;
-	}
-
-	.search-results-toggle-text {
-		font-size: 22rpx;
+	.search-indicator-collapsed .search-indicator-text {
 		color: rgba(255, 255, 255, 0.45);
 	}
 
-	.search-results-toggle-icon {
+	.search-indicator-collapsed .search-indicator-globe {
+		opacity: 0.5;
+	}
+
+	.search-indicator-globe {
+		width: 30rpx;
+		height: 30rpx;
+		flex-shrink: 0;
+		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
+	}
+
+	.search-indicator-text {
+		flex: 1;
+		font-size: 25rpx;
+		color: rgba(255, 255, 255, 0.65);
+		font-weight: 500;
+	}
+
+	.search-indicator-spinner {
+		width: 22rpx;
+		height: 22rpx;
+		border: 2rpx solid rgba(74, 108, 247, 0.25);
+		border-top-color: #4A6CF7;
+		border-radius: 50%;
+		animation: tool-spin 0.8s linear infinite;
+		flex-shrink: 0;
+	}
+
+	.search-indicator-chevron {
 		width: 24rpx;
 		height: 24rpx;
-		opacity: 0.45;
+		flex-shrink: 0;
+		opacity: 0.35;
+		filter: brightness(0) invert(1);
+		transition: transform 0.2s ease;
+	}
+
+	.search-chevron-up {
+		transform: rotate(180deg);
+	}
+
+	.search-sources-scroll {
+		margin-top: 12rpx;
+		white-space: nowrap;
+	}
+
+	.search-sources-row {
+		display: inline-flex;
+		gap: 12rpx;
+	}
+
+	.search-source-card {
+		display: inline-flex;
+		flex-direction: column;
+		gap: 10rpx;
+		padding: 16rpx;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 20rpx;
+		width: 260rpx;
+		flex-shrink: 0;
+		white-space: normal;
+	}
+
+	.search-source-head {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+	}
+
+	.search-source-num {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28rpx;
+		height: 28rpx;
+		border-radius: 6rpx;
+		background: rgba(74, 108, 247, 0.15);
+		flex-shrink: 0;
+	}
+
+	.search-source-num-text {
+		font-size: 18rpx;
+		font-weight: 600;
+		color: #4A6CF7;
+	}
+
+	.search-source-site {
+		font-size: 20rpx;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.45);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.search-source-title {
+		font-size: 24rpx;
+		font-weight: 600;
+		color: rgba(255, 255, 255, 0.85);
+		line-height: 1.3;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		white-space: normal;
+	}
+
+	.search-tool-empty,
+	.search-tool-error {
+		margin-top: 8rpx;
+		padding: 8rpx 0;
+	}
+
+	.search-tool-empty-text {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.4);
+	}
+
+	.search-tool-error-text {
+		font-size: 24rpx;
+		color: rgba(239, 68, 68, 0.7);
 	}
 
 	/* ========== 等待输出加载动画 ========== */
@@ -5575,7 +5789,7 @@
 
 	.attachment-uploading-item .file-name {
 		font-size: 22rpx;
-		color: #ffffff;
+		color: rgb(248, 248, 248);
 		text-align: center;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -5636,27 +5850,31 @@
 		align-items: center;
 		gap: 8rpx;
 		padding: 8rpx 16rpx 8rpx 12rpx;
-		background: rgba(255, 255, 255, 0.08);
+		background: rgb(46, 46, 48);
+		border: 1.5rpx solid rgba(255, 255, 255, 0.08);
 		border-radius: 999rpx;
 		cursor: pointer;
 		transition: background 0.15s ease;
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+			0 2rpx 8rpx rgba(0, 0, 0, 0.12);
 	}
 
 	.model-selector-btn:active {
-		background: rgba(255, 255, 255, 0.16);
+		background: rgb(56, 56, 59);
 	}
 
 	.model-selector-icon {
 		width: 28rpx;
 		height: 28rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.5;
+		filter: brightness(0) invert(0.58) sepia(0.2);
+		opacity: 1;
 		flex-shrink: 0;
 	}
 
 	.model-selector-label {
 		font-size: 24rpx;
-		color: rgba(255, 255, 255, 0.6);
+		color: #C8BCAE;
 		white-space: nowrap;
 		max-width: 280rpx;
 		overflow: hidden;
@@ -5666,8 +5884,8 @@
 	.model-selector-chevron {
 		width: 20rpx;
 		height: 20rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.35;
+		filter: brightness(0) invert(0.45) sepia(0.15);
+		opacity: 1;
 		flex-shrink: 0;
 	}
 
@@ -5687,29 +5905,49 @@
 		max-width: 80%;
 		z-index: 200;
 		margin-bottom: 8rpx;
-		background: rgba(38, 38, 42, 0.94);
-		-webkit-backdrop-filter: blur(24px) saturate(180%);
-		backdrop-filter: blur(24px) saturate(180%);
-		border: 1rpx solid rgba(255, 255, 255, 0.1);
+		background: rgb(41, 41, 41);
+		border: 2rpx solid rgba(255, 255, 255, 0.06);
 		border-radius: 20rpx;
 		padding: 6rpx;
-		box-shadow: 0 -6rpx 24rpx rgba(0, 0, 0, 0.35);
+		box-shadow: 0 -6rpx 24rpx rgba(0, 0, 0, 0.25);
 	}
 
 	.model-menu-item {
 		display: flex;
 		align-items: center;
 		padding: 20rpx 24rpx;
+		border: 1.5rpx solid transparent;
 		border-radius: 16rpx;
 		transition: background 0.15s ease;
 	}
 
 	.model-menu-item:active {
-		background: rgba(255, 255, 255, 0.08);
+		background: rgb(44, 44, 44);
 	}
 
 	.model-menu-item-active {
-		background: rgba(255, 255, 255, 0.08);
+		background: rgba(74, 108, 247, 0.18);
+		border-color: rgba(74, 108, 247, 0.42);
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.05),
+			0 4rpx 12rpx rgba(74, 108, 247, 0.12);
+	}
+
+	.model-menu-accent {
+		width: 8rpx;
+		height: 42rpx;
+		margin-right: 18rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.06);
+		opacity: 0;
+		flex-shrink: 0;
+		transition: opacity 0.15s ease, background 0.15s ease;
+	}
+
+	.model-menu-item-active .model-menu-accent {
+		background: linear-gradient(180deg, #7A93FF 0%, #4A6CF7 100%);
+		box-shadow: 0 0 12rpx rgba(74, 108, 247, 0.35);
+		opacity: 1;
 	}
 
 	.model-menu-item-info {
@@ -5723,28 +5961,23 @@
 	.model-menu-item-name {
 		font-size: 28rpx;
 		font-weight: 500;
-		color: rgba(255, 255, 255, 0.9);
+		color: #C8BCAE;
 	}
 
 	.model-menu-item-active .model-menu-item-name {
-		color: #ffffff;
+		color: rgb(248, 248, 248);
+	}
+
+	.model-menu-item-active .model-menu-item-desc {
+		color: rgba(205, 216, 255, 0.78);
 	}
 
 	.model-menu-item-desc {
 		font-size: 22rpx;
-		color: rgba(255, 255, 255, 0.4);
+		color: #7E746B;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-	}
-
-	.model-menu-check {
-		width: 32rpx;
-		height: 32rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.7;
-		flex-shrink: 0;
-		margin-left: 16rpx;
 	}
 
 	.model-menu-item-locked {
@@ -5758,8 +5991,8 @@
 	.model-menu-lock {
 		width: 28rpx;
 		height: 28rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.5;
+		filter: brightness(0) invert(0.45) sepia(0.15);
+		opacity: 1;
 		flex-shrink: 0;
 		margin-left: 16rpx;
 	}

@@ -1,12 +1,21 @@
 <template>
   <view class="knowledge-base-page">
+    <view class="knowledge-base-bg">
+      <view class="bg-mesh"></view>
+      <view class="bg-glow bg-glow-blue"></view>
+      <view class="bg-glow bg-glow-violet"></view>
+    </view>
+
     <!-- Navigation Bar -->
     <view class="nav-bar">
-      <view class="nav-left" @click="goBack">
-        <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
-      </view>
-      <view class="nav-center">
-        <text class="nav-title">知识库管理</text>
+      <view class="nav-main">
+        <view class="nav-left" @click="goBack">
+          <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
+        </view>
+        <view class="nav-title-wrap">
+          <text class="nav-title-main">知识库管理</text>
+          <text class="nav-title-sub">{{ spaceName || '当前学习空间' }}</text>
+        </view>
       </view>
       <view class="nav-right add-btn" @click="handleAddFile">
         <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/plus.svg" mode="aspectFit"></image>
@@ -120,6 +129,10 @@
 
     <!-- Document List -->
     <scroll-view v-else class="content-scroll" scroll-y>
+      <view class="document-section-head">
+        <text class="document-section-title">文档</text>
+        <text class="document-section-count">{{ documents.length }} 个</text>
+      </view>
       <view class="document-list">
         <view
           v-for="doc in documents"
@@ -130,6 +143,7 @@
           <view class="document-icon-wrapper">
             <image
               class="document-icon"
+              :class="'document-icon-' + getDocIconTone(doc)"
               :src="getDocIcon(doc)"
               mode="aspectFit"
             ></image>
@@ -137,7 +151,13 @@
           <view class="document-info">
             <text class="document-title">{{ truncateTitle(doc.title) }}</text>
             <view class="document-meta">
-              <text class="document-type">{{ getDocTypeLabel(doc) }}{{ doc.doc_type === 'link' ? '：' : '' }}</text>
+              <text class="document-type">{{ getDocTypeLabel(doc) }}</text>
+              <text
+                v-if="doc.doc_type === 'link' || doc.file_size"
+                class="document-separator"
+              >
+                ·
+              </text>
               <text v-if="doc.doc_type === 'link'" class="document-url">{{ doc.url }}</text>
               <text v-else-if="doc.file_size" class="document-size">{{ formatFileSize(doc.file_size) }}</text>
             </view>
@@ -194,7 +214,7 @@
         </view>
         <view class="storage-info">
           <text class="storage-used">{{ formatStorageSize(storageUsed) }} / {{ formatStorageSize(storageLimit) }}</text>
-          <text class="storage-percent" :style="{ color: storageColor }">{{ storagePercent }}%</text>
+          <text class="storage-percent" :style="{ color: storageColor }">{{ storagePercentDisplay }}</text>
         </view>
       </view>
     </view>
@@ -374,6 +394,10 @@ export default {
       return Math.min(100, Math.round(percent * 10) / 10) // 保留一位小数，最大100
     },
 
+    storagePercentDisplay() {
+      return `${Math.round(this.storagePercent)}%`
+    },
+
     storageColor() {
       const percent = this.storagePercent
       if (percent >= 90) return '#EF4444' // 红色 - 危险
@@ -524,6 +548,8 @@ export default {
         case 'doc':
         case 'docx':
           return '/static/icons/phosphor-icons/SVGs/regular/file-doc.svg'
+        case 'md':
+          return '/static/icons/phosphor-icons/SVGs/regular/code.svg'
         case 'txt':
           return '/static/icons/phosphor-icons/SVGs/regular/file-text.svg'
         default:
@@ -543,10 +569,32 @@ export default {
         case 'doc':
         case 'docx':
           return 'Word 文档'
+        case 'md':
+          return 'Markdown'
         case 'txt':
           return '文本文件'
         default:
           return '文档'
+      }
+    },
+
+    getDocIconTone(doc) {
+      if (doc.doc_type === 'link') {
+        return 'link'
+      }
+
+      const ext = doc.original_filename ? doc.original_filename.split('.').pop()?.toLowerCase() : ''
+      switch (ext) {
+        case 'pdf':
+          return 'pdf'
+        case 'doc':
+        case 'docx':
+          return 'doc'
+        case 'md':
+        case 'txt':
+          return 'text'
+        default:
+          return 'file'
       }
     },
 
@@ -1008,12 +1056,54 @@ export default {
 .knowledge-base-page {
   width: 100%;
   min-height: 100vh;
-  background-color: #0A0A0A;
+  background-color: rgb(29, 30, 32);
   position: relative;
   overflow: hidden;
 }
 
-/* Navigation Bar */
+.knowledge-base-bg {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.bg-mesh {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background:
+    radial-gradient(circle at 82% 14%, rgba(74, 108, 247, 0.08) 0%, rgba(74, 108, 247, 0) 32%),
+    radial-gradient(circle at 12% 100%, rgba(99, 102, 241, 0.05) 0%, rgba(99, 102, 241, 0) 36%);
+}
+
+.bg-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(130rpx);
+  opacity: 0.2;
+}
+
+.bg-glow-blue {
+  top: 120rpx;
+  right: -90rpx;
+  width: 320rpx;
+  height: 320rpx;
+  background: rgba(74, 108, 247, 0.12);
+}
+
+.bg-glow-violet {
+  bottom: 180rpx;
+  left: -90rpx;
+  width: 280rpx;
+  height: 280rpx;
+  background: rgba(123, 97, 255, 0.08);
+}
+
 .nav-bar {
   position: fixed;
   top: 0;
@@ -1021,7 +1111,7 @@ export default {
   right: 0;
   z-index: 100;
   padding-top: calc(100vh * 1.5 / 26);
-  padding-bottom: 16rpx;
+  padding-bottom: calc(100vh * 0.5 / 26);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1039,9 +1129,9 @@ export default {
   z-index: -1;
   background: linear-gradient(
     to bottom,
-    rgba(10, 10, 10, 0.6) 0%,
-    rgba(10, 10, 10, 0.45) 50%,
-    rgba(10, 10, 10, 0) 100%
+    rgba(29, 30, 32, 0.56) 0%,
+    rgba(29, 30, 32, 0.4) 50%,
+    rgba(29, 30, 32, 0) 100%
   );
   -webkit-backdrop-filter: blur(24px) saturate(150%);
   backdrop-filter: blur(24px) saturate(150%);
@@ -1049,22 +1139,72 @@ export default {
   mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
 }
 
-.nav-left {
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .nav-bar::before {
+    background: linear-gradient(
+      to bottom,
+      rgba(29, 30, 32, 0.82) 0%,
+      rgba(29, 30, 32, 0.66) 50%,
+      rgba(29, 30, 32, 0) 100%
+    );
+  }
+}
+
+.nav-main {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  min-width: 0;
+  flex: 1;
+}
+
+.nav-left,
+.nav-right {
   width: 72rpx;
   height: 72rpx;
   display: flex;
   justify-content: center;
   align-items: center;
   border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.06);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
   border: 1rpx solid rgba(255, 255, 255, 0.1);
+  outline: 1rpx solid rgba(255, 255, 255, 0.04);
+  outline-offset: 1rpx;
+  box-shadow:
+    inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
+    0 2rpx 12rpx rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
 }
 
-.nav-right-placeholder {
-  width: 72rpx;
-  height: 72rpx;
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .nav-left,
+  .nav-right {
+    background: rgba(80, 80, 95, 0.65);
+  }
+}
+
+.add-btn {
+  background: linear-gradient(180deg, rgba(96, 131, 255, 1) 0%, rgba(74, 108, 247, 1) 100%);
+  border: none;
+  outline: none;
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.18),
+    0 10rpx 24rpx rgba(74, 108, 247, 0.3);
+}
+
+.add-btn:active {
+  opacity: 0.92;
+  transform: scale(0.98);
+}
+
+.nav-title-wrap {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4rpx;
 }
 
 .nav-icon {
@@ -1073,13 +1213,23 @@ export default {
   filter: brightness(0) invert(1);
 }
 
-.nav-title {
+.nav-title-main {
   font-size: 34rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: rgb(248, 248, 248);
+  line-height: 1.2;
 }
 
-/* Loading, Error & Empty States */
+.nav-title-sub {
+  max-width: 100%;
+  font-size: 22rpx;
+  line-height: 1.25;
+  color: rgba(248, 248, 248, 0.52);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .loading-container,
 .error-container,
 .empty-container {
@@ -1088,12 +1238,13 @@ export default {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding-top: calc(100vh * 1.5 / 26 + 200rpx);
+  padding: calc(100vh * 4.4 / 26) 64rpx 220rpx;
+  box-sizing: border-box;
 }
 
 .loading-text {
   font-size: 30rpx;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(248, 248, 248, 0.56);
 }
 
 .error-icon {
@@ -1113,18 +1264,21 @@ export default {
 
 .retry-btn {
   padding: 20rpx 48rpx;
-  background: rgba(0, 136, 255, 0.15);
-  border: 1rpx solid rgba(0, 136, 255, 0.4);
+  background: rgb(46, 46, 48);
+  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
   border-radius: 40rpx;
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+    0 2rpx 8rpx rgba(0, 0, 0, 0.12);
 }
 
 .retry-btn:active {
-  background: rgba(0, 136, 255, 0.25);
+  background: rgb(56, 56, 59);
 }
 
 .retry-btn-text {
   font-size: 28rpx;
-  color: #0088FF;
+  color: rgb(248, 248, 248);
 }
 
 .empty-icon {
@@ -1137,64 +1291,99 @@ export default {
 
 .empty-text {
   font-size: 32rpx;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgb(248, 248, 248);
   margin-bottom: 16rpx;
 }
 
 .empty-hint {
   font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(248, 248, 248, 0.46);
   text-align: center;
   max-width: 400rpx;
 }
 
-/* Content Scroll */
 .content-scroll {
   flex: 1;
-  padding: calc(100vh * 1.5 / 26 + 100rpx) calc(100vw / 24) 180rpx;
+  padding: calc(100vh * 4.15 / 26) calc(100vw / 24) 220rpx;
   box-sizing: border-box;
 }
 
-/* Document List */
+.document-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10rpx;
+}
+
+.document-section-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: rgb(248, 248, 248);
+}
+
+.document-section-count {
+  font-size: 22rpx;
+  color: rgba(248, 248, 248, 0.38);
+}
+
 .document-list {
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  background: transparent;
 }
 
 .document-item {
   display: flex;
-  align-items: center;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1rpx solid rgba(255, 255, 255, 0.08);
-  border-radius: 20rpx;
-  padding: 20rpx 24rpx;
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  transition: all 0.2s ease;
+  align-items: flex-start;
+  padding: 22rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.08);
+  transition: background-color 0.15s ease;
 }
 
 .document-item:active {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.document-item:last-child {
+  border-bottom: none;
 }
 
 .document-icon-wrapper {
-  width: 60rpx;
-  height: 60rpx;
-  border-radius: 12rpx;
-  background: rgba(255, 255, 255, 0.08);
+  width: 34rpx;
+  height: 34rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-right: 20rpx;
+  margin-top: 4rpx;
+  margin-right: 18rpx;
 }
 
 .document-icon {
-  width: 32rpx;
-  height: 32rpx;
+  width: 34rpx;
+  height: 34rpx;
   filter: brightness(0) invert(1);
-  opacity: 0.8;
+  opacity: 0.85;
+}
+
+.document-icon-pdf,
+.document-icon-doc {
+  filter: invert(55%) sepia(31%) saturate(1010%) hue-rotate(331deg) brightness(93%) contrast(93%);
+  opacity: 1;
+}
+
+.document-icon-text {
+  filter: invert(42%) sepia(34%) saturate(847%) hue-rotate(96deg) brightness(95%) contrast(91%);
+  opacity: 1;
+}
+
+.document-icon-link {
+  filter: invert(55%) sepia(56%) saturate(1246%) hue-rotate(194deg) brightness(97%) contrast(95%);
+  opacity: 1;
+}
+
+.document-icon-file {
+  opacity: 0.75;
 }
 
 .document-info {
@@ -1204,9 +1393,9 @@ export default {
 
 .document-title {
   font-size: 28rpx;
-  font-weight: 600;
-  color: #ffffff;
-  margin-bottom: 4rpx;
+  font-weight: 500;
+  color: rgb(248, 248, 248);
+  margin-bottom: 6rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1215,44 +1404,45 @@ export default {
 .document-meta {
   display: flex;
   align-items: center;
-  gap: 4rpx;
+  gap: 8rpx;
   min-width: 0;
+}
+
+.document-separator {
+  font-size: 20rpx;
+  color: rgba(248, 248, 248, 0.24);
+  flex-shrink: 0;
 }
 
 .document-creator {
   display: flex;
   align-items: center;
   gap: 10rpx;
-  margin-top: 10rpx;
+  margin-top: 8rpx;
 }
 
 .creator-dot {
-  width: 14rpx;
-  height: 14rpx;
+  width: 10rpx;
+  height: 10rpx;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
 .document-creator-name {
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.42);
+  font-size: 20rpx;
+  color: rgba(248, 248, 248, 0.36);
 }
 
 .document-type {
   font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(248, 248, 248, 0.56);
   flex-shrink: 0;
 }
 
-.document-size {
-  font-size: 20rpx;
-  color: rgba(255, 255, 255, 0.35);
-  margin-left: 8rpx;
-}
-
+.document-size,
 .document-url {
   font-size: 20rpx;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(248, 248, 248, 0.34);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1262,35 +1452,40 @@ export default {
 .document-action {
   flex-shrink: 0;
   margin-left: 12rpx;
+  align-self: center;
 }
 
 .delete-btn {
-  width: 48rpx;
-  height: 48rpx;
+  width: 40rpx;
+  height: 40rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8rpx;
+  border-radius: 999rpx;
   transition: background 150ms ease;
 }
 
 .delete-btn:active {
-  background: rgba(239, 68, 68, 0.15);
+  background: rgba(239, 68, 68, 0.12);
 }
 
 .delete-icon {
-  width: 32rpx;
-  height: 32rpx;
-  /* 红色滤镜 - 与 app 其他红色元素一致 (#EF4444) */
-  filter: invert(47%) sepia(82%) saturate(2476%) hue-rotate(332deg) brightness(97%) contrast(92%);
+  width: 28rpx;
+  height: 28rpx;
+  filter: brightness(0) invert(1);
+  opacity: 0.28;
 }
 
-/* ========== 文档处理状态 Badges ========== */
+.delete-btn:active .delete-icon {
+  filter: invert(47%) sepia(82%) saturate(2476%) hue-rotate(332deg) brightness(97%) contrast(92%);
+  opacity: 0.8;
+}
+
 .document-status-row {
   display: flex;
   align-items: center;
   gap: 8rpx;
-  margin-top: 8rpx;
+  margin-top: 10rpx;
   flex-wrap: wrap;
 }
 
@@ -1298,18 +1493,18 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 6rpx;
-  padding: 4rpx 10rpx;
-  border-radius: 8rpx;
-  background: rgba(255, 255, 255, 0.06);
+  padding: 5rpx 10rpx;
+  border-radius: 999rpx;
+  background: rgb(41, 41, 41);
+  border: 1rpx solid rgba(255, 255, 255, 0.05);
 }
 
-/* 状态背景色 */
-.status-not_started { background: rgba(107, 114, 128, 0.15); }
-.status-pending { background: rgba(245, 158, 11, 0.15); }
-.status-processing { background: rgba(59, 130, 246, 0.15); }
-.status-completed { background: rgba(16, 185, 129, 0.15); }
-.status-failed { background: rgba(239, 68, 68, 0.15); }
-.status-loading { background: rgba(255, 255, 255, 0.06); }
+.status-not_started { background: rgba(107, 114, 128, 0.14); }
+.status-pending { background: rgba(245, 158, 11, 0.16); }
+.status-processing { background: rgba(74, 108, 247, 0.16); }
+.status-completed { background: rgba(16, 185, 129, 0.16); }
+.status-failed { background: rgba(239, 68, 68, 0.16); }
+.status-loading { background: rgb(41, 41, 41); }
 
 .status-dot {
   width: 8rpx;
@@ -1318,7 +1513,6 @@ export default {
   flex-shrink: 0;
 }
 
-/* 处理中动画 */
 .status-processing .status-dot {
   animation: pulse 1.5s ease-in-out infinite;
 }
@@ -1334,13 +1528,12 @@ export default {
   line-height: 1.2;
 }
 
-/* 切片数量 Badge */
 .chunk-badge {
   display: inline-flex;
   align-items: center;
-  padding: 4rpx 10rpx;
-  border-radius: 8rpx;
-  background: rgba(16, 185, 129, 0.1);
+  padding: 5rpx 10rpx;
+  border-radius: 999rpx;
+  background: rgba(16, 185, 129, 0.12);
   border: 1rpx solid rgba(16, 185, 129, 0.2);
 }
 
@@ -1350,13 +1543,12 @@ export default {
   font-weight: 500;
 }
 
-/* 错误 Badge */
 .error-badge {
   display: inline-flex;
   align-items: center;
   gap: 4rpx;
-  padding: 4rpx 10rpx;
-  border-radius: 8rpx;
+  padding: 5rpx 10rpx;
+  border-radius: 999rpx;
   background: rgba(239, 68, 68, 0.12);
   border: 1rpx solid rgba(239, 68, 68, 0.25);
   transition: background 150ms ease;
@@ -1366,19 +1558,21 @@ export default {
   background: rgba(239, 68, 68, 0.2);
 }
 
-.error-icon {
+.error-badge .error-icon {
   width: 16rpx;
   height: 16rpx;
   filter: invert(47%) sepia(82%) saturate(2476%) hue-rotate(332deg) brightness(97%) contrast(92%);
+  margin-bottom: 0;
 }
 
-.error-text {
+.error-badge .error-text {
   font-size: 20rpx;
   color: #EF4444;
   font-weight: 500;
+  margin-bottom: 0;
+  max-width: none;
 }
 
-/* Storage Indicator */
 .storage-container {
   position: fixed;
   bottom: 0;
@@ -1388,19 +1582,22 @@ export default {
   padding-bottom: calc(20rpx + env(safe-area-inset-bottom));
   background: linear-gradient(
     to top,
-    rgba(10, 10, 10, 0.95) 0%,
-    rgba(10, 10, 10, 0.8) 60%,
-    rgba(10, 10, 10, 0) 100%
+    rgba(29, 30, 32, 0.96) 0%,
+    rgba(29, 30, 32, 0.84) 58%,
+    rgba(29, 30, 32, 0) 100%
   );
+  pointer-events: none;
 }
 
 .storage-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1rpx solid rgba(255, 255, 255, 0.08);
-  border-radius: 20rpx;
+  background: rgb(36, 36, 36);
+  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  border-radius: 24rpx;
   padding: 24rpx;
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  backdrop-filter: blur(20px) saturate(150%);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+    0 8rpx 24rpx rgba(0, 0, 0, 0.14);
+  pointer-events: auto;
 }
 
 .storage-header {
@@ -1420,19 +1617,19 @@ export default {
   width: 32rpx;
   height: 32rpx;
   filter: brightness(0) invert(1);
-  opacity: 0.7;
+  opacity: 0.56;
 }
 
 .storage-title {
   font-size: 26rpx;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgb(248, 248, 248);
 }
 
 .tier-badge {
-  padding: 6rpx 16rpx;
-  border-radius: 20rpx;
-  background: rgba(255, 255, 255, 0.1);
+  padding: 6rpx 14rpx;
+  border-radius: 12rpx;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .tier-free {
@@ -1440,39 +1637,39 @@ export default {
 }
 
 .tier-plus {
-  background: rgba(0, 136, 255, 0.15);
+  background: rgba(74, 108, 247, 0.16);
 }
 
 .tier-ultra {
-  background: rgba(255, 215, 0, 0.15);
+  background: rgba(245, 158, 11, 0.15);
 }
 
 .tier-alpha {
-  background: rgba(138, 43, 226, 0.15);
+  background: rgba(160, 120, 255, 0.15);
 }
 
 .tier-text {
   font-size: 22rpx;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(248, 248, 248, 0.6);
 }
 
 .tier-plus .tier-text {
-  color: #0088FF;
+  color: #6B8AFF;
 }
 
 .tier-ultra .tier-text {
-  color: #FFD700;
+  color: #F5B94C;
 }
 
 .tier-alpha .tier-text {
-  color: #8A2BE2;
+  color: #B18CFF;
 }
 
 .storage-progress-track {
   width: 100%;
   height: 8rpx;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(41, 41, 41);
   border-radius: 4rpx;
   overflow: hidden;
   margin-bottom: 12rpx;
@@ -1492,7 +1689,7 @@ export default {
 
 .storage-used {
   font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(248, 248, 248, 0.48);
 }
 
 .storage-percent {
@@ -1500,30 +1697,6 @@ export default {
   font-weight: 600;
 }
 
-/* Add Button */
-.nav-right {
-  width: 72rpx;
-  height: 72rpx;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  border-radius: 50%;
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  backdrop-filter: blur(40px) saturate(180%);
-  border: 1rpx solid rgba(255, 255, 255, 0.1);
-}
-
-.add-btn {
-  background-color: #007AFF !important;
-  border: none !important;
-}
-
-.add-btn:active {
-  opacity: 0.85;
-  transform: scale(0.98);
-}
-
-/* Add File Popup */
 .knowledge-base-page .add-file-popup-wrapper {
   position: fixed;
   top: 0;
@@ -1536,18 +1709,18 @@ export default {
 .knowledge-base-page .add-file-popup {
   position: fixed;
   right: calc(100vw / 24);
-  top: calc(100vh * 1.5 / 26 + 88rpx);
+  top: calc(100vh * 1.5 / 26 + 92rpx);
   bottom: auto;
   height: auto;
   min-width: 280rpx;
-  background: rgba(30, 30, 45, 0.95);
+  background: rgba(36, 36, 36, 0.96);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
-  border-radius: 20rpx;
+  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  border-radius: 18rpx;
   box-shadow:
-    0 12rpx 40rpx rgba(0, 0, 0, 0.4),
-    0 0 0 1rpx rgba(255, 255, 255, 0.05) inset;
+    0 12rpx 32rpx rgba(0, 0, 0, 0.28),
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.04);
   overflow: visible;
   transform: translateY(-20rpx) scale(0.9);
   opacity: 0;
@@ -1567,7 +1740,7 @@ export default {
   height: 0;
   border-left: 16rpx solid transparent;
   border-right: 16rpx solid transparent;
-  border-bottom: 16rpx solid rgba(30, 30, 45, 0.95);
+  border-bottom: 16rpx solid rgba(36, 36, 36, 0.96);
 }
 
 .popup-option {
@@ -1578,7 +1751,7 @@ export default {
 }
 
 .popup-option:active {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgb(44, 44, 44);
 }
 
 .popup-option-icon {
@@ -1586,22 +1759,21 @@ export default {
   height: 44rpx;
   margin-right: 24rpx;
   filter: brightness(0) invert(1);
-  opacity: 0.85;
+  opacity: 0.88;
 }
 
 .popup-option-text {
   font-size: 30rpx;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgb(248, 248, 248);
   font-weight: 500;
 }
 
 .popup-divider {
   height: 1rpx;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   margin: 0 24rpx;
 }
 
-/* Link Dialog */
 .link-dialog-overlay {
   position: fixed;
   top: 0;
@@ -1617,19 +1789,19 @@ export default {
 }
 
 .link-dialog-overlay.overlay-show {
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(11, 13, 18, 0.58);
 }
 
 .link-dialog {
   width: 560rpx;
-  background: rgba(20, 20, 30, 0.92);
+  background: rgba(36, 36, 36, 0.96);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
+  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
   border-radius: 24rpx;
   box-shadow:
-    0 16rpx 48rpx rgba(0, 0, 0, 0.5),
-    0 0 0 1rpx rgba(255, 255, 255, 0.05) inset;
+    0 16rpx 48rpx rgba(0, 0, 0, 0.34),
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.04);
   overflow: hidden;
   transform: translateY(40rpx) scale(0.95);
   opacity: 0;
@@ -1645,7 +1817,7 @@ export default {
   display: block;
   font-size: 34rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: rgb(248, 248, 248);
   text-align: center;
   padding: 32rpx 32rpx 24rpx;
 }
@@ -1665,54 +1837,59 @@ export default {
 .link-input-label {
   display: block;
   font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(248, 248, 248, 0.56);
   margin-bottom: 12rpx;
 }
 
 .link-input {
   width: 100%;
   height: 80rpx;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  background: rgb(41, 41, 41);
+  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
   border-radius: 12rpx;
   padding: 0 24rpx;
   font-size: 28rpx;
-  color: #ffffff;
+  color: rgb(248, 248, 248);
   box-sizing: border-box;
 }
 
 .link-input-placeholder {
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(248, 248, 248, 0.3);
 }
 
 .link-dialog-actions {
   display: flex;
-  border-top: 1rpx solid rgba(255, 255, 255, 0.1);
+  gap: 16rpx;
+  padding: 0 32rpx 32rpx;
+  border-top: none;
 }
 
 .link-btn {
   flex: 1;
-  height: 96rpx;
+  height: 84rpx;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: rgb(46, 46, 48);
+  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  border-radius: 16rpx;
   transition: background 150ms ease;
 }
 
 .link-btn:active {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(56, 56, 59);
 }
 
 .link-btn-cancel {
-  border-right: 1rpx solid rgba(255, 255, 255, 0.1);
+  background: rgb(41, 41, 41);
 }
 
 .link-btn-cancel .link-btn-text {
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(248, 248, 248, 0.68);
 }
 
 .link-btn-confirm .link-btn-text {
-  color: #007AFF;
+  color: #6B8AFF;
   font-weight: 600;
 }
 
@@ -1725,7 +1902,6 @@ export default {
   font-size: 30rpx;
 }
 
-/* Upload Overlay */
 .upload-overlay {
   position: fixed;
   top: 0;
@@ -1733,7 +1909,7 @@ export default {
   right: 0;
   bottom: 0;
   z-index: 1000;
-  background-color: rgba(10, 10, 10, 0.9);
+  background-color: rgba(11, 13, 18, 0.72);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -1744,13 +1920,22 @@ export default {
   flex-direction: column;
   align-items: center;
   gap: 24rpx;
+  width: 560rpx;
+  padding: 36rpx 32rpx;
+  background: rgba(36, 36, 36, 0.96);
+  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  border-radius: 24rpx;
+  box-shadow:
+    0 16rpx 48rpx rgba(0, 0, 0, 0.34),
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.04);
+  box-sizing: border-box;
 }
 
 .upload-spinner {
   width: 80rpx;
   height: 80rpx;
   border: 4rpx solid rgba(255, 255, 255, 0.1);
-  border-top-color: #007AFF;
+  border-top-color: #6B8AFF;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -1761,7 +1946,7 @@ export default {
 
 .upload-filename {
   font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(248, 248, 248, 0.56);
   max-width: 400rpx;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1771,27 +1956,20 @@ export default {
 .upload-progress-track {
   width: 400rpx;
   height: 8rpx;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(41, 41, 41);
   border-radius: 4rpx;
   overflow: hidden;
 }
 
 .upload-progress-bar {
   height: 100%;
-  background: #007AFF;
+  background: #6B8AFF;
   border-radius: 4rpx;
   transition: width 0.3s ease;
 }
 
 .upload-text {
   font-size: 28rpx;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-/* Nav Center */
-.nav-center {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
+  color: rgba(248, 248, 248, 0.72);
 }
 </style>

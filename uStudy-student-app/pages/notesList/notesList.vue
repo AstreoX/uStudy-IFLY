@@ -1,67 +1,98 @@
 <template>
   <view class="notes-list-page">
+    <!-- Background -->
+    <view class="page-bg">
+      <view class="bg-mesh"></view>
+      <view class="bg-glow bg-glow-blue"></view>
+      <view class="bg-glow bg-glow-violet"></view>
+    </view>
+
     <!-- Navigation Bar -->
     <view class="nav-bar">
-      <view class="nav-left" @click="goBack">
+      <view class="nav-back" @click="goBack">
         <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
       </view>
-      <text class="nav-title">笔记管理</text>
-      <view class="nav-right-placeholder"></view>
+      <view class="nav-copy">
+        <text class="nav-title">笔记管理</text>
+        <text v-if="spaceName" class="nav-subtitle">{{ spaceName }}</text>
+      </view>
+      <view class="nav-spacer"></view>
     </view>
 
     <!-- Loading State -->
-    <view v-if="loading" class="loading-container">
-      <text class="loading-text">正在加载笔记列表...</text>
+    <view v-if="loading" class="state-container">
+      <text class="state-text">正在加载笔记列表...</text>
     </view>
 
     <!-- Error State -->
-    <view v-else-if="loadError" class="error-container">
-      <image class="error-icon" src="/static/icons/phosphor-icons/SVGs/regular/warning-circle.svg" mode="aspectFit"></image>
-      <text class="error-text">{{ loadError }}</text>
+    <view v-else-if="loadError" class="state-container">
+      <image class="state-icon state-icon-error" src="/static/icons/phosphor-icons/SVGs/regular/warning-circle.svg" mode="aspectFit"></image>
+      <text class="state-text state-text-error">{{ loadError }}</text>
       <view class="retry-btn" @click="loadNotes">
         <text class="retry-btn-text">重试</text>
       </view>
     </view>
 
     <!-- Empty State -->
-    <view v-else-if="notes.length === 0" class="empty-container">
-      <image class="empty-icon" src="/static/icons/phosphor-icons/SVGs/regular/notebook.svg" mode="aspectFit"></image>
-      <text class="empty-text">暂无笔记</text>
-      <text class="empty-sub">在与 AI 对话时可以让 AI 为你创建笔记</text>
+    <view v-else-if="notes.length === 0" class="state-container">
+      <image class="state-icon" src="/static/icons/phosphor-icons/SVGs/regular/notebook.svg" mode="aspectFit"></image>
+      <text class="state-text">暂无笔记</text>
+      <text class="state-sub">在与 AI 对话时可以让 AI 为你创建笔记</text>
     </view>
 
     <!-- Notes List -->
     <scroll-view v-else class="content-scroll" scroll-y>
-      <view class="notes-list">
-        <view
-          v-for="note in notes"
-          :key="note.id"
-          class="note-item"
-          @click="handleNoteClick(note)"
-        >
-          <view class="note-main">
-            <view class="note-info">
-              <view class="note-title-row">
-                <text class="note-title">{{ getNoteTitle(note) }}</text>
-                <text v-if="note.note_type === 'interactive_html'" class="note-type-badge">互动演示</text>
+      <view class="content-body">
+        <!-- Search Bar -->
+        <view class="search-bar">
+          <image class="search-icon" src="/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg" mode="aspectFit"></image>
+          <input
+            class="search-input"
+            v-model="searchQuery"
+            type="text"
+            placeholder="搜索笔记..."
+            placeholder-style="color: #7C8598"
+          />
+        </view>
+
+        <!-- No search results -->
+        <view v-if="filteredNotes.length === 0" class="no-results">
+          <text class="state-text">没有匹配的笔记</text>
+        </view>
+
+        <!-- Notes -->
+        <view v-else class="list-section">
+          <text class="section-caption">{{ filteredNotes.length }} 条笔记</text>
+          <view
+            v-for="note in filteredNotes"
+            :key="note.id"
+            class="note-item"
+            @click="handleNoteClick(note)"
+          >
+            <view class="note-main">
+              <view class="note-info">
+                <view class="note-title-row">
+                  <text class="note-title">{{ getNoteTitle(note) }}</text>
+                  <text v-if="note.note_type === 'interactive_html'" class="note-type-badge">互动</text>
+                </view>
+                <text class="note-preview">{{ note.note_type === 'interactive_html' ? '点击查看互动演示' : truncateContent(note.content) }}</text>
+                <view class="note-meta">
+                  <text class="note-date">{{ formatDate(note.created_at) }}</text>
+                  <text v-if="getNoteNodeTag(note)" class="note-node-tag">{{ getNoteNodeTag(note) }}</text>
+                  <text v-if="getNoteAttachmentCount(note) > 0" class="note-attach-badge">{{ getNoteAttachmentCount(note) }} 附件</text>
+                  <view v-if="isCollaborative && note.creator_nickname" class="note-creator-inline">
+                    <view class="note-creator-dot" :style="{ backgroundColor: getCreatorColor(note.creator_user_id) }"></view>
+                    <text class="note-creator-name">{{ note.creator_nickname }}</text>
+                  </view>
+                </view>
               </view>
-              <text class="note-preview">{{ note.note_type === 'interactive_html' ? '点击查看互动演示' : truncateContent(note.content) }}</text>
-              <view v-if="isCollaborative && note.creator_nickname" class="note-creator">
-                <view class="note-creator-dot" :style="{ backgroundColor: getCreatorColor(note.creator_user_id) }"></view>
-                <text class="note-creator-name">{{ note.creator_nickname }}</text>
-              </view>
-              <view class="note-meta">
-                <text class="note-date">{{ formatDate(note.created_at) }}</text>
-                <text v-if="getNoteNodeTag(note)" class="note-node-tag">{{ getNoteNodeTag(note) }}</text>
-                <text v-if="getNoteAttachmentCount(note) > 0" class="note-attach-badge">{{ getNoteAttachmentCount(note) }} 附件</text>
-              </view>
-            </view>
-            <view class="note-item-actions" @click.stop>
-              <view v-if="note.note_type !== 'interactive_html' && canEditNote(note)" class="note-item-btn" @click.stop="startEditNote(note)">
-                <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
-              </view>
-              <view v-if="canEditNote(note)" class="note-item-btn note-item-btn-delete" @click.stop="showDeleteConfirm(note)">
-                <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit" />
+              <view class="note-item-actions" @click.stop>
+                <view v-if="note.note_type !== 'interactive_html' && canEditNote(note)" class="note-item-btn" @click.stop="startEditNote(note)">
+                  <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
+                </view>
+                <view v-if="canEditNote(note)" class="note-item-btn note-item-btn-delete" @click.stop="showDeleteConfirm(note)">
+                  <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit" />
+                </view>
               </view>
             </view>
           </view>
@@ -73,8 +104,8 @@
     <view v-if="showNoteDetail" class="note-detail-overlay" @click="closeNoteDetail">
       <view class="note-detail-card" @click.stop>
         <view class="note-detail-header" @touchmove.prevent>
-          <view class="note-detail-back" @click="closeNoteDetail">
-            <image class="note-detail-back-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
+          <view class="detail-back" @click="closeNoteDetail">
+            <image class="detail-back-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
           </view>
           <text class="note-detail-title">{{ getNoteTitle(selectedNote) }}</text>
           <view class="note-detail-actions">
@@ -88,7 +119,7 @@
         </view>
         <scroll-view class="note-detail-scroll" scroll-y>
           <view v-if="detailLoading" class="note-detail-loading">
-            <text class="loading-text">加载中...</text>
+            <text class="state-text">加载中...</text>
           </view>
           <view v-else-if="selectedNote" class="note-detail-body">
             <view v-if="selectedNote.note_type === 'interactive_html'" class="artifact-action-bar">
@@ -128,8 +159,8 @@
     <view v-if="showNoteEdit" class="note-detail-overlay note-edit-overlay">
       <view class="note-detail-card">
         <view class="note-detail-header" @touchmove.prevent>
-          <view class="note-detail-back" @click="closeNoteEdit">
-            <image class="note-detail-back-icon" src="/static/icons/phosphor-icons/SVGs/regular/x.svg" mode="aspectFit"></image>
+          <view class="detail-back" @click="closeNoteEdit">
+            <image class="detail-back-icon" src="/static/icons/phosphor-icons/SVGs/regular/x.svg" mode="aspectFit"></image>
           </view>
           <text class="note-detail-title">编辑笔记</text>
           <view class="note-edit-save-btn" @click="saveNoteEdit">
@@ -142,7 +173,7 @@
           type="text"
           placeholder="笔记标题"
           maxlength="200"
-          placeholder-style="color: rgba(255,255,255,0.3)"
+          placeholder-style="color: #7C8598"
         />
         <scroll-view class="note-detail-scroll" scroll-y>
           <view class="note-edit-body">
@@ -150,7 +181,7 @@
               class="note-edit-textarea"
               v-model="editContent"
               placeholder="笔记内容（支持 Markdown）"
-              placeholder-style="color: rgba(255,255,255,0.3)"
+              placeholder-style="color: #7C8598"
               auto-height
             />
           </view>
@@ -202,6 +233,7 @@ export default {
       loading: true,
       loadError: null,
       notes: [],
+      searchQuery: '',
       isCollaborative: false,
       userRole: '',
       currentUserId: '',
@@ -209,13 +241,11 @@ export default {
       showNoteDetail: false,
       selectedNote: null,
       detailLoading: false,
-      // edit
       showNoteEdit: false,
       editNoteId: null,
       editTitle: '',
       editContent: '',
       isSaving: false,
-      // delete
       showDeleteModal: false,
       noteToDelete: null,
       isDeleting: false,
@@ -230,6 +260,17 @@ export default {
   computed: {
     deleteModalContent() {
       return `确定要删除笔记「${this.noteToDelete ? this.getNoteTitle(this.noteToDelete) : ''}」吗？此操作无法撤销。`
+    },
+
+    filteredNotes() {
+      if (!this.searchQuery.trim()) return this.notes
+      const q = this.searchQuery.trim().toLowerCase()
+      return this.notes.filter(note => {
+        const title = (note.title || '').toLowerCase()
+        const content = (note.content || '').toLowerCase()
+        const nodeLabel = (note.node_label || '').toLowerCase()
+        return title.includes(q) || content.includes(q) || nodeLabel.includes(q)
+      })
     }
   },
 
@@ -293,7 +334,6 @@ export default {
         this.loadError = null
         const response = await getSpaceNotes(this.spaceId)
         this.notes = Array.isArray(response) ? response : []
-        // 自动打开指定笔记（从 artifact 卡片跳转）
         if (this.pendingOpenNoteId) {
           const targetId = this.pendingOpenNoteId
           this.pendingOpenNoteId = ''
@@ -381,7 +421,6 @@ export default {
 
     async handleNoteClick(note) {
       if (!note?.id) return
-      // 互动演示类型直接跳转演示页面
       if (note.note_type === 'interactive_html') {
         this.openArtifactViewer(note)
         return
@@ -405,7 +444,6 @@ export default {
       this.selectedNote = null
     },
 
-    // --- Edit ---
     startEditNote(note) {
       if (!note || !this.canEditNote(note)) return
       this.editNoteId = note.id
@@ -442,7 +480,6 @@ export default {
       }
     },
 
-    // --- Delete ---
     showDeleteConfirm(note) {
       if (!note || !this.canEditNote(note)) return
       this.noteToDelete = note
@@ -478,25 +515,70 @@ export default {
 
 <style>
 .notes-list-page {
-  width: 100%;
-  min-height: 100vh;
-  background-color: #0A0A0A;
   position: relative;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: rgb(29, 30, 32);
+  overflow-x: hidden;
 }
 
-/* Navigation Bar */
+/* ========== Background ========== */
+.page-bg {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.bg-mesh {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background:
+    radial-gradient(circle at 82% 14%, rgba(74, 108, 247, 0.07) 0%, rgba(74, 108, 247, 0) 32%),
+    radial-gradient(circle at 12% 100%, rgba(99, 102, 241, 0.04) 0%, rgba(99, 102, 241, 0) 36%);
+}
+
+.bg-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(130rpx);
+  opacity: 0.2;
+}
+
+.bg-glow-blue {
+  top: 120rpx;
+  right: -90rpx;
+  width: 320rpx;
+  height: 320rpx;
+  background: rgba(74, 108, 247, 0.10);
+}
+
+.bg-glow-violet {
+  bottom: 180rpx;
+  left: -90rpx;
+  width: 280rpx;
+  height: 280rpx;
+  background: rgba(123, 97, 255, 0.07);
+}
+
+/* ========== Navigation Bar ========== */
 .nav-bar {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   z-index: 100;
-  padding-top: calc(100vh * 1.5 / 26);
-  padding-bottom: 16rpx;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding-top: calc(100vh * 1.5 / 26);
+  padding-bottom: calc(100vh * 0.5 / 26);
   padding-left: calc(100vw / 24);
   padding-right: calc(100vw / 24);
 }
@@ -511,9 +593,9 @@ export default {
   z-index: -1;
   background: linear-gradient(
     to bottom,
-    rgba(10, 10, 10, 0.6) 0%,
-    rgba(10, 10, 10, 0.45) 50%,
-    rgba(10, 10, 10, 0) 100%
+    rgba(29, 30, 32, 0.56) 0%,
+    rgba(29, 30, 32, 0.4) 50%,
+    rgba(29, 30, 32, 0) 100%
   );
   -webkit-backdrop-filter: blur(24px) saturate(150%);
   backdrop-filter: blur(24px) saturate(150%);
@@ -521,22 +603,62 @@ export default {
   mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
 }
 
-.nav-left {
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .nav-bar::before {
+    background: linear-gradient(
+      to bottom,
+      rgba(29, 30, 32, 0.82) 0%,
+      rgba(29, 30, 32, 0.66) 50%,
+      rgba(29, 30, 32, 0) 100%
+    );
+  }
+}
+
+.nav-back {
   width: 72rpx;
   height: 72rpx;
+  flex-shrink: 0;
   display: flex;
   justify-content: center;
   align-items: center;
   border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.06);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
   border: 1rpx solid rgba(255, 255, 255, 0.1);
+  outline: 1rpx solid rgba(255, 255, 255, 0.04);
+  outline-offset: 1rpx;
+  box-shadow:
+    inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
+    0 2rpx 12rpx rgba(0, 0, 0, 0.25);
 }
 
-.nav-right-placeholder {
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .nav-back {
+    background: rgba(80, 80, 95, 0.65);
+  }
+}
+
+.nav-back:active {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.nav-copy {
+  flex: 1;
+  min-width: 0;
+  margin-left: 16rpx;
+  margin-right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4rpx;
+}
+
+.nav-spacer {
   width: 72rpx;
   height: 72rpx;
+  flex-shrink: 0;
 }
 
 .nav-icon {
@@ -548,13 +670,22 @@ export default {
 .nav-title {
   font-size: 34rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: rgb(248, 248, 248);
+  line-height: 1.2;
 }
 
-/* Loading, Error & Empty States */
-.loading-container,
-.error-container,
-.empty-container {
+.nav-subtitle {
+  max-width: 100%;
+  font-size: 22rpx;
+  line-height: 1.25;
+  color: rgba(248, 248, 248, 0.52);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ========== States ========== */
+.state-container {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -563,87 +694,133 @@ export default {
   padding-top: calc(100vh * 1.5 / 26 + 200rpx);
 }
 
-.loading-text {
-  font-size: 30rpx;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.error-icon {
+.state-icon {
   width: 100rpx;
   height: 100rpx;
-  filter: brightness(0) saturate(100%) invert(44%) sepia(78%) saturate(2349%) hue-rotate(337deg) brightness(97%) contrast(93%);
-  margin-bottom: 24rpx;
-}
-
-.error-text {
-  font-size: 28rpx;
-  color: rgba(239, 68, 68, 0.9);
-  margin-bottom: 32rpx;
-  text-align: center;
-  max-width: 500rpx;
-}
-
-.retry-btn {
-  padding: 20rpx 48rpx;
-  background: rgba(0, 136, 255, 0.15);
-  border: 1rpx solid rgba(0, 136, 255, 0.4);
-  border-radius: 40rpx;
-}
-
-.retry-btn:active {
-  background: rgba(0, 136, 255, 0.25);
-}
-
-.retry-btn-text {
-  font-size: 28rpx;
-  color: #0088FF;
-}
-
-.empty-icon {
-  width: 120rpx;
-  height: 120rpx;
   filter: brightness(0) invert(1);
   opacity: 0.3;
   margin-bottom: 32rpx;
 }
 
-.empty-text {
-  font-size: 32rpx;
-  color: rgba(255, 255, 255, 0.6);
+.state-icon-error {
+  filter: brightness(0) saturate(100%) invert(44%) sepia(78%) saturate(2349%) hue-rotate(337deg) brightness(97%) contrast(93%);
+  opacity: 1;
 }
 
-.empty-sub {
-  font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.35);
+.state-text {
+  font-size: 28rpx;
+  color: #7C8598;
+}
+
+.state-text-error {
+  color: rgba(239, 68, 68, 0.9);
+  margin-bottom: 32rpx;
+  text-align: center;
+  max-width: 500rpx;
+  line-height: 1.5;
+}
+
+.state-sub {
+  font-size: 24rpx;
+  color: rgba(248, 248, 248, 0.35);
   margin-top: 12rpx;
 }
 
-/* Content Scroll */
-.content-scroll {
-  flex: 1;
-  padding: calc(100vh * 1.5 / 26 + 100rpx) calc(100vw / 24) 60rpx;
-  box-sizing: border-box;
+.retry-btn {
+  padding: 20rpx 48rpx;
+  background: rgba(74, 108, 247, 0.15);
+  border: 1rpx solid rgba(74, 108, 247, 0.4);
+  border-radius: 40rpx;
 }
 
-/* Notes List */
-.notes-list {
+.retry-btn:active {
+  background: rgba(74, 108, 247, 0.25);
+}
+
+.retry-btn-text {
+  font-size: 28rpx;
+  color: #4A6CF7;
+}
+
+/* ========== Content Scroll ========== */
+.content-scroll {
+  position: relative;
+  z-index: 1;
+  height: 100vh;
+}
+
+.content-body {
   display: flex;
   flex-direction: column;
-  gap: 24rpx;
+  gap: 22rpx;
+  padding:
+    calc(100vh * 4.2 / 26)
+    calc(100vw / 24)
+    calc(env(safe-area-inset-bottom) + 42rpx);
 }
 
+/* ========== Search Bar ========== */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  height: 80rpx;
+  padding: 0 24rpx;
+  border-radius: 36rpx;
+  background: rgb(36, 36, 36);
+  border: 2rpx solid rgba(255, 255, 255, 0.06);
+}
+
+.search-icon {
+  width: 36rpx;
+  height: 36rpx;
+  flex-shrink: 0;
+  filter: brightness(0) invert(1);
+  opacity: 0.35;
+}
+
+.search-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: rgb(248, 248, 248);
+  background: transparent;
+  border: none;
+}
+
+/* ========== No Results ========== */
+.no-results {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 80rpx 0;
+}
+
+/* ========== List Section ========== */
+.list-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.section-caption {
+  padding-left: 6rpx;
+  margin-bottom: 4rpx;
+  font-size: 22rpx;
+  letter-spacing: 1rpx;
+  color: rgba(248, 248, 248, 0.52);
+}
+
+/* ========== Note Item ========== */
 .note-item {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1rpx solid rgba(255, 255, 255, 0.08);
-  border-radius: 24rpx;
-  padding: 28rpx;
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  transition: all 0.2s ease;
+  padding: 24rpx 28rpx;
+  border-radius: 36rpx;
+  background: rgb(36, 36, 36);
+  border: 2rpx solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.18);
 }
 
 .note-item:active {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgb(41, 41, 41);
 }
 
 .note-main {
@@ -667,7 +844,8 @@ export default {
 .note-title {
   font-size: 30rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: rgb(248, 248, 248);
+  line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -678,28 +856,59 @@ export default {
 .note-type-badge {
   font-size: 20rpx;
   color: rgba(99, 102, 241, 0.9);
-  padding: 4rpx 12rpx;
+  padding: 4rpx 14rpx;
   background: rgba(99, 102, 241, 0.12);
-  border-radius: 6rpx;
+  border: 1rpx solid rgba(99, 102, 241, 0.25);
+  border-radius: 8rpx;
   flex-shrink: 0;
   white-space: nowrap;
 }
 
 .note-preview {
   font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.5);
+  color: #7C8598;
   margin-bottom: 14rpx;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  line-height: 1.5;
 }
 
-.note-creator {
+.note-meta {
   display: flex;
   align-items: center;
-  gap: 10rpx;
-  margin-bottom: 12rpx;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.note-date {
+  font-size: 22rpx;
+  color: rgba(248, 248, 248, 0.35);
+}
+
+.note-node-tag {
+  font-size: 20rpx;
+  color: rgba(129, 140, 248, 0.9);
+  padding: 4rpx 14rpx;
+  background: rgba(129, 140, 248, 0.12);
+  border: 1rpx solid rgba(129, 140, 248, 0.2);
+  border-radius: 8rpx;
+}
+
+.note-attach-badge {
+  font-size: 20rpx;
+  color: rgba(34, 197, 94, 0.9);
+  padding: 4rpx 14rpx;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1rpx solid rgba(34, 197, 94, 0.2);
+  border-radius: 8rpx;
+}
+
+.note-creator-inline {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
 }
 
 .note-creator-dot {
@@ -711,38 +920,10 @@ export default {
 
 .note-creator-name {
   font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.42);
+  color: rgba(248, 248, 248, 0.42);
 }
 
-.note-meta {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  flex-wrap: wrap;
-}
-
-.note-date {
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.35);
-}
-
-.note-node-tag {
-  font-size: 20rpx;
-  color: rgba(129, 140, 248, 0.9);
-  padding: 4rpx 12rpx;
-  background: rgba(129, 140, 248, 0.12);
-  border-radius: 6rpx;
-}
-
-.note-attach-badge {
-  font-size: 20rpx;
-  color: rgba(34, 197, 94, 0.9);
-  padding: 4rpx 12rpx;
-  background: rgba(34, 197, 94, 0.12);
-  border-radius: 6rpx;
-}
-
-/* Card action buttons */
+/* ========== Card Action Buttons ========== */
 .note-item-actions {
   display: flex;
   flex-direction: row;
@@ -753,14 +934,14 @@ export default {
 }
 
 .note-item-btn {
-  width: 52rpx;
-  height: 52rpx;
+  width: 56rpx;
+  height: 56rpx;
   display: flex;
   justify-content: center;
   align-items: center;
   background: rgba(255, 255, 255, 0.06);
-  border: 1rpx solid rgba(255, 255, 255, 0.12);
-  border-radius: 12rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-radius: 16rpx;
 }
 
 .note-item-btn:active {
@@ -771,24 +952,24 @@ export default {
   width: 30rpx;
   height: 30rpx;
   filter: brightness(0) invert(1);
-  opacity: 0.7;
+  opacity: 0.6;
 }
 
 .note-item-btn-delete {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
 .note-item-btn-delete:active {
-  background: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.25);
 }
 
 .note-item-btn-delete .note-item-btn-icon {
-  filter: brightness(0) invert(1);
-  opacity: 1;
+  filter: brightness(0) saturate(100%) invert(44%) sepia(78%) saturate(2349%) hue-rotate(337deg) brightness(97%) contrast(93%);
+  opacity: 0.85;
 }
 
-/* Note Detail Overlay */
+/* ========== Note Detail Overlay ========== */
 .note-detail-overlay {
   position: fixed;
   top: 0;
@@ -796,7 +977,7 @@ export default {
   right: 0;
   bottom: 0;
   z-index: 600;
-  background: rgba(10, 10, 18, 0.95);
+  background: rgba(22, 23, 25, 0.98);
   display: flex;
   flex-direction: column;
 }
@@ -818,22 +999,27 @@ export default {
   justify-content: space-between;
   padding: 24rpx 32rpx;
   padding-top: calc(100vh * 1.5 / 26);
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
   gap: 16rpx;
 }
 
-.note-detail-back {
-  width: 60rpx;
-  height: 60rpx;
+.detail-back {
+  width: 64rpx;
+  height: 64rpx;
   display: flex;
   justify-content: center;
   align-items: center;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
   flex-shrink: 0;
 }
 
-.note-detail-back-icon {
+.detail-back:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.detail-back-icon {
   width: 40rpx;
   height: 40rpx;
   filter: brightness(0) invert(1);
@@ -842,7 +1028,7 @@ export default {
 .note-detail-title {
   font-size: 32rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: rgb(248, 248, 248);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -873,14 +1059,14 @@ export default {
 
 .note-detail-empty {
   font-size: 28rpx;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(248, 248, 248, 0.35);
   font-style: italic;
 }
 
 .note-detail-attachments {
   margin-top: 40rpx;
   padding-top: 24rpx;
-  border-top: 1rpx solid rgba(255, 255, 255, 0.08);
+  border-top: 1rpx solid rgba(255, 255, 255, 0.06);
 }
 
 .note-detail-attach-item-wrap {
@@ -889,16 +1075,17 @@ export default {
 
 .note-detail-attach-image {
   width: 100%;
-  border-radius: 12rpx;
+  border-radius: 16rpx;
 }
 
 .note-detail-attach-item {
   display: flex;
   align-items: center;
   gap: 12rpx;
-  padding: 16rpx;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 12rpx;
+  padding: 16rpx 20rpx;
+  background: rgb(36, 36, 36);
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-radius: 16rpx;
 }
 
 .note-detail-attach-icon {
@@ -911,7 +1098,7 @@ export default {
 
 .note-detail-attach-name {
   font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(248, 248, 248, 0.6);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -921,10 +1108,10 @@ export default {
   display: block;
   margin-top: 32rpx;
   font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(248, 248, 248, 0.3);
 }
 
-/* Edit overlay styles */
+/* ========== Edit Overlay ========== */
 .note-edit-title-input {
   width: 100%;
   height: 96rpx;
@@ -932,10 +1119,10 @@ export default {
   flex-shrink: 0;
   font-size: 34rpx;
   font-weight: 600;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.04);
+  color: rgb(248, 248, 248);
+  background: rgba(255, 255, 255, 0.03);
   border: none;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
   padding: 0 32rpx;
   box-sizing: border-box;
 }
@@ -948,7 +1135,7 @@ export default {
   width: 100%;
   min-height: 400rpx;
   font-size: 28rpx;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(248, 248, 248, 0.85);
   line-height: 1.7;
   background: transparent;
   border: none;
@@ -956,22 +1143,22 @@ export default {
 
 .note-edit-save-btn {
   padding: 12rpx 28rpx;
-  background: rgba(59, 130, 246, 0.2);
-  border: 1rpx solid rgba(59, 130, 246, 0.5);
+  background: rgba(74, 108, 247, 0.18);
+  border: 1rpx solid rgba(74, 108, 247, 0.45);
   border-radius: 24rpx;
   flex-shrink: 0;
 }
 
 .note-edit-save-btn:active {
-  background: rgba(59, 130, 246, 0.35);
+  background: rgba(74, 108, 247, 0.32);
 }
 
 .note-edit-save-text {
   font-size: 26rpx;
-  color: #3b82f6;
+  color: #7C93FF;
 }
 
-/* Artifact action bar */
+/* ========== Artifact Action Bar ========== */
 .artifact-action-bar {
   margin-bottom: 24rpx;
 }
@@ -983,7 +1170,7 @@ export default {
   padding: 16rpx 28rpx;
   background: rgba(99, 102, 241, 0.12);
   border: 1rpx solid rgba(99, 102, 241, 0.3);
-  border-radius: 16rpx;
+  border-radius: 20rpx;
 }
 
 .artifact-view-btn:active {

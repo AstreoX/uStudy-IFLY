@@ -81,9 +81,9 @@ function linkifyRawUrls(text) {
 }
 
 // 代码块内联样式（rich-text 不支持外部 CSS）
-const CODE_WRAPPER_STYLE = 'background:rgba(30,30,30,0.95); border-radius:12px; margin:16px 0; overflow:hidden;'
-const CODE_HEADER_STYLE = 'display:flex; justify-content:space-between; align-items:center; padding:8px 16px; background:rgba(255,255,255,0.05); border-bottom:1px solid rgba(255,255,255,0.1);'
-const CODE_LANG_STYLE = 'color:rgba(255,255,255,0.6); font-size:12px;'
+const CODE_WRAPPER_STYLE = 'background:#171412; border:1px solid #3A302A; border-radius:12px; margin:16px 0; overflow:hidden;'
+const CODE_HEADER_STYLE = 'display:flex; justify-content:space-between; align-items:center; padding:8px 16px; background:#231D19; border-bottom:1px solid #3A302A;'
+const CODE_LANG_STYLE = 'color:#9F9488; font-size:12px;'
 const CODE_COPY_STYLE = 'color:#5c90f7; font-size:12px; text-decoration:none;'
 const CODE_PRE_STYLE = 'overflow-x:auto; margin:0; padding:16px; white-space:pre; background:transparent;'
 const CODE_STYLE = 'font-family:SF Mono,Monaco,Consolas,monospace; font-size:13px; color:#e0e0e0;'
@@ -91,8 +91,8 @@ const CODE_STYLE = 'font-family:SF Mono,Monaco,Consolas,monospace; font-size:13p
 // Table inline styles (dark theme, rpx units for app)
 const TABLE_WRAPPER_STYLE = 'overflow-x:auto; margin:24rpx 0;'
 const TABLE_STYLE = 'border-collapse:collapse; width:100%;'
-const TABLE_TH_STYLE = 'border:1px solid rgba(255,255,255,0.2); padding:16rpx 24rpx; background:rgba(255,255,255,0.08); font-weight:600; color:#ffffff; text-align:left;'
-const TABLE_TD_STYLE = 'border:1px solid rgba(255,255,255,0.15); padding:16rpx 24rpx; color:#ffffff;'
+const TABLE_TH_STYLE = 'border:1px solid #3A302A; padding:16rpx 24rpx; background:#231D19; font-weight:600; color:#F2EBE0; text-align:left;'
+const TABLE_TD_STYLE = 'border:1px solid #3A302A; padding:16rpx 24rpx; color:#F2EBE0;'
 
 function parseSimpleMarkdown(text) {
 	if (!text) return { html: '', codeContents: [] }
@@ -128,6 +128,49 @@ function parseSimpleMarkdown(text) {
 		const safeAlt = escapeHtml(alt || '图片')
 		imageBlocks.push('')
 		return `@@IMAGE_BLOCK_${idx}@@`
+	})
+
+	// Extract blockquotes (including GitHub-style alerts) before escapeHtml
+	const blockquoteBlocks = []
+	const ALERT_CONFIGS = {
+		NOTE:      { color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  icon: 'ℹ' },
+		TIP:       { color: '#22c55e', bg: 'rgba(34,197,94,0.10)',   icon: '💡' },
+		WARNING:   { color: '#f97316', bg: 'rgba(249,115,22,0.10)',  icon: '⚠' },
+		CAUTION:   { color: '#ef4444', bg: 'rgba(239,68,68,0.10)',   icon: '🔴' },
+		IMPORTANT: { color: '#a855f7', bg: 'rgba(168,85,247,0.10)', icon: '❗' },
+	}
+	content = content.replace(/((?:^[ \t]*>[^\n]*\n?)+)/gm, (match) => {
+		const lines = match.split('\n').filter(l => l.trim() !== '')
+		const stripped = lines.map(l => l.replace(/^[ \t]*>\s?/, ''))
+		const firstLine = stripped[0] || ''
+		const alertMatch = firstLine.match(/^\[!(NOTE|TIP|WARNING|CAUTION|IMPORTANT)\][ \t]*(.*)/i)
+		let html
+		if (alertMatch) {
+			const type = alertMatch[1].toUpperCase()
+			const titleExtra = alertMatch[2].trim()
+			const cfg = ALERT_CONFIGS[type]
+			const title = titleExtra ? `${cfg.icon} ${titleExtra}` : `${cfg.icon} ${type}`
+			const bodyLines = stripped.slice(1)
+			const body = bodyLines.map(l => escapeHtml(l)
+				.replace(/`([^`\n]+)`/g, '<code>$1</code>')
+				.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+				.replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+			).join('<br/>')
+			html = `<div style="border-left:3px solid ${cfg.color};background:${cfg.bg};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0;">` +
+				`<div style="color:${cfg.color};font-weight:600;margin-bottom:4px;font-size:13px;">${title}</div>` +
+				`<div style="color:#F2EBE0;font-size:14px;line-height:1.6;">${body}</div>` +
+				`</div>`
+		} else {
+			const body = stripped.map(l => escapeHtml(l)
+				.replace(/`([^`\n]+)`/g, '<code>$1</code>')
+				.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+				.replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+			).join('<br/>')
+			html = `<blockquote style="border-left:3px solid #3A302A;padding-left:12px;margin:8px 0;color:#9F9488;">${body}</blockquote>`
+		}
+		const idx = blockquoteBlocks.length
+		blockquoteBlocks.push(html)
+		return `\n@@BLOCKQUOTE_BLOCK_${idx}@@\n`
 	})
 
 	// Extract tables before escapeHtml (same placeholder pattern as code blocks)
@@ -209,7 +252,7 @@ function parseSimpleMarkdown(text) {
 		return `\n<ol>${items}</ol>`
 	})
 
-	content = content.replace(/(^|\n)>\s?(.*)(?=\n|$)/g, '$1<blockquote>$2</blockquote>')
+	// blockquotes already extracted as blockquoteBlocks above
 
 	content = content.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, (match, label, url) => {
 		if (!isSafeHttpUrl(url)) return label
@@ -250,6 +293,10 @@ function parseSimpleMarkdown(text) {
 
 	for (let i = 0; i < imageBlocks.length; i++) {
 		content = content.split(`@@IMAGE_BLOCK_${i}@@`).join(imageBlocks[i])
+	}
+
+	for (let i = 0; i < blockquoteBlocks.length; i++) {
+		content = content.split(`@@BLOCKQUOTE_BLOCK_${i}@@`).join(blockquoteBlocks[i])
 	}
 
 	return { html: content, codeContents }
@@ -505,7 +552,7 @@ export default {
 .markdown-content {
 	font-size: 30rpx;
 	line-height: 1.6;
-	color: #ffffff;
+	color: #F2EBE0;
 	word-break: break-word;
 }
 </style>
@@ -524,7 +571,7 @@ export default {
 
 .markdown-content strong {
 	font-weight: 600;
-	color: #ffffff;
+	color: #F2EBE0;
 }
 
 .markdown-content em {
@@ -537,7 +584,7 @@ export default {
 .markdown-content h3 {
 	font-weight: 600;
 	margin: 24rpx 0 16rpx 0;
-	color: #ffffff;
+	color: #F2EBE0;
 }
 
 .markdown-content h1 { font-size: 40rpx; }
@@ -587,16 +634,16 @@ export default {
 
 /* 引用 */
 .markdown-content blockquote {
-	border-left: 4rpx solid rgba(255, 255, 255, 0.3);
+	border-left: 4rpx solid #3A302A;
 	padding-left: 20rpx;
 	margin: 16rpx 0;
-	color: rgba(255, 255, 255, 0.8);
+	color: #9F9488;
 }
 
 /* 分隔线 */
 .markdown-content hr {
 	border: none;
-	border-top: 1px solid rgba(255, 255, 255, 0.2);
+	border-top: 1px solid #3A302A;
 	margin: 24rpx 0;
 }
 
@@ -664,27 +711,27 @@ export default {
 .katex {
 	font-size: 1.1em;
 	line-height: 1.2;
-	color: #ffffff;
+	color: #F2EBE0;
 }
 
 .katex .katex-html {
-	color: #ffffff;
+	color: #F2EBE0;
 }
 
 /* 分数线颜色 */
 .katex .frac-line {
-	background: #ffffff;
+	background: #F2EBE0;
 }
 
 /* 根号线颜色 */
 .katex .sqrt-line {
-	background: #ffffff;
+	background: #F2EBE0;
 }
 
 /* 矩阵括号颜色 */
 .katex .delimsizing,
 .katex .delimsizinginner {
-	color: #ffffff;
+	color: #F2EBE0;
 }
 
 /* 上下标 */
@@ -699,7 +746,7 @@ export default {
 
 /* 变量 */
 .katex .mord.mathnormal {
-	color: #ffffff;
+	color: #F2EBE0;
 }
 
 /* 数字 */

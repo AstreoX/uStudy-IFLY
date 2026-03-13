@@ -189,6 +189,16 @@ function is401Error(err) {
 }
 
 /**
+ * 检测是否为不可重连的 HTTP 错误（配额超限、权限不足等）
+ * 这类错误不应触发断点续传重连，应直接上报给上层
+ */
+function isNonRetryableHttpError(err) {
+  if (!err) return false
+  const msg = err.message || (typeof err === 'string' ? err : '')
+  return /\bHTTP\s+4[0-9]{2}\b/.test(msg)
+}
+
+/**
  * H5 平台 SSE 实现
  */
 function connectSSE_H5(fullUrl, method, headers, data, onEvent, onComplete, onConnectionError) {
@@ -342,7 +352,9 @@ function connectSSE_Android(fullUrl, method, headers, data, onEvent, onComplete,
       }
       onComplete?.()
     } else {
-      onConnectionError?.(new Error(`HTTP ${xhr?.status}: ${xhr?.statusText}`))
+      // 读取响应体以便 parseQuotaError 能解析配额错误 JSON
+      const body = xhr?.responseText || xhr?.statusText || ''
+      onConnectionError?.(new Error(`HTTP ${xhr?.status}: ${body}`))
     }
     cleanup()
   }
@@ -821,11 +833,12 @@ export function connectSSEWithResume(options) {
     },
     onConnectionError: (err) => {
       console.error('[SSE-Resume] Initial connection error:', err)
-      // 401 等错误由 connectSSE 内部处理，其他错误尝试重连
-      if (!is401Error(err)) {
-        handleDisconnect()
-      } else {
+      // 401 由 connectSSE 内部处理（token 刷新）
+      // 4xx HTTP 错误（配额超限、权限不足等）不可重连，直接上报
+      if (is401Error(err) || isNonRetryableHttpError(err)) {
         onConnectionError?.(err)
+      } else {
+        handleDisconnect()
       }
     },
   })

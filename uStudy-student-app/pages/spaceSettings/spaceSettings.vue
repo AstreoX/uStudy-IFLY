@@ -1,198 +1,222 @@
 <template>
   <view class="settings-page">
-    <!-- Navigation Bar -->
-    <view class="settings-nav-bar">
-      <view class="nav-left" @click="goBack">
-        <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
-      </view>
-      <text class="nav-title">学习空间设置</text>
-      <view class="nav-right-placeholder"></view>
+    <view class="settings-bg">
+      <view class="bg-mesh"></view>
+      <view class="bg-glow bg-glow-blue"></view>
+      <view class="bg-glow bg-glow-violet"></view>
     </view>
 
-    <!-- Content -->
-    <view class="content-area">
-      <view v-if="isCollaborative" class="collab-section">
-        <view class="collab-card">
-          <view class="collab-flag">
-            <image class="collab-flag-icon" src="/static/icons/user.svg" mode="aspectFit"></image>
-            <text class="collab-flag-text">协作空间</text>
-          </view>
-          <view class="collab-main">
-            <view class="collab-copy">
-              <text class="collab-title">{{ collaborationRoleLabel }}</text>
-              <text class="collab-desc">{{ collaborationRoleHint }}</text>
-            </view>
-            <view class="collab-pill">
-              <text class="collab-pill-text">{{ memberCount }} 人</text>
-            </view>
-          </view>
-        </view>
+    <view class="settings-nav">
+      <view class="nav-back" @click="goBack">
+        <image class="nav-icon" :src="getIconSrc('back')" mode="aspectFit"></image>
       </view>
-
-      <!-- Settings Section -->
-      <view class="settings-section">
-        <view class="settings-card">
-          <view class="settings-item">
-            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/brain.svg" mode="aspectFit"></image>
-            <text class="item-label">记忆共享</text>
-            <switch class="item-switch" :checked="memorySharing" :disabled="isUpdatingMemorySharing" @change="onMemorySharingChange" color="#22C55E" />
-          </view>
-
-          <view class="settings-divider"></view>
-
-          <view class="settings-item" @click="handleChatHistory">
-            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/chats.svg" mode="aspectFit"></image>
-            <text class="item-label">对话记录</text>
-            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
-          </view>
-
-          <view class="settings-divider"></view>
-
-          <view class="settings-item" @click="handleKnowledgeBase">
-            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/books.svg" mode="aspectFit"></image>
-            <text class="item-label">知识库管理</text>
-            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
-          </view>
-
-          <view class="settings-divider"></view>
-
-          <view class="settings-item" @click="handleTestManagement">
-            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/exam.svg" mode="aspectFit"></image>
-            <text class="item-label">测试管理</text>
-            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
-          </view>
-
-          <view class="settings-divider"></view>
-
-          <view class="settings-item" @click="handleNoteManagement">
-            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/notebook.svg" mode="aspectFit"></image>
-            <text class="item-label">笔记管理</text>
-            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
-          </view>
-
-          <template v-if="isCollaborative">
-            <view class="settings-divider"></view>
-
-            <view class="settings-item" @click="handleCollaborationLeaderboard">
-              <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/fill/trophy-fill.svg" mode="aspectFit"></image>
-              <text class="item-label">排行榜</text>
-              <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
-            </view>
-
-            <view class="settings-divider"></view>
-
-            <view class="settings-item" @click="handleCollaborationMembers">
-              <image class="item-icon" src="/static/icons/user.svg" mode="aspectFit"></image>
-              <text class="item-label">{{ isCollaborativeMember ? '协作成员' : '成员管理' }}</text>
-              <text class="item-value">{{ memberCount }}人</text>
-              <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
-            </view>
-          </template>
-
-          <view class="settings-divider"></view>
-
-          <view class="settings-item" @click="handleShareSpace">
-            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/upload-simple.svg" mode="aspectFit"></image>
-            <text class="item-label">分享空间</text>
-            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
-          </view>
-        </view>
+      <view class="nav-copy">
+        <text class="nav-title">学习空间设置</text>
+        <text class="nav-subtitle">{{ spaceName || '当前学习空间' }}</text>
       </view>
+      <view class="nav-spacer"></view>
+    </view>
 
-      <!-- Color Scheme Section -->
-      <view class="color-section">
-        <text class="section-label">卡片配色</text>
-        <view class="color-picker-card">
-          <view class="color-swatches">
+    <scroll-view class="content-scroll" scroll-y>
+      <view class="content-body">
+        <view class="overview-card">
+          <view class="overview-top">
+            <text class="overview-title">{{ spaceName || '当前学习空间' }}</text>
             <view
-              v-for="scheme in colorSchemes"
-              :key="scheme.hex"
-              class="color-swatch"
-              :class="{ 'swatch-selected': isColorSelected(scheme.hex), 'swatch-loading': isUpdatingColor && pendingColor === scheme.hex }"
-              :style="{ background: scheme.gradient }"
-              @click="selectColor(scheme.hex)"
+              class="overview-action"
+              :class="{ 'overview-action-disabled': isGeneratingShareCode }"
+              @click="handleShareSpace"
             >
-              <view v-if="isColorSelected(scheme.hex)" class="swatch-check">
-                <image class="check-icon" src="/static/icons/phosphor-icons/SVGs/bold/check.svg" mode="aspectFit"></image>
-              </view>
-              <view v-if="isUpdatingColor && pendingColor === scheme.hex" class="swatch-loading-indicator"></view>
+              <image class="overview-action-icon" :src="getIconSrc('share')" mode="aspectFit"></image>
+            </view>
+          </view>
+
+          <view class="overview-progress">
+            <view class="overview-progress-meta">
+              <text class="overview-progress-label">学习进度</text>
+              <text class="overview-progress-value">{{ spaceProgress.percent }}%</text>
+            </view>
+            <view class="overview-progress-track">
+              <view
+                class="overview-progress-fill"
+                :style="{ width: `${spaceProgress.percent}%` }"
+              ></view>
+            </view>
+          </view>
+
+          <view class="overview-stats-panel">
+            <view v-for="stat in heroStats" :key="stat.label" class="hero-stat">
+              <text class="hero-stat-value">{{ stat.value }}</text>
+              <text class="hero-stat-label">{{ stat.label }}</text>
             </view>
           </view>
         </view>
-      </view>
 
-      <!-- Danger Zone -->
-      <view class="danger-section">
-        <view class="danger-card" @click="handleDeleteSpace">
-          <image class="danger-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit"></image>
-          <text class="danger-label">{{ dangerActionLabel }}</text>
+        <view class="settings-section">
+          <text class="section-caption">学习内容</text>
+          <view class="settings-card">
+            <template v-for="(item, index) in learningItems" :key="item.key">
+              <view
+                class="settings-row settings-row-pressable"
+                @click="handleSettingAction(item)"
+              >
+                <view class="row-icon-wrap" :class="`row-icon-wrap-${item.tone}`">
+                  <image class="item-icon" :src="getIconSrc(item.icon)" mode="aspectFit"></image>
+                </view>
+
+                <view class="row-copy">
+                  <text class="row-title">{{ item.label }}</text>
+                  <text class="row-desc">{{ item.description }}</text>
+                </view>
+
+                <text v-if="item.value" class="row-value">{{ item.value }}</text>
+                <image class="item-arrow" :src="getIconSrc('chevron-right')" mode="aspectFit"></image>
+              </view>
+
+              <view
+                v-if="index !== learningItems.length - 1"
+                :key="`${item.key}-divider`"
+                class="settings-divider"
+              ></view>
+            </template>
+          </view>
+        </view>
+
+        <view v-if="collaborationItems.length > 0" class="settings-section">
+          <text class="section-caption">{{ collaborationGroupLabel }}</text>
+          <view class="settings-card">
+            <template v-for="(item, index) in collaborationItems" :key="item.key">
+              <view
+                class="settings-row settings-row-pressable"
+                @click="handleSettingAction(item)"
+              >
+                <view class="row-icon-wrap" :class="`row-icon-wrap-${item.tone}`">
+                  <image class="item-icon" :src="getIconSrc(item.icon)" mode="aspectFit"></image>
+                </view>
+
+                <view class="row-copy">
+                  <text class="row-title">{{ item.label }}</text>
+                  <text class="row-desc">{{ item.description }}</text>
+                </view>
+
+                <text v-if="item.value" class="row-value">{{ item.value }}</text>
+                <image class="item-arrow" :src="getIconSrc('chevron-right')" mode="aspectFit"></image>
+              </view>
+
+              <view
+                v-if="index !== collaborationItems.length - 1"
+                :key="`${item.key}-divider`"
+                class="settings-divider"
+              ></view>
+            </template>
+          </view>
+        </view>
+
+        <view class="settings-section">
+          <text class="section-caption">空间外观</text>
+          <view class="settings-card palette-card">
+            <view class="palette-copy">
+              <text class="palette-title">空间主题色</text>
+              <text class="palette-desc">更新学习空间首页卡片和相关高亮颜色</text>
+            </view>
+
+            <view class="color-swatches">
+              <view
+                v-for="scheme in colorSchemes"
+                :key="scheme.hex"
+                class="color-swatch"
+                :class="{
+                  'swatch-selected': isColorSelected(scheme.hex),
+                  'swatch-loading': isUpdatingColor && pendingColor === scheme.hex
+                }"
+                :style="{ background: scheme.gradient }"
+                @click="selectColor(scheme.hex)"
+              >
+                <view v-if="isColorSelected(scheme.hex)" class="swatch-check">
+                  <image class="check-icon" :src="getIconSrc('check')" mode="aspectFit"></image>
+                </view>
+                <view
+                  v-if="isUpdatingColor && pendingColor === scheme.hex"
+                  class="swatch-loading-indicator"
+                ></view>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <view class="danger-group">
+          <view class="danger-card" @click="handleDeleteSpace">
+            <view class="danger-icon-wrap">
+              <image class="danger-icon" :src="getIconSrc('trash')" mode="aspectFit"></image>
+            </view>
+            <text class="danger-label">删除学习空间</text>
+          </view>
         </view>
       </view>
-    </view>
+    </scroll-view>
 
-    <!-- 分享模式选择弹窗 -->
     <view
       v-if="showShareModePopup"
       class="share-popup-overlay"
       :class="{ 'overlay-show': shareModePopupVisible }"
       @click="closeShareModePopup"
     >
-      <view
-        class="share-popup-card"
-        :class="{ 'dialog-show': shareModePopupVisible }"
-        @click.stop
-      >
+      <view class="share-popup-card" :class="{ 'dialog-show': shareModePopupVisible }" @click.stop>
         <text class="share-popup-title">选择分享方式</text>
+        <text class="share-popup-hint">选择生成导入副本，或直接邀请对方加入协作学习。</text>
+
         <view class="share-mode-options">
           <view class="share-mode-option" @click="selectShareMode('clone')">
-            <view class="share-mode-icon-wrap">
-              <image class="share-mode-icon" src="/static/icons/phosphor-icons/SVGs/regular/copy.svg" mode="aspectFit"></image>
+            <view class="share-mode-icon-wrap row-icon-wrap-violet">
+              <image class="share-mode-icon" :src="getIconSrc('copy')" mode="aspectFit"></image>
             </view>
             <view class="share-mode-info">
               <text class="share-mode-label">创建副本</text>
-              <text class="share-mode-desc">对方导入后获得此空间的副本</text>
+              <text class="share-mode-desc">对方导入后获得当前学习空间的副本</text>
             </view>
-            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+            <image class="item-arrow" :src="getIconSrc('chevron-right')" mode="aspectFit"></image>
           </view>
-          <view class="settings-divider"></view>
+
+          <view class="settings-divider settings-divider-popup"></view>
+
           <view class="share-mode-option" @click="selectShareMode('collaborative')">
-            <view class="share-mode-icon-wrap">
-              <image class="share-mode-icon" src="/static/icons/user.svg" mode="aspectFit"></image>
+            <view class="share-mode-icon-wrap row-icon-wrap-blue">
+              <image class="share-mode-icon" :src="getIconSrc('members')" mode="aspectFit"></image>
             </view>
             <view class="share-mode-info">
               <text class="share-mode-label">共同学习</text>
-              <text class="share-mode-desc">对方导入后加入此空间一起学习</text>
+              <text class="share-mode-desc">对方导入后加入此空间并一起学习</text>
             </view>
-            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+            <image class="item-arrow" :src="getIconSrc('chevron-right')" mode="aspectFit"></image>
           </view>
         </view>
       </view>
     </view>
 
-    <!-- 分享码弹窗 -->
     <view
       v-if="showSharePopup"
       class="share-popup-overlay"
       :class="{ 'overlay-show': sharePopupVisible }"
       @click="closeSharePopup"
     >
-      <view
-        class="share-popup-card"
-        :class="{ 'dialog-show': sharePopupVisible }"
-        @click.stop
-      >
+      <view class="share-popup-card share-popup-card-code" :class="{ 'dialog-show': sharePopupVisible }" @click.stop>
         <text class="share-popup-title">分享学习空间</text>
-        <text class="share-popup-hint">{{ currentShareMode === 'collaborative' ? '对方导入后将加入此空间共同学习' : '将分享码发送给好友，即可导入此空间' }}</text>
+        <text class="share-popup-hint">
+          {{ currentShareMode === 'collaborative'
+            ? '对方导入后将加入此空间共同学习'
+            : '将分享码发送给好友，对方即可导入此空间副本' }}
+        </text>
+
         <view class="share-popup-code-box">
           <text class="share-popup-code">{{ displayShareCode }}</text>
         </view>
+
         <view class="share-popup-copy-btn" @click="handleCopyShareCode">
           <text class="share-popup-copy-btn-text">复制分享码</text>
         </view>
       </view>
     </view>
 
-    <!-- Delete Confirmation Modal -->
     <u-modal
       :visible="showDeleteModal"
       :title="dangerModalTitle"
@@ -203,7 +227,6 @@
       @close="showDeleteModal = false"
     />
 
-    <!-- Toast -->
     <u-toast
       :visible="toast.visible"
       :message="toast.message"
@@ -214,11 +237,38 @@
 </template>
 
 <script>
-import { deleteSpace, getSpace, getSpaceMembers, removeSpaceMember, updateSpace, generateShareCode } from '@/api/space'
+import {
+  deleteSpace,
+  generateShareCode,
+  getQuizzesBySpace,
+  getSpace,
+  getSpaceDocuments,
+  getSpaceMembers,
+  removeSpaceMember,
+  updateSpace
+} from '@/api/space'
+import { getSpaceConversations } from '@/api/chat'
+import { getSpaceNotes } from '@/api/note'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
 import { useUserStore } from '@/store/user'
 import { goBack } from '@/utils/navigation'
+
+// Temporary icon paths. Replace these with Lucide SVGs later.
+const ICON_SRC = {
+  back: '/static/icons/phosphor-icons/SVGs/regular/caret-left.svg',
+  share: '/static/icons/lucide/user-round-plus.svg',
+  chat: '/static/icons/lucide/messages-square.svg',
+  knowledge: '/static/icons/lucide/database.svg',
+  quiz: '/static/icons/phosphor-icons/SVGs/regular/exam.svg',
+  note: '/static/icons/lucide/notebook-pen.svg',
+  leaderboard: '/static/icons/phosphor-icons/SVGs/fill/trophy-fill.svg',
+  members: '/static/icons/user.svg',
+  copy: '/static/icons/phosphor-icons/SVGs/regular/copy.svg',
+  trash: '/static/icons/phosphor-icons/SVGs/regular/trash.svg',
+  check: '/static/icons/phosphor-icons/SVGs/bold/check.svg',
+  'chevron-right': '/static/icons/phosphor-icons/SVGs/regular/caret-right.svg'
+}
 
 export default {
   components: {
@@ -230,8 +280,7 @@ export default {
     return {
       spaceId: '',
       spaceName: '',
-      memorySharing: false,
-      isUpdatingMemorySharing: false,
+      spaceDescription: '',
       showDeleteModal: false,
       isDeleting: false,
       userRole: '',
@@ -244,16 +293,19 @@ export default {
         type: 'info'
       },
       colorSchemes: [
-        { hex: '#0F6FFF', gradient: 'linear-gradient(to bottom right, #0F6FFF 0%, #B1DD8B 100%)' },
-        { hex: '#A18CD1', gradient: 'linear-gradient(to bottom right, #A18CD1 0%, #FBC2EB 100%)' },
-        { hex: '#FA709A', gradient: 'linear-gradient(to bottom right, #FA709A 0%, #FEE140 100%)' },
-        { hex: '#84FAB0', gradient: 'linear-gradient(to bottom right, #84FAB0 0%, #38F9D7 100%)' },
-        { hex: '#F43B37', gradient: 'linear-gradient(to bottom right, #F43B37 0%, #453A94 100%)' }
+        { hex: '#0F6FFF', gradient: 'linear-gradient(135deg, #0F6FFF 0%, #69B8FF 48%, #B1DD8B 100%)' },
+        { hex: '#8B5CF6', gradient: 'linear-gradient(135deg, #8B5CF6 0%, #C084FC 52%, #F9A8D4 100%)' },
+        { hex: '#F97316', gradient: 'linear-gradient(135deg, #F97316 0%, #FB7185 52%, #FDE68A 100%)' },
+        { hex: '#10B981', gradient: 'linear-gradient(135deg, #10B981 0%, #2DD4BF 50%, #67E8F9 100%)' },
+        { hex: '#EF4444', gradient: 'linear-gradient(135deg, #EF4444 0%, #F97316 48%, #F59E0B 100%)' }
       ],
       currentColor: '',
       isUpdatingColor: false,
       pendingColor: '',
-      // 分享弹窗
+      conversationCount: null,
+      documentCount: null,
+      quizCount: null,
+      noteCount: null,
       showShareModePopup: false,
       shareModePopupVisible: false,
       showSharePopup: false,
@@ -269,28 +321,116 @@ export default {
       return this.isCollaborative && this.userRole && this.userRole !== 'owner'
     },
 
-    collaborationRoleLabel() {
-      if (this.isCollaborativeMember) {
-        return '你正在参与一个协作学习空间'
-      }
-      if (this.isCollaborative) {
-        return '你正在管理一个协作学习空间'
-      }
-      return ''
+    heroStats() {
+      return [
+        { label: '知识资料', value: this.toDisplayCount(this.documentCount) },
+        { label: '对话记录', value: this.toDisplayCount(this.conversationCount) },
+        { label: '学习笔记', value: this.toDisplayCount(this.noteCount) }
+      ]
     },
 
-    collaborationRoleHint() {
-      if (this.isCollaborativeMember) {
-        return '排行榜和成员列表已经迁到这里，你也可以在这里直接退出当前协作空间。'
+    spaceProgress() {
+      const metrics = [
+        { value: this.documentCount, target: 12, weight: 0.34 },
+        { value: this.conversationCount, target: 18, weight: 0.24 },
+        { value: this.noteCount, target: 12, weight: 0.22 },
+        { value: this.quizCount, target: 8, weight: 0.20 }
+      ]
+
+      if (metrics.every((metric) => metric.value === null || metric.value === undefined)) {
+        return { percent: 0 }
       }
+
+      const percent = Math.round(metrics.reduce((total, metric) => {
+        const value = typeof metric.value === 'number' ? metric.value : 0
+        return total + Math.min(value / metric.target, 1) * metric.weight
+      }, 0) * 100)
+
+      return { percent: Math.max(0, Math.min(percent, 100)) }
+    },
+
+    learningItems() {
+      return [
+        {
+          key: 'chat',
+          icon: 'chat',
+          label: '对话记录',
+          description: '查看所有对话记录',
+          value: this.toDisplayCount(this.conversationCount),
+          action: 'handleChatHistory',
+          tone: 'blue'
+        },
+        {
+          key: 'knowledge',
+          icon: 'knowledge',
+          label: '知识库管理',
+          description: '管理 AI 所参照的文档与链接',
+          value: this.toDisplayCount(this.documentCount),
+          action: 'handleKnowledgeBase',
+          tone: 'green'
+        },
+        {
+          key: 'quiz',
+          icon: 'quiz',
+          label: '测试管理',
+          description: '查看并管理测试记录',
+          value: this.toDisplayCount(this.quizCount),
+          action: 'handleTestManagement',
+          tone: 'violet'
+        },
+        {
+          key: 'note',
+          icon: 'note',
+          label: '学习笔记',
+          description: '管理笔记内容',
+          value: this.toDisplayCount(this.noteCount),
+          action: 'handleNoteManagement',
+          tone: 'amber'
+        }
+      ]
+    },
+
+    collaborationItems() {
+      const items = []
+
       if (this.isCollaborative) {
-        return '排行榜和成员管理都已经收拢到设置页，方便在 app 端快速管理协作学习。'
+        items.push({
+          key: 'leaderboard',
+          icon: 'leaderboard',
+          label: '排行榜',
+          description: '查看成员活跃度和学习表现',
+          action: 'handleCollaborationLeaderboard',
+          tone: 'violet'
+        })
+
+        items.push({
+          key: 'members',
+          icon: 'members',
+          label: this.isCollaborativeMember ? '协作成员' : '成员管理',
+          description: this.isCollaborativeMember
+            ? '查看当前成员列表与协作权限'
+            : '管理成员加入状态与协作权限',
+          value: `${this.memberCount}人`,
+          action: 'handleCollaborationMembers',
+          tone: 'blue'
+        })
       }
-      return ''
+
+      return items
+    },
+
+    collaborationGroupLabel() {
+      return '协作'
     },
 
     dangerActionLabel() {
       return this.isCollaborativeMember ? '退出该协作空间' : '删除该学习空间'
+    },
+
+    dangerDescription() {
+      return this.isCollaborativeMember
+        ? '退出后你将失去该空间的学习记录、资料与对话访问权限。'
+        : '删除后所有资料、测试、笔记与对话记录都将被永久移除。'
     },
 
     dangerModalTitle() {
@@ -325,28 +465,72 @@ export default {
   },
 
   methods: {
+    getIconSrc(key) {
+      return ICON_SRC[key] || ''
+    },
+
+    toDisplayCount(value) {
+      if (value === null || value === undefined) return '--'
+      if (value > 99) return '99+'
+      return String(value)
+    },
+
     showCustomToast(message, type = 'info') {
       this.toast = { visible: true, message, type }
     },
 
     async loadSpaceSettings() {
+      if (!this.spaceId) return
+
       try {
         const space = await getSpace(this.spaceId)
         this.currentColor = space.color || '#0F6FFF'
-        this.memorySharing = !!space.memory_sharing_enabled
         this.isCollaborative = !!space.is_collaborative
         this.userRole = space.user_role || ''
-        if (this.isCollaborative) {
-          await this.loadMemberCount()
-        } else {
-          this.memberCount = 1
-        }
+        this.spaceDescription = space.description || ''
+
+        await Promise.all([
+          this.loadMemberCount(),
+          this.loadOverviewCounts()
+        ])
       } catch (error) {
         this.currentColor = '#0F6FFF'
+        this.spaceDescription = ''
       }
     },
 
+    async loadOverviewCounts() {
+      const [chatResult, documentResult, quizResult, noteResult] = await Promise.allSettled([
+        getSpaceConversations(this.spaceId),
+        getSpaceDocuments(this.spaceId),
+        getQuizzesBySpace(this.spaceId),
+        getSpaceNotes(this.spaceId)
+      ])
+
+      this.conversationCount = this.extractCount(chatResult, 'conversations')
+      this.documentCount = this.extractCount(documentResult, 'documents')
+      this.quizCount = this.extractCount(quizResult)
+      this.noteCount = this.extractCount(noteResult)
+    },
+
+    extractCount(result, key) {
+      if (!result || result.status !== 'fulfilled') return 0
+
+      const value = result.value
+
+      if (typeof value?.total === 'number') return value.total
+      if (key && Array.isArray(value?.[key])) return value[key].length
+      if (Array.isArray(value)) return value.length
+
+      return 0
+    },
+
     async loadMemberCount() {
+      if (!this.isCollaborative) {
+        this.memberCount = 1
+        return
+      }
+
       try {
         const members = await getSpaceMembers(this.spaceId)
         const memberList = members?.data || members || []
@@ -382,22 +566,10 @@ export default {
       goBack()
     },
 
-    async onMemorySharingChange(e) {
-      if (!this.spaceId || this.isUpdatingMemorySharing) return
-
-      const nextValue = !!e.detail.value
-      const previousValue = this.memorySharing
-      this.memorySharing = nextValue
-      this.isUpdatingMemorySharing = true
-
-      try {
-        await updateSpace(this.spaceId, { memory_sharing_enabled: nextValue })
-        this.showCustomToast(nextValue ? '已开启记忆共享' : '已关闭记忆共享', 'success')
-      } catch (error) {
-        this.memorySharing = previousValue
-        this.showCustomToast(error.message || '更新失败，请重试', 'error')
-      } finally {
-        this.isUpdatingMemorySharing = false
+    handleSettingAction(item) {
+      if (!item || !item.action) return
+      if (typeof this[item.action] === 'function') {
+        this[item.action]()
       }
     },
 
@@ -439,7 +611,7 @@ export default {
 
     handleShareSpace() {
       if (this.isGeneratingShareCode || !this.spaceId) return
-      // Show mode selection popup first
+
       this.showShareModePopup = true
       this.$nextTick(() => {
         setTimeout(() => {
@@ -459,6 +631,7 @@ export default {
       this.closeShareModePopup()
       this.currentShareMode = mode
       this.isGeneratingShareCode = true
+
       try {
         const res = await generateShareCode(this.spaceId, mode)
         this.displayShareCode = res.display_code
@@ -508,6 +681,7 @@ export default {
         } else {
           await deleteSpace(this.spaceId)
         }
+
         this.showDeleteModal = false
         this.showCustomToast(this.isCollaborativeMember ? '已退出协作空间' : '学习空间已删除', 'success')
 
@@ -526,30 +700,71 @@ export default {
 
 <style>
 .settings-page {
-  width: 100%;
-  min-height: 100vh;
-  background-color: rgb(24, 24, 24);
   position: relative;
+  min-height: 100vh;
+  background-color: rgb(29, 30, 32);
   overflow: hidden;
 }
 
-/* Navigation Bar */
-.settings-nav-bar {
+.settings-bg {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.bg-mesh {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background:
+    radial-gradient(circle at 82% 14%, rgba(74, 108, 247, 0.08) 0%, rgba(74, 108, 247, 0) 32%),
+    radial-gradient(circle at 12% 100%, rgba(99, 102, 241, 0.05) 0%, rgba(99, 102, 241, 0) 36%);
+}
+
+.bg-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(130rpx);
+  opacity: 0.2;
+}
+
+.bg-glow-blue {
+  top: 120rpx;
+  right: -90rpx;
+  width: 320rpx;
+  height: 320rpx;
+  background: rgba(74, 108, 247, 0.12);
+}
+
+.bg-glow-violet {
+  bottom: 180rpx;
+  left: -90rpx;
+  width: 280rpx;
+  height: 280rpx;
+  background: rgba(123, 97, 255, 0.08);
+}
+
+.settings-nav {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   z-index: 100;
-  padding-top: calc(100vh * 1.5 / 26);
-  padding-bottom: calc(100vh * 0.5 / 26);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding-top: calc(100vh * 1.5 / 26);
+  padding-bottom: calc(100vh * 0.5 / 26);
   padding-left: calc(100vw / 24);
   padding-right: calc(100vw / 24);
 }
 
-.settings-nav-bar::before {
+.settings-nav::before {
   content: '';
   position: absolute;
   top: 0;
@@ -559,9 +774,9 @@ export default {
   z-index: -1;
   background: linear-gradient(
     to bottom,
-    rgba(10, 10, 10, 0.6) 0%,
-    rgba(10, 10, 10, 0.45) 50%,
-    rgba(10, 10, 10, 0) 100%
+    rgba(29, 30, 32, 0.56) 0%,
+    rgba(29, 30, 32, 0.4) 50%,
+    rgba(29, 30, 32, 0) 100%
   );
   -webkit-backdrop-filter: blur(24px) saturate(150%);
   backdrop-filter: blur(24px) saturate(150%);
@@ -569,14 +784,26 @@ export default {
   mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
 }
 
-.nav-left {
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .settings-nav::before {
+    background: linear-gradient(
+      to bottom,
+      rgba(29, 30, 32, 0.82) 0%,
+      rgba(29, 30, 32, 0.66) 50%,
+      rgba(29, 30, 32, 0) 100%
+    );
+  }
+}
+
+.nav-back {
   width: 72rpx;
   height: 72rpx;
+  flex-shrink: 0;
   display: flex;
   justify-content: center;
   align-items: center;
   border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.06);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
   border: 1rpx solid rgba(255, 255, 255, 0.1);
@@ -585,26 +812,34 @@ export default {
   box-shadow:
     inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
     0 2rpx 12rpx rgba(0, 0, 0, 0.25);
+  transition: all 0.2s ease;
+  color: rgb(248, 248, 248);
 }
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .settings-nav-bar::before {
-    background: linear-gradient(
-      to bottom,
-      rgba(10, 10, 10, 0.95) 0%,
-      rgba(10, 10, 10, 0.8) 50%,
-      rgba(10, 10, 10, 0) 100%
-    );
-  }
-
-  .nav-left {
+  .nav-back {
     background: rgba(80, 80, 95, 0.65);
   }
 }
 
-.nav-right-placeholder {
-  width: 72rpx;
-  height: 72rpx;
+.nav-copy {
+  flex: 1;
+  min-width: 0;
+  margin-left: 16rpx;
+  margin-right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4rpx;
+  text-align: left;
+}
+
+.nav-spacer {
+  width: 80rpx;
+  height: 80rpx;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .nav-icon {
@@ -616,276 +851,350 @@ export default {
 .nav-title {
   font-size: 34rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: rgb(248, 248, 248);
+  line-height: 1.2;
 }
 
-/* Content Area */
-.content-area {
+.nav-subtitle {
+  max-width: 100%;
+  font-size: 22rpx;
+  line-height: 1.25;
+  color: rgba(248, 248, 248, 0.52);
+}
+
+.content-scroll {
   position: relative;
   z-index: 1;
-  width: 100%;
-  padding-top: calc(100vh * 3.5 / 26);
-  padding-bottom: env(safe-area-inset-bottom);
+  height: 100vh;
 }
 
-.collab-section {
-  margin: 0 calc(100vw / 24) 24rpx;
-}
-
-.collab-card {
-  padding: 28rpx;
-  background: linear-gradient(135deg, rgba(91, 140, 255, 0.16) 0%, rgba(132, 250, 176, 0.08) 100%);
-  border: 1rpx solid rgba(91, 140, 255, 0.18);
-  border-radius: 28rpx;
-  -webkit-backdrop-filter: blur(22px);
-  backdrop-filter: blur(22px);
-  box-shadow: 0 18rpx 48rpx rgba(0, 0, 0, 0.14);
-}
-
-.collab-flag {
-  display: inline-flex;
-  align-items: center;
-  gap: 10rpx;
-  height: 52rpx;
-  padding: 0 18rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.collab-flag-icon {
-  width: 28rpx;
-  height: 28rpx;
-  filter: brightness(0) invert(1);
-}
-
-.collab-flag-text {
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.78);
-}
-
-.collab-main {
-  margin-top: 18rpx;
+.content-body {
   display: flex;
-  align-items: flex-start;
-  gap: 18rpx;
+  flex-direction: column;
+  gap: 22rpx;
+  padding:
+    calc(100vh * 4.2 / 26)
+    calc(100vw / 24)
+    calc(env(safe-area-inset-bottom) + 42rpx);
 }
 
-.collab-copy {
+.overview-card,
+.settings-card,
+.danger-card,
+.share-popup-card {
+  background: rgb(36, 36, 36);
+  border: 2rpx solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.18);
+}
+
+.overview-card {
+  border-radius: 40rpx;
+  padding: 36rpx;
+}
+
+.overview-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.overview-title {
   flex: 1;
-}
-
-.collab-title {
-  display: block;
-  font-size: 32rpx;
+  min-width: 0;
+  font-size: 36rpx;
   font-weight: 600;
-  color: #ffffff;
+  line-height: 1.24;
+  color: rgb(248, 248, 248);
 }
 
-.collab-desc {
-  display: block;
-  margin-top: 10rpx;
-  font-size: 24rpx;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.58);
-}
-
-.collab-pill {
-  min-width: 104rpx;
-  height: 56rpx;
-  padding: 0 20rpx;
-  border-radius: 999rpx;
+.overview-action {
+  width: 72rpx;
+  height: 72rpx;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(91, 140, 255, 0.16);
-  border: 1rpx solid rgba(91, 140, 255, 0.22);
+  border-radius: 24rpx;
+  background: rgb(46, 46, 48);
+  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+    0 2rpx 8rpx rgba(0, 0, 0, 0.12);
 }
 
-.collab-pill-text {
-  font-size: 24rpx;
-  color: #b8cbff;
+.overview-action-disabled {
+  opacity: 0.55;
 }
 
-/* Settings Section */
+.overview-action:active {
+  background: rgb(56, 56, 59);
+}
+
+.overview-action-icon {
+  width: 28rpx;
+  height: 28rpx;
+  filter: brightness(0) invert(0.72) sepia(0.32) saturate(1.2) hue-rotate(195deg);
+}
+
+.overview-progress {
+  margin-top: 26rpx;
+}
+
+.overview-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.overview-progress-label {
+  font-size: 22rpx;
+  font-weight: 600;
+  letter-spacing: 0.8rpx;
+  color: #7C8598;
+}
+
+.overview-progress-value {
+  font-size: 22rpx;
+  font-weight: 600;
+  color: #94A1FF;
+}
+
+.overview-progress-track {
+  height: 8rpx;
+  margin-top: 12rpx;
+  border-radius: 999rpx;
+  overflow: hidden;
+  background: rgb(41, 41, 41);
+}
+
+.overview-progress-fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, #7381EE 0%, #5E6AD2 100%);
+  box-shadow: none;
+}
+
+.overview-stats-panel {
+  margin-top: 26rpx;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20rpx;
+  padding: 28rpx 24rpx;
+  border-radius: 32rpx;
+  background: rgb(41, 41, 41);
+  border: 1.5rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.hero-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+  min-width: 0;
+}
+
+.hero-stat-value {
+  display: block;
+  font-size: 48rpx;
+  font-weight: 600;
+  letter-spacing: -0.4rpx;
+  line-height: 1.05;
+  color: rgb(248, 248, 248);
+}
+
+.hero-stat-label {
+  display: block;
+  font-size: 22rpx;
+  line-height: 1.25;
+  color: #7C8598;
+}
+
 .settings-section {
-  margin: 0 calc(100vw / 24);
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.section-caption {
+  padding-left: 6rpx;
+  font-size: 22rpx;
+  letter-spacing: 1rpx;
+  color: rgba(248, 248, 248, 0.52);
 }
 
 .settings-card {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
-  border-radius: 24rpx;
   overflow: hidden;
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
+  border-radius: 36rpx;
+  background: rgb(36, 36, 36);
 }
 
-@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .settings-card {
-    background: rgba(80, 80, 95, 0.65);
-  }
-}
-
-.settings-item {
+.settings-row {
   display: flex;
   align-items: center;
-  padding: 32rpx;
+  gap: 18rpx;
+  min-height: 116rpx;
+  padding: 0 28rpx;
 }
 
-.settings-item:active {
-  background: rgba(255, 255, 255, 0.05);
+.settings-row-pressable:active {
+  background: rgb(41, 41, 41);
+}
+
+.row-icon-wrap {
+  width: 36rpx;
+  height: 36rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+}
+
+.share-mode-icon-wrap,
+.danger-icon-wrap {
+  width: 60rpx;
+  height: 60rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18rpx;
+  background: rgb(46, 46, 48);
+  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+    0 2rpx 8rpx rgba(0, 0, 0, 0.12);
+}
+
+.share-mode-icon-wrap.row-icon-wrap-blue {
+  background: rgb(46, 46, 48);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.share-mode-icon-wrap.row-icon-wrap-violet {
+  background: rgb(46, 46, 48);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .item-icon {
-  width: 44rpx;
-  height: 44rpx;
-  margin-right: 24rpx;
-  filter: brightness(0) invert(1);
+  width: 36rpx;
+  height: 36rpx;
+  filter: brightness(0) invert(0.73) sepia(0.3) saturate(1.15) hue-rotate(194deg);
 }
 
-.item-label {
+.share-mode-icon {
+  width: 30rpx;
+  height: 30rpx;
+  filter: brightness(0) invert(0.98);
+}
+
+.row-copy {
   flex: 1;
-  font-size: 32rpx;
-  color: #ffffff;
+  min-width: 0;
+}
+
+.row-title {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: rgb(248, 248, 248);
+}
+
+.row-desc {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  line-height: 1.35;
+  color: #7C8598;
+}
+
+.row-value {
+  margin-left: 12rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: rgba(248, 248, 248, 0.74);
+  flex-shrink: 0;
 }
 
 .item-arrow {
   width: 32rpx;
   height: 32rpx;
-  filter: brightness(0) invert(1);
-  opacity: 0.4;
-}
-
-.item-value {
-  margin-right: 12rpx;
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.42);
-}
-
-.item-switch {
-  transform: scale(0.85);
+  flex-shrink: 0;
+  filter: brightness(0) invert(0.46);
 }
 
 .settings-divider {
   height: 1rpx;
-  background: rgba(255, 255, 255, 0.1);
-  margin-left: 100rpx;
+  margin-left: 0;
+  background: rgba(255, 255, 255, 0.06);
 }
 
-/* Danger Section */
-.danger-section {
-  margin: 48rpx calc(100vw / 24) 0;
+.palette-card {
+  padding: 24rpx 22rpx;
 }
 
-.danger-card {
-  display: flex;
-  align-items: center;
-  padding: 32rpx;
-  background: rgba(239, 68, 68, 0.15);
-  border: 1rpx solid rgba(239, 68, 68, 0.3);
-  border-radius: 24rpx;
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
+.palette-copy {
+  margin-bottom: 18rpx;
 }
 
-@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .danger-card {
-    background: rgba(239, 68, 68, 0.25);
-  }
-}
-
-.danger-card:active {
-  background: rgba(239, 68, 68, 0.25);
-}
-
-.danger-icon {
-  width: 44rpx;
-  height: 44rpx;
-  margin-right: 24rpx;
-  filter: invert(47%) sepia(82%) saturate(2476%) hue-rotate(332deg) brightness(97%) contrast(92%);
-}
-
-.danger-label {
-  flex: 1;
-  font-size: 32rpx;
-  color: #EF4444;
-  font-weight: 500;
-}
-
-/* Color Scheme Section */
-.color-section {
-  margin: 32rpx calc(100vw / 24) 0;
-}
-
-.section-label {
+.palette-title {
   display: block;
-  font-size: 28rpx;
-  color: rgba(255, 255, 255, 0.6);
-  margin-bottom: 16rpx;
-  padding-left: 8rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: rgb(248, 248, 248);
 }
 
-.color-picker-card {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
-  border-radius: 24rpx;
-  padding: 24rpx;
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-}
-
-@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .color-picker-card {
-    background: rgba(80, 80, 95, 0.65);
-  }
+.palette-desc {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: rgba(248, 248, 248, 0.52);
 }
 
 .color-swatches {
   display: flex;
-  justify-content: space-between;
-  gap: 16rpx;
+  flex-wrap: wrap;
+  gap: 12rpx;
 }
 
 .color-swatch {
   flex: 1;
-  aspect-ratio: 1;
-  border-radius: 16rpx;
+  min-width: 96rpx;
+  height: 96rpx;
   position: relative;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  border: 3rpx solid transparent;
+  border-radius: 18rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.04);
 }
 
 .color-swatch:active {
-  transform: scale(0.95);
+  transform: scale(0.96);
 }
 
 .swatch-selected {
-  border-color: rgba(255, 255, 255, 0.8);
-  box-shadow: 0 0 20rpx rgba(255, 255, 255, 0.3);
+  border-color: rgba(248, 248, 248, 0.7);
+  box-shadow: 0 0 0 6rpx rgba(255, 255, 255, 0.04);
 }
 
 .swatch-check {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 40rpx;
-  height: 40rpx;
-  background: rgba(0, 0, 0, 0.5);
-  border-radius: 50%;
+  inset: 0;
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
 }
 
 .check-icon {
-  width: 28rpx;
-  height: 28rpx;
+  width: 30rpx;
+  height: 30rpx;
   filter: brightness(0) invert(1);
 }
 
 .swatch-loading {
-  opacity: 0.6;
+  opacity: 0.62;
   pointer-events: none;
 }
 
@@ -893,107 +1202,85 @@ export default {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
-  width: 32rpx;
-  height: 32rpx;
-  border: 3rpx solid rgba(255, 255, 255, 0.3);
-  border-top-color: #ffffff;
+  width: 34rpx;
+  height: 34rpx;
+  margin-left: -17rpx;
+  margin-top: -17rpx;
+  border: 3rpx solid rgba(255, 255, 255, 0.28);
+  border-top-color: rgb(248, 248, 248);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: translate(-50%, -50%) rotate(360deg); }
+.danger-group {
+  padding-top: 2rpx;
 }
 
-/* 分享模式选择 */
-.share-mode-options {
-  width: 100%;
-}
-
-.share-mode-option {
+.danger-card {
   display: flex;
   align-items: center;
-  padding: 28rpx 24rpx;
+  gap: 18rpx;
+  min-height: 108rpx;
+  padding: 0 28rpx;
+  border-radius: 36rpx;
+  border: 1rpx solid #7A4051;
+  background: rgba(40, 18, 26, 0.92);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 120, 146, 0.08),
+    0 14rpx 34rpx rgba(0, 0, 0, 0.2);
 }
 
-.share-mode-option:active {
-  background: rgba(255, 255, 255, 0.05);
+.danger-card:active {
+  background: rgba(40, 17, 26, 0.96);
 }
 
-.share-mode-icon-wrap {
-  width: 64rpx;
-  height: 64rpx;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 16rpx;
-  margin-right: 20rpx;
-  flex-shrink: 0;
-}
-
-.share-mode-icon {
+.danger-icon-wrap {
   width: 36rpx;
   height: 36rpx;
-  filter: brightness(0) invert(1);
-}
-
-.share-mode-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4rpx;
-}
-
-.share-mode-label {
-  font-size: 30rpx;
-  font-weight: 500;
-  color: #ffffff;
-}
-
-.share-mode-desc {
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.45);
-}
-
-/* 分享码弹窗 */
-.share-popup-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 300;
-  background: rgba(0, 0, 0, 0);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 200ms ease;
+  background: transparent;
+  border: 0;
+}
+
+.danger-icon {
+  width: 34rpx;
+  height: 34rpx;
+  filter: invert(61%) sepia(48%) saturate(2052%) hue-rotate(309deg) brightness(103%) contrast(101%);
+}
+
+.danger-label {
+  display: inline-block;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #FF6F86;
+}
+
+.share-popup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0);
+  transition: background 220ms ease;
 }
 
 .share-popup-overlay.overlay-show {
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.58);
 }
 
 .share-popup-card {
-  width: 560rpx;
-  background: rgba(20, 20, 30, 0.92);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  backdrop-filter: blur(24px) saturate(180%);
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
-  border-radius: 24rpx;
-  box-shadow:
-    0 16rpx 48rpx rgba(0, 0, 0, 0.5),
-    0 0 0 1rpx rgba(255, 255, 255, 0.05) inset;
-  overflow: hidden;
-  transform: translateY(40rpx) scale(0.95);
+  width: 620rpx;
+  max-width: calc(100vw - 48rpx);
+  padding: 40rpx 32rpx 32rpx;
+  border-radius: 32rpx;
+  transform: translateY(36rpx) scale(0.96);
   opacity: 0;
-  transition: all 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
-  padding: 48rpx 40rpx 40rpx;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  transition: all 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .share-popup-card.dialog-show {
@@ -1001,62 +1288,121 @@ export default {
   opacity: 1;
 }
 
-@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .share-popup-card {
-    background: rgba(30, 30, 45, 0.98);
-  }
+.share-popup-card-code {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .share-popup-title {
-  font-size: 36rpx;
-  font-weight: 600;
-  color: #ffffff;
+  display: block;
   text-align: center;
-  margin-bottom: 16rpx;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: rgb(248, 248, 248);
 }
 
 .share-popup-hint {
-  font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.5);
+  display: block;
+  margin-top: 14rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
   text-align: center;
-  margin-bottom: 40rpx;
+  color: rgba(248, 248, 248, 0.56);
+}
+
+.share-mode-options {
+  margin-top: 24rpx;
+  overflow: hidden;
+  border-radius: 24rpx;
+  background: rgb(41, 41, 41);
+  border: 1.5rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.share-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  padding: 22rpx 20rpx;
+}
+
+.share-mode-option:active {
+  background: rgb(44, 44, 44);
+}
+
+.share-mode-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.share-mode-label {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: rgb(248, 248, 248);
+}
+
+.share-mode-desc {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: rgba(248, 248, 248, 0.52);
+}
+
+.settings-divider-popup {
+  margin-left: 94rpx;
 }
 
 .share-popup-code-box {
   width: 100%;
-  padding: 32rpx 0;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1rpx solid rgba(255, 255, 255, 0.12);
-  border-radius: 16rpx;
+  margin-top: 28rpx;
+  padding: 28rpx 20rpx;
+  border-radius: 24rpx;
+  background: rgb(41, 41, 41);
+  border: 1.5rpx solid rgba(255, 255, 255, 0.05);
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-bottom: 32rpx;
 }
 
 .share-popup-code {
-  font-size: 56rpx;
+  font-size: 52rpx;
   font-weight: 700;
-  color: #ffffff;
   letter-spacing: 8rpx;
+  color: rgb(248, 248, 248);
   font-family: 'Courier New', Courier, monospace;
 }
 
 .share-popup-copy-btn {
   width: 100%;
-  height: 88rpx;
+  height: 92rpx;
+  margin-top: 28rpx;
+  border-radius: 999rpx;
   display: flex;
-  justify-content: center;
   align-items: center;
-  background: linear-gradient(135deg, rgba(0, 136, 255, 0.6) 0%, rgba(139, 92, 246, 0.5) 100%);
-  border: 2rpx solid rgba(255, 255, 255, 0.2);
-  border-radius: 44rpx;
-  box-shadow: 0 8rpx 32rpx rgba(0, 136, 255, 0.3);
+  justify-content: center;
+  background: #4A6CF7;
+  box-shadow: 0 12rpx 28rpx rgba(74, 108, 247, 0.28);
+}
+
+.share-popup-copy-btn:active {
+  transform: scale(0.985);
 }
 
 .share-popup-copy-btn-text {
   font-size: 30rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: rgb(248, 248, 248);
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

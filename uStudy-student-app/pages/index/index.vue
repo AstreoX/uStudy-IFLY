@@ -178,7 +178,7 @@
 			</view>
 			<view class="nav-item nav-item-active" @click="navigateToChat">
 				<view class="nav-icon-wrapper">
-					<image class="icon-img-active" src="/static/icons/phosphor-icons/SVGs/duotone/chat-centered-duotone.svg" mode="aspectFit"></image>
+					<image class="icon-img-active" src="/static/icons/lucide/message-square.svg" mode="aspectFit"></image>
 				</view>
 			</view>
 			<view class="nav-item" @click="switchTab('account')">

@@ -21,7 +21,7 @@
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTextStyle": "white",
-				"backgroundColor": "#0a0a12",
+				"backgroundColor": "#1D1E20",
 				"app-plus": {
 					"animationType": "slide-in-right",
 					"animationDuration": 300
@@ -106,7 +106,7 @@
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTextStyle": "white",
-				"backgroundColor": "#0A0A12",
+				"backgroundColor": "#1D1E20",
 				"app-plus": {
 					"animationType": "slide-in-right",
 					"animationDuration": 300
@@ -118,7 +118,7 @@
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTextStyle": "white",
-				"backgroundColor": "#0A0A12",
+				"backgroundColor": "#1D1E20",
 				"app-plus": {
 					"animationType": "slide-in-right",
 					"animationDuration": 300
@@ -154,7 +154,7 @@
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTextStyle": "white",
-				"backgroundColor": "#0A0A12",
+				"backgroundColor": "#1D1E20",
 				"app-plus": {
 					"animationType": "slide-in-right",
 					"animationDuration": 300
@@ -190,7 +190,7 @@
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTextStyle": "white",
-				"backgroundColor": "#0A0A12",
+				"backgroundColor": "#1D1E20",
 				"app-plus": {
 					"animationType": "slide-in-right",
 					"animationDuration": 300
@@ -214,7 +214,7 @@
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTextStyle": "white",
-				"backgroundColor": "#0A0A12",
+				"backgroundColor": "#1D1E20",
 				"app-plus": {
 					"animationType": "slide-in-right",
 					"animationDuration": 300
@@ -238,7 +238,7 @@
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTextStyle": "white",
-				"backgroundColor": "#0A0A12",
+				"backgroundColor": "#1D1E20",
 				"app-plus": {
 					"animationType": "slide-in-right",
 					"animationDuration": 300
@@ -286,7 +286,7 @@
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTextStyle": "white",
-				"backgroundColor": "#0A0A12",
+				"backgroundColor": "#1D1E20",
 				"app-plus": {
 					"animationType": "slide-in-right",
 					"animationDuration": 300

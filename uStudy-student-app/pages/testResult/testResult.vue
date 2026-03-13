@@ -1,204 +1,225 @@
 <template>
   <view class="test-result-page">
-    <!-- 顶部导航栏 -->
+    <!-- Background -->
+    <view class="page-bg">
+      <view class="bg-mesh"></view>
+      <view class="bg-glow bg-glow-blue"></view>
+      <view class="bg-glow bg-glow-violet"></view>
+    </view>
+
+    <!-- Navigation Bar -->
     <view class="nav-bar">
-      <view class="nav-left" @click="goBack">
+      <view class="nav-back" @click="goBack">
         <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
       </view>
-      <text class="nav-title">测试结果</text>
-      <view class="nav-right-placeholder"></view>
+      <view class="nav-copy">
+        <text class="nav-title">{{ navTitle }}</text>
+        <text class="nav-subtitle">{{ navSubtitle }}</text>
+      </view>
+      <view class="nav-spacer"></view>
     </view>
 
-    <!-- 加载状态 -->
-    <view v-if="loading" class="loading-container">
-      <text class="loading-text">正在加载评估结果...</text>
+    <!-- Loading -->
+    <view v-if="loading" class="state-container">
+      <text class="state-text">正在加载评估结果...</text>
     </view>
 
-    <!-- 主内容区域 -->
+    <!-- Content -->
     <scroll-view v-else class="content-scroll" scroll-y>
-      <!-- 圆环进度和分数 -->
-      <view class="score-section">
-        <view class="score-ring-container">
-          <!-- #ifdef APP-PLUS -->
-          <canvas
-            canvas-id="scoreRingCanvas"
-            class="score-ring-canvas"
-            :style="{ width: ringCanvasSizePx + 'px', height: ringCanvasSizePx + 'px' }"
-          ></canvas>
-          <!-- #endif -->
-          <!-- #ifndef APP-PLUS -->
-          <svg class="score-ring" viewBox="0 0 120 120">
-            <!-- 背景轨道 -->
-            <circle
-              cx="60"
-              cy="60"
-              r="52"
-              fill="none"
-              stroke="rgba(255, 255, 255, 0.1)"
-              stroke-width="8"
-            />
-            <!-- 进度圆弧 -->
-            <circle
-              cx="60"
-              cy="60"
-              r="52"
-              fill="none"
-              stroke="#0088FF"
-              stroke-width="8"
-              stroke-linecap="round"
-              :stroke-dasharray="circumference"
-              :stroke-dashoffset="progressOffset"
-              transform="rotate(-90 60 60)"
-            />
-          </svg>
-          <!-- #endif -->
-          <view class="score-content">
-            <image class="trophy-icon" src="/static/icons/phosphor-icons/SVGs/fill/trophy-fill.svg" mode="aspectFit"></image>
-            <text class="score-text">{{ score }}/{{ totalScore }}分</text>
+      <view class="content-body">
+
+        <!-- Score Section -->
+        <view class="score-section">
+          <view class="score-ring-container">
+            <!-- #ifdef APP-PLUS -->
+            <canvas
+              canvas-id="scoreRingCanvas"
+              class="score-ring-canvas"
+              :style="{ width: ringCanvasSizePx + 'px', height: ringCanvasSizePx + 'px' }"
+            ></canvas>
+            <!-- #endif -->
+            <!-- #ifndef APP-PLUS -->
+            <svg class="score-ring" viewBox="0 0 120 120">
+              <circle
+                cx="60" cy="60" r="52"
+                fill="none"
+                stroke="rgba(255, 255, 255, 0.08)"
+                stroke-width="8"
+              />
+              <circle
+                cx="60" cy="60" r="52"
+                fill="none"
+                :stroke="ringColor"
+                stroke-width="8"
+                stroke-linecap="round"
+                :stroke-dasharray="circumference"
+                :stroke-dashoffset="progressOffset"
+                transform="rotate(-90 60 60)"
+              />
+            </svg>
+            <!-- #endif -->
+            <view class="score-content">
+              <image class="trophy-icon" src="/static/icons/phosphor-icons/SVGs/fill/trophy-fill.svg" mode="aspectFit"></image>
+              <view class="score-number-row">
+                <text class="score-number">{{ scorePercent }}</text>
+                <text class="score-unit">分</text>
+              </view>
+              <text class="score-detail">正确 {{ correctCount }}/{{ questionResults.length }} 题</text>
+            </view>
           </view>
         </view>
-      </view>
 
-      <!-- 优点和缺点卡片 -->
-      <view class="analysis-row">
-        <!-- 优点卡片 -->
-        <view class="analysis-card strength-card">
-          <view class="card-header">
-            <image class="card-icon" src="/static/icons/phosphor-icons/SVGs/regular/thumbs-up.svg" mode="aspectFit"></image>
-            <text class="card-title">优点分析</text>
+        <!-- Analysis Cards Row -->
+        <view class="analysis-row">
+          <!-- Strengths Card -->
+          <view class="analysis-card strength-card">
+            <view class="card-header">
+              <image class="card-icon" src="/static/icons/lucide/thumbs-up.svg" mode="aspectFit"></image>
+              <text class="card-label strength-label">优势</text>
+            </view>
+            <view class="card-body">
+              <view v-for="(item, index) in strengths" :key="'s-' + index" class="analysis-item">
+                <text class="bullet">•</text>
+                <text class="item-text">{{ item }}</text>
+              </view>
+            </view>
           </view>
-          <view class="card-content">
-            <view v-for="(item, index) in strengths" :key="'s-' + index" class="analysis-item">
-              <text class="bullet">•</text>
+
+          <!-- Weaknesses Card -->
+          <view class="analysis-card weakness-card">
+            <view class="card-header">
+              <image class="card-icon" src="/static/icons/lucide/thumbs-down.svg" mode="aspectFit"></image>
+              <text class="card-label weakness-label">待改进</text>
+            </view>
+            <view class="card-body">
+              <view v-for="(item, index) in weaknesses" :key="'w-' + index" class="analysis-item">
+                <text class="bullet">•</text>
+                <text class="item-text">{{ item }}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <!-- Suggestion Card -->
+        <view class="suggestion-card">
+          <view class="card-header">
+            <image class="card-icon suggestion-icon" src="/static/icons/phosphor-icons/SVGs/regular/lightbulb.svg" mode="aspectFit"></image>
+            <text class="card-label suggestion-label">提升建议</text>
+          </view>
+          <view class="card-body">
+            <view v-for="(item, index) in suggestions" :key="'sg-' + index" class="suggestion-item">
               <text class="item-text">{{ item }}</text>
             </view>
           </view>
         </view>
 
-        <!-- 缺点卡片 -->
-        <view class="analysis-card weakness-card">
-          <view class="card-header">
-            <image class="card-icon" src="/static/icons/phosphor-icons/SVGs/regular/warning-circle.svg" mode="aspectFit"></image>
-            <text class="card-title">缺点分析</text>
-          </view>
-          <view class="card-content">
-            <view v-for="(item, index) in weaknesses" :key="'w-' + index" class="analysis-item">
-              <text class="bullet">•</text>
-              <text class="item-text">{{ item }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
+        <!-- Questions Section -->
+        <view class="questions-section">
+          <text class="section-caption">答题详情</text>
 
-      <!-- 提升建议卡片 -->
-      <view class="suggestion-card">
-        <view class="card-header">
-          <image class="card-icon suggestion-icon" src="/static/icons/phosphor-icons/SVGs/regular/lightbulb.svg" mode="aspectFit"></image>
-          <text class="card-title">提升建议</text>
-        </view>
-        <view class="card-content">
-          <view v-for="(item, index) in suggestions" :key="'sg-' + index" class="suggestion-item">
-            <text class="suggestion-number">{{ index + 1 }}.</text>
-            <text class="item-text">{{ item }}</text>
-          </view>
-        </view>
-      </view>
-
-      <!-- 逐题评估卡片 -->
-      <view class="questions-card">
-        <view class="card-header">
-          <text class="card-title">逐题评估</text>
-        </view>
-        <view class="questions-list">
           <view
             v-for="(item, index) in questionResults"
             :key="'q-' + item.id"
-            class="question-item question-item-expandable"
-            :class="{ 'question-item-expanded': item.expanded }"
+            class="question-card"
+            :class="{ 'question-card-expanded': item.expanded }"
             @click="toggleQuestionExpand(index)"
           >
             <view class="question-main">
-              <view class="question-info">
-                <text class="question-label">Q{{ item.order }}:</text>
-                <text class="question-title">{{ item.title }}</text>
+              <!-- Score Badge -->
+              <view class="q-score-badge" :class="questionStatusClass(item)">
+                <text class="q-score-badge-text">{{ item.score }}</text>
               </view>
-              <view class="question-right">
-                <text class="question-score">{{ item.score }}/{{ item.maxScore }}</text>
-                <view class="question-status">
-                  <image
-                    v-if="item.status === 'correct'"
-                    class="status-icon correct"
-                    src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg"
-                    mode="aspectFit"
-                  ></image>
-                  <image
-                    v-else-if="item.status === 'wrong'"
-                    class="status-icon incorrect"
-                    src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg"
-                    mode="aspectFit"
-                  ></image>
-                  <image
-                    v-else-if="item.status === 'partial'"
-                    class="status-icon partial"
-                    src="/static/icons/phosphor-icons/SVGs/fill/warning-circle-fill.svg"
-                    mode="aspectFit"
-                  ></image>
-                </view>
+
+              <!-- Question Info -->
+              <view class="question-info">
+                <text class="question-title">{{ item.order }}. {{ item.title }}</text>
+              </view>
+
+              <!-- Status Icon -->
+              <view class="question-status">
+                <image
+                  v-if="item.status === 'correct'"
+                  class="status-icon"
+                  src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg"
+                  mode="aspectFit"
+                ></image>
+                <image
+                  v-else-if="item.status === 'wrong'"
+                  class="status-icon status-icon-wrong"
+                  src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg"
+                  mode="aspectFit"
+                ></image>
+                <image
+                  v-else-if="item.status === 'partial'"
+                  class="status-icon status-icon-partial"
+                  src="/static/icons/phosphor-icons/SVGs/fill/warning-circle-fill.svg"
+                  mode="aspectFit"
+                ></image>
               </view>
             </view>
-            <!-- 展开内容 - 所有题型都可展开 -->
+
+            <!-- Expanded Content -->
             <view v-if="item.expanded" class="question-expand">
-              <!-- 题干和选项 -->
-              <view class="expand-section question-content-section">
-                <text class="expand-text question-title">{{ item.title }}</text>
+              <!-- Question & Options -->
+              <view class="expand-section question-content-box">
                 <view v-if="item.options && item.options.length" class="options-list">
-                  <view v-for="(opt, optIndex) in item.options" :key="optIndex" class="option-item">
-                    <text class="option-label">{{ getOptionLabel(optIndex) }}.</text>
+                  <view
+                    v-for="(opt, optIndex) in item.options"
+                    :key="optIndex"
+                    class="option-item"
+                    :class="optionHighlightClass(item, optIndex)"
+                  >
+                    <text class="option-label">{{ getOptionLabel(optIndex) }}</text>
                     <text class="option-text">{{ opt }}</text>
+                    <text v-if="isUserAnswerOption(item, optIndex)" class="option-tag">你的答案</text>
                   </view>
                 </view>
               </view>
-              <!-- 你的答案 & 标准答案 - 非简答题一行左右分布 -->
+
+              <!-- Answers Row (non-short-answer) -->
               <view v-if="item.questionType !== 'short_answer'" class="expand-section answers-row">
                 <view class="answer-item">
-                  <text class="expand-label">你的答案：</text>
-                  <text class="expand-text user-answer">{{ item.userAnswerDisplay || '（未作答）' }}</text>
+                  <text class="expand-label">你的答案</text>
+                  <text class="expand-value user-answer">{{ item.userAnswerDisplay || '（未作答）' }}</text>
                 </view>
                 <view class="answer-item">
-                  <text class="expand-label">标准答案：</text>
-                  <text class="expand-text correct-answer">{{ item.correctAnswerDisplay }}</text>
+                  <text class="expand-label">标准答案</text>
+                  <text class="expand-value correct-answer">{{ item.correctAnswerDisplay }}</text>
                 </view>
               </view>
-              <!-- 简答题答案 - 上下排布 -->
+
+              <!-- Short answer answers -->
               <template v-else>
                 <view class="expand-section">
-                  <text class="expand-label">你的答案：</text>
-                  <text class="expand-text user-answer">{{ item.userAnswerDisplay || '（未作答）' }}</text>
+                  <text class="expand-label">你的答案</text>
+                  <text class="expand-value user-answer">{{ item.userAnswerDisplay || '（未作答）' }}</text>
                 </view>
                 <view class="expand-section">
-                  <text class="expand-label">标准答案：</text>
-                  <text class="expand-text correct-answer">{{ item.correctAnswerDisplay }}</text>
+                  <text class="expand-label">标准答案</text>
+                  <text class="expand-value correct-answer">{{ item.correctAnswerDisplay }}</text>
                 </view>
               </template>
-              <!-- AI 评语 - 仅简答题显示 -->
+
+              <!-- AI Evaluation (short answer only) -->
               <view v-if="item.questionType === 'short_answer' && item.aiEvaluation" class="expand-section ai-evaluation">
-                <text class="expand-label">AI 评语：</text>
-                <rich-text class="expand-text ai-text" :nodes="parseMarkdown(item.aiEvaluation)"></rich-text>
+                <text class="expand-label">AI 评语</text>
+                <rich-text class="expand-value ai-text" :nodes="parseMarkdown(item.aiEvaluation)"></rich-text>
               </view>
-            </view>
-            <!-- 收起按钮 - 仅展开时显示 -->
-            <view v-if="item.expanded" class="expand-hint">
-              <image
-                class="expand-icon expand-icon-rotated"
-                src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg"
-                mode="aspectFit"
-              ></image>
+
+              <!-- Collapse Hint -->
+              <view class="expand-hint">
+                <image
+                  class="expand-icon"
+                  src="/static/icons/phosphor-icons/SVGs/regular/caret-up.svg"
+                  mode="aspectFit"
+                ></image>
+              </view>
             </view>
           </view>
         </view>
+
       </view>
     </scroll-view>
-
   </view>
 </template>
 
@@ -209,6 +230,7 @@ export default {
   data() {
     return {
       quizId: null,
+      quizTitle: '',
       fromList: false,
       score: 0,
       totalScore: 0,
@@ -226,6 +248,11 @@ export default {
     ringCanvasSizePx() {
       return uni.upx2px(320)
     },
+    scorePercent() {
+      if (this.totalScore <= 0) return 0
+      const pct = Math.round(this.score / this.totalScore * 100)
+      return Number.isNaN(pct) ? 0 : Math.max(0, Math.min(100, pct))
+    },
     progressPercent() {
       if (this.totalScore <= 0) return 0
       const percent = this.score / this.totalScore
@@ -234,6 +261,23 @@ export default {
     },
     progressOffset() {
       return this.circumference * (1 - this.progressPercent)
+    },
+    ringColor() {
+      const pct = this.scorePercent
+      if (pct >= 80) return '#F5A623'
+      if (pct >= 60) return '#3b82f6'
+      if (pct >= 40) return '#f59e0b'
+      return '#ef4444'
+    },
+    correctCount() {
+      return this.questionResults.filter(q => q.status === 'correct').length
+    },
+    navTitle() {
+      return this.quizTitle || '测试结果'
+    },
+    navSubtitle() {
+      if (this.loading) return ''
+      return `${this.questionResults.length} 道题 · 正确 ${this.correctCount} 题`
     }
   },
 
@@ -258,6 +302,9 @@ export default {
   onLoad(options) {
     if (options.quizId) {
       this.quizId = options.quizId
+    }
+    if (options.quizTitle) {
+      this.quizTitle = decodeURIComponent(options.quizTitle)
     }
     this.fromList = options.fromList === 'true'
     this.loadEvaluationResult()
@@ -290,9 +337,6 @@ export default {
   },
 
   methods: {
-    /**
-     * 加载评估结果
-     */
     async loadEvaluationResult() {
       try {
         if (this.fromList && this.quizId) {
@@ -300,15 +344,12 @@ export default {
           return
         }
 
-        // 从全局缓存读取评估结果
         const result = uni.getStorageSync('quizEvaluationResult')
 
         if (result) {
           this.populateResult(result)
-          // 清除缓存
           uni.removeStorageSync('quizEvaluationResult')
         } else {
-          // 没有数据，使用默认模拟数据
           this.loadMockData()
         }
 
@@ -319,9 +360,6 @@ export default {
       }
     },
 
-    /**
-     * 从 API 加载作答记录
-     */
     async loadFromApi() {
       try {
         const result = await getQuizAttempt(this.quizId)
@@ -337,15 +375,15 @@ export default {
       }
     },
 
-    /**
-     * 填充评估结果数据
-     */
     populateResult(result) {
       this.score = result.score || 0
       this.totalScore = result.total_score || 0
       this.strengths = result.strengths || []
       this.weaknesses = result.weaknesses || []
       this.suggestions = result.suggestions || []
+      if (result.quiz_title) {
+        this.quizTitle = result.quiz_title
+      }
       this.questionResults = (result.question_results || []).map(qr => ({
         id: qr.id,
         order: qr.order,
@@ -362,13 +400,10 @@ export default {
         userAnswerDisplay: this.formatAnswer(qr.question_type, qr.user_answer),
         correctAnswerDisplay: this.formatAnswer(qr.question_type, qr.correct_answer)
       }))
-
     },
 
-    /**
-     * 加载模拟数据（用于开发测试）
-     */
     loadMockData() {
+      this.quizTitle = '监督学习基础测验'
       this.score = 85
       this.totalScore = 100
       this.strengths = [
@@ -393,16 +428,10 @@ export default {
       ]
     },
 
-    /**
-     * 获取选项标签（A、B、C、D...）
-     */
     getOptionLabel(index) {
       return ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'][index] || String(index + 1)
     },
 
-    /**
-     * 格式化答案显示
-     */
     formatAnswer(questionType, answer) {
       if (!answer) return '（未作答）'
 
@@ -429,9 +458,43 @@ export default {
       return JSON.stringify(answer)
     },
 
-    /**
-     * 切换题目展开状态（所有题型都可展开）
-     */
+    questionStatusClass(item) {
+      if (item.status === 'correct') return 'q-badge-correct'
+      if (item.status === 'wrong') return 'q-badge-wrong'
+      return 'q-badge-partial'
+    },
+
+    optionHighlightClass(item, optIndex) {
+      const isCorrect = this.isCorrectOption(item, optIndex)
+      const isUser = this.isUserAnswerOption(item, optIndex)
+      if (isCorrect && isUser) return 'option-correct'
+      if (isCorrect) return 'option-correct'
+      if (isUser && !isCorrect) return 'option-wrong'
+      return ''
+    },
+
+    isCorrectOption(item, optIndex) {
+      if (!item.correctAnswer) return false
+      if (item.questionType === 'single_choice') {
+        return item.correctAnswer.index === optIndex
+      }
+      if (item.questionType === 'multiple_choice') {
+        return (item.correctAnswer.indices || []).includes(optIndex)
+      }
+      return false
+    },
+
+    isUserAnswerOption(item, optIndex) {
+      if (!item.userAnswer) return false
+      if (item.questionType === 'single_choice') {
+        return item.userAnswer.index === optIndex
+      }
+      if (item.questionType === 'multiple_choice') {
+        return (item.userAnswer.indices || []).includes(optIndex)
+      }
+      return false
+    },
+
     toggleQuestionExpand(index) {
       this.questionResults = this.questionResults.map((q, i) => {
         if (i === index) {
@@ -441,9 +504,6 @@ export default {
       })
     },
 
-    /**
-     * 解析简单的 Markdown 格式
-     */
     parseMarkdown(text) {
       if (!text) return ''
       return text
@@ -483,17 +543,17 @@ export default {
       const ctx = uni.createCanvasContext('scoreRingCanvas', this)
       ctx.clearRect(0, 0, size, size)
 
-      // 背景轨道
-      ctx.setStrokeStyle('rgba(255, 255, 255, 0.1)')
+      // Background track
+      ctx.setStrokeStyle('rgba(255, 255, 255, 0.08)')
       ctx.setLineWidth(lineWidth)
       ctx.setLineCap('round')
       ctx.beginPath()
       ctx.arc(center, center, radius, 0, Math.PI * 2, false)
       ctx.stroke()
 
-      // 进度圆弧
+      // Progress arc
       if (this.progressPercent > 0) {
-        ctx.setStrokeStyle('#0088FF')
+        ctx.setStrokeStyle(this.ringColor)
         ctx.beginPath()
         ctx.arc(center, center, radius, startAngle, endAngle, false)
         ctx.stroke()
@@ -518,41 +578,70 @@ export default {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  background-color: #0A0A0A;
+  background-color: rgb(29, 30, 32);
   overflow-x: hidden;
 }
 
-/* ========== 加载状态 ========== */
-.loading-container {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding-top: calc(100vh * 1.5 / 26 + 88rpx);
+/* ========== Background ========== */
+.page-bg {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
 }
 
-.loading-text {
-  font-size: 30rpx;
-  color: rgba(255, 255, 255, 0.6);
+.bg-mesh {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background:
+    radial-gradient(circle at 82% 14%, rgba(74, 108, 247, 0.07) 0%, rgba(74, 108, 247, 0) 32%),
+    radial-gradient(circle at 12% 100%, rgba(99, 102, 241, 0.04) 0%, rgba(99, 102, 241, 0) 36%);
 }
 
-/* ========== 导航栏 ========== */
+.bg-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(130rpx);
+  opacity: 0.2;
+}
+
+.bg-glow-blue {
+  top: 120rpx;
+  right: -90rpx;
+  width: 320rpx;
+  height: 320rpx;
+  background: rgba(74, 108, 247, 0.10);
+}
+
+.bg-glow-violet {
+  bottom: 180rpx;
+  left: -90rpx;
+  width: 280rpx;
+  height: 280rpx;
+  background: rgba(123, 97, 255, 0.07);
+}
+
+/* ========== Navigation Bar ========== */
 .nav-bar {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   z-index: 100;
-  padding-top: calc(100vh * 1.5 / 26);
-  padding-bottom: 16rpx;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding-top: calc(100vh * 1.5 / 26);
+  padding-bottom: calc(100vh * 0.5 / 26);
   padding-left: calc(100vw / 24);
   padding-right: calc(100vw / 24);
 }
 
-/* 磨砂玻璃背景层 - 渐变过渡 */
 .nav-bar::before {
   content: '';
   position: absolute;
@@ -563,9 +652,9 @@ export default {
   z-index: -1;
   background: linear-gradient(
     to bottom,
-    rgba(10, 10, 10, 0.6) 0%,
-    rgba(10, 10, 10, 0.45) 50%,
-    rgba(10, 10, 10, 0) 100%
+    rgba(29, 30, 32, 0.56) 0%,
+    rgba(29, 30, 32, 0.4) 50%,
+    rgba(29, 30, 32, 0) 100%
   );
   -webkit-backdrop-filter: blur(24px) saturate(150%);
   backdrop-filter: blur(24px) saturate(150%);
@@ -573,34 +662,62 @@ export default {
   mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
 }
 
-/* 不支持 backdrop-filter 的降级方案 */
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .nav-bar::before {
     background: linear-gradient(
       to bottom,
-      rgba(10, 10, 10, 0.95) 0%,
-      rgba(10, 10, 10, 0.8) 50%,
-      rgba(10, 10, 10, 0) 100%
+      rgba(29, 30, 32, 0.82) 0%,
+      rgba(29, 30, 32, 0.66) 50%,
+      rgba(29, 30, 32, 0) 100%
     );
   }
 }
 
-.nav-left {
+.nav-back {
   width: 72rpx;
   height: 72rpx;
+  flex-shrink: 0;
   display: flex;
   justify-content: center;
   align-items: center;
   border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.06);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
   border: 1rpx solid rgba(255, 255, 255, 0.1);
+  outline: 1rpx solid rgba(255, 255, 255, 0.04);
+  outline-offset: 1rpx;
+  box-shadow:
+    inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
+    0 2rpx 12rpx rgba(0, 0, 0, 0.25);
 }
 
-.nav-right-placeholder {
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .nav-back {
+    background: rgba(80, 80, 95, 0.65);
+  }
+}
+
+.nav-back:active {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.nav-spacer {
   width: 72rpx;
   height: 72rpx;
+  flex-shrink: 0;
+}
+
+.nav-copy {
+  flex: 1;
+  min-width: 0;
+  margin-left: 16rpx;
+  margin-right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4rpx;
 }
 
 .nav-icon {
@@ -612,22 +729,56 @@ export default {
 .nav-title {
   font-size: 34rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: rgb(248, 248, 248);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
-/* ========== 内容滚动区域 ========== */
+.nav-subtitle {
+  max-width: 100%;
+  font-size: 22rpx;
+  line-height: 1.25;
+  color: rgba(248, 248, 248, 0.52);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ========== States ========== */
+.state-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding-top: calc(100vh * 1.5 / 26 + 200rpx);
+}
+
+.state-text {
+  font-size: 28rpx;
+  color: #7C8598;
+}
+
+/* ========== Content Scroll ========== */
 .content-scroll {
   flex: 1;
-  padding: calc(100vh * 1.5 / 26 + 100rpx) calc(100vw / 24) 60rpx;
+  padding-top: calc(100vh * 1.5 / 26 + 100rpx);
   box-sizing: border-box;
 }
 
-/* ========== 分数区域 ========== */
+.content-body {
+  padding: 0 calc(100vw / 24) 80rpx;
+}
+
+/* ========== Score Section ========== */
 .score-section {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 40rpx 0 48rpx;
+  padding: 32rpx 0 40rpx;
 }
 
 .score-ring-container {
@@ -655,77 +806,101 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12rpx;
+  gap: 6rpx;
 }
 
 .trophy-icon {
-  width: 80rpx;
-  height: 80rpx;
+  width: 64rpx;
+  height: 64rpx;
   filter: brightness(0) saturate(100%) invert(74%) sepia(46%) saturate(959%) hue-rotate(354deg) brightness(101%) contrast(96%);
 }
 
-.score-text {
-  font-size: 40rpx;
-  font-weight: 700;
-  color: #ffffff;
+.score-number-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4rpx;
 }
 
-/* ========== 分析卡片行 ========== */
+.score-number {
+  font-size: 56rpx;
+  font-weight: 700;
+  color: rgb(248, 248, 248);
+  line-height: 1;
+}
+
+.score-unit {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: rgba(248, 248, 248, 0.6);
+}
+
+.score-detail {
+  font-size: 24rpx;
+  color: #7C8598;
+  margin-top: 4rpx;
+}
+
+/* ========== Analysis Cards Row ========== */
 .analysis-row {
   display: flex;
-  gap: 20rpx;
-  margin-bottom: 24rpx;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
 }
 
 .analysis-card {
   flex: 1;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 24rpx;
+  border-radius: 28rpx;
   padding: 24rpx;
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  border: 2rpx solid;
+  background: rgb(36, 36, 36);
+  border: 2rpx solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.18);
 }
 
 .strength-card {
-  border-color: rgba(134, 239, 172, 0.4);
+  border-color: rgba(74, 222, 128, 0.25);
 }
 
 .weakness-card {
-  border-color: rgba(239, 68, 68, 0.4);
+  border-color: rgba(251, 191, 36, 0.25);
 }
 
 .card-header {
   display: flex;
   align-items: center;
-  gap: 12rpx;
-  margin-bottom: 20rpx;
+  gap: 10rpx;
+  margin-bottom: 16rpx;
 }
 
 .card-icon {
-  width: 36rpx;
-  height: 36rpx;
-  filter: brightness(0) invert(1);
+  width: 32rpx;
+  height: 32rpx;
 }
 
 .strength-card .card-icon {
-  filter: brightness(0) saturate(100%) invert(85%) sepia(25%) saturate(556%) hue-rotate(85deg) brightness(96%) contrast(92%);
+  filter: brightness(0) saturate(100%) invert(70%) sepia(52%) saturate(396%) hue-rotate(85deg) brightness(94%) contrast(88%);
 }
 
 .weakness-card .card-icon {
-  filter: brightness(0) saturate(100%) invert(44%) sepia(78%) saturate(2349%) hue-rotate(337deg) brightness(97%) contrast(93%);
+  filter: brightness(0) saturate(100%) invert(76%) sepia(60%) saturate(608%) hue-rotate(348deg) brightness(100%) contrast(97%);
 }
 
-.card-title {
-  font-size: 28rpx;
+.card-label {
+  font-size: 26rpx;
   font-weight: 600;
-  color: #ffffff;
 }
 
-.card-content {
+.strength-label {
+  color: rgba(74, 222, 128, 0.9);
+}
+
+.weakness-label {
+  color: rgba(251, 191, 36, 0.9);
+}
+
+.card-body {
   display: flex;
   flex-direction: column;
-  gap: 12rpx;
+  gap: 10rpx;
 }
 
 .analysis-item {
@@ -735,122 +910,135 @@ export default {
 }
 
 .bullet {
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 22rpx;
+  color: #7C8598;
   line-height: 1.6;
 }
 
 .item-text {
   flex: 1;
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.8);
+  font-size: 22rpx;
+  color: rgba(248, 248, 248, 0.72);
   line-height: 1.6;
 }
 
-/* ========== 建议卡片 ========== */
+/* ========== Suggestion Card ========== */
 .suggestion-card {
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 24rpx;
+  border-radius: 28rpx;
   padding: 24rpx;
-  margin-bottom: 24rpx;
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  border: 2rpx solid rgba(245, 158, 11, 0.4);
+  margin-bottom: 28rpx;
+  background: rgb(36, 36, 36);
+  border: 2rpx solid rgba(99, 102, 241, 0.25);
+  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.18);
 }
 
 .suggestion-icon {
-  filter: brightness(0) saturate(100%) invert(69%) sepia(67%) saturate(634%) hue-rotate(356deg) brightness(102%) contrast(93%) !important;
+  filter: brightness(0) saturate(100%) invert(52%) sepia(72%) saturate(2236%) hue-rotate(218deg) brightness(97%) contrast(95%) !important;
+}
+
+.suggestion-label {
+  color: rgba(99, 102, 241, 0.9);
 }
 
 .suggestion-item {
   display: flex;
   align-items: flex-start;
   gap: 8rpx;
+  padding-left: 4rpx;
 }
 
-.suggestion-number {
-  font-size: 24rpx;
-  color: rgba(245, 158, 11, 0.9);
-  font-weight: 500;
-  line-height: 1.6;
-}
-
-/* ========== 逐题评估卡片 ========== */
-.questions-card {
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 24rpx;
-  padding: 24rpx;
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  border: 1rpx solid rgba(255, 255, 255, 0.08);
-}
-
-.questions-list {
+/* ========== Questions Section ========== */
+.questions-section {
   display: flex;
   flex-direction: column;
   gap: 16rpx;
 }
 
-.question-item {
+.section-caption {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #7C8598;
+  margin-bottom: 4rpx;
+}
+
+.question-card {
   display: flex;
   flex-direction: column;
-  padding: 20rpx;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 16rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.06);
-  transition: all 0.3s ease;
+  padding: 24rpx 28rpx;
+  border-radius: 36rpx;
+  background: rgb(36, 36, 36);
+  border: 2rpx solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.18);
 }
 
-.question-item-expandable {
-  cursor: pointer;
-}
-
-.question-item-expanded {
-  background: rgba(255, 255, 255, 0.06);
+.question-card-expanded {
+  background: rgb(38, 38, 38);
 }
 
 .question-main {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 20rpx;
+}
+
+/* Question Score Badge */
+.q-score-badge {
+  width: 72rpx;
+  height: 72rpx;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 50%;
+}
+
+.q-badge-correct {
+  background: rgba(74, 222, 128, 0.12);
+  border: 2rpx solid rgba(74, 222, 128, 0.3);
+}
+
+.q-badge-wrong {
+  background: rgba(239, 68, 68, 0.12);
+  border: 2rpx solid rgba(239, 68, 68, 0.3);
+}
+
+.q-badge-partial {
+  background: rgba(251, 191, 36, 0.12);
+  border: 2rpx solid rgba(251, 191, 36, 0.3);
+}
+
+.q-score-badge-text {
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.q-badge-correct .q-score-badge-text {
+  color: rgba(74, 222, 128, 0.9);
+}
+
+.q-badge-wrong .q-score-badge-text {
+  color: rgba(239, 68, 68, 0.9);
+}
+
+.q-badge-partial .q-score-badge-text {
+  color: rgba(251, 191, 36, 0.9);
 }
 
 .question-info {
   flex: 1;
-  display: flex;
-  align-items: flex-start;
-  gap: 8rpx;
   min-width: 0;
 }
 
-.question-label {
-  font-size: 24rpx;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
-  flex-shrink: 0;
-}
-
 .question-title {
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.85);
+  font-size: 26rpx;
+  color: rgb(248, 248, 248);
   line-height: 1.5;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.question-right {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  flex-shrink: 0;
-  margin-left: 16rpx;
-}
-
-.question-score {
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.6);
-  font-weight: 500;
+  word-break: break-all;
 }
 
 .question-status {
@@ -860,25 +1048,22 @@ export default {
 .status-icon {
   width: 40rpx;
   height: 40rpx;
+  filter: brightness(0) saturate(100%) invert(70%) sepia(52%) saturate(396%) hue-rotate(85deg) brightness(94%) contrast(88%);
 }
 
-.status-icon.correct {
-  filter: brightness(0) saturate(100%) invert(85%) sepia(25%) saturate(556%) hue-rotate(85deg) brightness(96%) contrast(92%);
-}
-
-.status-icon.incorrect {
+.status-icon-wrong {
   filter: brightness(0) saturate(100%) invert(44%) sepia(78%) saturate(2349%) hue-rotate(337deg) brightness(97%) contrast(93%);
 }
 
-.status-icon.partial {
-  filter: brightness(0) saturate(100%) invert(69%) sepia(67%) saturate(634%) hue-rotate(356deg) brightness(102%) contrast(93%);
+.status-icon-partial {
+  filter: brightness(0) saturate(100%) invert(76%) sepia(60%) saturate(608%) hue-rotate(348deg) brightness(100%) contrast(97%);
 }
 
-/* ========== 简答题展开内容 ========== */
+/* ========== Expanded Content ========== */
 .question-expand {
   margin-top: 20rpx;
   padding-top: 20rpx;
-  border-top: 1rpx solid rgba(255, 255, 255, 0.08);
+  border-top: 1rpx solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
   gap: 16rpx;
@@ -888,6 +1073,82 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 8rpx;
+}
+
+.question-content-box {
+  background: rgb(41, 41, 41);
+  padding: 16rpx 20rpx;
+  border-radius: 20rpx;
+}
+
+.options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.option-item {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 12rpx 16rpx;
+  border-radius: 14rpx;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.option-correct {
+  background: rgba(74, 222, 128, 0.08);
+  border: 1rpx solid rgba(74, 222, 128, 0.2);
+}
+
+.option-wrong {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1rpx solid rgba(239, 68, 68, 0.2);
+}
+
+.option-label {
+  width: 40rpx;
+  height: 40rpx;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #7C8598;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 50%;
+}
+
+.option-correct .option-label {
+  color: rgba(74, 222, 128, 0.9);
+  background: rgba(74, 222, 128, 0.15);
+}
+
+.option-wrong .option-label {
+  color: rgba(239, 68, 68, 0.9);
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.option-text {
+  flex: 1;
+  font-size: 24rpx;
+  color: rgba(248, 248, 248, 0.8);
+  line-height: 1.5;
+}
+
+.option-tag {
+  font-size: 20rpx;
+  color: rgba(74, 222, 128, 0.9);
+  background: rgba(74, 222, 128, 0.1);
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  flex-shrink: 0;
+}
+
+.option-wrong .option-tag {
+  color: rgba(239, 68, 68, 0.9);
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .answers-row {
@@ -905,91 +1166,47 @@ export default {
 
 .expand-label {
   font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.5);
+  color: #7C8598;
   font-weight: 500;
 }
 
-.expand-text {
+.expand-value {
   font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(248, 248, 248, 0.8);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.expand-text.user-answer {
-  color: rgba(0, 136, 255, 0.9);
+.expand-value.user-answer {
+  color: rgba(99, 102, 241, 0.9);
 }
 
-.expand-text.correct-answer {
-  color: rgba(134, 239, 172, 0.9);
-}
-
-.question-content-section {
-  background: rgba(255, 255, 255, 0.03);
-  padding: 12rpx 16rpx;
-  border-radius: 8rpx;
-}
-
-.question-content-section .question-title {
-  display: block;
-  margin-bottom: 12rpx;
-}
-
-.options-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-}
-
-.option-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 8rpx;
-}
-
-.option-label {
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.6);
-  font-weight: 500;
-  flex-shrink: 0;
-}
-
-.option-text {
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.8);
-  line-height: 1.5;
+.expand-value.correct-answer {
+  color: rgba(74, 222, 128, 0.9);
 }
 
 .ai-evaluation {
-  background: rgba(139, 92, 246, 0.1);
+  background: rgba(139, 92, 246, 0.08);
   padding: 16rpx;
-  border-radius: 12rpx;
-  border: 1rpx solid rgba(139, 92, 246, 0.3);
+  border-radius: 16rpx;
+  border: 1rpx solid rgba(139, 92, 246, 0.2);
 }
 
 .ai-text {
   color: rgba(139, 92, 246, 0.9);
 }
 
-/* ========== 展开提示 ========== */
 .expand-hint {
   display: flex;
   justify-content: center;
-  margin-top: 12rpx;
+  margin-top: 8rpx;
 }
 
 .expand-icon {
-  width: 32rpx;
-  height: 32rpx;
+  width: 28rpx;
+  height: 28rpx;
   filter: brightness(0) invert(1);
-  opacity: 0.4;
-  transition: transform 0.3s ease;
+  opacity: 0.3;
 }
-
-.expand-icon-rotated {
-  transform: rotate(180deg);
-}
-
-
 </style>
