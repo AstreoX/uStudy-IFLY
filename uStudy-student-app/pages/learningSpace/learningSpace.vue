@@ -411,7 +411,8 @@
 						:maxlength="-1"
 						:adjust-position="false"
 						confirm-type="send"
-						:style="{ height: textareaHeight, overflowY: textareaOverflow }"
+						:auto-height="autoHeightEnabled"
+						:style="textareaStyle"
 						@input="onTextareaInput"
 						@linechange="onTextareaLineChange"
 						@confirm="sendMessage"
@@ -972,6 +973,34 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				const member = this.spaceMembers.find(item => String(item.user_id) === String(this.selectedMemberUserId))
 				return member?.nickname || '我'
 			},
+			autoHeightEnabled() {
+				// #ifdef H5
+				return false
+				// #endif
+				// #ifndef H5
+				return this.textareaLineCount <= this.textareaMaxLines
+				// #endif
+			},
+			textareaStyle() {
+				// #ifdef H5
+				return {
+					height: this.textareaHeight,
+					overflowY: this.textareaOverflow
+				}
+				// #endif
+				// #ifndef H5
+				if (this.textareaLineCount > this.textareaMaxLines) {
+					const lineH = uni.upx2px(40)
+					const padV = uni.upx2px(44)
+					const maxH = lineH * this.textareaMaxLines + padV
+					return {
+						height: maxH + 'px',
+						overflowY: 'auto'
+					}
+				}
+				return {}
+				// #endif
+			},
 		},
 
 		async onLoad(options) {
@@ -1063,7 +1092,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 			// #ifndef H5
 			this.$nextTick(() => {
-				this.adjustTextareaHeight()
+				// auto-height 自动处理，无需手动调整
 			})
 			// #endif
 
@@ -1143,9 +1172,11 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 		watch: {
 			inputText() {
+				// #ifdef H5
 				this.$nextTick(() => {
 					this.adjustTextareaHeight()
 				})
+				// #endif
 			},
 			async selectedNodeId(nodeId) {
 				if (!nodeId || !this.spaceId) {
@@ -1412,6 +1443,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 			},
 
 			onTextareaInput() {
+				// #ifdef H5
 				this.$nextTick(() => {
 					this.adjustTextareaHeight()
 					if (typeof requestAnimationFrame === 'function') {
@@ -1424,24 +1456,30 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						}, 0)
 					}
 				})
+				// #endif
 			},
 
 			onTextareaLineChange(e) {
 				const detail = e && e.detail ? e.detail : {}
 				const lineCount = Number(detail.lineCount)
 				if (!lineCount || Number.isNaN(lineCount)) {
+					// #ifdef H5
 					this.adjustTextareaHeight()
+					// #endif
 					return
 				}
 
+				const normalizedLineCount = Math.max(1, lineCount)
+				this.textareaLineCount = normalizedLineCount
+
+				// #ifdef H5
 				const lineH = uni.upx2px(40)
 				const padV = uni.upx2px(44)
 				const maxLines = Math.max(1, Number(this.textareaMaxLines) || 4)
-				const normalizedLineCount = Math.max(1, lineCount)
-				this.textareaLineCount = normalizedLineCount
 				const visibleLines = Math.min(maxLines, normalizedLineCount)
 				this.textareaHeight = lineH * visibleLines + padV + 'px'
 				this.textareaOverflow = normalizedLineCount > maxLines ? 'auto' : 'hidden'
+				// #endif
 			},
 
 			adjustTextareaHeight() {
@@ -2154,6 +2192,9 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				}
 				const url = `/pages/spaceChat/spaceChat?${queryParts.join('&')}`
 				this.inputText = ''
+				this.textareaLineCount = 1
+				this.textareaHeight = 'auto'
+				this.textareaOverflow = 'hidden'
 				this.pendingAttachments = []
 
 				// #ifdef APP-PLUS
@@ -2409,6 +2450,28 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 			// ========== 操作按钮方法 ==========
 			togglePathHighlight() {
+				// 没有学习路径时，弹窗引导生成
+				if (!this.isPathHighlightOn && this.learningPath.length === 0) {
+					uni.showModal({
+						title: '提示',
+						content: '暂无学习路径，是否需要生成学习路径？',
+						confirmText: '确认',
+						cancelText: '取消',
+						success: (res) => {
+							if (res.confirm) {
+								const message = '结合我的学习资料，学习偏好，以及学习目标，为我规划一条符合我需求的学习路径'
+								const url = `/pages/spaceChat/spaceChat?id=${this.spaceId}&name=${encodeURIComponent(this.spaceTitle)}&initialMessage=${encodeURIComponent(message)}`
+								// #ifdef APP-PLUS
+								uni.navigateTo({ url, animationType: 'slide-in-right', animationDuration: 300 })
+								// #endif
+								// #ifndef APP-PLUS
+								uni.navigateTo({ url })
+								// #endif
+							}
+						}
+					})
+					return
+				}
 				this.isPathHighlightOn = !this.isPathHighlightOn
 				this.minimapNeedsFullRedraw = true
 				this.isInteracting = false

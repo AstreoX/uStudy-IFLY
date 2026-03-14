@@ -1474,7 +1474,8 @@
 					:maxlength="-1"
 					:adjust-position="false"
 					confirm-type="send"
-					:style="{ height: textareaHeight, overflowY: textareaOverflow }"
+					:auto-height="autoHeightEnabled"
+					:style="textareaStyle"
 					@input="onTextareaInput"
 					@linechange="onTextareaLineChange"
 					@confirm="sendMessage"
@@ -2120,6 +2121,34 @@
 			progressOffset() {
 				const progress = this.calculatedQuizProgress
 				return this.progressCircumference - (progress / 100) * this.progressCircumference
+			},
+			autoHeightEnabled() {
+				// #ifdef H5
+				return false
+				// #endif
+				// #ifndef H5
+				return this.textareaLineCount <= this.textareaMaxLines
+				// #endif
+			},
+			textareaStyle() {
+				// #ifdef H5
+				return {
+					height: this.textareaHeight,
+					overflowY: this.textareaOverflow
+				}
+				// #endif
+				// #ifndef H5
+				if (this.textareaLineCount > this.textareaMaxLines) {
+					const lineH = uni.upx2px(40)
+					const padV = uni.upx2px(44)
+					const maxH = lineH * this.textareaMaxLines + padV
+					return {
+						height: maxH + 'px',
+						overflowY: 'auto'
+					}
+				}
+				return {}
+				// #endif
 			}
 		},
 
@@ -2272,7 +2301,9 @@
 			this.setupNotificationStream()
 
 			this.$nextTick(() => {
+				// #ifdef H5
 				this.adjustTextareaHeight()
+				// #endif
 				this.scrollToLatestMessage()
 
 				// 组件准备就绪后发送待发送的初始消息
@@ -2371,9 +2402,11 @@
 
 		watch: {
 			inputText() {
+				// #ifdef H5
 				this.$nextTick(() => {
 					this.adjustTextareaHeight()
 				})
+				// #endif
 			}
 		},
 
@@ -2497,6 +2530,7 @@
 			},
 
 			onTextareaInput() {
+				// #ifdef H5
 				this.$nextTick(() => {
 					this.adjustTextareaHeight()
 					if (typeof requestAnimationFrame === 'function') {
@@ -2509,24 +2543,30 @@
 						}, 0)
 					}
 				})
+				// #endif
 			},
 
 			onTextareaLineChange(e) {
 				const detail = e && e.detail ? e.detail : {}
 				const lineCount = Number(detail.lineCount)
 				if (!lineCount || Number.isNaN(lineCount)) {
+					// #ifdef H5
 					this.adjustTextareaHeight()
+					// #endif
 					return
 				}
 
+				const normalizedLineCount = Math.max(1, lineCount)
+				this.textareaLineCount = normalizedLineCount
+
+				// #ifdef H5
 				const lineH = uni.upx2px(40)
 				const padV = uni.upx2px(44)
 				const maxLines = Math.max(1, Number(this.textareaMaxLines) || 4)
-				const normalizedLineCount = Math.max(1, lineCount)
-				this.textareaLineCount = normalizedLineCount
 				const visibleLines = Math.min(maxLines, normalizedLineCount)
 				this.textareaHeight = lineH * visibleLines + padV + 'px'
 				this.textareaOverflow = normalizedLineCount > maxLines ? 'auto' : 'hidden'
+				// #endif
 			},
 
 			adjustTextareaHeight() {
@@ -3372,6 +3412,9 @@
 				}
 				this.messages.push(userMessage)
 				this.inputText = ''
+				this.textareaLineCount = 1
+				this.textareaHeight = 'auto'
+				this.textareaOverflow = 'hidden'
 				this.pendingAttachments = []  // 清空待发送列表
 				this.scrollToLatestMessage()
 
