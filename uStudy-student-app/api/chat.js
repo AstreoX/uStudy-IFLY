@@ -218,6 +218,39 @@ export function rollbackLastMessage(conversationId) {
   })
 }
 
+/**
+ * 搜索学习空间对话
+ * @param {string} spaceId - 学习空间 ID
+ * @param {string} q - 搜索关键词
+ * @param {string} scope - 搜索范围: 'title' | 'content' | 'all'
+ * @param {number} page - 页码
+ * @param {number} pageSize - 每页条数
+ * @returns {Promise<Object>} ConversationSearchResponse
+ */
+export function searchSpaceConversations(spaceId, q, scope = 'all', page = 1, pageSize = 20) {
+  return request({
+    url: `/api/spaces/${spaceId}/conversations/search`,
+    method: 'GET',
+    data: { q, scope, page, page_size: pageSize }
+  })
+}
+
+/**
+ * 搜索快速对话
+ * @param {string} q - 搜索关键词
+ * @param {string} scope - 搜索范围: 'title' | 'content' | 'all'
+ * @param {number} page - 页码
+ * @param {number} pageSize - 每页条数
+ * @returns {Promise<Object>} ConversationSearchResponse
+ */
+export function searchQuickChatConversations(q, scope = 'all', page = 1, pageSize = 20) {
+  return request({
+    url: '/api/quick-chat/conversations/search',
+    method: 'GET',
+    data: { q, scope, page, page_size: pageSize }
+  })
+}
+
 // ==================== Quick Chat API ====================
 
 /**
@@ -366,6 +399,44 @@ export function confirmToolExecution(conversationId, toolCallId, data) {
     url: `/api/quick-chat/conversations/${conversationId}/tools/${toolCallId}/confirm`,
     method: 'POST',
     data
+  })
+}
+
+/**
+ * 获取快速对话异步工具任务状态
+ * @param {string} conversationId - 对话 ID
+ * @param {string} toolCallId - 工具调用 ID
+ * @returns {Promise<Object>}
+ */
+export function getQuickChatToolTaskStatus(conversationId, toolCallId) {
+  return request({
+    url: `/api/quick-chat/conversations/${conversationId}/tools/${toolCallId}/status`,
+    method: 'GET'
+  })
+}
+
+/**
+ * 获取快速对话异步工具任务列表（用于恢复进行中的任务）
+ * @param {string} conversationId - 对话 ID
+ * @returns {Promise<Object>}
+ */
+export function listQuickChatToolTasks(conversationId) {
+  return request({
+    url: `/api/quick-chat/conversations/${conversationId}/tools/tasks`,
+    method: 'GET'
+  })
+}
+
+/**
+ * 绑定快速对话异步创建空间任务（KG 完成后调用）
+ * @param {string} conversationId - 对话 ID
+ * @param {string} toolCallId - 工具调用 ID
+ * @returns {Promise<Object>}
+ */
+export function bindQuickChatToolTask(conversationId, toolCallId) {
+  return request({
+    url: `/api/quick-chat/conversations/${conversationId}/tools/${toolCallId}/bind`,
+    method: 'POST'
   })
 }
 

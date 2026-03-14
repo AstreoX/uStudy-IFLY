@@ -8,55 +8,121 @@
 
     <!-- Navigation Bar -->
     <view class="nav-bar">
-      <view class="nav-main">
-        <view class="nav-left" @click="goBack">
-          <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
-        </view>
-        <view class="nav-title-wrap">
-          <text class="nav-title-main">快速对话记录</text>
-          <text class="nav-title-sub">快速对话</text>
-        </view>
-      </view>
-      <view class="nav-right" @click="handleSearch">
-        <image class="nav-icon nav-icon-search" src="/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg" mode="aspectFit"></image>
-      </view>
-    </view>
-
-    <!-- Loading State -->
-    <view v-if="isLoading" class="loading-container">
-      <view class="loading-spinner"></view>
-      <text class="loading-text">加载中...</text>
-    </view>
-
-    <!-- Empty State -->
-    <view v-else-if="conversations.length === 0" class="empty-container">
-      <image class="empty-icon" src="/static/icons/phosphor-icons/SVGs/regular/chats.svg" mode="aspectFit"></image>
-      <text class="empty-text">暂无对话记录</text>
-      <text class="empty-hint">点击下方按钮开始新对话</text>
-      <view class="empty-action" @click="createNewConversation">
-        <text class="empty-action-text">开始新对话</text>
-      </view>
-    </view>
-
-    <!-- Conversation List -->
-    <scroll-view v-else class="conversation-list" scroll-y :scroll-top="scrollTop" @scrolltoupper="onScrollToUpper">
-      <view class="list-content">
-        <view
-          v-for="conv in conversations"
-          :key="conv.id"
-          class="conversation-item"
-          @click="openConversation(conv)"
-        >
-          <view class="conv-content">
-            <text class="conv-title">{{ conv.title }}</text>
-            <text class="conv-time">{{ formatTime(conv.updated_at) }}</text>
+      <template v-if="!isSearching">
+        <view class="nav-main">
+          <view class="nav-left" @click="goBack">
+            <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
           </view>
-          <view class="conv-delete" @click.stop="showDeleteOption(conv)">
-            <image class="conv-delete-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit"></image>
+          <view class="nav-title-wrap">
+            <text class="nav-title-main">快速对话记录</text>
+            <text class="nav-title-sub">快速对话</text>
           </view>
         </view>
+        <view class="nav-right" @click="handleSearch">
+          <image class="nav-icon nav-icon-search" src="/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg" mode="aspectFit"></image>
+        </view>
+      </template>
+      <template v-else>
+        <view class="search-bar">
+          <image class="search-bar-icon" src="/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg" mode="aspectFit"></image>
+          <input
+            class="search-input"
+            v-model="searchQuery"
+            placeholder="搜索对话..."
+            placeholder-class="search-placeholder"
+            focus
+            confirm-type="search"
+            @input="onSearchInput"
+            @confirm="doSearch"
+          />
+          <view v-if="searchQuery" class="search-clear" @click="clearSearchQuery">
+            <image class="search-clear-icon" src="/static/icons/phosphor-icons/SVGs/regular/x-circle.svg" mode="aspectFit"></image>
+          </view>
+        </view>
+        <view class="search-cancel" @click="cancelSearch">
+          <text class="search-cancel-text">取消</text>
+        </view>
+      </template>
+    </view>
+
+    <!-- Search Results -->
+    <template v-if="isSearching">
+      <view v-if="isSearchLoading" class="loading-container">
+        <view class="loading-spinner"></view>
+        <text class="loading-text">搜索中...</text>
       </view>
-    </scroll-view>
+      <view v-else-if="searchQuery && searchResults.length === 0 && hasSearched" class="empty-container">
+        <image class="empty-icon" src="/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg" mode="aspectFit"></image>
+        <text class="empty-text">未找到相关对话</text>
+        <text class="empty-hint">试试其他关键词</text>
+      </view>
+      <scroll-view v-else-if="searchResults.length > 0" class="conversation-list" scroll-y>
+        <view class="list-content">
+          <view
+            v-for="item in searchResults"
+            :key="item.id"
+            class="conversation-item search-result-item"
+            @click="openConversation(item)"
+          >
+            <view class="conv-content search-result-content">
+              <view class="search-result-header">
+                <text class="conv-title">{{ item.title }}</text>
+                <text class="conv-time">{{ formatTime(item.updated_at) }}</text>
+              </view>
+              <view v-if="item.matching_messages && item.matching_messages.length > 0" class="search-snippets">
+                <view
+                  v-for="(msg, idx) in item.matching_messages.slice(0, 3)"
+                  :key="msg.id || idx"
+                  class="search-snippet"
+                >
+                  <text class="snippet-role">{{ msg.role === 'user' ? '你' : 'AI' }}:</text>
+                  <text class="snippet-text">{{ msg.snippet }}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+    </template>
+
+    <!-- Normal List -->
+    <template v-else>
+      <!-- Loading State -->
+      <view v-if="isLoading" class="loading-container">
+        <view class="loading-spinner"></view>
+        <text class="loading-text">加载中...</text>
+      </view>
+
+      <!-- Empty State -->
+      <view v-else-if="conversations.length === 0" class="empty-container">
+        <image class="empty-icon" src="/static/icons/phosphor-icons/SVGs/regular/chats.svg" mode="aspectFit"></image>
+        <text class="empty-text">暂无对话记录</text>
+        <text class="empty-hint">点击下方按钮开始新对话</text>
+        <view class="empty-action" @click="createNewConversation">
+          <text class="empty-action-text">开始新对话</text>
+        </view>
+      </view>
+
+      <!-- Conversation List -->
+      <scroll-view v-else class="conversation-list" scroll-y :scroll-top="scrollTop" @scrolltoupper="onScrollToUpper">
+        <view class="list-content">
+          <view
+            v-for="conv in conversations"
+            :key="conv.id"
+            class="conversation-item"
+            @click="openConversation(conv)"
+          >
+            <view class="conv-content">
+              <text class="conv-title">{{ conv.title }}</text>
+              <text class="conv-time">{{ formatTime(conv.updated_at) }}</text>
+            </view>
+            <view class="conv-delete" @click.stop="showDeleteOption(conv)">
+              <image class="conv-delete-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit"></image>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+    </template>
 
     <!-- Delete Confirmation Modal -->
     <u-modal
@@ -80,7 +146,7 @@
 </template>
 
 <script>
-import { getQuickChatConversations, deleteConversation } from '@/api/chat'
+import { getQuickChatConversations, deleteConversation, searchQuickChatConversations } from '@/api/chat'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
 
@@ -98,6 +164,12 @@ export default {
       selectedConvId: null,
       isDeleting: false,
       scrollTop: 0,
+      isSearching: false,
+      searchQuery: '',
+      searchResults: [],
+      isSearchLoading: false,
+      hasSearched: false,
+      searchTimer: null,
       toast: {
         visible: false,
         message: '',
@@ -160,7 +232,59 @@ export default {
     },
 
     handleSearch() {
-      this.showCustomToast('搜索功能暂未开放', 'info')
+      this.isSearching = true
+      this.searchQuery = ''
+      this.searchResults = []
+      this.hasSearched = false
+    },
+
+    cancelSearch() {
+      this.isSearching = false
+      this.searchQuery = ''
+      this.searchResults = []
+      this.hasSearched = false
+      this.isSearchLoading = false
+      if (this.searchTimer) {
+        clearTimeout(this.searchTimer)
+        this.searchTimer = null
+      }
+    },
+
+    clearSearchQuery() {
+      this.searchQuery = ''
+      this.searchResults = []
+      this.hasSearched = false
+    },
+
+    onSearchInput() {
+      if (this.searchTimer) {
+        clearTimeout(this.searchTimer)
+      }
+      if (!this.searchQuery.trim()) {
+        this.searchResults = []
+        this.hasSearched = false
+        return
+      }
+      this.searchTimer = setTimeout(() => {
+        this.doSearch()
+      }, 300)
+    },
+
+    async doSearch() {
+      const query = this.searchQuery.trim()
+      if (!query) return
+
+      this.isSearchLoading = true
+      try {
+        const result = await searchQuickChatConversations(query)
+        this.searchResults = result.items || []
+      } catch (err) {
+        this.showCustomToast(err.message || '搜索失败', 'error')
+        this.searchResults = []
+      } finally {
+        this.isSearchLoading = false
+        this.hasSearched = true
+      }
     },
 
     async doDeleteConversation() {
@@ -566,5 +690,116 @@ export default {
   filter: brightness(0) invert(1);
   opacity: 0.3;
   transition: opacity 0.15s ease;
+}
+
+/* Search Bar */
+.search-bar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  height: 72rpx;
+  padding: 0 20rpx;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  border-radius: 36rpx;
+}
+
+.search-bar-icon {
+  width: 36rpx;
+  height: 36rpx;
+  filter: brightness(0) invert(1);
+  opacity: 0.4;
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: rgb(248, 248, 248);
+  background: transparent;
+}
+
+.search-placeholder {
+  color: rgba(248, 248, 248, 0.36);
+}
+
+.search-clear {
+  width: 40rpx;
+  height: 40rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.search-clear-icon {
+  width: 32rpx;
+  height: 32rpx;
+  filter: brightness(0) invert(1);
+  opacity: 0.4;
+}
+
+.search-cancel {
+  flex-shrink: 0;
+  padding: 0 16rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+}
+
+.search-cancel-text {
+  font-size: 28rpx;
+  color: rgba(248, 248, 248, 0.7);
+}
+
+/* Search Results */
+.search-result-item {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.search-result-content {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12rpx;
+}
+
+.search-result-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.search-snippets {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  padding-left: 4rpx;
+}
+
+.search-snippet {
+  display: flex;
+  flex-direction: row;
+  gap: 8rpx;
+  overflow: hidden;
+}
+
+.snippet-role {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.snippet-text {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.36);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
 }
 </style>

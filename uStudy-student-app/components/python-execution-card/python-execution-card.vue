@@ -1,12 +1,10 @@
 <template>
-  <view class="pxc-wrap">
+  <view class="pxc-wrap" :class="{ 'pxc-expanded': detailVisible || isCollapsing }">
     <view
       class="pxc-pill"
       :class="{
         'pxc-pill-running': isRunning,
-        'pxc-pill-done': isSuccess,
         'pxc-pill-failed': isFailed,
-        'pxc-pill-expanded': canToggle && isExpanded,
         'pxc-pill-clickable': canToggle
       }"
       @click="toggleExpand"
@@ -27,7 +25,7 @@
       />
     </view>
 
-    <view v-if="detailVisible" class="pxc-card">
+    <view v-if="detailVisible || isCollapsing" :class="{ 'pxc-card-leave': isCollapsing }" class="pxc-card">
       <view class="pxc-card-header">
         <view class="pxc-icon-wrap">
           <image
@@ -111,7 +109,8 @@ export default {
   },
   data() {
     return {
-      isExpanded: this.toolCall?.status === 'done'
+      isExpanded: this.toolCall?.status === 'done',
+      isCollapsing: false
     }
   },
   computed: {
@@ -220,7 +219,15 @@ export default {
   methods: {
     toggleExpand() {
       if (!this.canToggle) return
-      this.isExpanded = !this.isExpanded
+      if (this.isExpanded) {
+        this.isCollapsing = true
+        setTimeout(() => {
+          this.isExpanded = false
+          this.isCollapsing = false
+        }, 200)
+      } else {
+        this.isExpanded = true
+      }
     },
     previewImage() {
       if (!this.fullImageUrl) return
@@ -238,6 +245,27 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 12rpx;
+}
+
+.pxc-expanded {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  border-radius: 24rpx;
+  padding: 0;
+  gap: 0;
+}
+
+.pxc-expanded .pxc-pill {
+  border: none;
+  background: transparent;
+  border-radius: 24rpx 24rpx 0 0;
+  padding: 20rpx 24rpx 16rpx;
+}
+
+.pxc-expanded .pxc-card {
+  border: none;
+  background: transparent;
+  border-radius: 0 0 24rpx 24rpx;
 }
 
 .pxc-pill {
@@ -265,9 +293,9 @@ export default {
   background: rgba(239, 68, 68, 0.05);
 }
 
-.pxc-pill-expanded {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.08);
+.pxc-card-leave {
+  animation: pxc-card-leave 0.2s ease-in forwards;
+  pointer-events: none;
 }
 
 .pxc-pill-icon {
@@ -506,11 +534,22 @@ export default {
 @keyframes pxc-card-enter {
   from {
     opacity: 0;
-    transform: translateY(8rpx);
+    transform: translateY(-8rpx);
   }
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes pxc-card-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8rpx);
   }
 }
 </style>

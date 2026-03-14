@@ -175,36 +175,43 @@
 							</view>
 						</view>
 
-						<!-- 图表生成工具：图片预览卡片 -->
+						<!-- 图表生成工具：pill + 可折叠图片详情卡片 -->
 						<view
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'generate_chart'"
 							:key="'chart-tool-' + segIdx"
-							class="tool-call-card"
-							:class="{
-								'tool-call-running': seg.toolCall.status === 'running',
-								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
-								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
-							}"
+							class="chart-tool-wrap"
+							:class="{ 'chart-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isChartExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
-							<view class="tool-call-header">
-								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
-								<text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
-								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
-								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
-									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
-								<image v-else class="tool-call-status-icon tool-call-status-failed"
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleChartExpand(seg.toolCall.id)"
+							>
+								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getChartToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-chevron"
+									:class="{ 'graph-tool-chevron-up': isChartExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
 									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
 							</view>
-							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.image_url" class="chart-image-preview">
+
+							<!-- 详情卡片：图片预览 -->
+							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.image_url && (isChartExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
+								:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
+								class="chart-detail-card"
+							>
 								<image
 									:src="getFullImageUrl(seg.toolCall.result.image_url)"
 									mode="widthFix"
 									class="chart-preview-img"
 									@click="previewChartImage(seg.toolCall.result.image_url)"
 								/>
-							</view>
-							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
-								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '图表生成失败' }}</text>
 							</view>
 						</view>
 
@@ -221,13 +228,12 @@
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'view_learning_spaces'"
 							:key="'space-query-' + segIdx"
 							class="space-query-wrap"
+							:class="{ 'space-query-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result && seg.toolCall.result.spaces && seg.toolCall.result.spaces.length && (isSpaceQueryExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<!-- 胶囊指示器（done 状态可点击折叠/展开） -->
 							<view class="space-query-pill"
 								:class="{
-									'space-query-running': seg.toolCall.status === 'running',
-									'space-query-done': seg.toolCall.status === 'done',
-									'space-query-expanded': seg.toolCall.status === 'done' && isSpaceQueryExpanded(seg.toolCall.id)
+									'space-query-running': seg.toolCall.status === 'running'
 								}"
 								@click="seg.toolCall.status === 'done' && toggleSpaceQuery(seg.toolCall.id)"
 							>
@@ -248,7 +254,8 @@
 
 							<!-- 学习空间结果卡片（可折叠） -->
 							<view
-								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result && seg.toolCall.result.spaces && seg.toolCall.result.spaces.length && isSpaceQueryExpanded(seg.toolCall.id)"
+								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result && seg.toolCall.result.spaces && seg.toolCall.result.spaces.length && (isSpaceQueryExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
+								:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
 								class="space-query-results"
 							>
 								<view class="space-query-results-header">
@@ -268,17 +275,54 @@
 							</view>
 						</view>
 
+						<!-- 学习空间绑定/创建工具：pill + 确认卡片 -->
+						<view
+							v-else-if="seg.type === 'tool' && isSpaceMutationTool(seg.toolCall.tool)"
+							:key="'space-mut-' + segIdx"
+							class="space-mutation-wrap"
+							:class="{ 'space-mutation-expanded': seg.toolCall.status === 'pending_confirmation' }"
+						>
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+							>
+								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getSpaceMutationText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-status-icon"
+									src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- 确认卡片 (pending_confirmation 时显示) -->
+							<view v-if="seg.toolCall.status === 'pending_confirmation'" class="space-mutation-confirm">
+								<text class="space-mutation-confirm-text">{{ getConfirmationText(seg.toolCall) }}</text>
+								<view class="space-mutation-confirm-buttons">
+									<view class="tool-btn tool-btn-cancel" @click="handleToolReject(msg.id, seg.toolCall)">
+										<text class="tool-btn-text">取消</text>
+									</view>
+									<view class="tool-btn tool-btn-confirm" @click="handleToolConfirm(msg.id, seg.toolCall)">
+										<text class="tool-btn-text">确认</text>
+									</view>
+								</view>
+							</view>
+						</view>
+
 						<!-- 日程管理工具：统一 pill（所有日程工具共用，get_schedule 额外有详情卡片） -->
 						<view
 							v-else-if="seg.type === 'tool' && isScheduleTool(seg.toolCall.tool)"
 							:key="'schedule-tool-' + segIdx"
 							class="schedule-view-wrap"
+							:class="{ 'schedule-expanded-container': isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<view class="graph-tool-pill"
 								:class="{
 									'graph-tool-running': seg.toolCall.status === 'running',
-									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
-									'graph-tool-expanded': isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
 									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
 								@click="isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
@@ -302,7 +346,8 @@
 
 							<!-- 日程详情卡片（get/add/update_schedule） -->
 							<view
-								v-if="isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && getScheduleDisplayEvents(seg.toolCall).length && isGraphToolExpanded(seg.toolCall.id)"
+								v-if="isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && getScheduleDisplayEvents(seg.toolCall).length && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
+								:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
 								class="schedule-card schedule-card-clickable"
 								@click="openNativeCalendar"
 							>
@@ -334,7 +379,8 @@
 
 							<!-- get_schedule 无日程 -->
 							<view
-								v-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && !getScheduleDisplayEvents(seg.toolCall).length && isGraphToolExpanded(seg.toolCall.id)"
+								v-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && !getScheduleDisplayEvents(seg.toolCall).length && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
+								:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
 								class="schedule-card schedule-card-empty"
 							>
 								<text class="schedule-empty-text">该日期范围内没有日程安排</text>
@@ -346,13 +392,12 @@
 							v-else-if="seg.type === 'tool' && isReviewTool(seg.toolCall.tool)"
 							:key="'review-tool-' + segIdx"
 							class="review-tool-wrap"
+							:class="{ 'review-expanded-container': seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<!-- pill -->
 							<view class="graph-tool-pill"
 								:class="{
 									'graph-tool-running': seg.toolCall.status === 'running',
-									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
-									'graph-tool-expanded': seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
 									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
 								@click="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
@@ -376,7 +421,8 @@
 
 							<!-- 复习事项详情卡片 -->
 							<view
-								v-if="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && getReviewDisplayItems(seg.toolCall).length && isGraphToolExpanded(seg.toolCall.id)"
+								v-if="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && getReviewDisplayItems(seg.toolCall).length && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
+								:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
 								class="review-card"
 							>
 								<view v-for="(item, idx) in getReviewDisplayItems(seg.toolCall)" :key="idx" class="review-event-item">
@@ -402,7 +448,8 @@
 
 							<!-- 无复习项 -->
 							<view
-								v-if="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && !getReviewDisplayItems(seg.toolCall).length && isGraphToolExpanded(seg.toolCall.id)"
+								v-if="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && !getReviewDisplayItems(seg.toolCall).length && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
+								:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
 								class="review-card review-card-empty"
 							>
 								<text class="review-empty-text">当前没有待复习项</text>
@@ -463,19 +510,6 @@
 								<text class="tool-call-result-text">{{ seg.toolCall.message }}</text>
 							</view>
 
-							<!-- 查看学习空间工具结果 -->
-							<view v-if="seg.toolCall.tool === 'view_learning_spaces' && seg.toolCall.status === 'done' && seg.toolCall.result && seg.toolCall.result.spaces" class="tool-spaces-list">
-								<view
-									v-for="space in seg.toolCall.result.spaces"
-									:key="space.id"
-									class="tool-space-item"
-									@click="handleSpaceClick(space)"
-								>
-									<view class="tool-space-color" :style="{ backgroundColor: space.color }"></view>
-									<text class="tool-space-name">{{ space.name }}</text>
-									<image class="tool-space-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
-								</view>
-							</view>
 						</view>
 					</template>
 
@@ -712,7 +746,7 @@
 
 <script>
 	import config from '@/config/index.js'
-	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage } from '@/api/chat'
+	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage, getQuickChatToolTaskStatus, listQuickChatToolTasks, bindQuickChatToolTask } from '@/api/chat'
 	import { executeCalendarTool } from '@/utils/calendar'
 	import { createCalendarEvent, getCalendarEvents, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendarEvents'
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
@@ -834,6 +868,16 @@
 		mark_review_completed:  { running: '正在标记复习完成…', done: '已标记复习完成', failed: '标记复习失败' }
 	}
 
+	// 创建学习空间异步任务 — 各阶段运行文案
+	const CREATE_SPACE_RUNNING_STAGE_TEXT = {
+		queued: '创建任务排队中…',
+		space_created: '学习空间已创建，正在生成知识图谱…',
+		kg_running: '正在生成知识图谱…',
+		kg_done: '知识图谱已生成，正在绑定学习空间…',
+		binding: '正在绑定学习空间…'
+	}
+	const CREATE_SPACE_SUCCESS_TEXT = '学习空间已创建并绑定，正在跳转…'
+
 	export default {
 		components: {
 			MarkdownRender,
@@ -893,6 +937,8 @@
 				expandedSearchResults: {}, // { toolCallId: true }
 				expandedSpaceQueries: {}, // { toolCallId: true/false }
 				expandedGraphTools: {}, // { toolCallId: true/false } — 日程工具折叠状态
+				expandedChartDetails: {}, // { toolCallId: true/false } — 图表详情展开状态
+				collapsingTools: {}, // { toolCallId: true } — 折叠动画中
 
 				// 问题反馈相关
 				showFeedbackModal: false,
@@ -908,7 +954,12 @@
 				// 模型选择相关
 				availableModels: [],
 				selectedModelId: null,
-				showModelMenu: false
+				showModelMenu: false,
+
+				// 异步创建空间任务轮询
+				taskPollTimers: {},
+				taskBindingLocks: {},
+				taskNavigated: {}
 			}
 		},
 
@@ -972,6 +1023,7 @@
 				'conversationId:', this.conversationId, 'cancelSSE:', !!this.cancelSSE,
 				'isSendingMessage:', this.isSendingMessage)
 			this._tryStartMonitorOrSave('onUnload')
+			this.stopAllTaskPolling()
 		},
 
 		mounted() {
@@ -1007,6 +1059,7 @@
 			console.log('[QuickChat] beforeDestroy triggered, activeMonitor:', !!getActiveMonitor())
 			// onHide/onUnload 可能已经启动了监控，作为最后兜底
 			this._tryStartMonitorOrSave('beforeDestroy')
+			this.stopAllTaskPolling()
 
 			// #ifdef APP-PLUS
 			clearSseEventBus()
@@ -1627,10 +1680,39 @@
 			},
 
 			toggleSpaceQuery(toolCallId) {
-				this.expandedSpaceQueries = {
-					...this.expandedSpaceQueries,
-					[toolCallId]: this.expandedSpaceQueries[toolCallId] === false
+				const isCurrentlyExpanded = this.expandedSpaceQueries[toolCallId] !== false
+				if (isCurrentlyExpanded) {
+					this.collapsingTools = { ...this.collapsingTools, [toolCallId]: true }
+					setTimeout(() => {
+						this.expandedSpaceQueries = { ...this.expandedSpaceQueries, [toolCallId]: false }
+						const { [toolCallId]: _, ...rest } = this.collapsingTools
+						this.collapsingTools = rest
+					}, 200)
+				} else {
+					this.expandedSpaceQueries = { ...this.expandedSpaceQueries, [toolCallId]: true }
 				}
+			},
+
+			isToolCollapsing(toolCallId) {
+				return !!this.collapsingTools[toolCallId]
+			},
+
+			isSpaceMutationTool(toolName) {
+				return toolName === 'rebind_to_learning_space' || toolName === 'create_learning_space'
+			},
+
+			getSpaceMutationText(toolCall) {
+				const spaceName = toolCall.arguments?.space_name || toolCall.arguments?.name || '学习空间'
+				if (toolCall.tool === 'rebind_to_learning_space') {
+					if (toolCall.status === 'pending_confirmation') return `确认绑定到「${spaceName}」`
+					if (toolCall.status === 'running') return '正在绑定学习空间…'
+					if (toolCall.status === 'done' && toolCall.success) return `已绑定到「${spaceName}」`
+					return '绑定学习空间失败'
+				}
+				if (toolCall.status === 'pending_confirmation') return `确认创建「${spaceName}」`
+				if (toolCall.status === 'running') return '正在创建学习空间…'
+				if (toolCall.status === 'done' && toolCall.success) return `已创建「${spaceName}」`
+				return '创建学习空间失败'
 			},
 
 			isScheduleTool(toolName) {
@@ -1764,10 +1846,41 @@
 			},
 
 			toggleGraphTool(toolCallId) {
-				this.expandedGraphTools = {
-					...this.expandedGraphTools,
-					[toolCallId]: this.expandedGraphTools[toolCallId] === false
+				const isCurrentlyExpanded = this.expandedGraphTools[toolCallId] !== false
+				if (isCurrentlyExpanded) {
+					this.collapsingTools = { ...this.collapsingTools, [toolCallId]: true }
+					setTimeout(() => {
+						this.expandedGraphTools = { ...this.expandedGraphTools, [toolCallId]: false }
+						const { [toolCallId]: _, ...rest } = this.collapsingTools
+						this.collapsingTools = rest
+					}, 200)
+				} else {
+					this.expandedGraphTools = { ...this.expandedGraphTools, [toolCallId]: true }
 				}
+			},
+
+			isChartExpanded(toolCallId) {
+				return this.expandedChartDetails[toolCallId] !== false
+			},
+
+			toggleChartExpand(toolCallId) {
+				const isCurrentlyExpanded = this.expandedChartDetails[toolCallId] !== false
+				if (isCurrentlyExpanded) {
+					this.collapsingTools = { ...this.collapsingTools, [toolCallId]: true }
+					setTimeout(() => {
+						this.expandedChartDetails = { ...this.expandedChartDetails, [toolCallId]: false }
+						const { [toolCallId]: _, ...rest } = this.collapsingTools
+						this.collapsingTools = rest
+					}, 200)
+				} else {
+					this.expandedChartDetails = { ...this.expandedChartDetails, [toolCallId]: true }
+				}
+			},
+
+			getChartToolText(toolCall) {
+				if (toolCall.status === 'running') return '正在生成图表…'
+				if (toolCall.status === 'done' && toolCall.success) return '已生成图表'
+				return '图表生成失败'
 			},
 
 			openSearchResultUrl(url) {
@@ -1937,6 +2050,12 @@
 						confirmed: true
 					})
 
+					// 创建学习空间：走异步处理链路
+					if (toolCall.tool === 'create_learning_space') {
+						await this.handleCreateLearningSpaceConfirmResult(msgId, toolCall, result)
+						return
+					}
+
 					// 更新工具状态
 					toolCall.status = 'done'
 					toolCall.success = result.success
@@ -1945,12 +2064,7 @@
 
 					// 同步更新消息中的工具片段
 					const msg = this.messages.find(m => m.id === msgId)
-					if (msg && msg.streamSegments) {
-						const seg = msg.streamSegments.find(s => s.type === 'tool' && s.toolCall && s.toolCall.id === toolCall.id)
-						if (seg) {
-							seg.toolCall = { ...toolCall }
-						}
-					}
+					this.syncToolCallInMessage(msg, toolCall)
 
 					this.$forceUpdate()
 
@@ -1958,7 +2072,7 @@
 					if (result.data?.action === 'navigate_to_space_chat') {
 						setTimeout(() => {
 							this.navigateToSpaceChat(result.data.space_id, result.data.space_name, result.data.conversation_id)
-						}, 1200) // 延迟 1.2 秒，让用户看到绑定成功的卡片状态
+						}, 1200)
 					}
 				} catch (err) {
 					uni.showToast({ title: err.message || '操作失败', icon: 'none' })
@@ -1994,6 +2108,435 @@
 				}
 
 				this.$forceUpdate()
+			},
+
+			// ========== 创建学习空间异步任务处理 ==========
+
+			/**
+			 * 处理 create_learning_space 确认后的异步分发
+			 */
+			async handleCreateLearningSpaceConfirmResult(msgId, toolCall, result) {
+				const action = result?.data?.action
+
+				// Case 1: 异步创建（正常流程）
+				if (result?.status === 'accepted' && action === 'async_create_learning_space') {
+					toolCall.status = 'running'
+					toolCall.success = null
+					toolCall.result = result.data || {}
+					toolCall.message = this.getCreateSpaceRunningText(result?.data?.stage || 'kg_running')
+
+					const msg = this.messages.find(m => m.id === msgId)
+					this.syncToolCallInMessage(msg, toolCall)
+					this.$forceUpdate()
+
+					this.startCreateSpaceTaskPolling(toolCall.id)
+					return
+				}
+
+				// Case 2: 已有运行中的任务
+				if (result?.status === 'accepted' && action === 'existing_running_task') {
+					const existingStage = result?.data?.existing_stage
+					toolCall.status = 'done'
+					toolCall.success = false
+					toolCall.result = result.data || {}
+					toolCall.message = `已有任务进行中（${this.getCreateSpaceStageLabel(existingStage)}）`
+
+					const msg = this.messages.find(m => m.id === msgId)
+					this.syncToolCallInMessage(msg, toolCall)
+					this.$forceUpdate()
+
+					const existingToolCallId = result?.data?.existing_tool_call_id
+					if (existingToolCallId) {
+						const holder = this.ensureCreateSpaceToolCard(existingToolCallId, {
+							message: this.getCreateSpaceRunningText(existingStage)
+						})
+						holder.toolCall.status = 'running'
+						holder.toolCall.success = null
+						holder.toolCall.message = this.getCreateSpaceRunningText(existingStage)
+						this.syncToolCallInMessage(holder.msg, holder.toolCall)
+						this.$forceUpdate()
+						this.startCreateSpaceTaskPolling(existingToolCallId)
+					}
+					return
+				}
+
+				// Case 3: 其他结果（同步成功/失败）
+				toolCall.status = 'done'
+				toolCall.success = !!result?.success
+				toolCall.message = result?.message || '创建学习空间失败'
+				toolCall.result = result?.data || null
+
+				const msg = this.messages.find(m => m.id === msgId)
+				this.syncToolCallInMessage(msg, toolCall)
+				this.$forceUpdate()
+
+				if (result?.data?.action === 'navigate_to_space_chat' && result?.data?.space_id) {
+					setTimeout(() => {
+						this.navigateToSpaceChat(result.data.space_id, result.data.space_name, result.data.conversation_id)
+					}, 1200)
+				}
+			},
+
+			/**
+			 * 启动 2s 间隔轮询任务状态
+			 */
+			startCreateSpaceTaskPolling(toolCallId) {
+				if (!this.conversationId || !toolCallId) return
+				if (this.taskPollTimers[toolCallId]) return
+
+				const poll = async () => {
+					await this.pollCreateSpaceTaskStatus(toolCallId)
+				}
+
+				const timerId = setInterval(poll, 2000)
+				this.taskPollTimers = { ...this.taskPollTimers, [toolCallId]: timerId }
+				poll()
+			},
+
+			/**
+			 * 停止单个任务的轮询
+			 */
+			stopCreateSpaceTaskPolling(toolCallId) {
+				const timerId = this.taskPollTimers[toolCallId]
+				if (timerId) {
+					clearInterval(timerId)
+				}
+				const { [toolCallId]: _timer, ...restTimers } = this.taskPollTimers
+				this.taskPollTimers = restTimers
+				const { [toolCallId]: _lock, ...restLocks } = this.taskBindingLocks
+				this.taskBindingLocks = restLocks
+			},
+
+			/**
+			 * 停止所有轮询（页面销毁时调用）
+			 */
+			stopAllTaskPolling() {
+				Object.values(this.taskPollTimers).forEach(timerId => clearInterval(timerId))
+				this.taskPollTimers = {}
+				this.taskBindingLocks = {}
+				this.taskNavigated = {}
+			},
+
+			/**
+			 * 单次轮询：获取状态 → 更新 UI → kg_done 时触发绑定
+			 */
+			async pollCreateSpaceTaskStatus(toolCallId) {
+				try {
+					const response = await getQuickChatToolTaskStatus(this.conversationId, toolCallId)
+					if (!response) return
+
+					if (!response.success) {
+						const holder = this.ensureCreateSpaceToolCard(toolCallId, {
+							message: response?.message || '任务状态获取失败'
+						})
+						this.applyCreateSpaceTaskToCard(holder.msg, holder.toolCall, {
+							status: 'failed',
+							stage: 'kg_failed',
+							error_stage: 'kg_generation',
+							error_message: response?.message || '任务状态获取失败'
+						})
+						this.stopCreateSpaceTaskPolling(toolCallId)
+						return
+					}
+
+					if (!response.data) return
+
+					const task = response.data
+					const holder = this.ensureCreateSpaceToolCard(toolCallId, {
+						message: this.getCreateSpaceRunningText(task.stage)
+					})
+
+					this.applyCreateSpaceTaskToCard(holder.msg, holder.toolCall, task)
+
+					if (task.status === 'running' && (task.can_bind || task.stage === 'kg_done')) {
+						await this.tryBindCreateSpaceTask(toolCallId)
+						return
+					}
+
+					if (task.status === 'failed') {
+						this.stopCreateSpaceTaskPolling(toolCallId)
+						return
+					}
+
+					if (task.status === 'done' && task.stage === 'binding_done') {
+						this.stopCreateSpaceTaskPolling(toolCallId)
+						if (!this.taskNavigated[toolCallId] && task.space_id) {
+							this.taskNavigated = { ...this.taskNavigated, [toolCallId]: true }
+							setTimeout(() => {
+								this.navigateToSpaceChat(task.space_id, task.request_payload?.name, this.conversationId)
+							}, 900)
+						}
+					}
+				} catch (err) {
+					// 忽略瞬时轮询错误，继续轮询
+				}
+			},
+
+			/**
+			 * KG 完成后尝试绑定任务
+			 */
+			async tryBindCreateSpaceTask(toolCallId) {
+				if (!this.conversationId || !toolCallId) return
+				if (this.taskBindingLocks[toolCallId]) return
+
+				this.taskBindingLocks = { ...this.taskBindingLocks, [toolCallId]: true }
+
+				const holder = this.ensureCreateSpaceToolCard(toolCallId, {
+					message: CREATE_SPACE_RUNNING_STAGE_TEXT.binding
+				})
+				holder.toolCall.status = 'running'
+				holder.toolCall.success = null
+				holder.toolCall.message = CREATE_SPACE_RUNNING_STAGE_TEXT.binding
+				this.syncToolCallInMessage(holder.msg, holder.toolCall)
+				this.$forceUpdate()
+
+				try {
+					const response = await bindQuickChatToolTask(this.conversationId, toolCallId)
+					if (!response?.success) {
+						const task = response?.data
+						if (task?.stage === 'kg_done' || String(response?.message || '').includes('尚未生成完成')) {
+							return
+						}
+
+						this.applyCreateSpaceTaskToCard(holder.msg, holder.toolCall, task || {
+							status: 'failed',
+							stage: 'binding_failed',
+							error_stage: 'binding',
+							error_message: response?.message || '学习空间绑定失败'
+						})
+						this.stopCreateSpaceTaskPolling(toolCallId)
+						return
+					}
+
+					const task = response?.data || {}
+					this.applyCreateSpaceTaskToCard(holder.msg, holder.toolCall, {
+						...task,
+						status: task.status || 'done',
+						stage: task.stage || 'binding_done'
+					})
+					this.stopCreateSpaceTaskPolling(toolCallId)
+
+					const spaceId = task.space_id
+					if (spaceId && !this.taskNavigated[toolCallId]) {
+						this.taskNavigated = { ...this.taskNavigated, [toolCallId]: true }
+						setTimeout(() => {
+							this.navigateToSpaceChat(spaceId, task.space_name, this.conversationId)
+						}, 900)
+					}
+				} catch (err) {
+					this.applyCreateSpaceTaskToCard(holder.msg, holder.toolCall, {
+						status: 'failed',
+						stage: 'binding_failed',
+						error_stage: 'binding',
+						error_message: err?.message || '学习空间绑定失败'
+					})
+					this.stopCreateSpaceTaskPolling(toolCallId)
+				} finally {
+					const { [toolCallId]: _lock, ...restLocks } = this.taskBindingLocks
+					this.taskBindingLocks = restLocks
+				}
+			},
+
+			/**
+			 * 页面加载时恢复进行中的异步任务
+			 */
+			async restoreQuickChatToolTasks() {
+				if (!this.conversationId) return
+
+				try {
+					const response = await listQuickChatToolTasks(this.conversationId)
+					if (!response?.success || !response?.data?.tasks) return
+
+					const tasks = response.data.tasks || []
+					for (const task of tasks) {
+						if (task.tool_name !== 'create_learning_space' || !task.tool_call_id) continue
+
+						const holder = this.ensureCreateSpaceToolCard(task.tool_call_id, {
+							message: this.getCreateSpaceRunningText(task.stage)
+						})
+						this.applyCreateSpaceTaskToCard(holder.msg, holder.toolCall, task)
+
+						if (task.status === 'running') {
+							this.startCreateSpaceTaskPolling(task.tool_call_id)
+						}
+					}
+				} catch (err) {
+					// 恢复是尽力而为，忽略错误
+				}
+			},
+
+			/**
+			 * 确保指定 toolCallId 有对应的 UI 卡片，不存在则创建
+			 */
+			ensureCreateSpaceToolCard(toolCallId, options = {}) {
+				const existing = this.findToolCallCard(toolCallId)
+				if (existing) return existing
+
+				const toolCall = {
+					id: toolCallId,
+					tool: 'create_learning_space',
+					status: 'running',
+					success: null,
+					display_name: TOOL_DISPLAY_NAMES.create_learning_space,
+					requires_confirmation: false,
+					arguments: {},
+					result: null,
+					message: options.message || CREATE_SPACE_RUNNING_STAGE_TEXT.kg_running
+				}
+
+				const msg = {
+					id: this.nextId++,
+					role: 'ai',
+					content: '',
+					isStreaming: false,
+					isWaitingOutput: false,
+					isError: false,
+					segments: [{ type: 'tool', toolCall: { ...toolCall } }],
+					streamSegments: null,
+					toolCalls: [{ ...toolCall }],
+					isSystemToolStatus: true
+				}
+
+				this.messages = [...this.messages, msg]
+				this.$nextTick(() => this.scrollToLatestMessage())
+
+				return this.findToolCallCard(toolCallId)
+			},
+
+			/**
+			 * 根据任务状态更新卡片 UI
+			 */
+			applyCreateSpaceTaskToCard(msg, toolCall, task) {
+				if (!toolCall || !task) return
+
+				toolCall.result = task
+
+				if (task.status === 'running') {
+					toolCall.status = 'running'
+					toolCall.success = null
+					toolCall.message = this.getCreateSpaceRunningText(task.stage)
+				} else if (task.status === 'failed') {
+					toolCall.status = 'done'
+					toolCall.success = false
+					toolCall.message = this.getCreateSpaceFailedText(task)
+				} else if (task.status === 'done') {
+					toolCall.status = 'done'
+					toolCall.success = true
+					toolCall.message = CREATE_SPACE_SUCCESS_TEXT
+				}
+
+				this.syncToolCallInMessage(msg, toolCall)
+				this.$forceUpdate()
+			},
+
+			/**
+			 * 按 toolCallId 查找消息中的工具卡片
+			 */
+			findToolCallCard(toolCallId) {
+				if (!toolCallId) return null
+
+				for (let i = this.messages.length - 1; i >= 0; i -= 1) {
+					const msg = this.messages[i]
+					const segmentSources = [msg?.segments, msg?.streamSegments]
+
+					for (const source of segmentSources) {
+						if (!Array.isArray(source)) continue
+						const seg = source.find(s => s?.type === 'tool' && s?.toolCall?.id === toolCallId)
+						if (seg?.toolCall) {
+							return { msg, toolCall: seg.toolCall }
+						}
+					}
+
+					if (Array.isArray(msg?.toolCalls)) {
+						const tc = msg.toolCalls.find(t => t?.id === toolCallId)
+						if (tc) {
+							return { msg, toolCall: tc }
+						}
+					}
+				}
+
+				return null
+			},
+
+			/**
+			 * 同步工具状态到 message 的 segments/streamSegments/toolCalls
+			 */
+			syncToolCallInMessage(msg, toolCall) {
+				if (!msg || !toolCall) return
+
+				const syncInArray = (arr) => {
+					if (!Array.isArray(arr)) return
+					for (let i = 0; i < arr.length; i++) {
+						if (arr[i]?.type === 'tool' && arr[i]?.toolCall?.id === toolCall.id) {
+							arr[i].toolCall = { ...toolCall }
+						}
+					}
+				}
+
+				syncInArray(msg.segments)
+				syncInArray(msg.streamSegments)
+
+				if (Array.isArray(msg.toolCalls)) {
+					for (let i = 0; i < msg.toolCalls.length; i++) {
+						if (msg.toolCalls[i]?.id === toolCall.id) {
+							msg.toolCalls[i] = { ...toolCall }
+						}
+					}
+				}
+			},
+
+			// ========== 创建学习空间文案辅助方法 ==========
+
+			getCreateSpaceRunningText(stage) {
+				return CREATE_SPACE_RUNNING_STAGE_TEXT[stage] || '正在处理学习空间创建任务…'
+			},
+
+			getCreateSpaceStageLabel(stage) {
+				const mapping = {
+					queued: '排队中',
+					space_created: '空间已创建',
+					kg_running: '知识图谱生成中',
+					kg_done: '知识图谱已完成',
+					binding: '绑定中',
+					binding_done: '绑定完成',
+					kg_failed: '知识图谱失败',
+					binding_failed: '绑定失败',
+					timeout: '任务超时',
+					cleanup_done: '清理完成',
+					cleanup_failed: '清理失败'
+				}
+				return mapping[stage] || '处理中'
+			},
+
+			getCreateSpaceFailedText(task) {
+				if (!task) return '学习空间创建失败'
+
+				const errorStage = task.error_stage
+				const errorMessage = task.error_message || '未知错误'
+
+				let mainText = ''
+				if (errorStage === 'kg_generation') {
+					mainText = `知识图谱生成失败：${errorMessage}`
+				} else if (errorStage === 'binding') {
+					mainText = `学习空间绑定失败：${errorMessage}`
+				} else if (errorStage === 'kg_generation_timeout') {
+					mainText = '知识图谱生成超时（2分钟）'
+				} else if (errorStage === 'cleanup') {
+					mainText = `失败后清理空间失败：${errorMessage}`
+				} else {
+					mainText = `学习空间创建失败：${errorMessage}`
+				}
+
+				const cleanupStage = task?.result_payload?.cleanup_stage
+				if (cleanupStage === 'cleanup_failed') {
+					const cleanupError = task?.result_payload?.cleanup_error || '未知错误'
+					const cleanupText = `失败后清理空间失败：${cleanupError}`
+					if (!mainText.includes(cleanupText)) {
+						mainText = `${mainText}\n${cleanupText}`
+					}
+				}
+
+				return mainText
 			},
 
 			/**
@@ -2366,6 +2909,9 @@
 					this.$nextTick(() => {
 						this.scrollToLatestMessage()
 					})
+
+					// 恢复进行中的异步任务（创建学习空间等）
+					this.restoreQuickChatToolTasks()
 				} catch (err) {
 					uni.showToast({ title: '加载对话失败', icon: 'none' })
 				} finally {
@@ -2957,6 +3503,9 @@
 		padding: 20rpx 28rpx;
 		border-radius: 28rpx;
 		word-break: break-all;
+		display: flex;
+		flex-direction: column;
+		gap: 8rpx;
 	}
 
 	.user-bubble-row {
@@ -3030,7 +3579,6 @@
 
 	/* 工具调用卡片 */
 	.tool-call-card {
-		margin: 16rpx 0;
 		padding: 20rpx 24rpx;
 		background-color: rgba(255, 255, 255, 0.05);
 		border-radius: 16rpx;
@@ -3150,7 +3698,6 @@
 		background: rgba(255, 255, 255, 0.04);
 		border: 1rpx solid rgba(255, 255, 255, 0.08);
 		border-radius: 20rpx;
-		margin: 12rpx 0;
 	}
 
 	.space-query-running {
@@ -3206,11 +3753,9 @@
 	}
 
 	.space-query-wrap {
-		margin: 12rpx 0;
 	}
 
 	.space-query-wrap .space-query-pill {
-		margin: 0;
 	}
 
 	.space-query-results {
@@ -3273,6 +3818,86 @@
 		height: 28rpx;
 		filter: brightness(0) invert(1);
 		opacity: 0.4;
+	}
+
+	/* ========== 学习空间查询展开容器 ========== */
+	.space-query-expanded-container {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 0;
+		gap: 0;
+	}
+
+	.space-query-expanded-container .space-query-pill {
+		border: none;
+		background: transparent;
+		border-radius: 24rpx 24rpx 0 0;
+		padding: 20rpx 24rpx 16rpx;
+	}
+
+	.space-query-expanded-container .space-query-results {
+		border: none;
+		background: transparent;
+		border-radius: 0 0 24rpx 24rpx;
+		margin-top: 0;
+		animation: tool-card-enter 0.28s ease-out;
+	}
+
+	/* ========== 学习空间绑定/创建 pill 容器 ========== */
+	.space-mutation-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
+	.space-mutation-expanded {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 0;
+		gap: 0;
+	}
+
+	.space-mutation-expanded .graph-tool-pill {
+		border: none;
+		background: transparent;
+		border-radius: 24rpx 24rpx 0 0;
+		padding: 20rpx 24rpx 16rpx;
+	}
+
+	.space-mutation-confirm {
+		padding: 0 24rpx 20rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 16rpx;
+		animation: tool-card-enter 0.28s ease-out;
+	}
+
+	.space-mutation-confirm-text {
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.space-mutation-confirm-buttons {
+		display: flex;
+		gap: 16rpx;
+	}
+
+	/* ========== 折叠过渡动画 ========== */
+	.tool-card-leave {
+		animation: tool-card-leave 0.2s ease-in forwards;
+		pointer-events: none;
+	}
+
+	@keyframes tool-card-enter {
+		from { opacity: 0; transform: translateY(-8rpx); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+
+	@keyframes tool-card-leave {
+		from { opacity: 1; transform: translateY(0); }
+		to { opacity: 0; transform: translateY(-8rpx); }
 	}
 
 	.tool-call-status-icon {
@@ -3347,10 +3972,38 @@
 	}
 
 	/* 图表预览 */
-	.chart-image-preview {
-		margin-top: 12rpx;
-		border-radius: 12rpx;
-		overflow: hidden;
+	/* ========== 图表工具 pill 容器 ========== */
+	.chart-tool-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
+	.chart-expanded-container {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 0;
+		gap: 0;
+	}
+
+	.chart-expanded-container .graph-tool-pill {
+		border: none;
+		background: transparent;
+		border-radius: 24rpx 24rpx 0 0;
+		padding: 20rpx 24rpx 16rpx;
+	}
+
+	.chart-expanded-container .chart-detail-card {
+		border: none;
+		background: transparent;
+		border-radius: 0 0 24rpx 24rpx;
+		animation: tool-card-enter 0.28s ease-out;
+	}
+
+	.chart-detail-card {
+		padding: 0 24rpx 20rpx;
+		border-radius: 24rpx;
 	}
 
 	.chart-preview-img {
@@ -3705,7 +4358,6 @@
 
 	/* ========== 搜索来源卡片 ========== */
 	.search-tool-wrap {
-		margin: 12rpx 0;
 	}
 
 	.search-indicator {
@@ -4373,6 +5025,29 @@
 		gap: 12rpx;
 	}
 
+	/* ========== 日程工具展开容器 ========== */
+	.schedule-expanded-container {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 0;
+		gap: 0;
+	}
+
+	.schedule-expanded-container .graph-tool-pill {
+		border: none;
+		background: transparent;
+		border-radius: 24rpx 24rpx 0 0;
+		padding: 20rpx 24rpx 16rpx;
+	}
+
+	.schedule-expanded-container .schedule-card {
+		border: none;
+		background: transparent;
+		border-radius: 0 0 24rpx 24rpx;
+		animation: tool-card-enter 0.28s ease-out;
+	}
+
 	.schedule-card {
 		background: rgba(255, 255, 255, 0.04);
 		border: 1rpx solid rgba(255, 255, 255, 0.08);
@@ -4498,6 +5173,29 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12rpx;
+	}
+
+	/* ========== 复习工具展开容器 ========== */
+	.review-expanded-container {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 0;
+		gap: 0;
+	}
+
+	.review-expanded-container .graph-tool-pill {
+		border: none;
+		background: transparent;
+		border-radius: 24rpx 24rpx 0 0;
+		padding: 20rpx 24rpx 16rpx;
+	}
+
+	.review-expanded-container .review-card {
+		border: none;
+		background: transparent;
+		border-radius: 0 0 24rpx 24rpx;
+		animation: tool-card-enter 0.28s ease-out;
 	}
 
 	.review-card {

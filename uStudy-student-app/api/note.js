@@ -63,3 +63,17 @@ export function deleteNote(spaceId, noteId) {
     method: 'DELETE'
   })
 }
+
+/**
+ * 创建笔记
+ * @param {string|number} spaceId
+ * @param {Object} data - { title, content, node_id, sort_order } (all optional)
+ * @returns {Promise<Object>}
+ */
+export function createNote(spaceId, data) {
+  return request({
+    url: `/api/spaces/${spaceId}/notes`,
+    method: 'POST',
+    data
+  })
+}

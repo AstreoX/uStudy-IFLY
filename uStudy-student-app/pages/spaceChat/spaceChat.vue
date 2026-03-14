@@ -172,13 +172,12 @@
 							v-else-if="seg.type === 'tool' && isReviewTool(seg.toolCall.tool)"
 							:key="'review-tool-' + segIdx"
 							class="review-tool-wrap"
+							:class="{ 'review-expanded-container': seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<!-- pill -->
 							<view class="graph-tool-pill"
 								:class="{
 									'graph-tool-running': seg.toolCall.status === 'running',
-									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
-									'graph-tool-expanded': seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
 									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
 								@click="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
@@ -202,7 +201,8 @@
 
 							<!-- 复习事项详情卡片 -->
 							<view
-								v-if="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && getReviewDisplayItems(seg.toolCall).length && isGraphToolExpanded(seg.toolCall.id)"
+								v-if="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && getReviewDisplayItems(seg.toolCall).length && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
+								:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
 								class="review-card"
 							>
 								<view v-for="(item, idx) in getReviewDisplayItems(seg.toolCall)" :key="idx" class="review-event-item">
@@ -228,7 +228,8 @@
 
 							<!-- 无复习项 -->
 							<view
-								v-if="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && !getReviewDisplayItems(seg.toolCall).length && isGraphToolExpanded(seg.toolCall.id)"
+								v-if="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && !getReviewDisplayItems(seg.toolCall).length && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
+								:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
 								class="review-card review-card-empty"
 							>
 								<text class="review-empty-text">当前没有待复习项</text>
@@ -566,13 +567,12 @@
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'generate_chart'"
 							:key="'chart-tool-' + segIdx"
 							class="chart-tool-wrap"
+							:class="{ 'chart-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isChartExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<!-- pill 指示器（done+success 时可点击折叠/展开） -->
 							<view class="graph-tool-pill"
 								:class="{
 									'graph-tool-running': seg.toolCall.status === 'running',
-									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
-									'graph-tool-expanded': seg.toolCall.status === 'done' && seg.toolCall.success && isChartExpanded(seg.toolCall.id),
 									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
 								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleChartExpand(seg.toolCall.id)"
@@ -590,7 +590,8 @@
 							</view>
 
 							<!-- 详情卡片：图片预览（done + success + 展开时显示） -->
-							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.image_url && isChartExpanded(seg.toolCall.id)"
+							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.image_url && (isChartExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
+								:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
 								class="chart-detail-card"
 							>
 								<image
@@ -1066,12 +1067,11 @@
 							v-else-if="seg.type === 'tool' && isScheduleTool(seg.toolCall.tool)"
 							:key="'schedule-tool-' + segIdx"
 							class="schedule-view-wrap"
+							:class="{ 'schedule-expanded-container': isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<view class="graph-tool-pill"
 								:class="{
 									'graph-tool-running': seg.toolCall.status === 'running',
-									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
-									'graph-tool-expanded': isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
 									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
 								@click="isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
@@ -1095,7 +1095,8 @@
 
 							<!-- 日程详情卡片（get/add/update_schedule） -->
 							<view
-								v-if="isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && getScheduleDisplayEvents(seg.toolCall).length && isGraphToolExpanded(seg.toolCall.id)"
+								v-if="isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && getScheduleDisplayEvents(seg.toolCall).length && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
+								:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
 								class="schedule-card schedule-card-clickable"
 								@click="openNativeCalendar"
 							>
@@ -1127,7 +1128,8 @@
 
 							<!-- get_schedule 无日程 -->
 							<view
-								v-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && !getScheduleDisplayEvents(seg.toolCall).length && isGraphToolExpanded(seg.toolCall.id)"
+								v-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && !getScheduleDisplayEvents(seg.toolCall).length && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
+								:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
 								class="schedule-card schedule-card-empty"
 							>
 								<text class="schedule-empty-text">该日期范围内没有日程安排</text>
@@ -1660,6 +1662,7 @@
 	import { savePendingMessage, getPendingMessages, removePendingMessage, savePendingMessagesFromArray, clearPendingMessages } from '@/utils/messageDraft'
 	import { startBackgroundMonitor, stopBackgroundMonitor, getActiveMonitor } from '@/utils/backgroundChatMonitor'
 	import { consumeAllPending } from '@/utils/quizEvaluationBus'
+	import { createNote } from '@/api/note'
 	// #ifdef APP-PLUS
 	import SseRenderjs from '@/components/sse-renderjs/sse-renderjs.vue'
 	// #endif
@@ -5273,9 +5276,16 @@
 			},
 
 			toggleChartExpand(toolCallId) {
-				this.expandedChartDetails = {
-					...this.expandedChartDetails,
-					[toolCallId]: this.expandedChartDetails[toolCallId] === false
+				const isCurrentlyExpanded = this.expandedChartDetails[toolCallId] !== false
+				if (isCurrentlyExpanded) {
+					this.collapsingTools = { ...this.collapsingTools, [toolCallId]: true }
+					setTimeout(() => {
+						this.expandedChartDetails = { ...this.expandedChartDetails, [toolCallId]: false }
+						const { [toolCallId]: _, ...rest } = this.collapsingTools
+						this.collapsingTools = rest
+					}, 200)
+				} else {
+					this.expandedChartDetails = { ...this.expandedChartDetails, [toolCallId]: true }
 				}
 			},
 
@@ -5697,8 +5707,28 @@
 				})
 			},
 
-			toggleBookmark(msg) {
-				this.$set(msg, 'isBookmarked', !msg.isBookmarked)
+			async toggleBookmark(msg) {
+				if (msg.isBookmarked) {
+					this.$set(msg, 'isBookmarked', false)
+					return
+				}
+
+				const content = msg.content || ''
+				if (!content.trim()) {
+					uni.showToast({ title: '消息内容为空', icon: 'none' })
+					return
+				}
+
+				const title = content.replace(/[#*`>\n]/g, '').trim().slice(0, 20) || '收藏笔记'
+
+				try {
+					await createNote(this.spaceId, { title, content })
+					this.$set(msg, 'isBookmarked', true)
+					uni.showToast({ title: '已添加到笔记', icon: 'success' })
+				} catch (e) {
+					console.error('[Bookmark] createNote failed:', e)
+					uni.showToast({ title: '保存失败', icon: 'none' })
+				}
 			},
 
 			onScrollToTop() {
@@ -7017,6 +7047,29 @@
 		gap: 12rpx;
 	}
 
+	/* ========== 日程工具展开容器 ========== */
+	.schedule-expanded-container {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 0;
+		gap: 0;
+	}
+
+	.schedule-expanded-container .graph-tool-pill {
+		border: none;
+		background: transparent;
+		border-radius: 24rpx 24rpx 0 0;
+		padding: 20rpx 24rpx 16rpx;
+	}
+
+	.schedule-expanded-container .schedule-card {
+		border: none;
+		background: transparent;
+		border-radius: 0 0 24rpx 24rpx;
+		animation: tool-card-enter 0.28s ease-out;
+	}
+
 	.schedule-card {
 		background: rgba(255, 255, 255, 0.04);
 		border: 1rpx solid rgba(255, 255, 255, 0.08);
@@ -8084,6 +8137,29 @@
 		gap: 12rpx;
 	}
 
+	/* ========== 图表工具展开容器 ========== */
+	.chart-expanded-container {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 0;
+		gap: 0;
+	}
+
+	.chart-expanded-container .graph-tool-pill {
+		border: none;
+		background: transparent;
+		border-radius: 24rpx 24rpx 0 0;
+		padding: 20rpx 24rpx 16rpx;
+	}
+
+	.chart-expanded-container .chart-detail-card {
+		border: none;
+		background: transparent;
+		border-radius: 0 0 24rpx 24rpx;
+		animation: tool-card-enter 0.28s ease-out;
+	}
+
 	.chart-detail-card {
 		background: rgba(255, 255, 255, 0.04);
 		border: 1rpx solid rgba(255, 255, 255, 0.08);
@@ -8133,6 +8209,29 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12rpx;
+	}
+
+	/* ========== 复习工具展开容器 ========== */
+	.review-expanded-container {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 0;
+		gap: 0;
+	}
+
+	.review-expanded-container .graph-tool-pill {
+		border: none;
+		background: transparent;
+		border-radius: 24rpx 24rpx 0 0;
+		padding: 20rpx 24rpx 16rpx;
+	}
+
+	.review-expanded-container .review-card {
+		border: none;
+		background: transparent;
+		border-radius: 0 0 24rpx 24rpx;
+		animation: tool-card-enter 0.28s ease-out;
 	}
 
 	.review-card {

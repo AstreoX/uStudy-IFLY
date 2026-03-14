@@ -1,12 +1,10 @@
 <template>
-  <view class="agc-wrap">
+  <view class="agc-wrap" :class="{ 'agc-expanded': detailVisible || isCollapsing }">
     <view
       class="agc-pill"
       :class="{
         'agc-pill-generating': isGenerating,
-        'agc-pill-done': isDone,
-        'agc-pill-failed': isFailed,
-        'agc-pill-expanded': detailVisible
+        'agc-pill-failed': isFailed
       }"
       @click="toggleExpand"
     >
@@ -25,7 +23,7 @@
       />
     </view>
 
-    <view v-if="detailVisible" class="agc-card">
+    <view v-if="detailVisible || isCollapsing" :class="{ 'agc-card-leave': isCollapsing }" class="agc-card">
       <view class="agc-card-header">
         <view class="agc-icon-wrap">
           <image
@@ -108,6 +106,7 @@ export default {
   data() {
     return {
       isExpanded: true,
+      isCollapsing: false,
       codeScrollTop: 0,
       suppressAutoScrollUntil: 0,
       ignoreScrollEventsUntil: 0,
@@ -224,7 +223,15 @@ export default {
   },
   methods: {
     toggleExpand() {
-      this.isExpanded = !this.isExpanded
+      if (this.isExpanded) {
+        this.isCollapsing = true
+        setTimeout(() => {
+          this.isExpanded = false
+          this.isCollapsing = false
+        }, 200)
+      } else {
+        this.isExpanded = true
+      }
     },
     handleCodeScroll() {
       const now = Date.now()
@@ -274,6 +281,27 @@ export default {
   gap: 12rpx;
 }
 
+.agc-expanded {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  border-radius: 24rpx;
+  padding: 0;
+  gap: 0;
+}
+
+.agc-expanded .agc-pill {
+  border: none;
+  background: transparent;
+  border-radius: 24rpx 24rpx 0 0;
+  padding: 20rpx 24rpx 16rpx;
+}
+
+.agc-expanded .agc-card {
+  border: none;
+  background: transparent;
+  border-radius: 0 0 24rpx 24rpx;
+}
+
 .agc-pill {
   display: flex;
   align-items: center;
@@ -290,10 +318,9 @@ export default {
   background: rgba(74, 108, 247, 0.06);
 }
 
-.agc-pill-done,
-.agc-pill-expanded {
-  border-color: rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.08);
+.agc-card-leave {
+  animation: agc-card-leave 0.2s ease-in forwards;
+  pointer-events: none;
 }
 
 .agc-pill-failed {
@@ -528,11 +555,22 @@ export default {
 @keyframes agc-card-enter {
   from {
     opacity: 0;
-    transform: translateY(8rpx);
+    transform: translateY(-8rpx);
   }
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes agc-card-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8rpx);
   }
 }
 </style>

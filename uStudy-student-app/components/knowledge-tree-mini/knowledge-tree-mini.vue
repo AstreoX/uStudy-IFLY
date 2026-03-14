@@ -1018,8 +1018,10 @@ export default {
         this.drawPathNode(ctx, node)
       })
 
-      // Draw labels (path nodes only)
-      this.drawNodeLabels(ctx, pathNodes, { alpha: 0.9 })
+      // Draw labels (path nodes only) — skip when too many path nodes to avoid overlap
+      if (pathNodes.length <= 7) {
+        this.drawNodeLabels(ctx, pathNodes, { alpha: 0.9 })
+      }
     },
 
     /**
@@ -1058,11 +1060,13 @@ export default {
         this.drawNode(ctx, node)
       })
 
-      // Draw labels (level 0-1 + highlighted nodes)
-      const labelNodes = this.layoutNodes.filter(node =>
-        node.level === 0 || node.level === 1 || this.highlightLabelSet.has(node.label)
-      )
-      this.drawNodeLabels(ctx, labelNodes, { alpha: 0.85 })
+      // Draw labels only when node count <= 7 (too many nodes cause label overlap)
+      if (this.nodes.length <= 7) {
+        const labelNodes = this.layoutNodes.filter(node =>
+          node.level === 0 || node.level === 1 || this.highlightLabelSet.has(node.label)
+        )
+        this.drawNodeLabels(ctx, labelNodes, { alpha: 0.85 })
+      }
     },
 
     drawNodeLabels(ctx, nodes, options = {}) {
