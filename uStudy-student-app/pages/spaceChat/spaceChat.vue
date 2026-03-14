@@ -694,13 +694,13 @@
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'get_graph_overview'"
 							:key="'graph-overview-' + segIdx"
 							class="graph-overview-wrap"
+							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id) }"
 						>
 							<!-- pill 指示器 -->
 							<view class="graph-tool-pill"
 								:class="{
 									'graph-tool-running': seg.toolCall.status === 'running',
 									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
-									'graph-tool-expanded': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
 									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
 								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
@@ -761,13 +761,13 @@
 							v-else-if="seg.type === 'tool' && isGraphMutationTool(seg.toolCall.tool)"
 							:key="'graph-mutation-' + segIdx"
 							class="gm-wrap"
+							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id) }"
 						>
 							<!-- pill 指示器（复用样式） -->
 							<view class="graph-tool-pill"
 								:class="{
 									'graph-tool-running': seg.toolCall.status === 'running',
 									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
-									'graph-tool-expanded': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
 									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
 								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
@@ -831,13 +831,13 @@
 							v-else-if="seg.type === 'tool' && isGraphQueryTool(seg.toolCall.tool)"
 							:key="'graph-query-' + segIdx"
 							class="gm-wrap"
+							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id) }"
 						>
 							<!-- pill 指示器 -->
 							<view class="graph-tool-pill"
 								:class="{
 									'graph-tool-running': seg.toolCall.status === 'running',
 									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
-									'graph-tool-expanded': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
 									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
 								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
@@ -891,13 +891,13 @@
 							v-else-if="seg.type === 'tool' && isLearningPathTool(seg.toolCall.tool)"
 							:key="'lp-tool-' + segIdx"
 							class="gm-wrap"
+							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id) }"
 						>
 							<!-- pill 指示器 -->
 							<view class="graph-tool-pill"
 								:class="{
 									'graph-tool-running': seg.toolCall.status === 'running',
 									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
-									'graph-tool-expanded': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
 									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
 								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
@@ -958,13 +958,13 @@
 							v-else-if="seg.type === 'tool' && isPostorderTool(seg.toolCall.tool)"
 							:key="'postorder-' + segIdx"
 							class="gm-wrap"
+							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id) }"
 						>
 							<!-- pill -->
 							<view class="graph-tool-pill"
 								:class="{
 									'graph-tool-running': seg.toolCall.status === 'running',
 									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
-									'graph-tool-expanded': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
 									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
 								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
@@ -7341,6 +7341,35 @@
 			opacity: 1;
 			transform: translateY(0);
 		}
+	}
+
+	/* ========== 展开态统一容器 ========== */
+	.gm-expanded-container {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 0;
+		gap: 0;
+	}
+
+	.gm-expanded-container .graph-tool-pill {
+		border: none;
+		background: transparent;
+		border-radius: 24rpx 24rpx 0 0;
+		padding: 20rpx 24rpx 16rpx;
+	}
+
+	.gm-expanded-container .gm-card {
+		border: none;
+		background: transparent;
+		border-radius: 0 0 24rpx 24rpx;
+		animation: none;
+	}
+
+	.gm-expanded-container .graph-overview-card {
+		border: none;
+		background: transparent;
+		border-radius: 0 0 24rpx 24rpx;
 	}
 
 	/* ========== 测试题生成工具指示器 ========== */
