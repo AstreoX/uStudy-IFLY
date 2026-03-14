@@ -1,12 +1,20 @@
 <template>
-  <view class="knowledge-tree-mini-container">
+  <view class="knowledge-tree-mini-container" :class="{ 'knowledge-tree-mini-interactive': interactive }">
     <canvas
       v-if="hasData"
       :canvas-id="canvasId"
       class="mini-graph-canvas"
       :style="{ width: canvasWidth + 'px', height: canvasHeight + 'px' }"
     />
-    <view v-else class="empty-state">
+    <!-- 交互模式：透明触摸层（canvas 在 uni-app 中不可靠地接收 touch） -->
+    <view
+      v-if="interactive && hasData"
+      class="touch-overlay"
+      @touchstart="onCanvasTouchStart"
+      @touchmove.stop.prevent="onCanvasTouchMove"
+      @touchend="onCanvasTouchEnd"
+    />
+    <view v-if="!hasData" class="empty-state">
       <text class="empty-text">暂无数据</text>
     </view>
   </view>
@@ -136,6 +144,38 @@ export default {
     canvasHeight: {
       type: Number,
       default: 120
+    },
+    forceTreeMode: {
+      type: Boolean,
+      default: false
+    },
+    canvasIdSuffix: {
+      type: String,
+      default: ''
+    },
+    interactive: {
+      type: Boolean,
+      default: false
+    },
+    highlightNodeLabels: {
+      type: Array,
+      default: () => []
+    },
+    highlightColor: {
+      type: String,
+      default: '#4A6CF7'
+    },
+    highlightMode: {
+      type: String,
+      default: 'static'
+    },
+    highlightEdgePairs: {
+      type: Array,
+      default: () => []
+    },
+    highlightEdgeColor: {
+      type: String,
+      default: '#FFD93D'
     }
   },
 
@@ -145,13 +185,19 @@ export default {
       nodeMap: new Map(),
       layoutNodes: [],
       isDestroyed: false,
-      treeScale: 1
+      treeScale: 1,
+      // 交互模式：视口变换
+      viewOffsetX: 0,
+      viewOffsetY: 0,
+      viewScale: 1,
+      touchState: null,
+      drawThrottleTimer: null
     }
   },
 
   computed: {
     canvasId() {
-      return `miniGraph_${this.spaceId}`
+      return `miniGraph_${this.spaceId}${this.canvasIdSuffix}`
     },
 
     hasData() {
@@ -160,6 +206,10 @@ export default {
 
     hasLearningPath() {
       return this.edges && this.edges.some(e => e.type === 'learning_path')
+    },
+
+    highlightLabelSet() {
+      return new Set(this.highlightNodeLabels || [])
     }
   },
 
@@ -181,6 +231,12 @@ export default {
     },
     canvasHeight() {
       this.scheduleRedraw()
+    },
+    highlightNodeLabels: {
+      handler() {
+        if (!this.ctx || this.layoutNodes.length === 0) return
+        this.drawMiniGraph()
+      }
     }
   },
 
@@ -193,6 +249,10 @@ export default {
   beforeDestroy() {
     this.isDestroyed = true
     this.ctx = null
+    if (this.drawThrottleTimer) {
+      clearTimeout(this.drawThrottleTimer)
+      this.drawThrottleTimer = null
+    }
   },
 
   methods: {
@@ -232,14 +292,43 @@ export default {
       this.nodes.forEach(n => this.nodeMap.set(n.id, { ...n }))
 
       // Compute layout
-      if (this.hasLearningPath) {
+      if (this.hasLearningPath && !this.forceTreeMode) {
         this.computePathLayout()
       } else {
         this.computeConcentricLayout()
       }
 
+      // Recenter on highlighted nodes if any
+      this.recenterOnHighlights()
+
       // Draw
       this.drawMiniGraph()
+
+    },
+
+    /**
+     * 将视口中心移到高亮节点的质心，使变更节点始终居中显示
+     */
+    recenterOnHighlights() {
+      if (this.highlightLabelSet.size === 0 || this.layoutNodes.length === 0) return
+
+      const highlighted = this.layoutNodes.filter(n => this.highlightLabelSet.has(n.label))
+      if (highlighted.length === 0) return
+
+      // 计算高亮节点质心
+      const cx = highlighted.reduce((sum, n) => sum + n.x, 0) / highlighted.length
+      const cy = highlighted.reduce((sum, n) => sum + n.y, 0) / highlighted.length
+
+      // 偏移量：质心 → 画布中心
+      const dx = this.canvasWidth / 2 - cx
+      const dy = this.canvasHeight / 2 - cy
+
+      // 平移所有节点
+      this.layoutNodes = this.layoutNodes.map(n => ({
+        ...n,
+        x: n.x + dx,
+        y: n.y + dy
+      }))
     },
 
     getLabelMetrics() {
@@ -849,10 +938,26 @@ export default {
       ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight)
 
       try {
-        if (this.hasLearningPath) {
+        // 交互模式：应用视口变换（平移 + 缩放）
+        if (this.interactive) {
+          ctx.save()
+          // 先移到画布中心，再缩放，再移回 + 偏移
+          ctx.translate(
+            this.viewOffsetX + this.canvasWidth / 2,
+            this.viewOffsetY + this.canvasHeight / 2
+          )
+          ctx.scale(this.viewScale, this.viewScale)
+          ctx.translate(-this.canvasWidth / 2, -this.canvasHeight / 2)
+        }
+
+        if (this.hasLearningPath && !this.forceTreeMode) {
           this.drawPathMode(ctx)
         } else {
           this.drawTreeMode(ctx)
+        }
+
+        if (this.interactive) {
+          ctx.restore()
         }
       } catch (err) {
         console.error('[KnowledgeTreeMini] draw error:', err)
@@ -883,13 +988,23 @@ export default {
       })
       ctx.setGlobalAlpha(1.0)
 
+      // Build highlight edge lookup (label→label)
+      const highlightEdgeSet = new Set()
+      if (this.highlightEdgePairs && this.highlightEdgePairs.length > 0) {
+        this.highlightEdgePairs.forEach(pair => {
+          highlightEdgeSet.add(pair[0] + '→' + pair[1])
+        })
+      }
+
       // Draw path edges (highlight)
       const pathEdges = this.edges.filter(e => e.type === 'learning_path')
       pathEdges.forEach(edge => {
         const fromNode = nodeById.get(edge.from)
         const toNode = nodeById.get(edge.to)
         if (fromNode && toNode) {
-          this.drawPathEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y)
+          const edgeKey = fromNode.label + '→' + toNode.label
+          const edgeColor = highlightEdgeSet.has(edgeKey) ? this.highlightEdgeColor : null
+          this.drawPathEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, edgeColor)
         }
       })
 
@@ -915,6 +1030,7 @@ export default {
       const nodeById = new Map()
       this.layoutNodes.forEach(n => nodeById.set(n.id, n))
       const edgeWidth = Math.max(1, 1 * (this.treeScale || 1))
+      const hasHighlight = this.highlightLabelSet.size > 0
 
       // Draw all edges
       const treeEdges = this.edges.filter(e => e.type === 'knowledge_tree' || !e.type)
@@ -922,7 +1038,18 @@ export default {
         const fromNode = nodeById.get(edge.from)
         const toNode = nodeById.get(edge.to)
         if (fromNode && toNode) {
-          this.drawEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, 'rgba(255, 255, 255, 0.25)', edgeWidth)
+          if (hasHighlight) {
+            const fromLabel = fromNode.label
+            const toLabel = toNode.label
+            const isHighlightEdge = this.highlightLabelSet.has(fromLabel) && this.highlightLabelSet.has(toLabel)
+            if (isHighlightEdge) {
+              this.drawEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, this.highlightColor, edgeWidth * 2.5)
+            } else {
+              this.drawEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, 'rgba(255, 255, 255, 0.25)', edgeWidth)
+            }
+          } else {
+            this.drawEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, 'rgba(255, 255, 255, 0.25)', edgeWidth)
+          }
         }
       })
 
@@ -931,8 +1058,10 @@ export default {
         this.drawNode(ctx, node)
       })
 
-      // Draw labels (level 0-1 only)
-      const labelNodes = this.layoutNodes.filter(node => node.level === 0 || node.level === 1)
+      // Draw labels (level 0-1 + highlighted nodes)
+      const labelNodes = this.layoutNodes.filter(node =>
+        node.level === 0 || node.level === 1 || this.highlightLabelSet.has(node.label)
+      )
       this.drawNodeLabels(ctx, labelNodes, { alpha: 0.85 })
     },
 
@@ -987,8 +1116,8 @@ export default {
     /**
      * Draw path edge with arrow (blue highlighted)
      */
-    drawPathEdge(ctx, x1, y1, x2, y2) {
-      const color = '#0088FF'
+    drawPathEdge(ctx, x1, y1, x2, y2, overrideColor) {
+      const color = overrideColor || '#0088FF'
       const scale = this.treeScale || 1
       const lineWidth = Math.max(2, 3 * scale)
 
@@ -1073,6 +1202,21 @@ export default {
         ctx.fill()
       }
 
+      // Highlight ring for mutation tools
+      if (this.highlightLabelSet.has(node.label)) {
+        const ringRadius = radius + outlineSize + 4 * (this.treeScale || 1)
+        const ringWidth = Math.max(1.5, 2.5 * (this.treeScale || 1))
+
+        ctx.setShadow(0, 0, glowSize * 2, this.highlightColor)
+        ctx.beginPath()
+        ctx.arc(node.x, node.y, ringRadius, 0, Math.PI * 2)
+        ctx.setStrokeStyle(this.highlightColor)
+        ctx.setLineWidth(ringWidth)
+        ctx.setGlobalAlpha(0.9)
+        ctx.stroke()
+        ctx.setGlobalAlpha(1.0)
+      }
+
       // Reset shadow
       ctx.setShadow(0, 0, 0, 'transparent')
     },
@@ -1091,6 +1235,92 @@ export default {
       ctx.setStrokeStyle('#0088FF')
       ctx.setLineWidth(Math.max(1, 1.5 * (this.treeScale || 1)))
       ctx.stroke()
+    },
+
+    // ========== Touch Interaction (interactive mode) ==========
+
+    onCanvasTouchStart(e) {
+      if (!this.interactive) return
+      const touches = e.touches
+      if (touches.length === 1) {
+        this.touchState = {
+          type: 'pan',
+          startX: touches[0].clientX,
+          startY: touches[0].clientY,
+          startOffsetX: this.viewOffsetX,
+          startOffsetY: this.viewOffsetY
+        }
+      } else if (touches.length === 2) {
+        this.initPinch(touches)
+      }
+    },
+
+    onCanvasTouchMove(e) {
+      if (!this.interactive || !this.touchState) return
+      const touches = e.touches
+
+      if (touches.length === 2 && this.touchState.type === 'pan') {
+        // 单指拖动中第二根手指落下 → 切换为缩放
+        this.initPinch(touches)
+        return
+      }
+
+      if (this.touchState.type === 'pan' && touches.length === 1) {
+        this.viewOffsetX = this.touchState.startOffsetX + (touches[0].clientX - this.touchState.startX)
+        this.viewOffsetY = this.touchState.startOffsetY + (touches[0].clientY - this.touchState.startY)
+      } else if (this.touchState.type === 'pinch' && touches.length === 2) {
+        const dx = touches[1].clientX - touches[0].clientX
+        const dy = touches[1].clientY - touches[0].clientY
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const ratio = dist / this.touchState.startDist
+        this.viewScale = clamp(this.touchState.startScale * ratio, 0.3, 5)
+
+        // 缩放时同步平移
+        const midX = (touches[0].clientX + touches[1].clientX) / 2
+        const midY = (touches[0].clientY + touches[1].clientY) / 2
+        this.viewOffsetX = this.touchState.startOffsetX + (midX - this.touchState.startMidX)
+        this.viewOffsetY = this.touchState.startOffsetY + (midY - this.touchState.startMidY)
+      }
+
+      this.throttledDraw()
+    },
+
+    onCanvasTouchEnd(e) {
+      if (!this.interactive) return
+      if (e.touches.length === 0) {
+        this.touchState = null
+      } else if (e.touches.length === 1) {
+        // 缩放结束、还剩一根手指 → 切回拖动
+        this.touchState = {
+          type: 'pan',
+          startX: e.touches[0].clientX,
+          startY: e.touches[0].clientY,
+          startOffsetX: this.viewOffsetX,
+          startOffsetY: this.viewOffsetY
+        }
+      }
+    },
+
+    initPinch(touches) {
+      const dx = touches[1].clientX - touches[0].clientX
+      const dy = touches[1].clientY - touches[0].clientY
+      this.touchState = {
+        type: 'pinch',
+        startDist: Math.sqrt(dx * dx + dy * dy) || 1,
+        startScale: this.viewScale,
+        startMidX: (touches[0].clientX + touches[1].clientX) / 2,
+        startMidY: (touches[0].clientY + touches[1].clientY) / 2,
+        startOffsetX: this.viewOffsetX,
+        startOffsetY: this.viewOffsetY
+      }
+    },
+
+    throttledDraw() {
+      if (this.drawThrottleTimer) return
+      this.drawThrottleTimer = setTimeout(() => {
+        this.drawThrottleTimer = null
+        this.drawMiniGraph()
+      }, 16)
     }
   }
 }
@@ -1106,8 +1336,21 @@ export default {
   overflow: hidden;
 }
 
+.knowledge-tree-mini-interactive {
+  position: relative;
+}
+
 .mini-graph-canvas {
   display: block;
+}
+
+.touch-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
 }
 
 .empty-state {

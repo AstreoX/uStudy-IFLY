@@ -4924,32 +4924,25 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		height: 76rpx;
 		padding: 0 28rpx 0 20rpx;
 		border-radius: 38rpx;
-		background-color: rgba(255, 255, 255, 0.06);
-		-webkit-backdrop-filter: blur(40px) saturate(180%);
-		backdrop-filter: blur(40px) saturate(180%);
-		border: 1rpx solid rgba(255, 255, 255, 0.1);
-		outline: 1rpx solid rgba(255, 255, 255, 0.04);
-		outline-offset: 1rpx;
+		background: rgb(46, 46, 48);
+		border: 1.5rpx solid rgba(255, 255, 255, 0.08);
 		box-shadow:
-			inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
-			0 2rpx 12rpx rgba(0, 0, 0, 0.25);
-		transition: all 0.2s ease;
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+			0 2rpx 8rpx rgba(0, 0, 0, 0.12);
+		transition: background 0.15s ease;
+	}
+
+	.path-pill:active {
+		background: rgb(56, 56, 59);
 	}
 
 	.path-pill-active {
-		background-color: rgba(0, 136, 255, 0.75);
-		border: 1rpx solid rgba(255, 255, 255, 0.2);
-		outline: 1rpx solid rgba(0, 136, 255, 0.3);
-		box-shadow:
-			inset 0 1rpx 2rpx rgba(255, 255, 255, 0.15),
-			0 0 20rpx rgba(0, 136, 255, 0.4),
-			0 2rpx 12rpx rgba(0, 0, 0, 0.25);
+		background: rgb(0, 110, 220);
+		border-color: rgba(255, 255, 255, 0.15);
 	}
 
-	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-		.path-pill {
-			background: rgba(80, 80, 95, 0.65);
-		}
+	.path-pill-active:active {
+		background: rgb(0, 95, 190);
 	}
 
 	.path-pill-icon {

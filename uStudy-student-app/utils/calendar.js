@@ -346,15 +346,11 @@ function getSchedule(params) {
       })
     }
 
-    if (schedules.length === 0) {
-      return `查询日期范围: ${start_date} 至 ${end_date}\n该日期范围内没有日程安排`
+    return {
+      date_range: `${start_date} 至 ${end_date}`,
+      events: schedules,
+      count: schedules.length
     }
-
-    let output = `查询日期范围: ${start_date} 至 ${end_date}\n\n`
-    for (const s of schedules) {
-      output += `[${s.id}] ${s.title}\n  时间: ${s.start_time} ~ ${s.end_time}\n  详情: ${s.details}\n\n`
-    }
-    return output
   } catch (err) {
     throw new Error(`查询日程失败: ${getCalendarErrorMessage(err)}`)
   } finally {

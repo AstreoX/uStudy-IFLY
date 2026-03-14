@@ -261,27 +261,128 @@
 							</view>
 						</view>
 
-						<!-- 学习空间查询工具：行内胶囊指示器 -->
+						<!-- 学习空间查询工具：胶囊指示器 + 结果卡片 -->
 						<view
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'view_learning_spaces'"
 							:key="'space-query-' + segIdx"
-							class="space-query-pill"
-							:class="{
-								'space-query-running': seg.toolCall.status === 'running',
-								'space-query-done': seg.toolCall.status === 'done'
-							}"
+							class="space-query-wrap"
 						>
-							<image class="space-query-icon"
-								src="/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg"
-								mode="aspectFit" />
-							<text class="space-query-text">
-								{{ seg.toolCall.status === 'running' ? '正在查询学习空间' : '已查询学习空间' }}
-							</text>
-							<view v-if="seg.toolCall.status === 'running'" class="space-query-spinner"></view>
-							<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
-								class="space-query-check"
-								src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg"
-								mode="aspectFit" />
+							<!-- 胶囊指示器（done 状态可点击折叠/展开） -->
+							<view class="space-query-pill"
+								:class="{
+									'space-query-running': seg.toolCall.status === 'running',
+									'space-query-done': seg.toolCall.status === 'done',
+									'space-query-expanded': seg.toolCall.status === 'done' && isSpaceQueryExpanded(seg.toolCall.id)
+								}"
+								@click="seg.toolCall.status === 'done' && toggleSpaceQuery(seg.toolCall.id)"
+							>
+								<image class="space-query-icon"
+									src="/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg"
+									mode="aspectFit" />
+								<text class="space-query-text">
+									{{ seg.toolCall.status === 'running'
+										? '正在查询学习空间'
+										: '已查询 ' + (seg.toolCall.result && seg.toolCall.result.spaces ? seg.toolCall.result.spaces.length : 0) + ' 个学习空间' }}
+								</text>
+								<view v-if="seg.toolCall.status === 'running'" class="space-query-spinner"></view>
+								<image v-else class="space-query-chevron"
+									:class="{ 'space-query-chevron-up': isSpaceQueryExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg"
+									mode="aspectFit" />
+							</view>
+
+							<!-- 学习空间结果卡片（可折叠） -->
+							<view
+								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result && seg.toolCall.result.spaces && seg.toolCall.result.spaces.length && isSpaceQueryExpanded(seg.toolCall.id)"
+								class="space-query-results"
+							>
+								<view class="space-query-results-header">
+									<image class="space-query-results-icon" src="/static/icons/lucide/folder-open.svg" mode="aspectFit" />
+									<text class="space-query-results-title">找到 {{ seg.toolCall.result.spaces.length }} 个学习空间</text>
+								</view>
+								<view
+									v-for="space in seg.toolCall.result.spaces"
+									:key="space.id"
+									class="space-query-item"
+									@click="handleSpaceClick(space)"
+								>
+									<view class="space-query-color" :style="{ backgroundColor: space.color }"></view>
+									<text class="space-query-name">{{ space.name }}</text>
+									<image class="space-query-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit" />
+								</view>
+							</view>
+						</view>
+
+						<!-- 日程管理工具：统一 pill（所有日程工具共用，get_schedule 额外有详情卡片） -->
+						<view
+							v-else-if="seg.type === 'tool' && isScheduleTool(seg.toolCall.tool)"
+							:key="'schedule-tool-' + segIdx"
+							class="schedule-view-wrap"
+						>
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+									'graph-tool-expanded': seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+								@click="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
+							>
+								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getScheduleToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<!-- get_schedule 用 chevron（可展开） -->
+								<image v-else-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-chevron"
+									:class="{ 'graph-tool-chevron-up': isGraphToolExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+								<!-- 其他日程工具用 circle-check -->
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-status-icon"
+									src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- get_schedule 日程详情卡片 -->
+							<view
+								v-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && getScheduleEvents(seg.toolCall.result).length && isGraphToolExpanded(seg.toolCall.id)"
+								class="schedule-card"
+							>
+								<template v-for="(group, gIdx) in groupScheduleByDate(getScheduleEvents(seg.toolCall.result))" :key="'dh-' + gIdx">
+									<view class="schedule-date-header">
+										<view class="schedule-date-dot" :class="{ 'schedule-date-dot-today': group.isToday }"></view>
+										<text class="schedule-date-text" :class="{ 'schedule-date-text-today': group.isToday }">{{ group.label }}</text>
+									</view>
+									<view
+										v-for="(ev, eIdx) in group.events"
+										:key="'ev-' + gIdx + '-' + eIdx"
+										class="schedule-event-row"
+									>
+										<view class="schedule-event-time">
+											<text class="schedule-event-time-start">{{ ev.startShort }}</text>
+											<text class="schedule-event-time-end">{{ ev.endShort }}</text>
+										</view>
+										<view class="schedule-event-bar" :style="{ background: ev.barColor }"></view>
+										<view class="schedule-event-info">
+											<text class="schedule-event-title">{{ ev.title }}</text>
+											<text v-if="ev.details" class="schedule-event-desc">{{ ev.details }}</text>
+										</view>
+									</view>
+								</template>
+								<view class="schedule-card-footer">
+									<text class="schedule-card-count">共 {{ getScheduleEvents(seg.toolCall.result).length }} 个日程</text>
+								</view>
+							</view>
+
+							<!-- get_schedule 无日程 -->
+							<view
+								v-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && !getScheduleEvents(seg.toolCall.result).length && isGraphToolExpanded(seg.toolCall.id)"
+								class="schedule-card schedule-card-empty"
+							>
+								<text class="schedule-empty-text">该日期范围内没有日程安排</text>
+							</view>
 						</view>
 
 						<!-- 非记忆类工具：原有卡片样式 -->
@@ -365,18 +466,42 @@
 
 				<!-- AI 消息操作图标 (流式输出完成后显示) -->
 				<view v-if="msg.role === 'ai' && !msg.isStreaming" class="ai-msg-actions">
-					<image
-						class="ai-msg-action-icon"
-						src="/static/icons/phosphor-icons/SVGs/regular/copy.svg"
-						mode="aspectFit"
-						@click="copyMessage(msg)"
-					></image>
-					<image
-						class="ai-msg-action-icon"
-						src="/static/icons/phosphor-icons/SVGs/regular/flag.svg"
-						mode="aspectFit"
-						@click="openFeedbackModal(msg)"
-					></image>
+					<view class="ai-msg-action-btn copy-btn" @click="copyMessage(msg)">
+						<image
+							class="ai-msg-action-icon copy-icon-default"
+							:class="{ 'copy-icon-hide': msg.copySuccess }"
+							src="/static/icons/phosphor-icons/SVGs/regular/copy.svg"
+							mode="aspectFit"
+						></image>
+						<image
+							class="ai-msg-action-icon copy-icon-check"
+							:class="{ 'copy-icon-show': msg.copySuccess }"
+							src="/static/icons/phosphor-icons/SVGs/regular/check.svg"
+							mode="aspectFit"
+						></image>
+					</view>
+					<view
+						class="ai-msg-action-btn"
+						:class="{ 'action-btn-active': msg.userReaction === 'like' }"
+						@click="reactToMessage(msg, 'like')"
+					>
+						<image
+							class="ai-msg-action-icon"
+							src="/static/icons/phosphor-icons/SVGs/regular/thumbs-up.svg"
+							mode="aspectFit"
+						></image>
+					</view>
+					<view
+						class="ai-msg-action-btn"
+						:class="{ 'action-btn-active': msg.userReaction === 'dislike' }"
+						@click="reactToMessage(msg, 'dislike')"
+					>
+						<image
+							class="ai-msg-action-icon"
+							src="/static/icons/phosphor-icons/SVGs/regular/thumbs-down.svg"
+							mode="aspectFit"
+						></image>
+					</view>
 				</view>
 			</template>
 		</view>
@@ -550,7 +675,9 @@
 
 <script>
 	import config from '@/config/index.js'
-	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, submitFeedback, getModels, getStreamingStatus, rollbackLastMessage } from '@/api/chat'
+	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage } from '@/api/chat'
+	import { executeCalendarTool } from '@/utils/calendar'
+	import { createCalendarEvent, getCalendarEvents, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendarEvents'
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
 	import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	import UInputModal from '@/components/u-input-modal/u-input-modal.vue'
@@ -582,7 +709,13 @@
 		// 图表生成工具
 		generate_chart: '生成图表',
 		// 代码执行工具
-		run_python_code: '执行 Python 代码'
+		run_python_code: '执行 Python 代码',
+		// 日程管理工具
+		get_current_time: '获取当前时间',
+		get_schedule: '查看日程',
+		add_schedule: '添加日程',
+		delete_schedule: '删除日程',
+		update_schedule: '更新日程'
 	}
 
 	// 工具图标映射
@@ -603,7 +736,13 @@
 		// 图表生成工具
 		generate_chart: '/static/icons/phosphor-icons/SVGs/regular/image.svg',
 		// 代码执行工具
-		run_python_code: '/static/icons/phosphor-icons/SVGs/regular/code.svg'
+		run_python_code: '/static/icons/phosphor-icons/SVGs/regular/code.svg',
+		// 日程管理工具
+		get_current_time: '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg',
+		get_schedule: '/static/icons/phosphor-icons/SVGs/regular/calendar.svg',
+		add_schedule: '/static/icons/phosphor-icons/SVGs/regular/calendar-plus.svg',
+		delete_schedule: '/static/icons/phosphor-icons/SVGs/regular/calendar-x.svg',
+		update_schedule: '/static/icons/phosphor-icons/SVGs/regular/calendar-check.svg'
 	}
 
 	// 记忆类工具集合（使用行内波浪文字而非卡片）
@@ -620,6 +759,20 @@
 		delete_from_long_term_memory: '正在删除长期记忆…',
 		write_to_space_memory: '正在更新学习空间偏好…',
 		delete_from_space_memory: '正在删除学习空间偏好…'
+	}
+
+	// 日程管理工具集合
+	const SCHEDULE_TOOLS = new Set([
+		'get_current_time', 'get_schedule', 'add_schedule', 'delete_schedule', 'update_schedule'
+	])
+
+	// 日程工具显示文字 { running, done, failed }
+	const SCHEDULE_TOOL_TEXT = {
+		get_current_time: { running: '正在获取当前时间…', done: '已获取当前时间', failed: '获取时间失败' },
+		get_schedule:     { running: '正在查看日程…',     done: '已查看日程',     failed: '查看日程失败' },
+		add_schedule:     { running: '正在添加日程…',     done: '已添加日程',     failed: '添加日程失败' },
+		delete_schedule:  { running: '正在删除日程…',     done: '已删除日程',     failed: '删除日程失败' },
+		update_schedule:  { running: '正在更新日程…',     done: '已更新日程',     failed: '更新日程失败' }
 	}
 
 	export default {
@@ -678,6 +831,8 @@
 
 				// 搜索结果展开状态
 				expandedSearchResults: {}, // { toolCallId: true }
+				expandedSpaceQueries: {}, // { toolCallId: true/false }
+				expandedGraphTools: {}, // { toolCallId: true/false } — 日程工具折叠状态
 				// 代码块展开状态
 				expandedCodeBlocks: {}, // { toolCallId: true }
 
@@ -1409,6 +1564,99 @@
 				}
 			},
 
+			isSpaceQueryExpanded(toolCallId) {
+				return this.expandedSpaceQueries[toolCallId] !== false
+			},
+
+			toggleSpaceQuery(toolCallId) {
+				this.expandedSpaceQueries = {
+					...this.expandedSpaceQueries,
+					[toolCallId]: this.expandedSpaceQueries[toolCallId] === false
+				}
+			},
+
+			isScheduleTool(toolName) {
+				return SCHEDULE_TOOLS.has(toolName)
+			},
+
+			getScheduleToolText(toolCall) {
+				const texts = SCHEDULE_TOOL_TEXT[toolCall.tool]
+				if (!texts) return toolCall.tool
+				if (toolCall.status === 'running') return texts.running
+				if (toolCall.status === 'done' && toolCall.success) {
+					if (toolCall.tool === 'get_current_time' && toolCall.result?.current_time) {
+						const ts = toolCall.result.current_time
+						const short = ts.length >= 16 ? ts.slice(5, 16) : ts
+						const weekday = toolCall.result.weekday || ''
+						return texts.done + ' · ' + short + (weekday ? ' ' + weekday : '')
+					}
+					if (toolCall.tool === 'get_schedule') {
+						const dr = toolCall.result?.date_range || toolCall.result?.data?.date_range
+						if (dr) return texts.done + ' · ' + dr
+					}
+					return texts.done
+				}
+				return texts.failed
+			},
+
+			getScheduleEvents(result) {
+				if (!result) return []
+				if (result.events) return result.events
+				if (result.data?.events) return result.data.events
+				return []
+			},
+
+			groupScheduleByDate(events) {
+				if (!events || !events.length) return []
+				const groups = {}
+				const today = new Date()
+				const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+				const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+				const BAR_COLORS = [
+					'rgba(74, 108, 247, 0.8)',
+					'rgba(232, 168, 56, 0.8)',
+					'rgba(94, 194, 105, 0.8)',
+					'rgba(129, 140, 248, 0.8)',
+					'rgba(239, 68, 68, 0.8)'
+				]
+				let colorIdx = 0
+				for (const ev of events) {
+					const dateStr = ev.start_time ? ev.start_time.slice(0, 10) : 'unknown'
+					if (!groups[dateStr]) {
+						const d = new Date(dateStr.replace(/-/g, '/'))
+						const isToday = dateStr === todayStr
+						const month = d.getMonth() + 1
+						const day = d.getDate()
+						const weekday = WEEKDAYS[d.getDay()]
+						groups[dateStr] = {
+							date: dateStr,
+							label: `${month}月${day}日 ${weekday}` + (isToday ? ' · 今天' : ''),
+							isToday,
+							events: []
+						}
+					}
+					groups[dateStr].events.push({
+						...ev,
+						startShort: ev.start_time ? ev.start_time.slice(11, 16) : '',
+						endShort: ev.end_time ? ev.end_time.slice(11, 16) : '',
+						barColor: BAR_COLORS[colorIdx % BAR_COLORS.length]
+					})
+					colorIdx++
+				}
+				return Object.values(groups).sort((a, b) => a.date.localeCompare(b.date))
+			},
+
+			isGraphToolExpanded(toolCallId) {
+				return this.expandedGraphTools[toolCallId] !== false
+			},
+
+			toggleGraphTool(toolCallId) {
+				this.expandedGraphTools = {
+					...this.expandedGraphTools,
+					[toolCallId]: this.expandedGraphTools[toolCallId] === false
+				}
+			},
+
 			isCodeExpanded(toolCallId) {
 				return !!this.expandedCodeBlocks[toolCallId]
 			},
@@ -1538,6 +1786,9 @@
 
 					const toolCall = this.activeToolCalls.find(tc => tc.id === id)
 					if (toolCall) {
+						// 防止后端 tool_call(done) 覆盖客户端已完成的工具结果
+						if (toolCall._clientDone) return
+
 						toolCall.status = 'done'
 						toolCall.success = success
 						toolCall.result = result
@@ -1641,6 +1892,107 @@
 				}
 
 				this.$forceUpdate()
+			},
+
+			/**
+			 * 处理客户端工具请求（日历操作等）
+			 */
+			async handleClientToolRequest(aiMsgId, data) {
+				const { tool_call_id, tool, params } = data
+
+				// 日历工具：自动执行
+				this.handleToolCallEvent(aiMsgId, {
+					id: tool_call_id,
+					tool,
+					status: 'running',
+					arguments: params
+				})
+
+				const calendarResult = await executeCalendarTool(tool, params)
+
+				// Dual-write: sync to backend DB (best-effort)
+				this.syncCalendarToBackend(tool, params, calendarResult).catch(err => {
+					console.warn('Calendar backend sync failed:', err)
+				})
+
+				// POST 结果回后端（带重试）
+				const maxRetries = 3
+				for (let attempt = 1; attempt <= maxRetries; attempt++) {
+					try {
+						await submitToolResult(this.conversationId, {
+							tool_call_id,
+							success: calendarResult.success,
+							result: calendarResult.result || null,
+							error: calendarResult.error || null
+						})
+						break
+					} catch (err) {
+						console.error(`submitToolResult attempt ${attempt} failed:`, err)
+						if (attempt < maxRetries) {
+							await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 1)))
+						}
+					}
+				}
+
+				// 更新工具卡片为完成状态
+				this.handleToolCallEvent(aiMsgId, {
+					id: tool_call_id,
+					tool,
+					status: 'done',
+					success: calendarResult.success,
+					result: calendarResult.result || calendarResult.error
+				})
+
+				// 标记为客户端已完成
+				const clientTc = this.activeToolCalls.find(tc => tc.id === tool_call_id)
+				if (clientTc) clientTc._clientDone = true
+			},
+
+			async syncCalendarToBackend(tool, params, calendarResult) {
+				if (!calendarResult.success) return
+				try {
+					if (tool === 'add_schedule') {
+						const externalId = calendarResult.result?.id || null
+						await createCalendarEvent({
+							title: params.title,
+							start_time: this.calendarTimeToISO(params.start_time),
+							end_time: this.calendarTimeToISO(params.end_time),
+							details: params.details || null,
+							external_id: externalId ? String(externalId) : null,
+							source_conversation_id: this.conversationId || null
+						})
+					} else if (tool === 'delete_schedule' && params.schedule_id) {
+						const events = await getCalendarEvents(
+							new Date(Date.now() - 365 * 86400000).toISOString(),
+							new Date(Date.now() + 365 * 86400000).toISOString()
+						)
+						const match = (events || []).find(e => e.external_id === String(params.schedule_id))
+						if (match) await deleteCalendarEvent(match.id)
+					} else if (tool === 'update_schedule' && params.schedule_id) {
+						const events = await getCalendarEvents(
+							new Date(Date.now() - 365 * 86400000).toISOString(),
+							new Date(Date.now() + 365 * 86400000).toISOString()
+						)
+						const match = (events || []).find(e => e.external_id === String(params.schedule_id))
+						if (match) {
+							const updateData = {}
+							if (params.title) updateData.title = params.title
+							if (params.start_time) updateData.start_time = this.calendarTimeToISO(params.start_time)
+							if (params.end_time) updateData.end_time = this.calendarTimeToISO(params.end_time)
+							if (params.details) updateData.details = params.details
+							await updateCalendarEvent(match.id, updateData)
+						}
+					}
+				} catch (err) {
+					console.warn('syncCalendarToBackend error:', err)
+				}
+			},
+
+			calendarTimeToISO(timeStr) {
+				if (!timeStr) return new Date().toISOString()
+				const [datePart, timePart] = timeStr.split(' ')
+				if (!datePart || !timePart) return new Date().toISOString()
+				return new Date(`${datePart}T${timePart}:00`).toISOString()
 			},
 
 			handleSpaceClick(space) {
@@ -2016,6 +2368,10 @@
 							this.handleToolCallEvent(aiMsgId, data)
 						},
 
+						onClientToolRequest: (data) => {
+							this.handleClientToolRequest(aiMsgId, data)
+						},
+
 						onDone: (fullContent) => {
 							this.flushThinkingBuffer()
 							const msg = this.messages.find(m => m.id === aiMsgId)
@@ -2190,9 +2546,42 @@
 			copyMessage(msg) {
 				uni.setClipboardData({
 					data: msg.content,
-					success() {
-						uni.showToast({ title: '已复制', icon: 'success' })
+					showToast: false,
+					success: () => {
+						this.$set(msg, 'copySuccess', true)
+						setTimeout(() => {
+							this.$set(msg, 'copySuccess', false)
+						}, 1500)
 					}
+				})
+			},
+
+			reactToMessage(msg, reaction) {
+				const current = msg.userReaction
+				const newReaction = current === reaction ? null : reaction
+				this.$set(msg, 'userReaction', newReaction)
+
+				// Only send feedback when setting a reaction (not when clearing)
+				if (!newReaction) return
+
+				const conversationHistory = this.messages.map(m => ({
+					role: m.role,
+					content: m.content,
+					created_at: m.created_at || new Date().toISOString(),
+					toolCalls: m.toolCalls || null,
+					segments: m.segments || null
+				}))
+
+				submitFeedback({
+					conversation_id: this.conversationId,
+					message_id: msg.serverId || null,
+					chat_mode: 'quick_chat',
+					space_name: null,
+					feedback_type: newReaction === 'like' ? 'positive' : 'negative',
+					feedback_content: newReaction === 'like' ? '👍 用户点赞了此回复' : '👎 用户点踩了此回复',
+					conversation_history: conversationHistory
+				}).catch(() => {
+					// Silent failure — don't affect UI
 				})
 			},
 
@@ -2631,44 +3020,134 @@
 	.space-query-pill {
 		display: flex;
 		align-items: center;
-		gap: 16rpx;
-		padding: 16rpx 24rpx;
-		background-color: #171412;
-		border: 1rpx solid #3A302A;
-		border-radius: 24rpx;
+		gap: 14rpx;
+		padding: 14rpx 20rpx;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 20rpx;
 		margin: 12rpx 0;
 	}
 
+	.space-query-running {
+		background: rgba(74, 108, 247, 0.06);
+		border-color: rgba(74, 108, 247, 0.3);
+	}
+
+	.space-query-done {
+		background: rgba(255, 255, 255, 0.06);
+		border-color: rgba(255, 255, 255, 0.12);
+	}
+
+	.space-query-expanded {
+		background: rgba(74, 108, 247, 0.08);
+		border-color: rgba(74, 108, 247, 0.25);
+	}
+
 	.space-query-icon {
-		width: 32rpx;
-		height: 32rpx;
-		filter: invert(42%) sepia(93%) saturate(1352%) hue-rotate(213deg) brightness(99%) contrast(94%);
+		width: 30rpx;
+		height: 30rpx;
+		flex-shrink: 0;
+		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
 	}
 
 	.space-query-text {
 		flex: 1;
-		font-size: 26rpx;
+		font-size: 25rpx;
 		font-weight: 500;
-		color: #C8BCAE;
+		color: rgba(255, 255, 255, 0.65);
 	}
 
 	.space-query-spinner {
-		width: 28rpx;
-		height: 28rpx;
-		border: 2rpx solid rgba(74, 108, 247, 0.3);
+		width: 22rpx;
+		height: 22rpx;
+		border: 2rpx solid rgba(74, 108, 247, 0.25);
 		border-top-color: #4A6CF7;
 		border-radius: 50%;
 		animation: spin 0.8s linear infinite;
+		flex-shrink: 0;
 	}
 
-	.space-query-check {
+	.space-query-chevron {
+		width: 24rpx;
+		height: 24rpx;
+		flex-shrink: 0;
+		opacity: 0.35;
+		filter: brightness(0) invert(1);
+		transition: transform 0.2s ease;
+	}
+
+	.space-query-chevron-up {
+		transform: rotate(180deg);
+	}
+
+	.space-query-wrap {
+		margin: 12rpx 0;
+	}
+
+	.space-query-wrap .space-query-pill {
+		margin: 0;
+	}
+
+	.space-query-results {
+		margin-top: 12rpx;
+		background: rgba(255, 255, 255, 0.06);
+		border: 1rpx solid rgba(255, 255, 255, 0.12);
+		border-radius: 16rpx;
+		padding: 20rpx 24rpx;
+	}
+
+	.space-query-results-header {
+		display: flex;
+		align-items: center;
+		gap: 10rpx;
+		padding-bottom: 16rpx;
+		border-bottom: 1rpx solid rgba(255, 255, 255, 0.08);
+		margin-bottom: 4rpx;
+	}
+
+	.space-query-results-icon {
 		width: 28rpx;
 		height: 28rpx;
-		filter: invert(42%) sepia(93%) saturate(1352%) hue-rotate(213deg) brightness(99%) contrast(94%);
+		filter: brightness(0) invert(1);
+		opacity: 0.5;
 	}
 
-	.space-query-done {
-		opacity: 0.6;
+	.space-query-results-title {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.45);
+		font-weight: 500;
+	}
+
+	.space-query-item {
+		display: flex;
+		align-items: center;
+		padding: 16rpx 0;
+		border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
+	}
+
+	.space-query-item:last-child {
+		border-bottom: none;
+	}
+
+	.space-query-color {
+		width: 24rpx;
+		height: 24rpx;
+		border-radius: 6rpx;
+		margin-right: 16rpx;
+		flex-shrink: 0;
+	}
+
+	.space-query-name {
+		flex: 1;
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.9);
+	}
+
+	.space-query-arrow {
+		width: 28rpx;
+		height: 28rpx;
+		filter: brightness(0) invert(1);
+		opacity: 0.4;
 	}
 
 	.tool-call-status-icon {
@@ -2882,15 +3361,68 @@
 	.ai-msg-actions {
 		display: flex;
 		align-items: center;
-		gap: 24rpx;
+		gap: 4rpx;
 		margin-top: 12rpx;
 	}
 
+	.ai-msg-action-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 12rpx;
+		transition: background-color 0.15s ease, transform 0.1s ease;
+	}
+
+	.ai-msg-action-btn:active {
+		transform: scale(0.88);
+		background-color: rgba(255, 255, 255, 0.08);
+	}
+
 	.ai-msg-action-icon {
-		width: 32rpx;
-		height: 32rpx;
+		width: 30rpx;
+		height: 30rpx;
+		opacity: 0.4;
+		filter: brightness(0) invert(1);
+		transition: opacity 0.15s ease, filter 0.15s ease;
+	}
+
+	.action-btn-active .ai-msg-action-icon {
 		opacity: 1;
-		filter: brightness(0) invert(0.45) sepia(0.15);
+		filter: brightness(0) invert(1);
+	}
+
+	/* 复制按钮：两个图标叠加 crossfade */
+	.copy-btn {
+		position: relative;
+	}
+
+	.copy-icon-default,
+	.copy-icon-check {
+		position: absolute;
+		transition: opacity 0.25s ease, transform 0.25s ease;
+	}
+
+	.copy-icon-default {
+		opacity: 0.4;
+		transform: scale(1);
+	}
+
+	.copy-icon-default.copy-icon-hide {
+		opacity: 0;
+		transform: scale(0.6);
+	}
+
+	.copy-icon-check {
+		opacity: 0;
+		transform: scale(0.6);
+	}
+
+	.copy-icon-check.copy-icon-show {
+		opacity: 1;
+		transform: scale(1);
+		filter: brightness(0) invert(0.45) sepia(1) saturate(8) hue-rotate(90deg);
 	}
 
 	/* 用户消息操作图标 */
@@ -3705,5 +4237,210 @@
 		color: rgba(255, 255, 255, 0.75);
 		line-height: 1.7;
 		word-break: break-all;
+	}
+
+	/* ========== 知识图谱/日程工具 pill ========== */
+	.graph-tool-pill {
+		display: flex;
+		align-items: center;
+		gap: 16rpx;
+		padding: 16rpx 24rpx;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		transition: all 0.25s ease;
+	}
+
+	.graph-tool-running {
+		border-color: rgba(74, 108, 247, 0.3);
+		background: rgba(74, 108, 247, 0.06);
+	}
+
+	.graph-tool-done {
+		/* 中性底色 */
+	}
+
+	.graph-tool-failed {
+		border-color: rgba(239, 68, 68, 0.2);
+		background: rgba(239, 68, 68, 0.05);
+	}
+
+	.graph-tool-pill-icon {
+		width: 32rpx;
+		height: 32rpx;
+		flex-shrink: 0;
+		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
+	}
+
+	.graph-tool-pill-text {
+		flex: 1;
+		font-size: 26rpx;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.7);
+	}
+
+	.graph-tool-running .graph-tool-pill-text {
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.graph-tool-spinner {
+		width: 28rpx;
+		height: 28rpx;
+		border: 2rpx solid rgba(74, 108, 247, 0.3);
+		border-top-color: #4A6CF7;
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+		flex-shrink: 0;
+	}
+
+	.graph-tool-status-icon {
+		width: 28rpx;
+		height: 28rpx;
+		flex-shrink: 0;
+		filter: invert(48%) sepia(30%) saturate(900%) hue-rotate(100deg) brightness(85%) contrast(90%);
+	}
+
+	.graph-tool-status-failed {
+		filter: invert(40%) sepia(90%) saturate(2000%) hue-rotate(345deg) brightness(90%) contrast(95%);
+	}
+
+	.graph-tool-expanded {
+		border-color: rgba(255, 255, 255, 0.2);
+		background: rgba(255, 255, 255, 0.08);
+	}
+
+	.graph-tool-chevron {
+		width: 24rpx;
+		height: 24rpx;
+		flex-shrink: 0;
+		opacity: 0.35;
+		filter: brightness(0) invert(1);
+		transition: transform 0.2s ease;
+	}
+
+	.graph-tool-chevron-up {
+		transform: rotate(180deg);
+	}
+
+	/* ========== 日程详情卡片 ========== */
+	.schedule-view-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
+	.schedule-card {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 20rpx 24rpx 14rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 8rpx;
+	}
+
+	.schedule-date-header {
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+		padding: 6rpx 0;
+	}
+
+	.schedule-date-dot {
+		width: 10rpx;
+		height: 10rpx;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.25);
+		flex-shrink: 0;
+	}
+
+	.schedule-date-dot-today {
+		background: rgba(74, 108, 247, 0.8);
+	}
+
+	.schedule-date-text {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.45);
+		font-weight: 600;
+	}
+
+	.schedule-date-text-today {
+		color: rgba(255, 255, 255, 0.6);
+	}
+
+	.schedule-event-row {
+		display: flex;
+		align-items: flex-start;
+		gap: 16rpx;
+		background: rgba(255, 255, 255, 0.04);
+		border-radius: 16rpx;
+		padding: 14rpx 16rpx;
+	}
+
+	.schedule-event-time {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 2rpx;
+		width: 80rpx;
+		flex-shrink: 0;
+	}
+
+	.schedule-event-time-start {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.8);
+		font-weight: 600;
+	}
+
+	.schedule-event-time-end {
+		font-size: 20rpx;
+		color: rgba(255, 255, 255, 0.35);
+	}
+
+	.schedule-event-bar {
+		width: 4rpx;
+		height: 48rpx;
+		border-radius: 2rpx;
+		flex-shrink: 0;
+	}
+
+	.schedule-event-info {
+		display: flex;
+		flex-direction: column;
+		gap: 4rpx;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.schedule-event-title {
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.85);
+		font-weight: 500;
+	}
+
+	.schedule-event-desc {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.4);
+	}
+
+	.schedule-card-footer {
+		display: flex;
+		justify-content: flex-end;
+		padding: 6rpx 4rpx 0;
+	}
+
+	.schedule-card-count {
+		font-size: 20rpx;
+		color: rgba(255, 255, 255, 0.25);
+	}
+
+	.schedule-card-empty {
+		padding: 24rpx;
+		align-items: center;
+	}
+
+	.schedule-empty-text {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.35);
 	}
 </style>

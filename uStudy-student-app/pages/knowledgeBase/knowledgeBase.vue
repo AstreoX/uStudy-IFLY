@@ -604,6 +604,20 @@ export default {
       return title.slice(0, maxLength) + '...'
     },
 
+    // 计算字符串的 UTF-8 字节长度（兼容 App 原生端，无需 Blob）
+    getStringByteLength(str) {
+      if (!str) return 0
+      let len = 0
+      for (let i = 0; i < str.length; i++) {
+        const code = str.codePointAt(i)
+        if (code <= 0x7F) len += 1
+        else if (code <= 0x7FF) len += 2
+        else if (code <= 0xFFFF) len += 3
+        else { len += 4; i++ }
+      }
+      return len
+    },
+
     formatFileSize(bytes) {
       if (!bytes) return ''
       if (bytes < 1024) return `${bytes} B`
@@ -623,8 +637,8 @@ export default {
       for (const doc of this.documents) {
         if (doc.doc_type === 'link') {
           // 链接按 URL 字符串的 UTF-8 字节长度计算
-          const urlLength = new Blob([doc.url || '']).size
-          const titleLength = new Blob([doc.title || '']).size
+          const urlLength = this.getStringByteLength(doc.url || '')
+          const titleLength = this.getStringByteLength(doc.title || '')
           totalBytes += urlLength + titleLength
         } else {
           // 文件按实际大小计算
@@ -920,7 +934,7 @@ export default {
       }
 
       // 预估链接数据大小并检查存储空间
-      const estimatedSize = new Blob([url, title]).size
+      const estimatedSize = this.getStringByteLength(url) + this.getStringByteLength(title)
       if (!this.checkStorageSpace(estimatedSize)) {
         this.closeLinkDialog()
         return

@@ -31,7 +31,7 @@
 
 <script>
 const DIMENSIONS = ['连续性', '专注度', '深入程度', '理解程度', '知识结构', '复习情况']
-const CURRENT_DEFAULTS = [82, 65, 90, 55, 48, 75]
+const CURRENT_DEFAULTS = [0, 0, 0, 0, 0, 0]
 const GRID_LEVELS = [20, 40, 60, 80, 100]
 
 const TAP_TARGET_SIZE = 40
@@ -76,6 +76,21 @@ export default {
       isDestroyed: false,
       _initRetryTimer: null,
       labelAnchors: []
+    }
+  },
+
+  watch: {
+    currentValues: {
+      handler() {
+        this.drawRadar()
+      },
+      deep: true
+    },
+    lastWeekValues: {
+      handler() {
+        this.drawRadar()
+      },
+      deep: true
     }
   },
 
@@ -209,7 +224,7 @@ export default {
     normalizeValues(values, sides) {
       const arr = Array.isArray(values) ? values : []
       if (arr.length >= sides) return arr.slice(0, sides)
-      return [...arr, ...Array(sides - arr.length).fill(50)]
+      return [...arr, ...Array(sides - arr.length).fill(0)]
     },
 
     trySetLineDash(ctx, pattern) {

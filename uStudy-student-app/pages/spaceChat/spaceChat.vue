@@ -218,121 +218,176 @@
 							</view>
 						</view>
 
-						<!-- 测验成绩工具：view_quiz_results -->
+						<!-- 测验成绩工具：pill + 可折叠结果卡片 -->
 						<view
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'view_quiz_results'"
 							:key="'quiz-results-' + segIdx"
-							class="tool-call-card"
-							:class="{
-								'tool-call-running': seg.toolCall.status === 'running',
-								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
-								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
-							}"
+							class="quiz-tool-wrap"
 						>
-							<!-- Header -->
-							<view class="tool-call-header">
-								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
-								<text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
-								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
-								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
-									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
-								<image v-else class="tool-call-status-icon tool-call-status-failed"
-									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							<!-- 胶囊指示器 -->
+							<view class="quiz-tool-pill"
+								:class="{
+									'quiz-tool-running': seg.toolCall.status === 'running',
+									'quiz-tool-done': seg.toolCall.status === 'done',
+									'quiz-tool-expanded': seg.toolCall.status === 'done' && isQuizToolExpanded(seg.toolCall.id),
+									'quiz-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+								@click="seg.toolCall.status === 'done' && toggleQuizTool(seg.toolCall.id)"
+							>
+								<image class="quiz-tool-pill-icon" src="/static/icons/lucide/list-checks.svg" mode="aspectFit" />
+								<text class="quiz-tool-pill-text">
+									{{ seg.toolCall.status === 'running'
+										? '正在查询测验成绩…'
+										: (seg.toolCall.success
+											? '已查询 ' + (seg.toolCall.result?.quizzes?.length || 0) + ' 份测验'
+											: '查询测验成绩失败') }}
+								</text>
+								<view v-if="seg.toolCall.status === 'running'" class="quiz-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="quiz-tool-chevron"
+									:class="{ 'quiz-tool-chevron-up': isQuizToolExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
 							</view>
 
-							<!-- 测验列表 -->
-							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.data?.quizzes?.length"
-								class="quiz-results-list">
-								<view v-for="(quiz, idx) in seg.toolCall.result.data.quizzes" :key="idx" class="quiz-result-item">
-									<view class="quiz-result-header">
+							<!-- 测验列表卡片 -->
+							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.quizzes?.length && isQuizToolExpanded(seg.toolCall.id)"
+								class="quiz-tool-results-card">
+								<view v-for="(quiz, idx) in seg.toolCall.result.quizzes" :key="idx"
+									class="quiz-result-item"
+									:class="{
+										'quiz-result-clickable': getQuizClickAction(quiz) !== 'disabled',
+										'quiz-result-evaluating': quiz.attempt_status === 'pending' || quiz.attempt_status === 'evaluating'
+									}"
+									@click="onQuizItemClick(quiz)"
+								>
+									<view class="quiz-result-row">
 										<text class="quiz-result-title">{{ quiz.title }}</text>
 										<text class="quiz-result-difficulty"
 											:class="'difficulty-' + quiz.difficulty">{{ getDifficultyLabel(quiz.difficulty) }}</text>
 									</view>
 									<view class="quiz-result-meta">
-										<text v-if="quiz.has_attempt" class="quiz-result-score">{{ quiz.score }}/{{ quiz.total_score }}</text>
+										<text v-if="quiz.attempt_status === 'pending' || quiz.attempt_status === 'evaluating'"
+											class="quiz-result-evaluating-text">评估中</text>
+										<text v-else-if="quiz.has_attempt" class="quiz-result-score">{{ quiz.score }}/{{ quiz.total_score }}</text>
 										<text v-else class="quiz-result-no-attempt">未作答</text>
 										<text class="quiz-result-date">{{ quiz.created_at }}</text>
+										<image v-if="getQuizClickAction(quiz) !== 'disabled'"
+											class="quiz-result-arrow"
+											src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit" />
 									</view>
 								</view>
 							</view>
 
 							<!-- 无测验 -->
-							<view v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" class="tool-call-result">
-								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '当前学习空间没有测验' }}</text>
-							</view>
-
-							<!-- 失败 -->
-							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
-								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '获取测验成绩失败' }}</text>
+							<view v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success && isQuizToolExpanded(seg.toolCall.id) && !seg.toolCall.result?.quizzes?.length"
+								class="quiz-tool-empty">
+								<text class="quiz-tool-empty-text">{{ seg.toolCall.result?.message || '当前学习空间没有测验' }}</text>
 							</view>
 						</view>
 
-						<!-- 测验详情工具：view_quiz_attempt_detail -->
+						<!-- 测验详情工具：pill + 可折叠分析卡片 -->
 						<view
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'view_quiz_attempt_detail'"
 							:key="'quiz-detail-' + segIdx"
-							class="tool-call-card"
-							:class="{
-								'tool-call-running': seg.toolCall.status === 'running',
-								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
-								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
-							}"
+							class="quiz-tool-wrap"
 						>
-							<!-- Header -->
-							<view class="tool-call-header">
-								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
-								<text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
-								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
-								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
-									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
-								<image v-else class="tool-call-status-icon tool-call-status-failed"
-									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							<!-- 胶囊指示器 -->
+							<view class="quiz-tool-pill"
+								:class="{
+									'quiz-tool-running': seg.toolCall.status === 'running',
+									'quiz-tool-done': seg.toolCall.status === 'done',
+									'quiz-tool-expanded': seg.toolCall.status === 'done' && isQuizToolExpanded(seg.toolCall.id),
+									'quiz-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+								@click="seg.toolCall.status === 'done' && toggleQuizTool(seg.toolCall.id)"
+							>
+								<image class="quiz-tool-pill-icon" src="/static/icons/lucide/list-checks.svg" mode="aspectFit" />
+								<text class="quiz-tool-pill-text">
+									{{ seg.toolCall.status === 'running'
+										? '正在分析测验详情…'
+										: (seg.toolCall.success
+											? '测验分析完成'
+											: '测验分析失败') }}
+								</text>
+								<view v-if="seg.toolCall.status === 'running'" class="quiz-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="quiz-tool-chevron"
+									:class="{ 'quiz-tool-chevron-up': isQuizToolExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
 							</view>
 
-							<!-- 详情内容 -->
-							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.data"
-								class="quiz-detail-content">
-								<!-- 总分 -->
-								<view class="quiz-detail-score-summary">
-									<text class="quiz-detail-score-value">{{ seg.toolCall.result.data.score }}/{{ seg.toolCall.result.data.total_score }}</text>
-									<text class="quiz-detail-score-percent">({{ seg.toolCall.result.data.percentage }}%)</text>
-								</view>
-
-								<!-- 优势 -->
-								<view v-if="seg.toolCall.result.data.strengths?.length" class="quiz-detail-section">
-									<text class="quiz-detail-section-title">优势</text>
-									<view v-for="(item, idx) in seg.toolCall.result.data.strengths" :key="'s-' + idx" class="quiz-detail-list-item">
-										<text class="quiz-detail-list-icon strength-icon">✓</text>
-										<text class="quiz-detail-list-text">{{ item }}</text>
+							<!-- 详情分析卡片 -->
+							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result && isQuizToolExpanded(seg.toolCall.id)"
+								class="quiz-tool-detail-card quiz-tool-detail-clickable"
+								@click="navigateToResult(seg.toolCall.arguments?.quiz_id)">
+								<!-- 得分概览区 -->
+								<view class="quiz-detail-score-section">
+									<view class="quiz-detail-score-header">
+										<text class="quiz-detail-score-label">得分</text>
+									</view>
+									<view class="quiz-detail-score-row">
+										<text class="quiz-detail-score-value">{{ seg.toolCall.result.score }}/{{ seg.toolCall.result.total_score }}</text>
+										<text class="quiz-detail-score-percent">({{ seg.toolCall.result.percentage }}%)</text>
+									</view>
+									<view class="quiz-detail-score-bar-bg">
+										<view class="quiz-detail-score-bar-fill"
+											:style="{ width: (seg.toolCall.result.percentage || 0) + '%' }"
+											:class="getScoreBarClass(seg.toolCall.result.percentage)"></view>
 									</view>
 								</view>
 
-								<!-- 不足 -->
-								<view v-if="seg.toolCall.result.data.weaknesses?.length" class="quiz-detail-section">
-									<text class="quiz-detail-section-title">不足</text>
-									<view v-for="(item, idx) in seg.toolCall.result.data.weaknesses" :key="'w-' + idx" class="quiz-detail-list-item">
-										<text class="quiz-detail-list-icon weakness-icon">✗</text>
-										<text class="quiz-detail-list-text">{{ item }}</text>
+								<!-- 分析区 -->
+								<view v-if="seg.toolCall.result.strengths?.length || seg.toolCall.result.weaknesses?.length"
+									class="quiz-detail-analysis-section">
+									<view class="quiz-detail-analysis-header">
+										<text class="quiz-detail-section-title">分析</text>
+									</view>
+
+									<!-- 优势 -->
+									<view v-if="seg.toolCall.result.strengths?.length" class="quiz-detail-subsection">
+										<text class="quiz-detail-subsection-title">优势</text>
+										<view v-for="(item, idx) in seg.toolCall.result.strengths" :key="'s-' + idx" class="quiz-detail-tag-item">
+											<view class="quiz-detail-dot strength-dot"></view>
+											<text class="quiz-detail-tag-text">{{ item }}</text>
+										</view>
+									</view>
+
+									<!-- 不足 -->
+									<view v-if="seg.toolCall.result.weaknesses?.length" class="quiz-detail-subsection">
+										<text class="quiz-detail-subsection-title">不足</text>
+										<view v-for="(item, idx) in seg.toolCall.result.weaknesses" :key="'w-' + idx" class="quiz-detail-tag-item">
+											<view class="quiz-detail-dot weakness-dot"></view>
+											<text class="quiz-detail-tag-text">{{ item }}</text>
+										</view>
 									</view>
 								</view>
 
-								<!-- 题目列表 -->
-								<view v-if="seg.toolCall.result.data.questions?.length" class="quiz-detail-section">
-									<text class="quiz-detail-section-title">题目详情</text>
-									<view v-for="(q, idx) in seg.toolCall.result.data.questions" :key="'q-' + idx" class="quiz-detail-question-item">
-										<text class="quiz-detail-question-order">{{ q.order }}</text>
-										<text class="quiz-detail-question-status"
-											:class="'status-' + q.status">{{ q.status === 'correct' ? '✓' : q.status === 'wrong' ? '✗' : '△' }}</text>
-										<text class="quiz-detail-question-title">{{ q.title }}</text>
-										<text class="quiz-detail-question-score">{{ q.score }}</text>
+								<!-- 题目详情区 -->
+								<view v-if="seg.toolCall.result.questions?.length" class="quiz-detail-questions-section">
+									<view class="quiz-detail-questions-header">
+										<text class="quiz-detail-section-title">题目详情</text>
+										<text class="quiz-detail-questions-count">{{ seg.toolCall.result.questions.length }} 题</text>
 									</view>
+									<view v-for="(q, idx) in seg.toolCall.result.questions" :key="'q-' + idx" class="quiz-detail-q-row">
+										<text class="quiz-detail-q-order">{{ q.order }}</text>
+										<view class="quiz-detail-q-status-dot"
+											:class="'status-dot-' + q.status"></view>
+										<text class="quiz-detail-q-title">{{ q.title }}</text>
+										<text class="quiz-detail-q-score">{{ q.score }}</text>
+									</view>
+								</view>
+
+								<!-- 查看详情入口 -->
+								<view class="quiz-detail-footer">
+									<text class="quiz-detail-footer-text">查看完整评估结果</text>
+									<image class="quiz-detail-footer-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit" />
 								</view>
 							</view>
 
 							<!-- 失败 -->
-							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
-								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '获取测验详情失败' }}</text>
+							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success && isQuizToolExpanded(seg.toolCall.id)"
+								class="quiz-tool-empty">
+								<text class="quiz-tool-empty-text">{{ seg.toolCall.result?.message || '获取测验详情失败' }}</text>
 							</view>
 						</view>
 
@@ -613,6 +668,424 @@
 									<text class="quiz-entry-meta">点击进入测试</text>
 								</view>
 								<image class="quiz-entry-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit" />
+							</view>
+						</view>
+
+						<!-- 知识图谱概览工具：pill + 详情卡片 -->
+						<view
+							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'get_graph_overview'"
+							:key="'graph-overview-' + segIdx"
+							class="graph-overview-wrap"
+						>
+							<!-- pill 指示器 -->
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+									'graph-tool-expanded': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
+							>
+								<image class="graph-tool-pill-icon" src="/static/icons/git-pull-request.svg" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getGraphToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-chevron"
+									:class="{ 'graph-tool-chevron-up': isGraphToolExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- 详情卡片 (done + success + 有快照) -->
+							<view
+								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id] && isGraphToolExpanded(seg.toolCall.id)"
+								class="graph-overview-card"
+								@click="showGraphQuickView = true"
+							>
+								<!-- Header -->
+								<view class="graph-overview-header">
+									<view class="graph-overview-icon-wrap">
+										<image class="graph-overview-icon-img" src="/static/icons/git-pull-request.svg" mode="aspectFit" />
+									</view>
+									<view class="graph-overview-title-col">
+										<text class="graph-overview-title">{{ spaceTitle }}知识图谱</text>
+										<text class="graph-overview-meta">{{ graphMutationSnapshots[seg.toolCall.id].nodes.length }} 个节点 · {{ graphMutationSnapshots[seg.toolCall.id].edges.length }} 条边</text>
+									</view>
+								</view>
+
+								<!-- Divider -->
+								<view class="graph-overview-divider"></view>
+
+								<!-- Graph thumbnail -->
+								<view class="graph-overview-preview" :style="{ height: graphPreviewHeight + 'px' }">
+									<knowledge-tree-mini
+										:space-id="spaceId"
+										:nodes="graphMutationSnapshots[seg.toolCall.id].nodes"
+										:edges="graphMutationSnapshots[seg.toolCall.id].edges"
+										:canvas-width="graphPreviewWidth"
+										:canvas-height="graphPreviewHeight"
+										:force-tree-mode="true"
+										:canvas-id-suffix="graphMutationSnapshots[seg.toolCall.id].canvasSuffix"
+									/>
+									<view class="graph-overview-hint" @click.stop="showGraphQuickView = true">
+										<image class="graph-overview-hint-icon" src="/static/icons/phosphor-icons/SVGs/regular/eye.svg" mode="aspectFit" />
+										<text class="graph-overview-hint-text">快速查看</text>
+									</view>
+								</view>
+							</view>
+						</view>
+
+						<!-- 知识图谱变更工具：pill + 详情卡片 -->
+						<view
+							v-else-if="seg.type === 'tool' && isGraphMutationTool(seg.toolCall.tool)"
+							:key="'graph-mutation-' + segIdx"
+							class="gm-wrap"
+						>
+							<!-- pill 指示器（复用样式） -->
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+									'graph-tool-expanded': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
+							>
+								<image class="graph-tool-pill-icon" src="/static/icons/git-pull-request.svg" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getGraphToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-chevron"
+									:class="{ 'graph-tool-chevron-up': isGraphToolExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- 详情卡片 (done + success + 有快照数据) -->
+							<view
+								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id] && isGraphToolExpanded(seg.toolCall.id)"
+								class="gm-card"
+							>
+								<!-- Header -->
+								<view class="gm-card-header">
+									<view class="gm-card-icon-wrap"
+										:class="{
+											'gm-icon-add': seg.toolCall.tool === 'add_node' || seg.toolCall.tool === 'add_edge',
+											'gm-icon-delete': seg.toolCall.tool === 'delete_node' || seg.toolCall.tool === 'delete_edge',
+											'gm-icon-update': seg.toolCall.tool === 'update_mastery'
+										}"
+									>
+										<image class="gm-card-icon-img" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+									</view>
+									<view class="gm-card-title-col">
+										<text class="gm-card-title">{{ getGmCardTitle(seg.toolCall) }}</text>
+										<text class="gm-card-meta">{{ getGmCardMeta(seg.toolCall.id) }}</text>
+									</view>
+								</view>
+
+								<view class="gm-card-divider"></view>
+
+								<!-- 完整知识图谱 + 高亮 -->
+								<view class="gm-card-preview" :style="{ height: graphPreviewHeight + 'px' }">
+									<knowledge-tree-mini
+										:space-id="spaceId"
+										:nodes="graphMutationSnapshots[seg.toolCall.id].nodes"
+										:edges="graphMutationSnapshots[seg.toolCall.id].edges"
+										:canvas-width="graphPreviewWidth"
+										:canvas-height="graphPreviewHeight"
+										:force-tree-mode="true"
+										:canvas-id-suffix="graphMutationSnapshots[seg.toolCall.id].canvasSuffix"
+										:highlight-node-labels="graphMutationSnapshots[seg.toolCall.id].highlightNodeLabels"
+										:highlight-color="graphMutationSnapshots[seg.toolCall.id].highlightColor"
+										:highlight-mode="graphMutationSnapshots[seg.toolCall.id].highlightMode"
+									/>
+								</view>
+							</view>
+						</view>
+
+						<!-- 知识图谱查询工具：pill + 详情卡片 -->
+						<view
+							v-else-if="seg.type === 'tool' && isGraphQueryTool(seg.toolCall.tool)"
+							:key="'graph-query-' + segIdx"
+							class="gm-wrap"
+						>
+							<!-- pill 指示器 -->
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+									'graph-tool-expanded': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
+							>
+								<image class="graph-tool-pill-icon" src="/static/icons/git-pull-request.svg" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getGraphToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-chevron"
+									:class="{ 'graph-tool-chevron-up': isGraphToolExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- 详情卡片 (done + success + 有快照数据) -->
+							<view
+								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id] && isGraphToolExpanded(seg.toolCall.id)"
+								class="gm-card"
+							>
+								<view class="gm-card-header">
+									<view class="gm-card-icon-wrap gm-icon-query">
+										<image class="gm-card-icon-img" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+									</view>
+									<view class="gm-card-title-col">
+										<text class="gm-card-title">{{ getGmCardTitle(seg.toolCall) }}</text>
+										<text class="gm-card-meta">{{ getGmCardMeta(seg.toolCall.id) }}</text>
+									</view>
+								</view>
+								<view class="gm-card-divider"></view>
+								<view class="gm-card-preview" :style="{ height: graphPreviewHeight + 'px' }">
+									<knowledge-tree-mini
+										:space-id="spaceId"
+										:nodes="graphMutationSnapshots[seg.toolCall.id].nodes"
+										:edges="graphMutationSnapshots[seg.toolCall.id].edges"
+										:canvas-width="graphPreviewWidth"
+										:canvas-height="graphPreviewHeight"
+										:force-tree-mode="true"
+										:canvas-id-suffix="graphMutationSnapshots[seg.toolCall.id].canvasSuffix"
+										:highlight-node-labels="graphMutationSnapshots[seg.toolCall.id].highlightNodeLabels"
+										:highlight-color="graphMutationSnapshots[seg.toolCall.id].highlightColor"
+										:highlight-mode="graphMutationSnapshots[seg.toolCall.id].highlightMode"
+									/>
+								</view>
+							</view>
+						</view>
+
+						<!-- 学习路径工具：pill + 详情卡片 -->
+						<view
+							v-else-if="seg.type === 'tool' && isLearningPathTool(seg.toolCall.tool)"
+							:key="'lp-tool-' + segIdx"
+							class="gm-wrap"
+						>
+							<!-- pill 指示器 -->
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+									'graph-tool-expanded': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
+							>
+								<image class="graph-tool-pill-icon" src="/static/icons/git-pull-request.svg" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getGraphToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-chevron"
+									:class="{ 'graph-tool-chevron-up': isGraphToolExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- 详情卡片 (done + success + 有快照数据) -->
+							<view
+								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id] && isGraphToolExpanded(seg.toolCall.id)"
+								class="gm-card"
+							>
+								<view class="gm-card-header">
+									<view class="gm-card-icon-wrap"
+										:class="{
+											'gm-icon-path-generate': seg.toolCall.tool === 'generate_learning_path',
+											'gm-icon-path-modify': seg.toolCall.tool !== 'generate_learning_path'
+										}"
+									>
+										<image class="gm-card-icon-img" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+									</view>
+									<view class="gm-card-title-col">
+										<text class="gm-card-title">{{ getGmCardTitle(seg.toolCall) }}</text>
+										<text class="gm-card-meta">{{ getGmCardMeta(seg.toolCall.id) }}</text>
+									</view>
+								</view>
+								<view class="gm-card-divider"></view>
+								<view class="gm-card-preview" :style="{ height: graphPreviewHeight + 'px' }">
+									<knowledge-tree-mini
+										:space-id="spaceId"
+										:nodes="graphMutationSnapshots[seg.toolCall.id].nodes"
+										:edges="graphMutationSnapshots[seg.toolCall.id].edges"
+										:canvas-width="graphPreviewWidth"
+										:canvas-height="graphPreviewHeight"
+										:force-tree-mode="false"
+										:canvas-id-suffix="graphMutationSnapshots[seg.toolCall.id].canvasSuffix"
+										:highlight-node-labels="graphMutationSnapshots[seg.toolCall.id].highlightNodeLabels"
+										:highlight-color="graphMutationSnapshots[seg.toolCall.id].highlightColor"
+										:highlight-mode="graphMutationSnapshots[seg.toolCall.id].highlightMode"
+										:highlight-edge-pairs="graphMutationSnapshots[seg.toolCall.id].highlightEdgePairs || []"
+										:highlight-edge-color="graphMutationSnapshots[seg.toolCall.id].highlightEdgeColor || '#FFD93D'"
+									/>
+								</view>
+							</view>
+						</view>
+
+						<!-- 后序遍历工具：pill + 知识图谱卡片 -->
+						<view
+							v-else-if="seg.type === 'tool' && isPostorderTool(seg.toolCall.tool)"
+							:key="'postorder-' + segIdx"
+							class="gm-wrap"
+						>
+							<!-- pill -->
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+									'graph-tool-expanded': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
+							>
+								<image class="graph-tool-pill-icon" src="/static/icons/git-pull-request.svg" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getGraphToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-chevron"
+									:class="{ 'graph-tool-chevron-up': isGraphToolExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- 详情卡片 (done + success + 有快照) -->
+							<view
+								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id] && isGraphToolExpanded(seg.toolCall.id)"
+								class="gm-card"
+							>
+								<view class="gm-card-header">
+									<view class="gm-card-icon-wrap gm-icon-postorder">
+										<image class="gm-card-icon-img" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+									</view>
+									<view class="gm-card-title-col">
+										<text class="gm-card-title">{{ getGmCardTitle(seg.toolCall) }}</text>
+										<text class="gm-card-meta">{{ getGmCardMeta(seg.toolCall.id) }}</text>
+									</view>
+								</view>
+								<view class="gm-card-divider"></view>
+								<view class="gm-card-preview" :style="{ height: graphPreviewHeight + 'px' }">
+									<knowledge-tree-mini
+										:space-id="spaceId"
+										:nodes="graphMutationSnapshots[seg.toolCall.id].nodes"
+										:edges="graphMutationSnapshots[seg.toolCall.id].edges"
+										:canvas-width="graphPreviewWidth"
+										:canvas-height="graphPreviewHeight"
+										:force-tree-mode="true"
+										:canvas-id-suffix="graphMutationSnapshots[seg.toolCall.id].canvasSuffix"
+										:highlight-node-labels="graphMutationSnapshots[seg.toolCall.id].highlightNodeLabels"
+										:highlight-color="graphMutationSnapshots[seg.toolCall.id].highlightColor"
+										:highlight-mode="graphMutationSnapshots[seg.toolCall.id].highlightMode"
+									/>
+								</view>
+							</view>
+						</view>
+
+						<!-- 其他知识图谱工具：行内 pill -->
+						<view
+							v-else-if="seg.type === 'tool' && isGraphToolButNotOverview(seg.toolCall.tool)"
+							:key="'graph-tool-' + segIdx"
+							class="graph-tool-pill"
+							:class="{
+								'graph-tool-running': seg.toolCall.status === 'running',
+								'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+								'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+							}"
+						>
+							<image class="graph-tool-pill-icon" src="/static/icons/git-pull-request.svg" mode="aspectFit" />
+							<text class="graph-tool-pill-text">{{ getGraphToolText(seg.toolCall) }}</text>
+							<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+							<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+								class="graph-tool-status-icon"
+								src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+							<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+								class="graph-tool-status-icon graph-tool-status-failed"
+								src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+						</view>
+
+						<!-- 日程管理工具：统一 pill（所有日程工具共用，get_schedule 额外有详情卡片） -->
+						<view
+							v-else-if="seg.type === 'tool' && isScheduleTool(seg.toolCall.tool)"
+							:key="'schedule-tool-' + segIdx"
+							class="schedule-view-wrap"
+						>
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+									'graph-tool-expanded': seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+								@click="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
+							>
+								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getScheduleToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<!-- get_schedule 用 chevron（可展开） -->
+								<image v-else-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-chevron"
+									:class="{ 'graph-tool-chevron-up': isGraphToolExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+								<!-- 其他日程工具用 circle-check -->
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-status-icon"
+									src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- get_schedule 日程详情卡片 -->
+							<view
+								v-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && getScheduleEvents(seg.toolCall.result).length && isGraphToolExpanded(seg.toolCall.id)"
+								class="schedule-card"
+							>
+								<template v-for="(group, gIdx) in groupScheduleByDate(getScheduleEvents(seg.toolCall.result))" :key="'dh-' + gIdx">
+									<view class="schedule-date-header">
+										<view class="schedule-date-dot" :class="{ 'schedule-date-dot-today': group.isToday }"></view>
+										<text class="schedule-date-text" :class="{ 'schedule-date-text-today': group.isToday }">{{ group.label }}</text>
+									</view>
+									<view
+										v-for="(ev, eIdx) in group.events"
+										:key="'ev-' + gIdx + '-' + eIdx"
+										class="schedule-event-row"
+									>
+										<view class="schedule-event-time">
+											<text class="schedule-event-time-start">{{ ev.startShort }}</text>
+											<text class="schedule-event-time-end">{{ ev.endShort }}</text>
+										</view>
+										<view class="schedule-event-bar" :style="{ background: ev.barColor }"></view>
+										<view class="schedule-event-info">
+											<text class="schedule-event-title">{{ ev.title }}</text>
+											<text v-if="ev.details" class="schedule-event-desc">{{ ev.details }}</text>
+										</view>
+									</view>
+								</template>
+								<view class="schedule-card-footer">
+									<text class="schedule-card-count">共 {{ getScheduleEvents(seg.toolCall.result).length }} 个日程</text>
+								</view>
+							</view>
+
+							<!-- get_schedule 无日程 -->
+							<view
+								v-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && !getScheduleEvents(seg.toolCall.result).length && isGraphToolExpanded(seg.toolCall.id)"
+								class="schedule-card schedule-card-empty"
+							>
+								<text class="schedule-empty-text">该日期范围内没有日程安排</text>
 							</view>
 						</view>
 
@@ -978,6 +1451,43 @@
 			@close="showImageSourcePicker = false"
 		/>
 
+		<!-- 知识图谱快速预览弹窗 -->
+		<view
+			v-if="showGraphQuickView && graphOverviewData"
+			class="graph-quick-view-overlay"
+			@click="showGraphQuickView = false"
+		>
+			<view class="graph-quick-view-panel" @click.stop>
+				<!-- 头部 -->
+				<view class="graph-quick-view-header">
+					<view class="graph-quick-view-title-row">
+						<image class="graph-quick-view-title-icon" src="/static/icons/git-pull-request.svg" mode="aspectFit" />
+						<text class="graph-quick-view-title">{{ spaceTitle }}知识图谱</text>
+					</view>
+					<view class="graph-quick-view-close" @click="showGraphQuickView = false">
+						<image class="graph-quick-view-close-icon" src="/static/icons/phosphor-icons/SVGs/regular/x.svg" mode="aspectFit" />
+					</view>
+				</view>
+
+				<!-- 元信息 -->
+				<text class="graph-quick-view-meta">{{ graphOverviewData.nodes.length }} 个节点 · {{ graphOverviewData.edges.length }} 条边</text>
+
+				<!-- 图谱画布（可拖动/缩放） -->
+				<view class="graph-quick-view-canvas" :style="{ height: graphQuickViewHeight + 'px' }">
+					<knowledge-tree-mini
+						:space-id="spaceId"
+						:nodes="graphOverviewData.nodes"
+						:edges="graphOverviewData.edges"
+						:canvas-width="graphQuickViewWidth"
+						:canvas-height="graphQuickViewHeight"
+						:force-tree-mode="true"
+						:interactive="true"
+						canvas-id-suffix="_quickview"
+					/>
+				</view>
+			</view>
+		</view>
+
 		<!-- SSE Renderjs 组件 (仅 Android App) -->
 		<!-- #ifdef APP-PLUS -->
 		<sse-renderjs
@@ -999,6 +1509,7 @@
 	import PreKnowledgeCard from '@/components/pre-knowledge-card/pre-knowledge-card.vue'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
 	import NoteCreationCard from '@/components/note-creation-card/note-creation-card.vue'
+	import KnowledgeTreeMini from '@/components/knowledge-tree-mini/knowledge-tree-mini.vue'
 	import { generateQuiz, getTaskStatus, getSpaceGraph } from '@/api/space'
 	import { createConversation, getConversation, sendMessage as sendChatMessage, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage } from '@/api/chat'
 	import { connectNotificationStream } from '@/api/notification'
@@ -1028,10 +1539,13 @@
 		get_parent_nodes: '获取父节点',
 		get_sibling_nodes: '获取兄弟节点',
 		generate_learning_path: '生成学习路径',
+		extend_learning_path: '延伸学习路径',
+		update_learning_path_segment: '更新路径段',
 		get_learning_paths: '获取学习路径',
 		delete_all_learning_paths: '删除所有路径',
 		get_postorder_traversal: '获取后序遍历',
 		// 日程管理工具
+		get_current_time: '获取当前时间',
 		get_schedule: '查看日程',
 		add_schedule: '添加日程',
 		delete_schedule: '删除日程',
@@ -1081,14 +1595,17 @@
 		delete_node: '/static/icons/phosphor-icons/SVGs/regular/trash.svg',
 		delete_edge: '/static/icons/phosphor-icons/SVGs/regular/link-break.svg',
 		update_mastery: '/static/icons/phosphor-icons/SVGs/regular/graduation-cap.svg',
-		get_child_nodes: '/static/icons/phosphor-icons/SVGs/regular/arrow-down.svg',
-		get_parent_nodes: '/static/icons/phosphor-icons/SVGs/regular/arrow-up.svg',
-		get_sibling_nodes: '/static/icons/phosphor-icons/SVGs/regular/arrows-left-right.svg',
+		get_child_nodes: '/static/icons/lucide/git-merge.svg',
+		get_parent_nodes: '/static/icons/lucide/git-branch.svg',
+		get_sibling_nodes: '/static/icons/lucide/git-pull-request-draft.svg',
 		generate_learning_path: '/static/icons/phosphor-icons/SVGs/regular/flow-arrow.svg',
+		extend_learning_path: '/static/icons/phosphor-icons/SVGs/regular/flow-arrow.svg',
+		update_learning_path_segment: '/static/icons/phosphor-icons/SVGs/regular/arrows-left-right.svg',
 		get_learning_paths: '/static/icons/phosphor-icons/SVGs/regular/path.svg',
 		delete_all_learning_paths: '/static/icons/phosphor-icons/SVGs/regular/trash.svg',
 		get_postorder_traversal: '/static/icons/phosphor-icons/SVGs/regular/tree-structure.svg',
 		// 日程管理工具
+		get_current_time: '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg',
 		get_schedule: '/static/icons/phosphor-icons/SVGs/regular/calendar.svg',
 		add_schedule: '/static/icons/phosphor-icons/SVGs/regular/calendar-plus.svg',
 		delete_schedule: '/static/icons/phosphor-icons/SVGs/regular/calendar-x.svg',
@@ -1149,6 +1666,79 @@
 		delete_from_space_memory: '正在删除学习空间偏好…'
 	}
 
+	// 知识图谱类工具集合（使用行内 pill 而非卡片）
+	const GRAPH_TOOLS = new Set([
+		'get_graph_overview',
+		'add_node',
+		'add_edge',
+		'delete_node',
+		'delete_edge',
+		'update_mastery',
+		'get_child_nodes',
+		'get_parent_nodes',
+		'get_sibling_nodes',
+		'generate_learning_path',
+		'extend_learning_path',
+		'update_learning_path_segment',
+		'get_learning_paths',
+		'delete_all_learning_paths',
+		'get_postorder_traversal'
+	])
+
+	// 知识图谱变更工具（有详情卡片 + 动画）
+	const GRAPH_MUTATION_TOOLS = new Set([
+		'add_node', 'add_edge', 'update_mastery'
+	])
+
+	// 知识图谱查询工具（有详情卡片 + 高亮）
+	const GRAPH_QUERY_TOOLS = new Set([
+		'get_child_nodes', 'get_parent_nodes', 'get_sibling_nodes'
+	])
+
+	// 详情卡片默认折叠的工具（需要手动点击展开）
+	const GRAPH_DEFAULT_COLLAPSED = new Set([
+		'get_child_nodes', 'get_parent_nodes', 'get_sibling_nodes',
+		'get_postorder_traversal', 'add_edge'
+	])
+
+	// 学习路径工具（有详情卡片 + path mode 渲染 + 边高亮）
+	const LEARNING_PATH_TOOLS = new Set([
+		'generate_learning_path', 'extend_learning_path', 'update_learning_path_segment'
+	])
+
+	// 知识图谱工具显示文字 { running, done, failed }
+	const GRAPH_TOOL_TEXT = {
+		get_graph_overview:        { running: '正在查看知识图谱…',   done: '已查看知识图谱',   failed: '查看知识图谱失败' },
+		add_node:                  { running: '正在添加知识节点…',   done: '已添加知识节点',   failed: '添加知识节点失败' },
+		add_edge:                  { running: '正在添加知识关系…',   done: '已添加知识关系',   failed: '添加知识关系失败' },
+		delete_node:               { running: '正在删除知识节点…',   done: '已删除知识节点',   failed: '删除知识节点失败' },
+		delete_edge:               { running: '正在删除知识关系…',   done: '已删除知识关系',   failed: '删除知识关系失败' },
+		update_mastery:            { running: '正在更新掌握度…',     done: '已更新掌握度',     failed: '更新掌握度失败' },
+		get_child_nodes:           { running: '正在获取子节点…',     done: '已获取子节点',     failed: '获取子节点失败' },
+		get_parent_nodes:          { running: '正在获取父节点…',     done: '已获取父节点',     failed: '获取父节点失败' },
+		get_sibling_nodes:         { running: '正在获取兄弟节点…',   done: '已获取兄弟节点',   failed: '获取兄弟节点失败' },
+		generate_learning_path:    { running: '正在生成学习路径…',   done: '已生成学习路径',   failed: '生成学习路径失败' },
+		extend_learning_path:          { running: '正在延伸学习路径…',   done: '已延伸学习路径',   failed: '延伸学习路径失败' },
+		update_learning_path_segment:  { running: '正在更新路径段…',     done: '已更新路径段',     failed: '更新路径段失败' },
+		get_learning_paths:        { running: '正在获取学习路径…',   done: '已获取学习路径',   failed: '获取学习路径失败' },
+		delete_all_learning_paths: { running: '正在删除学习路径…',   done: '已删除学习路径',   failed: '删除学习路径失败' },
+		get_postorder_traversal:   { running: '正在遍历知识图谱…',   done: '已遍历知识图谱',   failed: '遍历知识图谱失败' }
+	}
+
+	// 日程管理工具集合
+	const SCHEDULE_TOOLS = new Set([
+		'get_current_time', 'get_schedule', 'add_schedule', 'delete_schedule', 'update_schedule'
+	])
+
+	// 日程工具显示文字 { running, done, failed }
+	const SCHEDULE_TOOL_TEXT = {
+		get_current_time: { running: '正在获取当前时间…', done: '已获取当前时间', failed: '获取时间失败' },
+		get_schedule:     { running: '正在查看日程…',     done: '已查看日程',     failed: '查看日程失败' },
+		add_schedule:     { running: '正在添加日程…',     done: '已添加日程',     failed: '添加日程失败' },
+		delete_schedule:  { running: '正在删除日程…',     done: '已删除日程',     failed: '删除日程失败' },
+		update_schedule:  { running: '正在更新日程…',     done: '已更新日程',     failed: '更新日程失败' }
+	}
+
 	export default {
 		components: {
 			UCapsuleToast,
@@ -1158,6 +1748,7 @@
 			PreKnowledgeCard,
 			ImageSourcePicker,
 			NoteCreationCard,
+			KnowledgeTreeMini,
 			// #ifdef APP-PLUS
 			SseRenderjs,
 			// #endif
@@ -1238,6 +1829,8 @@
 
 				// 搜索结果展开状态
 				expandedSearchResults: {}, // { toolCallId: true }
+				expandedQuizTools: {}, // { toolCallId: true/false }
+				expandedGraphTools: {}, // { toolCallId: true/false }
 				// 代码块展开状态
 				expandedCodeBlocks: {}, // { toolCallId: true }
 
@@ -1281,7 +1874,21 @@
 				showModelMenu: false,
 
 				// 后台监控：最后一条用户消息的发送时间
-				lastUserMessageTimestamp: null
+				lastUserMessageTimestamp: null,
+
+				// 知识图谱概览卡片
+				graphOverviewData: null,
+				graphPreviewWidth: 200,
+				graphPreviewHeight: 110,
+
+				// 图谱快速预览弹窗
+				showGraphQuickView: false,
+				graphQuickViewWidth: 300,
+				graphQuickViewHeight: 300,
+
+				// 图谱变更工具快照
+				graphMutationSnapshots: {},
+				gmCanvasCounter: 0
 			}
 		},
 
@@ -1343,6 +1950,9 @@
 					this.spaceTitle = '学习空间'
 				}
 			}
+
+			// 计算图谱概览预览尺寸
+			this.calculateGraphPreviewSize()
 
 			// 如果传入了 conversationId，加载历史消息
 			if (options.conversationId) {
@@ -2412,7 +3022,7 @@
 							msg.segments = segments
 							msg.toolCalls = m.tool_calls
 						}
-						// 修正 artifact 卡片的 generating 状态
+						// 修正 artifact 卡片的 generating 状态 + 恢复图谱变更快照
 						if (msg.segments) {
 							for (const seg of msg.segments) {
 								if (seg.type === 'tool' && seg.toolCall &&
@@ -2420,6 +3030,31 @@
 									seg.toolCall.status === 'done' && seg.toolCall.success &&
 									seg.toolCall.result?.status === 'generating') {
 									seg.toolCall = { ...seg.toolCall, result: { ...seg.toolCall.result, status: 'done' } }
+								}
+								if (seg.type === 'tool' && seg.toolCall &&
+									seg.toolCall.tool === 'get_graph_overview' &&
+									seg.toolCall.status === 'done' && seg.toolCall.success) {
+									this.prepareGraphOverviewSnapshot(seg.toolCall.id, seg.toolCall.tool, seg.toolCall)
+								}
+								if (seg.type === 'tool' && seg.toolCall &&
+									GRAPH_MUTATION_TOOLS.has(seg.toolCall.tool) &&
+									seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result) {
+									this.prepareGraphMutationSnapshot(seg.toolCall.id, seg.toolCall.tool, seg.toolCall.result)
+								}
+								if (seg.type === 'tool' && seg.toolCall &&
+									GRAPH_QUERY_TOOLS.has(seg.toolCall.tool) &&
+									seg.toolCall.status === 'done' && seg.toolCall.success) {
+									this.prepareGraphQuerySnapshot(seg.toolCall.id, seg.toolCall.tool, seg.toolCall)
+								}
+								if (seg.type === 'tool' && seg.toolCall &&
+									LEARNING_PATH_TOOLS.has(seg.toolCall.tool) &&
+									seg.toolCall.status === 'done' && seg.toolCall.success) {
+									this.prepareLearningPathSnapshot(seg.toolCall.id, seg.toolCall.tool, seg.toolCall)
+								}
+								if (seg.type === 'tool' && seg.toolCall &&
+									seg.toolCall.tool === 'get_postorder_traversal' &&
+									seg.toolCall.status === 'done' && seg.toolCall.success) {
+									this.preparePostorderSnapshot(seg.toolCall.id, seg.toolCall.tool, seg.toolCall)
 								}
 							}
 						}
@@ -2693,6 +3328,12 @@
 
 							// 保存最终片段
 							msg.segments = finalSegments
+							// [debug] 检查日程工具片段
+							for (const fs of finalSegments) {
+								if (fs.type === 'tool' && SCHEDULE_TOOLS.has(fs.toolCall?.tool)) {
+									console.log('[schedule-debug] onDone finalSeg:', fs.toolCall.tool, 'status:', fs.toolCall.status, 'success:', fs.toolCall.success, 'result keys:', fs.toolCall.result ? Object.keys(fs.toolCall.result) : 'null', 'expanded:', this.expandedGraphTools[fs.toolCall.id])
+								}
+							}
 							// 保存完整文本用于复制等功能
 							msg.content = fullContent
 							// 清理流式片段
@@ -3042,7 +3683,7 @@
 							msg.segments = segments
 							msg.toolCalls = m.tool_calls
 						}
-						// 修正历史加载中 artifact 卡片的 generating 状态
+						// 修正历史加载中 artifact 卡片的 generating 状态 + 恢复图谱变更快照
 						if (msg.segments) {
 							for (const seg of msg.segments) {
 								if (seg.type === 'tool' && seg.toolCall &&
@@ -3050,6 +3691,31 @@
 									seg.toolCall.status === 'done' && seg.toolCall.success &&
 									seg.toolCall.result?.status === 'generating') {
 									seg.toolCall = { ...seg.toolCall, result: { ...seg.toolCall.result, status: 'done' } }
+								}
+								if (seg.type === 'tool' && seg.toolCall &&
+									seg.toolCall.tool === 'get_graph_overview' &&
+									seg.toolCall.status === 'done' && seg.toolCall.success) {
+									this.prepareGraphOverviewSnapshot(seg.toolCall.id, seg.toolCall.tool, seg.toolCall)
+								}
+								if (seg.type === 'tool' && seg.toolCall &&
+									GRAPH_MUTATION_TOOLS.has(seg.toolCall.tool) &&
+									seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result) {
+									this.prepareGraphMutationSnapshot(seg.toolCall.id, seg.toolCall.tool, seg.toolCall.result)
+								}
+								if (seg.type === 'tool' && seg.toolCall &&
+									GRAPH_QUERY_TOOLS.has(seg.toolCall.tool) &&
+									seg.toolCall.status === 'done' && seg.toolCall.success) {
+									this.prepareGraphQuerySnapshot(seg.toolCall.id, seg.toolCall.tool, seg.toolCall)
+								}
+								if (seg.type === 'tool' && seg.toolCall &&
+									LEARNING_PATH_TOOLS.has(seg.toolCall.tool) &&
+									seg.toolCall.status === 'done' && seg.toolCall.success) {
+									this.prepareLearningPathSnapshot(seg.toolCall.id, seg.toolCall.tool, seg.toolCall)
+								}
+								if (seg.type === 'tool' && seg.toolCall &&
+									seg.toolCall.tool === 'get_postorder_traversal' &&
+									seg.toolCall.status === 'done' && seg.toolCall.success) {
+									this.preparePostorderSnapshot(seg.toolCall.id, seg.toolCall.tool, seg.toolCall)
 								}
 							}
 						}
@@ -3170,9 +3836,16 @@
 					// 更新活动工具调用状态
 					const toolCall = this.activeToolCalls.find(tc => tc.id === id)
 					if (toolCall) {
+						// 客户端工具已由前端完成，跳过后端 SSE 的重复 done 事件（防止覆盖 result）
+						if (toolCall._clientDone) return
+
 						toolCall.status = 'done'
 						toolCall.success = success
 						toolCall.result = result
+						if (args) toolCall.arguments = args
+						if (SCHEDULE_TOOLS.has(tool)) {
+							console.log('[schedule-debug] handleToolCallEvent done:', tool, 'success:', success, 'result type:', typeof result, 'result:', JSON.stringify(result)?.slice(0, 200))
+						}
 
 						// 记忆工具：最短显示1秒
 						if (MEMORY_TOOLS.has(tool)) {
@@ -3192,8 +3865,33 @@
 							}
 						}
 
-						// 如果是学习路径生成工具完成，通知 learningSpace 页面刷新
-						if (tool === 'generate_learning_path' && success) {
+						// 如果是知识图谱概览工具完成，准备快照
+						if (tool === 'get_graph_overview' && success) {
+							this.prepareGraphOverviewSnapshot(id, tool, toolCall)
+						}
+
+						// 图谱变更工具完成 → 准备快照
+						if (GRAPH_MUTATION_TOOLS.has(tool) && success) {
+							this.prepareGraphMutationSnapshot(id, tool, result)
+						}
+
+						// 图谱查询工具完成 → 准备快照
+						if (GRAPH_QUERY_TOOLS.has(tool) && success) {
+							this.prepareGraphQuerySnapshot(id, tool, toolCall)
+						}
+
+						// 学习路径工具完成 → 准备快照
+						if (LEARNING_PATH_TOOLS.has(tool) && success) {
+							this.prepareLearningPathSnapshot(id, tool, toolCall)
+						}
+
+						// 后序遍历工具完成 → 准备快照
+						if (tool === 'get_postorder_traversal' && success) {
+							this.preparePostorderSnapshot(id, tool, toolCall)
+						}
+
+						// 学习路径工具完成，通知 learningSpace 页面刷新
+						if (LEARNING_PATH_TOOLS.has(tool) && success) {
 							uni.$emit('learningPathUpdated')
 						}
 
@@ -3276,7 +3974,7 @@
 						await submitToolResult(this.conversationId, {
 							tool_call_id,
 							success: calendarResult.success,
-							result: calendarResult.result ? { data: calendarResult.result } : null,
+							result: calendarResult.result || null,
 							error: calendarResult.error || null
 						})
 						break
@@ -3297,6 +3995,10 @@
 					success: calendarResult.success,
 					result: calendarResult.result || calendarResult.error
 				})
+
+				// 标记为客户端已完成，防止后端 tool_call(done) SSE 覆盖 result
+				const clientTc = this.activeToolCalls.find(tc => tc.id === tool_call_id)
+				if (clientTc) clientTc._clientDone = true
 			},
 
 			/**
@@ -3459,6 +4161,490 @@
 				return PLANNING_TOOLS.has(toolName)
 			},
 
+			isGraphTool(toolName) {
+				return GRAPH_TOOLS.has(toolName)
+			},
+
+			getGraphToolText(toolCall) {
+				const texts = GRAPH_TOOL_TEXT[toolCall.tool]
+				if (!texts) return toolCall.tool
+				if (toolCall.status === 'running') return texts.running
+				if (toolCall.status === 'done' && toolCall.success) return texts.done
+				return texts.failed
+			},
+
+			isGraphToolButNotOverview(toolName) {
+				return GRAPH_TOOLS.has(toolName)
+					&& toolName !== 'get_graph_overview'
+					&& !GRAPH_MUTATION_TOOLS.has(toolName)
+					&& !GRAPH_QUERY_TOOLS.has(toolName)
+					&& !LEARNING_PATH_TOOLS.has(toolName)
+					&& toolName !== 'get_postorder_traversal'
+			},
+
+			isPostorderTool(toolName) {
+				return toolName === 'get_postorder_traversal'
+			},
+
+			isGraphMutationTool(toolName) {
+				return GRAPH_MUTATION_TOOLS.has(toolName)
+			},
+
+			isGraphQueryTool(toolName) {
+				return GRAPH_QUERY_TOOLS.has(toolName)
+			},
+
+			isLearningPathTool(toolName) {
+				return LEARNING_PATH_TOOLS.has(toolName)
+			},
+
+			isScheduleTool(toolName) {
+				return SCHEDULE_TOOLS.has(toolName)
+			},
+
+			getScheduleToolText(toolCall) {
+				const texts = SCHEDULE_TOOL_TEXT[toolCall.tool]
+				if (!texts) return toolCall.tool
+				if (toolCall.status === 'running') return texts.running
+				if (toolCall.status === 'done' && toolCall.success) {
+					if (toolCall.tool === 'get_current_time' && toolCall.result?.current_time) {
+						const ts = toolCall.result.current_time
+						const short = ts.length >= 16 ? ts.slice(5, 16) : ts
+						const weekday = toolCall.result.weekday || ''
+						return texts.done + ' · ' + short + (weekday ? ' ' + weekday : '')
+					}
+					if (toolCall.tool === 'get_schedule') {
+						const dr = toolCall.result?.date_range || toolCall.result?.data?.date_range
+						if (dr) return texts.done + ' · ' + dr
+					}
+					return texts.done
+				}
+				return texts.failed
+			},
+
+			getScheduleEvents(result) {
+				if (!result) { console.log('[schedule-debug] result is falsy:', result); return [] }
+				console.log('[schedule-debug] result keys:', Object.keys(result), 'has events:', !!result.events, 'events length:', result.events?.length, 'has data.events:', !!result.data?.events)
+				if (result.events) return result.events
+				if (result.data?.events) return result.data.events
+				console.log('[schedule-debug] no events found, returning []')
+				return []
+			},
+
+			groupScheduleByDate(events) {
+				if (!events || !events.length) return []
+				const groups = {}
+				const today = new Date()
+				const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+				const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+				const BAR_COLORS = [
+					'rgba(74, 108, 247, 0.8)',
+					'rgba(232, 168, 56, 0.8)',
+					'rgba(94, 194, 105, 0.8)',
+					'rgba(129, 140, 248, 0.8)',
+					'rgba(239, 68, 68, 0.8)'
+				]
+				let colorIdx = 0
+				for (const ev of events) {
+					const dateStr = ev.start_time ? ev.start_time.slice(0, 10) : 'unknown'
+					if (!groups[dateStr]) {
+						const d = new Date(dateStr.replace(/-/g, '/'))
+						const isToday = dateStr === todayStr
+						const month = d.getMonth() + 1
+						const day = d.getDate()
+						const weekday = WEEKDAYS[d.getDay()]
+						groups[dateStr] = {
+							date: dateStr,
+							label: `${month}月${day}日 ${weekday}` + (isToday ? ' · 今天' : ''),
+							isToday,
+							events: []
+						}
+					}
+					groups[dateStr].events.push({
+						...ev,
+						startShort: ev.start_time ? ev.start_time.slice(11, 16) : '',
+						endShort: ev.end_time ? ev.end_time.slice(11, 16) : '',
+						barColor: BAR_COLORS[colorIdx % BAR_COLORS.length]
+					})
+					colorIdx++
+				}
+				return Object.values(groups).sort((a, b) => a.date.localeCompare(b.date))
+			},
+
+			calculateGraphPreviewSize() {
+				const systemInfo = uni.getSystemInfoSync()
+				const cardWidth = systemInfo.windowWidth * 0.75 - 48
+				this.graphPreviewWidth = Math.floor(cardWidth)
+				this.graphPreviewHeight = Math.floor(cardWidth * 0.55)
+
+				// 快速预览弹窗：面板宽度 - 两侧 padding (24rpx * 2 = 48rpx)
+				// rpx→px: rpx * windowWidth / 750
+				const pxPerRpx = systemInfo.windowWidth / 750
+				const panelPadding = 40 * 2 * pxPerRpx   // overlay padding 40rpx * 2
+				const canvasPadding = 24 * 2 * pxPerRpx  // canvas margin 24rpx * 2
+				const panelBorder = 2 * pxPerRpx         // borders
+				const panelMaxWidth = 700 * pxPerRpx
+				const panelWidth = Math.min(systemInfo.windowWidth - panelPadding, panelMaxWidth)
+				const quickViewWidth = panelWidth - canvasPadding - panelBorder
+				this.graphQuickViewWidth = Math.floor(quickViewWidth)
+				this.graphQuickViewHeight = Math.floor(quickViewWidth * 0.75)
+			},
+
+			async loadGraphOverviewData() {
+				try {
+					const data = await getSpaceGraph(this.spaceId)
+					if (data && data.nodes && data.nodes.length > 0) {
+						this.graphOverviewData = {
+							nodes: data.nodes.map(n => ({
+								id: n.id,
+								label: n.label || n.title || n.name,
+								mastery: n.mastery
+							})),
+							edges: (data.edges || []).map(e => ({
+								from: e.from_node_id || e.from,
+								to: e.to_node_id || e.to,
+								type: e.type || 'knowledge_tree'
+							}))
+						}
+					}
+				} catch (err) {
+					console.error('[spaceChat] loadGraphOverviewData failed:', err)
+				}
+			},
+
+			async prepareGraphOverviewSnapshot(toolCallId, tool, toolCall) {
+				const suffix = '_ov_' + (++this.gmCanvasCounter)
+
+				// 重新加载最新图谱数据
+				await this.loadGraphOverviewData()
+				if (!this.graphOverviewData) return
+
+				this.graphMutationSnapshots = {
+					...this.graphMutationSnapshots,
+					[toolCallId]: {
+						nodes: [...this.graphOverviewData.nodes],
+						edges: [...this.graphOverviewData.edges],
+						highlightNodeLabels: [],
+						highlightColor: null,
+						highlightMode: 'static',
+						canvasSuffix: suffix
+					}
+				}
+				this.$forceUpdate()
+			},
+
+			async prepareGraphMutationSnapshot(toolCallId, tool, result) {
+				if (GRAPH_DEFAULT_COLLAPSED.has(tool) && this.expandedGraphTools[toolCallId] === undefined) {
+					this.expandedGraphTools = { ...this.expandedGraphTools, [toolCallId]: false }
+				}
+				const isDelete = tool === 'delete_node' || tool === 'delete_edge'
+				const suffix = '_gm_' + (++this.gmCanvasCounter)
+
+				if (isDelete) {
+					// 删除操作：先用旧数据快照（被删项还在），延迟刷新
+					if (!this.graphOverviewData) {
+						await this.loadGraphOverviewData()
+					}
+					if (this.graphOverviewData) {
+						this.graphMutationSnapshots = {
+							...this.graphMutationSnapshots,
+							[toolCallId]: {
+								nodes: [...this.graphOverviewData.nodes],
+								edges: [...this.graphOverviewData.edges],
+								highlightNodeLabels: this.extractHighlightLabels(tool, result),
+								highlightColor: '#EF4444',
+								highlightMode: 'static',
+								canvasSuffix: suffix
+							}
+						}
+						this.$forceUpdate()
+					}
+					// 2.5s 后刷新为删除后的真实数据
+					setTimeout(async () => {
+						await this.loadGraphOverviewData()
+						if (this.graphOverviewData && this.graphMutationSnapshots[toolCallId]) {
+							this.graphMutationSnapshots = {
+								...this.graphMutationSnapshots,
+								[toolCallId]: {
+									...this.graphMutationSnapshots[toolCallId],
+									nodes: [...this.graphOverviewData.nodes],
+									edges: [...this.graphOverviewData.edges],
+									highlightNodeLabels: [],
+									highlightMode: 'static'
+								}
+							}
+							this.$forceUpdate()
+						}
+					}, 2500)
+				} else {
+					// add / update：先刷新再快照
+					await this.loadGraphOverviewData()
+					if (this.graphOverviewData) {
+						this.graphMutationSnapshots = {
+							...this.graphMutationSnapshots,
+							[toolCallId]: {
+								nodes: [...this.graphOverviewData.nodes],
+								edges: [...this.graphOverviewData.edges],
+								highlightNodeLabels: this.extractHighlightLabels(tool, result),
+								highlightColor: tool === 'update_mastery' ? '#49FFAA' : '#4A6CF7',
+								highlightMode: 'static',
+								canvasSuffix: suffix
+							}
+						}
+						this.$forceUpdate()
+					}
+				}
+			},
+
+			extractHighlightLabels(tool, result) {
+				if (!result) return []
+				switch (tool) {
+					case 'add_node':
+						return [result.label].filter(Boolean)
+					case 'add_edge':
+						return [result.from_node, result.to_node].filter(Boolean)
+					case 'delete_node':
+						return [result.deleted_node_name].filter(Boolean)
+					case 'delete_edge':
+						return [result.from_node, result.to_node].filter(Boolean)
+					case 'update_mastery':
+						return [result.node_name].filter(Boolean)
+					default:
+						return []
+				}
+			},
+
+			async prepareGraphQuerySnapshot(toolCallId, tool, toolCall) {
+				if (GRAPH_DEFAULT_COLLAPSED.has(tool) && this.expandedGraphTools[toolCallId] === undefined) {
+					this.expandedGraphTools = { ...this.expandedGraphTools, [toolCallId]: false }
+				}
+				const suffix = '_gq_' + (++this.gmCanvasCounter)
+				const nodeName = toolCall.arguments?.node_name
+				if (!nodeName) return
+
+				if (!this.graphOverviewData) {
+					await this.loadGraphOverviewData()
+				}
+				if (!this.graphOverviewData) return
+
+				const highlights = this.computeQueryHighlights(tool, nodeName, this.graphOverviewData)
+
+				this.graphMutationSnapshots = {
+					...this.graphMutationSnapshots,
+					[toolCallId]: {
+						nodes: [...this.graphOverviewData.nodes],
+						edges: [...this.graphOverviewData.edges],
+						highlightNodeLabels: highlights,
+						highlightColor: '#818CF8',
+						highlightMode: 'static',
+						canvasSuffix: suffix
+					}
+				}
+				this.$forceUpdate()
+			},
+
+			async prepareLearningPathSnapshot(toolCallId, tool, toolCall) {
+				const suffix = '_lp_' + (++this.gmCanvasCounter)
+
+				// 刷新图谱数据（包含新建的 learning_path 边）
+				await this.loadGraphOverviewData()
+				if (!this.graphOverviewData) return
+
+				const result = toolCall.result || {}
+				const args = toolCall.arguments || {}
+				const nodeSequence = args.node_sequence || []
+
+				let highlightLabels = []
+				let highlightEdgePairs = []
+				let highlightColor = '#0088FF'
+				let highlightEdgeColor = '#FFD93D'
+
+				if (tool === 'generate_learning_path') {
+					// 蓝色：高亮所有路径节点，边用默认蓝色（无需 override）
+					highlightLabels = [...(result.path || nodeSequence)]
+					highlightEdgePairs = []
+					highlightColor = '#0088FF'
+				} else if (tool === 'extend_learning_path') {
+					// 黄色：新节点 = 除第一个外的所有（第一个是已有末端节点）
+					highlightLabels = nodeSequence.slice(1)
+					highlightColor = '#FFD93D'
+					for (let i = 0; i < nodeSequence.length - 1; i++) {
+						highlightEdgePairs.push([nodeSequence[i], nodeSequence[i + 1]])
+					}
+				} else if (tool === 'update_learning_path_segment') {
+					// 黄色：中间新节点（首尾是锚点）
+					highlightLabels = nodeSequence.slice(1, -1)
+					highlightColor = '#FFD93D'
+					for (let i = 0; i < nodeSequence.length - 1; i++) {
+						highlightEdgePairs.push([nodeSequence[i], nodeSequence[i + 1]])
+					}
+				}
+
+				this.graphMutationSnapshots = {
+					...this.graphMutationSnapshots,
+					[toolCallId]: {
+						nodes: [...this.graphOverviewData.nodes],
+						edges: [...this.graphOverviewData.edges],
+						highlightNodeLabels: highlightLabels,
+						highlightColor,
+						highlightMode: 'static',
+						canvasSuffix: suffix,
+						highlightEdgePairs,
+						highlightEdgeColor
+					}
+				}
+				this.$forceUpdate()
+			},
+
+			async preparePostorderSnapshot(toolCallId, tool, toolCall) {
+				if (this.expandedGraphTools[toolCallId] === undefined) {
+					this.expandedGraphTools = { ...this.expandedGraphTools, [toolCallId]: false }
+				}
+				const suffix = '_po_' + (++this.gmCanvasCounter)
+
+				if (!this.graphOverviewData) {
+					await this.loadGraphOverviewData()
+				}
+				if (!this.graphOverviewData) return
+
+				// 解析遍历结果字符串 "A->B->C" → ["A", "B", "C"]
+				const result = toolCall.result
+				let traversalNodes = []
+				if (result && typeof result === 'string' && result !== '(空子树)') {
+					traversalNodes = result.split('->')
+				}
+
+				this.graphMutationSnapshots = {
+					...this.graphMutationSnapshots,
+					[toolCallId]: {
+						nodes: [...this.graphOverviewData.nodes],
+						edges: [...this.graphOverviewData.edges],
+						highlightNodeLabels: traversalNodes,
+						highlightColor: '#49FFAA',
+						highlightMode: 'static',
+						canvasSuffix: suffix
+					}
+				}
+				this.$forceUpdate()
+			},
+
+			computeQueryHighlights(tool, nodeName, graphData) {
+				const highlights = [nodeName]
+
+				const labelToId = new Map()
+				const idToLabel = new Map()
+				graphData.nodes.forEach(n => {
+					labelToId.set(n.label, n.id)
+					idToLabel.set(n.id, n.label)
+				})
+
+				const targetId = labelToId.get(nodeName)
+				if (!targetId) return highlights
+
+				const childrenOf = new Map()
+				const parentsOf = new Map()
+
+				graphData.edges.forEach(e => {
+					if (e.type && e.type !== 'knowledge_tree') return
+					if (!childrenOf.has(e.from)) childrenOf.set(e.from, [])
+					childrenOf.get(e.from).push(e.to)
+					if (!parentsOf.has(e.to)) parentsOf.set(e.to, [])
+					parentsOf.get(e.to).push(e.from)
+				})
+
+				switch (tool) {
+					case 'get_child_nodes': {
+						const queue = [targetId]
+						const visited = new Set([targetId])
+						while (queue.length > 0) {
+							const cur = queue.shift()
+							const children = childrenOf.get(cur) || []
+							for (const cid of children) {
+								if (!visited.has(cid)) {
+									visited.add(cid)
+									const label = idToLabel.get(cid)
+									if (label) highlights.push(label)
+									queue.push(cid)
+								}
+							}
+						}
+						break
+					}
+					case 'get_parent_nodes': {
+						const parents = parentsOf.get(targetId) || []
+						for (const pid of parents) {
+							const label = idToLabel.get(pid)
+							if (label) highlights.push(label)
+						}
+						break
+					}
+					case 'get_sibling_nodes': {
+						const parents = parentsOf.get(targetId) || []
+						for (const pid of parents) {
+							const siblings = childrenOf.get(pid) || []
+							for (const sid of siblings) {
+								if (sid !== targetId) {
+									const label = idToLabel.get(sid)
+									if (label && !highlights.includes(label)) {
+										highlights.push(label)
+									}
+								}
+							}
+						}
+						break
+					}
+				}
+
+				return highlights
+			},
+
+			getGmCardTitle(toolCall) {
+				// 查询工具：从 arguments 获取标题
+				switch (toolCall.tool) {
+					case 'get_child_nodes': return (toolCall.arguments?.node_name || '') + ' 的子节点'
+					case 'get_parent_nodes': return (toolCall.arguments?.node_name || '') + ' 的父节点'
+					case 'get_sibling_nodes': return (toolCall.arguments?.node_name || '') + ' 的兄弟节点'
+					case 'generate_learning_path': {
+						const path = toolCall.result?.path || toolCall.arguments?.node_sequence || []
+						return '学习路径: ' + path.join(' → ')
+					}
+					case 'extend_learning_path': {
+						const path = toolCall.result?.path || toolCall.arguments?.node_sequence || []
+						return '延伸路径: ' + path.join(' → ')
+					}
+					case 'update_learning_path_segment': {
+						const seq = toolCall.arguments?.node_sequence || []
+						return '更新路径段: ' + seq.join(' → ')
+					}
+					case 'get_postorder_traversal': {
+						const nodeName = toolCall.arguments?.node_name || ''
+						const poResult = toolCall.result
+						let count = 0
+						if (poResult && typeof poResult === 'string' && poResult !== '(空子树)') {
+							count = poResult.split('->').length
+						}
+						return nodeName + ' 的后序遍历 · ' + count + ' 个节点'
+					}
+				}
+				// 变更工具：从 result 获取标题
+				const r = toolCall.result
+				if (!r) return ''
+				switch (toolCall.tool) {
+					case 'add_node': return '已添加节点: ' + r.label
+					case 'add_edge': return '已连接: ' + r.from_node + ' → ' + r.to_node
+					case 'delete_node': return '已删除节点: ' + r.deleted_node_name
+					case 'delete_edge': return '已断开: ' + r.from_node + ' ↔ ' + r.to_node
+					case 'update_mastery': return r.node_name + ' 掌握度: ' + r.mastery + '%'
+					default: return ''
+				}
+			},
+
+			getGmCardMeta(toolCallId) {
+				const snap = this.graphMutationSnapshots[toolCallId]
+				if (!snap) return ''
+				return snap.nodes.length + ' 个节点 · ' + snap.edges.length + ' 条边'
+			},
+
 			/**
 			 * 判断是否为测验成绩类工具
 			 */
@@ -3517,6 +4703,67 @@
 					...this.expandedSearchResults,
 					[toolCallId]: this.expandedSearchResults[toolCallId] === false
 				}
+			},
+
+			isQuizToolExpanded(toolCallId) {
+				return this.expandedQuizTools[toolCallId] !== false
+			},
+
+			toggleQuizTool(toolCallId) {
+				this.expandedQuizTools = {
+					...this.expandedQuizTools,
+					[toolCallId]: this.expandedQuizTools[toolCallId] === false
+				}
+			},
+
+			isGraphToolExpanded(toolCallId) {
+				return this.expandedGraphTools[toolCallId] !== false
+			},
+
+			toggleGraphTool(toolCallId) {
+				this.expandedGraphTools = {
+					...this.expandedGraphTools,
+					[toolCallId]: this.expandedGraphTools[toolCallId] === false
+				}
+			},
+
+			/**
+			 * 判断测验项的点击行为
+			 */
+			getQuizClickAction(quiz) {
+				if (quiz.attempt_status === 'pending' || quiz.attempt_status === 'evaluating') {
+					return 'disabled'
+				}
+				if (quiz.has_attempt) {
+					return 'view_result'
+				}
+				return 'take_quiz'
+			},
+
+			/**
+			 * 测验项点击处理
+			 */
+			onQuizItemClick(quiz) {
+				const action = this.getQuizClickAction(quiz)
+				if (action === 'disabled') return
+				if (action === 'view_result') {
+					uni.navigateTo({
+						url: `/pages/testResult/testResult?quizId=${quiz.id}&fromList=true`
+					})
+				} else {
+					uni.navigateTo({
+						url: `/pages/test/test?quizId=${quiz.id}`
+					})
+				}
+			},
+
+			/**
+			 * 得分进度条颜色类名
+			 */
+			getScoreBarClass(percentage) {
+				if (percentage >= 80) return 'score-bar-high'
+				if (percentage >= 50) return 'score-bar-mid'
+				return 'score-bar-low'
 			},
 
 			isCodeExpanded(toolCallId) {
@@ -4911,6 +6158,539 @@
 		}
 	}
 
+	/* ========== 知识图谱工具 pill ========== */
+	.graph-tool-pill {
+		display: flex;
+		align-items: center;
+		gap: 16rpx;
+		padding: 16rpx 24rpx;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		transition: all 0.25s ease;
+	}
+
+	.graph-tool-running {
+		border-color: rgba(74, 108, 247, 0.3);
+		background: rgba(74, 108, 247, 0.06);
+	}
+
+	.graph-tool-done {
+		/* 中性底色，与 quiz-gen-done 一致 */
+	}
+
+	.graph-tool-failed {
+		border-color: rgba(239, 68, 68, 0.2);
+		background: rgba(239, 68, 68, 0.05);
+	}
+
+	.graph-tool-pill-icon {
+		width: 32rpx;
+		height: 32rpx;
+		flex-shrink: 0;
+		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
+	}
+
+	.graph-tool-pill-text {
+		flex: 1;
+		font-size: 26rpx;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.7);
+	}
+
+	.graph-tool-running .graph-tool-pill-text {
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.graph-tool-spinner {
+		width: 28rpx;
+		height: 28rpx;
+		border: 2rpx solid rgba(74, 108, 247, 0.3);
+		border-top-color: #4A6CF7;
+		border-radius: 50%;
+		animation: tool-spin 0.8s linear infinite;
+		flex-shrink: 0;
+	}
+
+	.graph-tool-status-icon {
+		width: 28rpx;
+		height: 28rpx;
+		flex-shrink: 0;
+		filter: invert(48%) sepia(30%) saturate(900%) hue-rotate(100deg) brightness(85%) contrast(90%);
+	}
+
+	.graph-tool-status-failed {
+		filter: invert(40%) sepia(90%) saturate(2000%) hue-rotate(345deg) brightness(90%) contrast(95%);
+	}
+
+	.graph-tool-expanded {
+		border-color: rgba(255, 255, 255, 0.2);
+		background: rgba(255, 255, 255, 0.08);
+	}
+
+	.graph-tool-chevron {
+		width: 24rpx;
+		height: 24rpx;
+		flex-shrink: 0;
+		opacity: 0.35;
+		filter: brightness(0) invert(1);
+		transition: transform 0.2s ease;
+	}
+
+	.graph-tool-chevron-up {
+		transform: rotate(180deg);
+	}
+
+	/* ========== 日程详情卡片 ========== */
+	.schedule-view-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
+	.schedule-card {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 20rpx 24rpx 14rpx;
+		display: flex;
+		flex-direction: column;
+		gap: 8rpx;
+		animation: gm-card-enter 0.35s ease-out;
+	}
+
+	.schedule-date-header {
+		display: flex;
+		align-items: center;
+		gap: 12rpx;
+		padding: 6rpx 0;
+	}
+
+	.schedule-date-dot {
+		width: 10rpx;
+		height: 10rpx;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.25);
+		flex-shrink: 0;
+	}
+
+	.schedule-date-dot-today {
+		background: rgba(74, 108, 247, 0.8);
+	}
+
+	.schedule-date-text {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.45);
+		font-weight: 600;
+	}
+
+	.schedule-date-text-today {
+		color: rgba(255, 255, 255, 0.6);
+	}
+
+	.schedule-event-row {
+		display: flex;
+		align-items: flex-start;
+		gap: 16rpx;
+		background: rgba(255, 255, 255, 0.04);
+		border-radius: 16rpx;
+		padding: 14rpx 16rpx;
+	}
+
+	.schedule-event-time {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 2rpx;
+		width: 80rpx;
+		flex-shrink: 0;
+	}
+
+	.schedule-event-time-start {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.8);
+		font-weight: 600;
+	}
+
+	.schedule-event-time-end {
+		font-size: 20rpx;
+		color: rgba(255, 255, 255, 0.35);
+	}
+
+	.schedule-event-bar {
+		width: 4rpx;
+		height: 48rpx;
+		border-radius: 2rpx;
+		flex-shrink: 0;
+	}
+
+	.schedule-event-info {
+		display: flex;
+		flex-direction: column;
+		gap: 4rpx;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.schedule-event-title {
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.85);
+		font-weight: 500;
+	}
+
+	.schedule-event-desc {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.4);
+	}
+
+	.schedule-card-footer {
+		display: flex;
+		justify-content: flex-end;
+		padding: 6rpx 4rpx 0;
+	}
+
+	.schedule-card-count {
+		font-size: 20rpx;
+		color: rgba(255, 255, 255, 0.25);
+	}
+
+	.schedule-card-empty {
+		padding: 24rpx;
+		align-items: center;
+	}
+
+	.schedule-empty-text {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.35);
+	}
+
+	/* ========== 知识图谱概览卡片 ========== */
+	.graph-overview-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
+	.graph-overview-card {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 20rpx 24rpx;
+		overflow: hidden;
+	}
+
+	.graph-overview-header {
+		display: flex;
+		align-items: center;
+		gap: 16rpx;
+	}
+
+	.graph-overview-icon-wrap {
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 16rpx;
+		background: rgba(74, 108, 247, 0.1);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.graph-overview-icon-img {
+		width: 32rpx;
+		height: 32rpx;
+		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
+	}
+
+	.graph-overview-title-col {
+		display: flex;
+		flex-direction: column;
+		gap: 4rpx;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.graph-overview-title {
+		font-size: 28rpx;
+		font-weight: 600;
+		color: #fff;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.graph-overview-meta {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.45);
+	}
+
+	.graph-overview-divider {
+		height: 1rpx;
+		background: rgba(255, 255, 255, 0.06);
+		margin: 16rpx 0;
+	}
+
+	.graph-overview-preview {
+		position: relative;
+		background: rgba(0, 0, 0, 0.12);
+		border-radius: 20rpx;
+		border: 1rpx solid rgba(255, 255, 255, 0.04);
+		overflow: hidden;
+	}
+
+	.graph-overview-hint {
+		position: absolute;
+		top: 12rpx;
+		right: 12rpx;
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+		background: rgba(255, 255, 255, 0.08);
+		border-radius: 100rpx;
+		padding: 8rpx 16rpx;
+		border: 1rpx solid rgba(255, 255, 255, 0.1);
+	}
+
+	.graph-overview-hint-icon {
+		width: 24rpx;
+		height: 24rpx;
+		filter: invert(1);
+		opacity: 0.6;
+	}
+
+	.graph-overview-hint-text {
+		font-size: 20rpx;
+		color: rgba(255, 255, 255, 0.6);
+	}
+
+	/* ========== 知识图谱快速预览弹窗 ========== */
+	.graph-quick-view-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 9999;
+		background: rgba(0, 0, 0, 0.6);
+		backdrop-filter: blur(8px);
+		-webkit-backdrop-filter: blur(8px);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 40rpx;
+	}
+
+	.graph-quick-view-panel {
+		width: 100%;
+		max-width: 700rpx;
+		background: #1a1a2e;
+		border: 1rpx solid rgba(255, 255, 255, 0.1);
+		border-radius: 32rpx;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.graph-quick-view-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 28rpx 32rpx 0;
+	}
+
+	.graph-quick-view-title-row {
+		display: flex;
+		align-items: center;
+		gap: 14rpx;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.graph-quick-view-title-icon {
+		width: 36rpx;
+		height: 36rpx;
+		flex-shrink: 0;
+		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
+	}
+
+	.graph-quick-view-title {
+		font-size: 32rpx;
+		font-weight: 600;
+		color: #fff;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.graph-quick-view-close {
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.06);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.graph-quick-view-close:active {
+		background: rgba(255, 255, 255, 0.12);
+	}
+
+	.graph-quick-view-close-icon {
+		width: 28rpx;
+		height: 28rpx;
+		filter: invert(1);
+		opacity: 0.5;
+	}
+
+	.graph-quick-view-meta {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.4);
+		padding: 8rpx 32rpx 20rpx;
+	}
+
+	.graph-quick-view-canvas {
+		margin: 0 24rpx 28rpx;
+		background: rgba(0, 0, 0, 0.2);
+		border-radius: 24rpx;
+		border: 1rpx solid rgba(255, 255, 255, 0.04);
+		overflow: hidden;
+	}
+
+	/* ========== 知识图谱变更工具详情卡片 ========== */
+	.gm-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
+	.gm-card {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 20rpx 24rpx;
+		animation: gm-card-enter 0.35s ease-out;
+	}
+
+	.gm-card-header {
+		display: flex;
+		align-items: center;
+		gap: 16rpx;
+	}
+
+	.gm-card-icon-wrap {
+		width: 48rpx;
+		height: 48rpx;
+		border-radius: 14rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.gm-icon-add {
+		background: rgba(74, 108, 247, 0.12);
+	}
+
+	.gm-icon-delete {
+		background: rgba(239, 68, 68, 0.12);
+	}
+
+	.gm-icon-update {
+		background: rgba(73, 255, 170, 0.12);
+	}
+
+	.gm-card-icon-img {
+		width: 28rpx;
+		height: 28rpx;
+		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
+	}
+
+	.gm-icon-delete .gm-card-icon-img {
+		filter: invert(40%) sepia(90%) saturate(2000%) hue-rotate(345deg) brightness(90%) contrast(95%);
+	}
+
+	.gm-icon-update .gm-card-icon-img {
+		filter: invert(70%) sepia(50%) saturate(500%) hue-rotate(100deg) brightness(105%) contrast(90%);
+	}
+
+	.gm-icon-query {
+		background: rgba(129, 140, 248, 0.12);
+	}
+
+	.gm-icon-query .gm-card-icon-img {
+		filter: invert(55%) sepia(60%) saturate(1500%) hue-rotate(210deg) brightness(105%) contrast(95%);
+	}
+
+	.gm-icon-path-generate {
+		background: rgba(0, 136, 255, 0.12);
+	}
+	.gm-icon-path-generate .gm-card-icon-img {
+		filter: invert(40%) sepia(80%) saturate(2000%) hue-rotate(190deg) brightness(105%) contrast(95%);
+	}
+
+	.gm-icon-path-modify {
+		background: rgba(255, 217, 61, 0.12);
+	}
+	.gm-icon-path-modify .gm-card-icon-img {
+		filter: invert(80%) sepia(50%) saturate(1000%) hue-rotate(10deg) brightness(105%) contrast(90%);
+	}
+
+	.gm-icon-postorder {
+		background: rgba(74, 108, 247, 0.1);
+	}
+	.gm-icon-postorder .gm-card-icon-img {
+		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
+	}
+
+	.gm-card-title-col {
+		display: flex;
+		flex-direction: column;
+		gap: 2rpx;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.gm-card-title {
+		font-size: 26rpx;
+		font-weight: 600;
+		color: #fff;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.gm-card-meta {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.45);
+	}
+
+	.gm-card-divider {
+		height: 1rpx;
+		background: rgba(255, 255, 255, 0.06);
+		margin: 14rpx 0;
+	}
+
+	.gm-card-preview {
+		position: relative;
+		background: rgba(0, 0, 0, 0.12);
+		border-radius: 20rpx;
+		border: 1rpx solid rgba(255, 255, 255, 0.04);
+		overflow: hidden;
+	}
+
+	@keyframes gm-card-enter {
+		from {
+			opacity: 0;
+			transform: translateY(8rpx);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
 	/* ========== 测试题生成工具指示器 ========== */
 	.quiz-gen-wrap {
 		display: flex;
@@ -5642,22 +7422,124 @@
 		color: rgba(251, 191, 36, 0.9);
 	}
 
-	/* ========== 测验成绩列表 ========== */
-	.quiz-results-list {
-		margin-top: 12rpx;
+	/* ========== 测验工具 - 胶囊 + 卡片 ========== */
+	.quiz-tool-wrap {
+		margin: 12rpx 0;
+	}
+
+	.quiz-tool-pill {
+		display: flex;
+		align-items: center;
+		gap: 14rpx;
+		padding: 14rpx 20rpx;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 20rpx;
+	}
+
+	.quiz-tool-running {
+		background: rgba(74, 108, 247, 0.06);
+		border-color: rgba(74, 108, 247, 0.3);
+	}
+
+	.quiz-tool-done {
+		background: rgba(255, 255, 255, 0.06);
+		border-color: rgba(255, 255, 255, 0.12);
+	}
+
+	.quiz-tool-expanded {
+		background: rgba(255, 255, 255, 0.08);
+		border-color: rgba(255, 255, 255, 0.2);
+	}
+
+	.quiz-tool-failed {
+		border-color: rgba(239, 68, 68, 0.2);
+		background: rgba(239, 68, 68, 0.05);
+	}
+
+	.quiz-tool-pill-icon {
+		width: 30rpx;
+		height: 30rpx;
+		flex-shrink: 0;
+		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
+	}
+
+	.quiz-tool-failed .quiz-tool-pill-icon {
+		filter: brightness(0) saturate(100%) invert(42%) sepia(76%) saturate(2178%) hue-rotate(336deg) brightness(98%) contrast(89%);
+	}
+
+	.quiz-tool-pill-text {
+		flex: 1;
+		font-size: 25rpx;
+		font-weight: 500;
+		color: rgba(255, 255, 255, 0.65);
+	}
+
+	.quiz-tool-spinner {
+		width: 22rpx;
+		height: 22rpx;
+		border: 2rpx solid rgba(74, 108, 247, 0.25);
+		border-top-color: #4A6CF7;
+		border-radius: 50%;
+		animation: tool-spin 0.8s linear infinite;
+		flex-shrink: 0;
+	}
+
+	.quiz-tool-chevron {
+		width: 24rpx;
+		height: 24rpx;
+		flex-shrink: 0;
+		opacity: 0.35;
+		filter: brightness(0) invert(1);
+		transition: transform 0.2s ease;
+	}
+
+	.quiz-tool-chevron-up {
+		transform: rotate(180deg);
+	}
+
+	.quiz-tool-empty {
+		margin-top: 10rpx;
+		padding: 16rpx 20rpx;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.06);
+		border-radius: 12rpx;
+	}
+
+	.quiz-tool-empty-text {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.45);
+	}
+
+	/* -- 测验成绩列表卡片 -- */
+	.quiz-tool-results-card {
+		margin-top: 10rpx;
+		background: rgba(255, 255, 255, 0.06);
+		border: 1rpx solid rgba(255, 255, 255, 0.12);
+		border-radius: 16rpx;
+		padding: 16rpx 20rpx;
 		display: flex;
 		flex-direction: column;
 		gap: 8rpx;
 	}
 
 	.quiz-result-item {
-		background: rgba(255, 255, 255, 0.06);
-		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		background: rgba(255, 255, 255, 0.05);
+		border: 1rpx solid rgba(255, 255, 255, 0.06);
 		border-radius: 12rpx;
-		padding: 12rpx 16rpx;
+		padding: 14rpx 16rpx;
+		transition: background 0.15s ease;
 	}
 
-	.quiz-result-header {
+	.quiz-result-clickable:active {
+		background: rgba(255, 255, 255, 0.1);
+	}
+
+	.quiz-result-evaluating {
+		opacity: 0.55;
+	}
+
+	.quiz-result-row {
 		display: flex;
 		align-items: center;
 		gap: 8rpx;
@@ -5704,6 +7586,12 @@
 		font-weight: 600;
 	}
 
+	.quiz-result-evaluating-text {
+		font-size: 22rpx;
+		color: rgba(251, 191, 36, 0.8);
+		font-weight: 500;
+	}
+
 	.quiz-result-no-attempt {
 		font-size: 22rpx;
 		color: rgba(255, 255, 255, 0.4);
@@ -5712,18 +7600,48 @@
 	.quiz-result-date {
 		font-size: 22rpx;
 		color: rgba(255, 255, 255, 0.4);
+		flex: 1;
 	}
 
-	/* ========== 测验详情 ========== */
-	.quiz-detail-content {
-		margin-top: 12rpx;
+	.quiz-result-arrow {
+		width: 24rpx;
+		height: 24rpx;
+		flex-shrink: 0;
+		opacity: 0.3;
+		filter: brightness(0) invert(1);
 	}
 
-	.quiz-detail-score-summary {
+	/* -- 测验详情分析卡片 -- */
+	.quiz-tool-detail-card {
+		margin-top: 10rpx;
+		background: rgba(255, 255, 255, 0.06);
+		border: 1rpx solid rgba(255, 255, 255, 0.12);
+		border-radius: 16rpx;
+		overflow: hidden;
+	}
+
+	/* 得分概览区 */
+	.quiz-detail-score-section {
+		padding: 20rpx 24rpx 16rpx;
+	}
+
+	.quiz-detail-score-header {
+		margin-bottom: 6rpx;
+	}
+
+	.quiz-detail-score-label {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.45);
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 1rpx;
+	}
+
+	.quiz-detail-score-row {
 		display: flex;
 		align-items: baseline;
 		gap: 8rpx;
-		margin-bottom: 12rpx;
+		margin-bottom: 10rpx;
 	}
 
 	.quiz-detail-score-value {
@@ -5737,56 +7655,123 @@
 		color: rgba(255, 255, 255, 0.5);
 	}
 
-	.quiz-detail-section {
-		margin-top: 12rpx;
+	.quiz-detail-score-bar-bg {
+		width: 100%;
+		height: 6rpx;
+		background: rgba(255, 255, 255, 0.08);
+		border-radius: 3rpx;
+		overflow: hidden;
+	}
+
+	.quiz-detail-score-bar-fill {
+		height: 100%;
+		border-radius: 3rpx;
+		transition: width 0.5s ease;
+	}
+
+	.score-bar-high {
+		background: rgba(34, 197, 94, 0.8);
+	}
+
+	.score-bar-mid {
+		background: rgba(251, 191, 36, 0.8);
+	}
+
+	.score-bar-low {
+		background: rgba(239, 68, 68, 0.8);
+	}
+
+	/* 分析区 */
+	.quiz-detail-analysis-section {
+		padding: 16rpx 24rpx;
+		border-top: 1rpx solid rgba(255, 255, 255, 0.06);
+	}
+
+	.quiz-detail-analysis-header {
+		margin-bottom: 10rpx;
 	}
 
 	.quiz-detail-section-title {
-		font-size: 24rpx;
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.45);
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 1rpx;
+	}
+
+	.quiz-detail-subsection {
+		margin-top: 10rpx;
+	}
+
+	.quiz-detail-subsection:first-child {
+		margin-top: 0;
+	}
+
+	.quiz-detail-subsection-title {
+		font-size: 23rpx;
 		color: rgba(255, 255, 255, 0.6);
 		font-weight: 500;
 		margin-bottom: 6rpx;
 	}
 
-	.quiz-detail-list-item {
+	.quiz-detail-tag-item {
 		display: flex;
 		align-items: flex-start;
-		gap: 8rpx;
+		gap: 10rpx;
 		padding: 4rpx 0;
 	}
 
-	.quiz-detail-list-icon {
-		font-size: 22rpx;
-		width: 28rpx;
-		text-align: center;
+	.quiz-detail-dot {
+		width: 10rpx;
+		height: 10rpx;
+		border-radius: 50%;
 		flex-shrink: 0;
+		margin-top: 10rpx;
 	}
 
-	.quiz-detail-list-icon.strength-icon {
-		color: rgba(34, 197, 94, 0.9);
+	.strength-dot {
+		background: rgba(34, 197, 94, 0.9);
 	}
 
-	.quiz-detail-list-icon.weakness-icon {
-		color: rgba(239, 68, 68, 0.9);
+	.weakness-dot {
+		background: rgba(239, 68, 68, 0.9);
 	}
 
-	.quiz-detail-list-text {
+	.quiz-detail-tag-text {
 		font-size: 24rpx;
 		color: rgba(255, 255, 255, 0.8);
 		flex: 1;
 	}
 
-	.quiz-detail-question-item {
+	/* 题目详情区 */
+	.quiz-detail-questions-section {
+		padding: 16rpx 24rpx 20rpx;
+		border-top: 1rpx solid rgba(255, 255, 255, 0.06);
+	}
+
+	.quiz-detail-questions-header {
 		display: flex;
 		align-items: center;
-		gap: 8rpx;
+		justify-content: space-between;
+		margin-bottom: 10rpx;
+	}
+
+	.quiz-detail-questions-count {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.35);
+	}
+
+	.quiz-detail-q-row {
+		display: flex;
+		align-items: center;
+		gap: 10rpx;
 		background: rgba(255, 255, 255, 0.04);
 		border-radius: 8rpx;
-		padding: 8rpx 12rpx;
+		padding: 10rpx 12rpx;
 		margin-top: 6rpx;
 	}
 
-	.quiz-detail-question-order {
+	.quiz-detail-q-order {
 		font-size: 22rpx;
 		color: rgba(255, 255, 255, 0.4);
 		width: 32rpx;
@@ -5794,26 +7779,26 @@
 		flex-shrink: 0;
 	}
 
-	.quiz-detail-question-status {
-		font-size: 24rpx;
-		width: 32rpx;
-		text-align: center;
+	.quiz-detail-q-status-dot {
+		width: 12rpx;
+		height: 12rpx;
+		border-radius: 50%;
 		flex-shrink: 0;
 	}
 
-	.quiz-detail-question-status.status-correct {
-		color: rgba(34, 197, 94, 0.9);
+	.status-dot-correct {
+		background: rgba(34, 197, 94, 0.9);
 	}
 
-	.quiz-detail-question-status.status-wrong {
-		color: rgba(239, 68, 68, 0.9);
+	.status-dot-wrong {
+		background: rgba(239, 68, 68, 0.9);
 	}
 
-	.quiz-detail-question-status.status-partial {
-		color: rgba(251, 191, 36, 0.9);
+	.status-dot-partial {
+		background: rgba(251, 191, 36, 0.9);
 	}
 
-	.quiz-detail-question-title {
+	.quiz-detail-q-title {
 		font-size: 24rpx;
 		color: rgba(255, 255, 255, 0.8);
 		flex: 1;
@@ -5822,10 +7807,36 @@
 		white-space: nowrap;
 	}
 
-	.quiz-detail-question-score {
+	.quiz-detail-q-score {
 		font-size: 22rpx;
 		color: rgba(255, 255, 255, 0.5);
 		flex-shrink: 0;
+	}
+
+	.quiz-tool-detail-clickable:active {
+		background: rgba(255, 255, 255, 0.09);
+	}
+
+	.quiz-detail-footer {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6rpx;
+		padding: 14rpx 24rpx;
+		border-top: 1rpx solid rgba(255, 255, 255, 0.06);
+	}
+
+	.quiz-detail-footer-text {
+		font-size: 23rpx;
+		color: rgba(74, 108, 247, 0.8);
+		font-weight: 500;
+	}
+
+	.quiz-detail-footer-arrow {
+		width: 22rpx;
+		height: 22rpx;
+		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
+		opacity: 0.8;
 	}
 
 	/* ========== 搜索来源卡片 ========== */
@@ -5849,8 +7860,8 @@
 	}
 
 	.search-indicator-expanded {
-		background: rgba(74, 108, 247, 0.08);
-		border-color: rgba(74, 108, 247, 0.25);
+		background: rgba(255, 255, 255, 0.08);
+		border-color: rgba(255, 255, 255, 0.2);
 	}
 
 	.search-indicator-collapsed {
