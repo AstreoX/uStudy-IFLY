@@ -1,6 +1,6 @@
 <template>
   <!-- list_notes：笔记列表 -->
-  <view v-if="toolName === 'list_notes' && isSuccess" class="ndc-card">
+  <view v-if="toolName === 'list_notes' && isSuccess" class="ndc-card" :class="{ 'ndc-flat': flat }">
     <view class="ndc-card-header">
       <view class="ndc-icon-wrap">
         <image class="ndc-file-icon" src="/static/icons/phosphor-icons/SVGs/regular/notebook.svg" mode="aspectFit" />
@@ -24,7 +24,7 @@
   </view>
 
   <!-- view_note_detail：笔记详情 -->
-  <view v-else-if="toolName === 'view_note_detail' && isSuccess" class="ndc-card">
+  <view v-else-if="toolName === 'view_note_detail' && isSuccess" class="ndc-card" :class="{ 'ndc-flat': flat }">
     <view class="ndc-card-header">
       <view class="ndc-icon-wrap">
         <image class="ndc-file-icon" src="/static/icons/phosphor-icons/SVGs/regular/file-text.svg" mode="aspectFit" />
@@ -50,7 +50,7 @@
   </view>
 
   <!-- update_note：更新笔记 -->
-  <view v-else-if="toolName === 'update_note' && isSuccess" class="ndc-card">
+  <view v-else-if="toolName === 'update_note' && isSuccess" class="ndc-card" :class="{ 'ndc-flat': flat }">
     <view class="ndc-card-header">
       <view class="ndc-icon-wrap">
         <image class="ndc-file-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
@@ -80,6 +80,10 @@ export default {
     toolCall: {
       type: Object,
       required: true
+    },
+    flat: {
+      type: Boolean,
+      default: false
     }
   },
   computed: {
@@ -352,5 +356,12 @@ export default {
   font-size: 20rpx;
   font-weight: 500;
   color: rgba(74, 222, 128, 0.9);
+}
+
+.ndc-flat {
+  border: none;
+  background: transparent;
+  border-radius: 0 0 24rpx 24rpx;
+  padding: 20rpx 24rpx 14rpx;
 }
 </style>

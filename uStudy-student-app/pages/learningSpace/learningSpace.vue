@@ -333,8 +333,14 @@
 					>
 						<view class="model-menu-accent"></view>
 						<view class="model-menu-item-info">
-							<text class="model-menu-item-name">{{ m.display_name }}</text>
-							<text class="model-menu-item-desc">{{ m.locked ? '升级订阅解锁' : m.description }}</text>
+							<text
+								class="model-menu-item-name"
+								:style="{ color: m.locked ? '#9CA3AF' : '#C7CBD4', '-webkit-text-fill-color': m.locked ? '#9CA3AF' : '#C7CBD4' }"
+							>{{ m.display_name }}</text>
+							<text
+								class="model-menu-item-desc"
+								:style="{ color: '#A1A1AA', '-webkit-text-fill-color': '#A1A1AA' }"
+							>{{ m.locked ? '升级订阅解锁' : m.description }}</text>
 						</view>
 						<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
 					</view>
@@ -390,7 +396,11 @@
 
 					<view class="custom-placeholder-row">
 						<image class="placeholder-sparkle-icon" src="/static/icons/phosphor-icons/SVGs/fill/sparkle-fill.svg" mode="aspectFit"></image>
-						<text v-if="!inputText" class="placeholder-text">有问题，尽管问</text>
+						<text
+							v-if="!inputText"
+							class="placeholder-text"
+							:style="{ color: '#A1A1AA', '-webkit-text-fill-color': '#A1A1AA' }"
+						>有问题，尽管问</text>
 					</view>
 
 					<textarea
@@ -414,7 +424,10 @@
 						<view class="input-bottom-left">
 							<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
 								<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
-								<text class="model-selector-label">{{ selectedModelName }}</text>
+								<text
+									class="model-selector-label"
+									:style="{ color: '#C7CBD4', '-webkit-text-fill-color': '#C7CBD4' }"
+								>{{ selectedModelName }}</text>
 								<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
 							</view>
 						</view>
@@ -5012,7 +5025,8 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.input-field {
 		width: 100%;
 		font-size: 28rpx;
-		color: rgb(248, 248, 248);
+		color: #F5F5F5;
+		-webkit-text-fill-color: #F5F5F5;
 		min-height: 40rpx;
 		line-height: 1.4;
 		padding: 24rpx 28rpx 12rpx 72rpx;
@@ -5077,7 +5091,8 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	}
 
 	.input-placeholder {
-		color: #A79D92;
+		color: #A1A1AA;
+		-webkit-text-fill-color: #A1A1AA;
 		font-size: 28rpx;
 	}
 
@@ -5098,7 +5113,8 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	}
 
 	.placeholder-text {
-		color: #A79D92;
+		color: #A1A1AA;
+		-webkit-text-fill-color: #A1A1AA;
 		font-size: 28rpx;
 	}
 
@@ -5125,14 +5141,15 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.model-selector-icon {
 		width: 28rpx;
 		height: 28rpx;
-		filter: brightness(0) invert(0.58) sepia(0.2);
+		filter: brightness(0) invert(0.7);
 		opacity: 1;
 		flex-shrink: 0;
 	}
 
 	.model-selector-label {
 		font-size: 24rpx;
-		color: #C8BCAE;
+		color: #C7CBD4;
+		-webkit-text-fill-color: #C7CBD4;
 		white-space: nowrap;
 		max-width: 280rpx;
 		overflow: hidden;
@@ -5142,7 +5159,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.model-selector-chevron {
 		width: 20rpx;
 		height: 20rpx;
-		filter: brightness(0) invert(0.45) sepia(0.15);
+		filter: brightness(0) invert(0.62);
 		opacity: 1;
 		flex-shrink: 0;
 	}
@@ -5219,7 +5236,8 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.model-menu-item-name {
 		font-size: 28rpx;
 		font-weight: 500;
-		color: #C8BCAE;
+		color: #C7CBD4;
+		-webkit-text-fill-color: #C7CBD4;
 	}
 
 	.model-menu-item-active .model-menu-item-name {
@@ -5227,12 +5245,14 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	}
 
 	.model-menu-item-active .model-menu-item-desc {
-		color: rgba(205, 216, 255, 0.78);
+		color: #A1A1AA;
+		-webkit-text-fill-color: #A1A1AA;
 	}
 
 	.model-menu-item-desc {
 		font-size: 22rpx;
-		color: #7E746B;
+		color: #A1A1AA;
+		-webkit-text-fill-color: #A1A1AA;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -5249,7 +5269,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	.model-menu-lock {
 		width: 28rpx;
 		height: 28rpx;
-		filter: brightness(0) invert(0.45) sepia(0.15);
+		filter: brightness(0) invert(0.58);
 		opacity: 1;
 		flex-shrink: 0;
 		margin-left: 16rpx;

@@ -551,8 +551,14 @@
 				>
 					<view class="model-menu-accent"></view>
 					<view class="model-menu-item-info">
-						<text class="model-menu-item-name">{{ m.display_name }}</text>
-						<text class="model-menu-item-desc">{{ m.locked ? '升级订阅解锁' : m.description }}</text>
+						<text
+							class="model-menu-item-name"
+							:style="{ color: m.locked ? '#9CA3AF' : '#C7CBD4', '-webkit-text-fill-color': m.locked ? '#9CA3AF' : '#C7CBD4' }"
+						>{{ m.display_name }}</text>
+						<text
+							class="model-menu-item-desc"
+							:style="{ color: '#A1A1AA', '-webkit-text-fill-color': '#A1A1AA' }"
+						>{{ m.locked ? '升级订阅解锁' : m.description }}</text>
 					</view>
 					<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
 				</view>
@@ -593,7 +599,11 @@
 
 				<view class="custom-placeholder-row">
 					<image class="placeholder-sparkle-icon" src="/static/icons/phosphor-icons/SVGs/fill/sparkle-fill.svg" mode="aspectFit"></image>
-					<text v-if="!inputText" class="placeholder-text">有问题，尽管问</text>
+					<text
+						v-if="!inputText"
+						class="placeholder-text"
+						:style="{ color: '#A1A1AA', '-webkit-text-fill-color': '#A1A1AA' }"
+					>有问题，尽管问</text>
 				</view>
 
 				<textarea
@@ -616,7 +626,10 @@
 					<!-- 左侧：模型选择 pill -->
 					<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
 						<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
-						<text class="model-selector-label">{{ selectedModelName }}</text>
+						<text
+							class="model-selector-label"
+							:style="{ color: '#C7CBD4', '-webkit-text-fill-color': '#C7CBD4' }"
+						>{{ selectedModelName }}</text>
 						<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
 					</view>
 					<view v-else class="input-bottom-row-spacer"></view>
@@ -770,20 +783,30 @@
 		update_schedule: '/static/icons/phosphor-icons/SVGs/regular/calendar-check.svg'
 	}
 
-	// 记忆类工具集合（使用行内波浪文字而非卡片）
+	// 记忆类工具集合（使用行内银光掠过效果）
 	const MEMORY_TOOLS = new Set([
+		// 旧版工具名
 		'write_to_long_term_memory',
 		'delete_from_long_term_memory',
 		'write_to_space_memory',
-		'delete_from_space_memory'
+		'delete_from_space_memory',
+		// 新版向量记忆工具名
+		'remember',
+		'remember_space',
+		'forget',
+		'search_memories'
 	])
 
 	// 记忆工具显示文字
 	const MEMORY_TOOL_TEXT = {
-		write_to_long_term_memory: '正在更新长期记忆…',
-		delete_from_long_term_memory: '正在删除长期记忆…',
-		write_to_space_memory: '正在更新学习空间偏好…',
-		delete_from_space_memory: '正在删除学习空间偏好…'
+		write_to_long_term_memory: '记忆信息到长期偏好中…',
+		remember: '记忆信息到长期偏好中…',
+		write_to_space_memory: '记忆信息到学习空间偏好中…',
+		remember_space: '记忆信息到学习空间偏好中…',
+		search_memories: '查询记忆中…',
+		delete_from_long_term_memory: '优化记忆中…',
+		delete_from_space_memory: '优化记忆中…',
+		forget: '优化记忆中…'
 	}
 
 	// 日程管理工具集合
@@ -3064,13 +3087,13 @@
 		to { transform: rotate(360deg); }
 	}
 
-	/* ========== 记忆工具行内波浪文字 ========== */
+	/* ========== 记忆工具行内银光掠过 ========== */
 	.memory-tool-inline {
 		margin: 8rpx 0;
 		max-height: 0;
 		opacity: 0;
 		overflow: hidden;
-		transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
+		transition: max-height 0.4s ease, opacity 0.4s ease, margin 0.4s ease;
 	}
 
 	.memory-tool-active {
@@ -3084,32 +3107,37 @@
 		margin: 0;
 	}
 
+	.memory-tool-done .memory-tool-text {
+		animation: none;
+	}
+
 	.memory-tool-text {
 		display: inline-block;
 		font-size: 26rpx;
-		color: #9ca3af;
+		font-style: italic;
+		color: rgba(192, 199, 210, 0.5);
 		background: linear-gradient(
 			90deg,
-			#6b7280 0%,
-			#9ca3af 15%,
-			#d1d5db 30%,
-			#9ca3af 45%,
-			#6b7280 60%,
-			#6b7280 100%
+			rgba(160, 170, 185, 0.4) 0%,
+			rgba(200, 210, 225, 0.7) 20%,
+			rgba(230, 238, 250, 1) 40%,
+			rgba(200, 210, 225, 0.7) 60%,
+			rgba(160, 170, 185, 0.4) 80%,
+			rgba(160, 170, 185, 0.4) 100%
 		);
-		background-size: 300% 100%;
+		background-size: 250% 100%;
 		-webkit-background-clip: text;
 		background-clip: text;
 		-webkit-text-fill-color: transparent;
-		animation: wave-shimmer 2s ease-in-out infinite;
+		animation: memory-shimmer 2s ease-in-out infinite;
 	}
 
-	@keyframes wave-shimmer {
+	@keyframes memory-shimmer {
 		0% {
-			background-position: 100% 0;
+			background-position: 100% 50%;
 		}
 		100% {
-			background-position: -100% 0;
+			background-position: -100% 50%;
 		}
 	}
 
@@ -3475,7 +3503,8 @@
 	.input-field {
 		width: 100%;
 		font-size: 28rpx;
-		color: rgb(248, 248, 248);
+		color: #F5F5F5;
+		-webkit-text-fill-color: #F5F5F5;
 		min-height: 40rpx;
 		line-height: 1.4;
 		padding: 24rpx 28rpx 12rpx 72rpx;
@@ -3570,7 +3599,8 @@
 	}
 
 	.input-placeholder {
-		color: #A79D92;
+		color: #A1A1AA;
+		-webkit-text-fill-color: #A1A1AA;
 		font-size: 28rpx;
 	}
 
@@ -3591,7 +3621,8 @@
 	}
 
 	.placeholder-text {
-		color: #A79D92;
+		color: #A1A1AA;
+		-webkit-text-fill-color: #A1A1AA;
 		font-size: 28rpx;
 	}
 
@@ -4066,14 +4097,15 @@
 	.model-selector-icon {
 		width: 28rpx;
 		height: 28rpx;
-		filter: brightness(0) invert(0.58) sepia(0.2);
+		filter: brightness(0) invert(0.7);
 		opacity: 1;
 		flex-shrink: 0;
 	}
 
 	.model-selector-label {
 		font-size: 24rpx;
-		color: #C8BCAE;
+		color: #C7CBD4;
+		-webkit-text-fill-color: #C7CBD4;
 		white-space: nowrap;
 		max-width: 280rpx;
 		overflow: hidden;
@@ -4083,7 +4115,7 @@
 	.model-selector-chevron {
 		width: 20rpx;
 		height: 20rpx;
-		filter: brightness(0) invert(0.45) sepia(0.15);
+		filter: brightness(0) invert(0.62);
 		opacity: 1;
 		flex-shrink: 0;
 	}
@@ -4160,7 +4192,8 @@
 	.model-menu-item-name {
 		font-size: 28rpx;
 		font-weight: 500;
-		color: #C8BCAE;
+		color: #C7CBD4;
+		-webkit-text-fill-color: #C7CBD4;
 	}
 
 	.model-menu-item-active .model-menu-item-name {
@@ -4168,12 +4201,14 @@
 	}
 
 	.model-menu-item-active .model-menu-item-desc {
-		color: rgba(205, 216, 255, 0.78);
+		color: #A1A1AA;
+		-webkit-text-fill-color: #A1A1AA;
 	}
 
 	.model-menu-item-desc {
 		font-size: 22rpx;
-		color: #7E746B;
+		color: #A1A1AA;
+		-webkit-text-fill-color: #A1A1AA;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -4190,7 +4225,7 @@
 	.model-menu-lock {
 		width: 28rpx;
 		height: 28rpx;
-		filter: brightness(0) invert(0.45) sepia(0.15);
+		filter: brightness(0) invert(0.58);
 		opacity: 1;
 		flex-shrink: 0;
 		margin-left: 16rpx;

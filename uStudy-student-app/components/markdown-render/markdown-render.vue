@@ -86,19 +86,455 @@ const MARKDOWN_BORDER_COLOR = '#333333'
 const MARKDOWN_SURFACE_COLOR = '#111111'
 const MARKDOWN_SURFACE_ELEVATED_COLOR = '#1A1A1A'
 
+const ONE_DARK_BG = '#282C34'
+const ONE_DARK_BG_ELEVATED = '#21252B'
+const ONE_DARK_BORDER = '#3E4451'
+const ONE_DARK_TEXT = '#ABB2BF'
+const ONE_DARK_MUTED = '#7F848E'
+const ONE_DARK_BLUE = '#61AFEF'
+const ONE_DARK_CYAN = '#56B6C2'
+const ONE_DARK_GREEN = '#98C379'
+const ONE_DARK_ORANGE = '#D19A66'
+const ONE_DARK_PURPLE = '#C678DD'
+const ONE_DARK_RED = '#E06C75'
+const ONE_DARK_YELLOW = '#E5C07B'
+
 // 代码块内联样式（rich-text 不支持外部 CSS）
-const CODE_WRAPPER_STYLE = `background:${MARKDOWN_SURFACE_COLOR}; border:1px solid ${MARKDOWN_BORDER_COLOR}; border-radius:12px; margin:16px 0; overflow:hidden;`
-const CODE_HEADER_STYLE = `display:flex; justify-content:space-between; align-items:center; padding:8px 16px; background:${MARKDOWN_SURFACE_ELEVATED_COLOR}; border-bottom:1px solid ${MARKDOWN_BORDER_COLOR};`
-const CODE_LANG_STYLE = `color:${MARKDOWN_MUTED_COLOR}; font-size:12px;`
-const CODE_COPY_STYLE = 'color:#5c90f7; font-size:12px; text-decoration:none;'
+const CODE_WRAPPER_STYLE = `background:${ONE_DARK_BG}; border:1px solid ${ONE_DARK_BORDER}; border-radius:12px; margin:16px 0; overflow:hidden; box-shadow:0 10px 24px rgba(0,0,0,0.22);`
+const CODE_HEADER_STYLE = `display:flex; justify-content:space-between; align-items:center; padding:8px 16px; background:${ONE_DARK_BG_ELEVATED}; border-bottom:1px solid ${ONE_DARK_BORDER};`
+const CODE_LANG_STYLE = `color:${ONE_DARK_MUTED}; font-size:12px; letter-spacing:0.04em; text-transform:lowercase;`
+const CODE_COPY_STYLE = `color:${ONE_DARK_BLUE}; font-size:12px; text-decoration:none;`
 const CODE_PRE_STYLE = 'overflow-x:auto; margin:0; padding:16px; white-space:pre; background:transparent;'
-const CODE_STYLE = `font-family:SF Mono,Monaco,Consolas,monospace; font-size:13px; color:${MARKDOWN_TEXT_COLOR};`
+const CODE_STYLE = `font-family:SF Mono,Monaco,Consolas,monospace; font-size:13px; color:${ONE_DARK_TEXT}; -webkit-text-fill-color:${ONE_DARK_TEXT};`
+
+// App 端 renderjs 动态插入的高亮节点，不能稳定依赖外部 class 样式，直接内联 token 颜色。
+const HLJS_TOKEN_STYLE_MAP = {
+	'hljs-comment': `color:${ONE_DARK_MUTED};-webkit-text-fill-color:${ONE_DARK_MUTED};font-style:italic;`,
+	'hljs-quote': `color:${ONE_DARK_MUTED};-webkit-text-fill-color:${ONE_DARK_MUTED};font-style:italic;`,
+	'hljs-keyword': `color:${ONE_DARK_PURPLE};-webkit-text-fill-color:${ONE_DARK_PURPLE};`,
+	'hljs-selector-tag': `color:${ONE_DARK_RED};-webkit-text-fill-color:${ONE_DARK_RED};`,
+	'hljs-tag': `color:${ONE_DARK_RED};-webkit-text-fill-color:${ONE_DARK_RED};`,
+	'hljs-name': `color:${ONE_DARK_RED};-webkit-text-fill-color:${ONE_DARK_RED};`,
+	'hljs-literal': `color:${ONE_DARK_ORANGE};-webkit-text-fill-color:${ONE_DARK_ORANGE};`,
+	'hljs-link': `color:${ONE_DARK_BLUE};-webkit-text-fill-color:${ONE_DARK_BLUE};text-decoration:underline;`,
+	'hljs-string': `color:${ONE_DARK_GREEN};-webkit-text-fill-color:${ONE_DARK_GREEN};`,
+	'hljs-regexp': `color:${ONE_DARK_CYAN};-webkit-text-fill-color:${ONE_DARK_CYAN};`,
+	'hljs-addition': `color:${ONE_DARK_GREEN};-webkit-text-fill-color:${ONE_DARK_GREEN};`,
+	'hljs-number': `color:${ONE_DARK_ORANGE};-webkit-text-fill-color:${ONE_DARK_ORANGE};`,
+	'hljs-symbol': `color:${ONE_DARK_ORANGE};-webkit-text-fill-color:${ONE_DARK_ORANGE};`,
+	'hljs-bullet': `color:${ONE_DARK_ORANGE};-webkit-text-fill-color:${ONE_DARK_ORANGE};`,
+	'hljs-built_in': `color:${ONE_DARK_CYAN};-webkit-text-fill-color:${ONE_DARK_CYAN};`,
+	'hljs-type': `color:${ONE_DARK_YELLOW};-webkit-text-fill-color:${ONE_DARK_YELLOW};`,
+	'hljs-class': `color:${ONE_DARK_YELLOW};-webkit-text-fill-color:${ONE_DARK_YELLOW};`,
+	'hljs-title': `color:${ONE_DARK_BLUE};-webkit-text-fill-color:${ONE_DARK_BLUE};`,
+	'hljs-function': `color:${ONE_DARK_BLUE};-webkit-text-fill-color:${ONE_DARK_BLUE};`,
+	'hljs-params': `color:${ONE_DARK_TEXT};-webkit-text-fill-color:${ONE_DARK_TEXT};`,
+	'hljs-variable': `color:${ONE_DARK_RED};-webkit-text-fill-color:${ONE_DARK_RED};`,
+	'hljs-property': `color:${ONE_DARK_RED};-webkit-text-fill-color:${ONE_DARK_RED};`,
+	'hljs-attr': `color:${ONE_DARK_YELLOW};-webkit-text-fill-color:${ONE_DARK_YELLOW};`,
+	'hljs-operator': `color:${ONE_DARK_TEXT};-webkit-text-fill-color:${ONE_DARK_TEXT};`,
+	'hljs-punctuation': `color:${ONE_DARK_TEXT};-webkit-text-fill-color:${ONE_DARK_TEXT};`,
+	'hljs-meta': `color:${ONE_DARK_PURPLE};-webkit-text-fill-color:${ONE_DARK_PURPLE};`,
+	'hljs-doctag': `color:${ONE_DARK_PURPLE};-webkit-text-fill-color:${ONE_DARK_PURPLE};`,
+	'hljs-section': `color:${ONE_DARK_BLUE};-webkit-text-fill-color:${ONE_DARK_BLUE};`,
+	'hljs-emphasis': 'font-style:italic;',
+	'hljs-strong': 'font-weight:700;',
+	'hljs-deletion': `color:${ONE_DARK_RED};-webkit-text-fill-color:${ONE_DARK_RED};`
+}
+
+function getHljsInlineStyle(className) {
+	const classNames = String(className || '').split(/\s+/).filter(Boolean)
+	const styles = []
+
+	classNames.forEach((name) => {
+		const style = HLJS_TOKEN_STYLE_MAP[name]
+		if (style && !styles.includes(style)) {
+			styles.push(style)
+		}
+	})
+
+	return styles.join('')
+}
+
+function buildStyledTokenEscaped(escapedContent, className) {
+	const inlineStyle = getHljsInlineStyle(className)
+	if (!inlineStyle) return escapedContent
+	return `<span class="${className}" style="${inlineStyle}">${escapedContent}</span>`
+}
+
+function buildStyledToken(rawContent, className) {
+	return buildStyledTokenEscaped(escapeHtml(rawContent), className)
+}
 
 // Table inline styles (dark theme, rpx units for app)
 const TABLE_WRAPPER_STYLE = 'overflow-x:auto; margin:24rpx 0;'
 const TABLE_STYLE = 'border-collapse:collapse; width:100%;'
 const TABLE_TH_STYLE = `border:1px solid ${MARKDOWN_BORDER_COLOR}; padding:16rpx 24rpx; background:${MARKDOWN_SURFACE_ELEVATED_COLOR}; font-weight:600; color:${MARKDOWN_TEXT_COLOR}; text-align:left;`
 const TABLE_TD_STYLE = `border:1px solid ${MARKDOWN_BORDER_COLOR}; padding:16rpx 24rpx; color:${MARKDOWN_TEXT_COLOR};`
+
+const LANGUAGE_SPECS = {
+	python: {
+		lineComments: ['#'],
+		blockComments: [],
+		stringQuotes: ["'''", '"""', "'", '"'],
+		caseInsensitive: false,
+		keywords: ['and', 'as', 'assert', 'async', 'await', 'break', 'case', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'match', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield'],
+		literals: ['True', 'False', 'None'],
+		builtins: ['abs', 'all', 'any', 'bool', 'dict', 'enumerate', 'filter', 'float', 'input', 'int', 'len', 'list', 'map', 'max', 'min', 'open', 'print', 'range', 'set', 'sorted', 'str', 'sum', 'tuple', 'type', 'zip']
+	},
+	javascript: {
+		lineComments: ['//'],
+		blockComments: [['/*', '*/']],
+		stringQuotes: ['`', "'", '"'],
+		caseInsensitive: false,
+		keywords: ['async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'default', 'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function', 'if', 'import', 'in', 'instanceof', 'let', 'new', 'of', 'return', 'super', 'switch', 'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'yield'],
+		literals: ['true', 'false', 'null', 'undefined', 'NaN', 'Infinity'],
+		builtins: ['Array', 'Boolean', 'console', 'Date', 'JSON', 'Map', 'Math', 'Number', 'Object', 'Promise', 'RegExp', 'Set', 'String', 'Symbol']
+	},
+	typescript: {
+		lineComments: ['//'],
+		blockComments: [['/*', '*/']],
+		stringQuotes: ['`', "'", '"'],
+		caseInsensitive: false,
+		keywords: ['abstract', 'any', 'as', 'async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'declare', 'default', 'delete', 'do', 'else', 'enum', 'export', 'extends', 'finally', 'for', 'function', 'if', 'implements', 'import', 'in', 'infer', 'instanceof', 'interface', 'keyof', 'let', 'module', 'namespace', 'new', 'private', 'protected', 'public', 'readonly', 'return', 'satisfies', 'static', 'super', 'switch', 'this', 'throw', 'try', 'type', 'typeof', 'var', 'void', 'while'],
+		literals: ['true', 'false', 'null', 'undefined', 'never', 'unknown'],
+		builtins: ['Array', 'Boolean', 'console', 'Date', 'JSON', 'Map', 'Math', 'Number', 'Object', 'Promise', 'Record', 'Set', 'String']
+	},
+	json: {
+		lineComments: [],
+		blockComments: [],
+		stringQuotes: ['"'],
+		caseInsensitive: false,
+		keywords: [],
+		literals: ['true', 'false', 'null'],
+		builtins: []
+	},
+	bash: {
+		lineComments: ['#'],
+		blockComments: [],
+		stringQuotes: ['`', "'", '"'],
+		caseInsensitive: false,
+		keywords: ['case', 'do', 'done', 'elif', 'else', 'esac', 'fi', 'for', 'function', 'if', 'in', 'select', 'then', 'until', 'while'],
+		literals: ['true', 'false'],
+		builtins: ['awk', 'cat', 'cd', 'curl', 'echo', 'export', 'find', 'grep', 'printf', 'pwd', 'sed', 'ssh', 'test', 'tr', 'uniq', 'xargs']
+	},
+	sql: {
+		lineComments: ['--', '#'],
+		blockComments: [['/*', '*/']],
+		stringQuotes: ["'", '"', '`'],
+		caseInsensitive: true,
+		keywords: ['add', 'alter', 'and', 'as', 'asc', 'between', 'by', 'case', 'create', 'delete', 'desc', 'distinct', 'drop', 'else', 'end', 'exists', 'from', 'group', 'having', 'in', 'inner', 'insert', 'into', 'join', 'left', 'like', 'limit', 'not', 'null', 'offset', 'on', 'or', 'order', 'outer', 'right', 'select', 'set', 'table', 'then', 'union', 'update', 'values', 'when', 'where'],
+		literals: ['true', 'false', 'null'],
+		builtins: ['avg', 'count', 'coalesce', 'max', 'min', 'now', 'round', 'sum']
+	},
+	css: {
+		lineComments: [],
+		blockComments: [['/*', '*/']],
+		stringQuotes: ["'", '"'],
+		caseInsensitive: false,
+		keywords: ['important'],
+		literals: [],
+		builtins: []
+	}
+}
+
+const SUPPORTED_CODE_LANGUAGES = Object.keys(LANGUAGE_SPECS).concat(['xml'])
+
+function escapeRegExp(text) {
+	return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function buildKeywordRegex(words, caseInsensitive) {
+	if (!words || !words.length) return null
+	const sortedWords = words.slice().sort((a, b) => b.length - a.length)
+	return new RegExp(`\\b(${sortedWords.map(escapeRegExp).join('|')})\\b`, caseInsensitive ? 'gi' : 'g')
+}
+
+function findLineEnd(text, startIndex) {
+	const lineBreakIndex = text.indexOf('\n', startIndex)
+	return lineBreakIndex === -1 ? text.length : lineBreakIndex
+}
+
+function findStringEnd(text, startIndex, quote) {
+	let index = startIndex + quote.length
+
+	while (index < text.length) {
+		if (quote.length === 1 && text[index] === '\\') {
+			index += 2
+			continue
+		}
+		if (text.slice(index, index + quote.length) === quote) {
+			return index + quote.length
+		}
+		index += 1
+	}
+
+	return text.length
+}
+
+function scanCodeSegments(text, spec) {
+	const segments = []
+	let plainStart = 0
+	let index = 0
+
+	function pushPlain(endIndex) {
+		if (endIndex > plainStart) {
+			segments.push({ type: 'plain', content: text.slice(plainStart, endIndex) })
+		}
+	}
+
+	while (index < text.length) {
+		let matched = false
+
+		for (let i = 0; i < spec.blockComments.length; i++) {
+			const startToken = spec.blockComments[i][0]
+			const endToken = spec.blockComments[i][1]
+			if (text.slice(index, index + startToken.length) === startToken) {
+				pushPlain(index)
+				const endIndex = text.indexOf(endToken, index + startToken.length)
+				const segmentEnd = endIndex === -1 ? text.length : endIndex + endToken.length
+				segments.push({ type: 'comment', content: text.slice(index, segmentEnd) })
+				index = segmentEnd
+				plainStart = index
+				matched = true
+				break
+			}
+		}
+		if (matched) continue
+
+		for (let i = 0; i < spec.lineComments.length; i++) {
+			const marker = spec.lineComments[i]
+			if (text.slice(index, index + marker.length) === marker) {
+				pushPlain(index)
+				const segmentEnd = findLineEnd(text, index)
+				segments.push({ type: 'comment', content: text.slice(index, segmentEnd) })
+				index = segmentEnd
+				plainStart = index
+				matched = true
+				break
+			}
+		}
+		if (matched) continue
+
+		for (let i = 0; i < spec.stringQuotes.length; i++) {
+			const quote = spec.stringQuotes[i]
+			if (text.slice(index, index + quote.length) === quote) {
+				pushPlain(index)
+				const segmentEnd = findStringEnd(text, index, quote)
+				segments.push({ type: 'string', content: text.slice(index, segmentEnd) })
+				index = segmentEnd
+				plainStart = index
+				matched = true
+				break
+			}
+		}
+		if (matched) continue
+
+		index += 1
+	}
+
+	pushPlain(text.length)
+	return segments
+}
+
+function highlightMarkupAttributes(rawAttrs) {
+	const attrRegex = /([:@A-Za-z_][-A-Za-z0-9_:.]*)(\s*=\s*)(".*?"|'.*?'|[^\s"'=<>`]+)/g
+	let output = ''
+	let lastIndex = 0
+	let match = attrRegex.exec(rawAttrs)
+
+	while (match) {
+		output += escapeHtml(rawAttrs.slice(lastIndex, match.index))
+		output += buildStyledToken(match[1], 'hljs-attr')
+		output += escapeHtml(match[2])
+		output += buildStyledToken(match[3], 'hljs-string')
+		lastIndex = match.index + match[0].length
+		match = attrRegex.exec(rawAttrs)
+	}
+
+	output += escapeHtml(rawAttrs.slice(lastIndex))
+	return output
+}
+
+function highlightMarkupCode(rawCode) {
+	const tagRegex = /<!--[\s\S]*?-->|<\/?[^>\n]+>/g
+	let output = ''
+	let lastIndex = 0
+	let match = tagRegex.exec(rawCode)
+
+	while (match) {
+		output += escapeHtml(rawCode.slice(lastIndex, match.index))
+		const token = match[0]
+
+		if (token.slice(0, 4) === '<!--') {
+			output += buildStyledToken(token, 'hljs-comment')
+		} else {
+			const parsed = token.match(/^<(\/?)([A-Za-z][A-Za-z0-9:_-]*)([\s\S]*?)(\/?)>$/)
+			if (!parsed) {
+				output += escapeHtml(token)
+			} else {
+				output += '&lt;'
+				if (parsed[1]) output += '/'
+				output += buildStyledToken(parsed[2], 'hljs-selector-tag')
+				output += highlightMarkupAttributes(parsed[3] || '')
+				if (parsed[4]) output += '/'
+				output += '&gt;'
+			}
+		}
+
+		lastIndex = match.index + token.length
+		match = tagRegex.exec(rawCode)
+	}
+
+	output += escapeHtml(rawCode.slice(lastIndex))
+	return output
+}
+
+function highlightPlainSegment(rawText, lang, spec) {
+	let escapedText = escapeHtml(rawText)
+	const caseInsensitive = !!spec.caseInsensitive
+	const reserved = []
+
+	function reservePattern(regex, renderer) {
+		if (!regex) return
+		escapedText = escapedText.replace(regex, (...args) => {
+			const key = `@@CODE_SLOT_${reserved.length}_@@`
+			reserved.push({ key, html: renderer(...args) })
+			return key
+		})
+	}
+
+	if (lang === 'python') {
+		reservePattern(/(^|[\t ]+)(@[A-Za-z_][A-Za-z0-9_.]*)/gm, (match, prefix, decorator) => prefix + buildStyledTokenEscaped(decorator, 'hljs-meta'))
+		reservePattern(/\b(def)(\s+)([A-Za-z_][A-Za-z0-9_]*)/g, (match, keyword, whitespace, name) => buildStyledTokenEscaped(keyword, 'hljs-keyword') + whitespace + buildStyledTokenEscaped(name, 'hljs-title'))
+		reservePattern(/\b(class)(\s+)([A-Za-z_][A-Za-z0-9_]*)/g, (match, keyword, whitespace, name) => buildStyledTokenEscaped(keyword, 'hljs-keyword') + whitespace + buildStyledTokenEscaped(name, 'hljs-title'))
+	}
+
+	if (lang === 'javascript' || lang === 'typescript') {
+		reservePattern(/\b(function)(\s+)([A-Za-z_$][A-Za-z0-9_$]*)/g, (match, keyword, whitespace, name) => buildStyledTokenEscaped(keyword, 'hljs-keyword') + whitespace + buildStyledTokenEscaped(name, 'hljs-title'))
+		reservePattern(/\b(class)(\s+)([A-Za-z_$][A-Za-z0-9_$]*)/g, (match, keyword, whitespace, name) => buildStyledTokenEscaped(keyword, 'hljs-keyword') + whitespace + buildStyledTokenEscaped(name, 'hljs-title'))
+	}
+
+	if (lang === 'bash') {
+		reservePattern(/(^|[^\\$])(\$\{?[A-Za-z_][A-Za-z0-9_]*\}?)/g, (match, prefix, variable) => prefix + buildStyledTokenEscaped(variable, 'hljs-variable'))
+	}
+
+	if (lang === 'json') {
+		reservePattern(/(&quot;(?:\\.|[^&])*?&quot;)(\s*:)/g, (match, key, colon) => buildStyledTokenEscaped(key, 'hljs-attr') + colon)
+	}
+
+	if (lang === 'css') {
+		reservePattern(/([A-Za-z-]+)(\s*:)/g, (match, property, colon) => buildStyledTokenEscaped(property, 'hljs-attr') + colon)
+	}
+
+	reservePattern(/\b(?:0x[0-9A-Fa-f]+|\d+(?:\.\d+)?(?:e[+-]?\d+)?)\b/g, (match) => buildStyledTokenEscaped(match, 'hljs-number'))
+
+	const keywordRegex = buildKeywordRegex(spec.keywords, caseInsensitive)
+	if (keywordRegex) {
+		reservePattern(keywordRegex, (match) => buildStyledTokenEscaped(match, 'hljs-keyword'))
+	}
+
+	const literalRegex = buildKeywordRegex(spec.literals, caseInsensitive)
+	if (literalRegex) {
+		reservePattern(literalRegex, (match) => buildStyledTokenEscaped(match, 'hljs-literal'))
+	}
+
+	const builtInRegex = buildKeywordRegex(spec.builtins, caseInsensitive)
+	if (builtInRegex) {
+		reservePattern(builtInRegex, (match) => buildStyledTokenEscaped(match, 'hljs-built_in'))
+	}
+
+	for (let i = 0; i < reserved.length; i++) {
+		escapedText = escapedText.split(reserved[i].key).join(reserved[i].html)
+	}
+
+	return escapedText
+}
+
+function highlightGenericCode(rawCode, lang, spec) {
+	const segments = scanCodeSegments(rawCode, spec)
+	let html = ''
+
+	for (let i = 0; i < segments.length; i++) {
+		const segment = segments[i]
+		if (segment.type === 'comment') {
+			html += buildStyledToken(segment.content, 'hljs-comment')
+		} else if (segment.type === 'string') {
+			html += buildStyledToken(segment.content, 'hljs-string')
+		} else {
+			html += highlightPlainSegment(segment.content, lang, spec)
+		}
+	}
+
+	return html
+}
+
+function detectCodeLanguage(rawCode) {
+	const code = String(rawCode || '')
+	if (!code.trim()) return ''
+
+	if (/^\s*[\[{]/.test(code) && /"\s*:/.test(code)) return 'json'
+	if (/(^|\n)\s*def\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/.test(code) || /\bimport\s+[A-Za-z_][A-Za-z0-9_]*\b/.test(code) || /\bself\b/.test(code)) return 'python'
+	if (/<[A-Za-z][^>\n]*>/.test(code) || /<\/[A-Za-z][^>\n]*>/.test(code) || /<!--[\s\S]*?-->/.test(code)) return 'xml'
+	if (/\b(function|const|let|var|=>|console\.|import\s+.+from)\b/.test(code)) return 'javascript'
+	if (/\b(select|insert|update|delete)\b[\s\S]*\b(from|into|set)\b/i.test(code)) return 'sql'
+	if (/^\s*#!/.test(code) || /(^|\n)\s*(echo|export|fi|then|elif)\b/.test(code)) return 'bash'
+	if (/(^|\n)\s*[.#]?[A-Za-z_-][A-Za-z0-9_-]*\s*\{/.test(code) || /(^|\n)\s*[A-Za-z-]+\s*:\s*[^;]+;/.test(code)) return 'css'
+	return ''
+}
+
+function normalizeCodeLanguage(lang) {
+	const normalized = String(lang || '').trim().toLowerCase()
+	if (!normalized) return ''
+
+	const aliasMap = {
+		js: 'javascript',
+		jsx: 'javascript',
+		py: 'python',
+		ts: 'typescript',
+		tsx: 'typescript',
+		sh: 'bash',
+		shell: 'bash',
+		zsh: 'bash',
+		yml: 'yaml',
+		md: 'markdown',
+		plaintext: 'plaintext',
+		text: 'plaintext',
+		vue: 'xml',
+		html: 'xml'
+	}
+
+	return aliasMap[normalized] || normalized
+}
+
+function sanitizeCodeLanguageClass(lang) {
+	return String(lang || '').toLowerCase().replace(/[^a-z0-9_-]/g, '')
+}
+
+function highlightCode(rawCode, lang) {
+	const normalizedLang = normalizeCodeLanguage(lang)
+	const resolvedLang = SUPPORTED_CODE_LANGUAGES.indexOf(normalizedLang) !== -1 ? normalizedLang : detectCodeLanguage(rawCode)
+
+	if (resolvedLang === 'xml') {
+		return {
+			html: highlightMarkupCode(rawCode),
+			language: resolvedLang
+		}
+	}
+
+	const spec = LANGUAGE_SPECS[resolvedLang]
+	if (!spec) {
+		return {
+			html: escapeHtml(rawCode),
+			language: normalizedLang || ''
+		}
+	}
+
+	return {
+		html: highlightGenericCode(rawCode, resolvedLang, spec),
+		language: resolvedLang
+	}
+}
 
 function parseSimpleMarkdown(text) {
 	if (!text) return { html: '', codeContents: [] }
@@ -107,10 +543,13 @@ function parseSimpleMarkdown(text) {
 	const codeContents = []
 	let content = text.replace(/```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g, (match, lang, code) => {
 		const idx = codeBlocks.length
-		const safeLang = escapeHtml((lang || '').trim())
+		const normalizedLang = normalizeCodeLanguage(lang)
 		const rawCode = (code || '').replace(/^\n+|\n+$/g, '') // 去掉首尾空行
-		const safeCode = escapeHtml(rawCode)
-		const displayLang = safeLang || 'code'
+		const highlighted = highlightCode(rawCode, normalizedLang)
+		const resolvedLang = String(lang || '').trim() || highlighted.language || 'code'
+		const displayLang = escapeHtml(resolvedLang)
+		const languageClass = sanitizeCodeLanguageClass(highlighted.language || normalizedLang)
+		const codeClassAttr = `hljs hljs-code-block${languageClass ? ` language-${languageClass}` : ''}`
 
 		// 保存原始代码供复制
 		codeContents.push(rawCode)
@@ -121,7 +560,7 @@ function parseSimpleMarkdown(text) {
 					`<span style="${CODE_LANG_STYLE}">${displayLang}</span>` +
 					`<a href="copy:${idx}" style="${CODE_COPY_STYLE}">复制代码</a>` +
 				`</div>` +
-				`<pre style="${CODE_PRE_STYLE}"><code style="${CODE_STYLE}">${safeCode}</code></pre>` +
+				`<pre style="${CODE_PRE_STYLE}"><code class="${codeClassAttr}" style="${CODE_STYLE}">${highlighted.html}</code></pre>` +
 			`</div>`
 		)
 		return `@@CODE_BLOCK_${idx}@@`
@@ -620,7 +1059,8 @@ export default {
 /* 代码块 */
 .markdown-content pre,
 .markdown-content .hljs-code-block {
-	background: rgba(0, 0, 0, 0.4);
+	background: #282C34;
+	border: 1px solid #3E4451;
 	border-radius: 12rpx;
 	padding: 20rpx;
 	margin: 16rpx 0;
@@ -632,13 +1072,28 @@ export default {
 	font-size: 26rpx;
 }
 
+.markdown-content pre code,
+.markdown-content .hljs-code-block,
+.app-rich-content pre code,
+.app-rich-content .hljs-code-block {
+	display: block;
+	background: transparent !important;
+	padding: 0;
+	margin: 0;
+	line-height: 1.7;
+	color: #ABB2BF;
+	-webkit-text-fill-color: #ABB2BF;
+}
+
 /* 行内代码 */
 .markdown-content p code,
 .markdown-content li code {
-	background: rgba(255, 255, 255, 0.15);
+	background: rgba(97, 175, 239, 0.12);
 	padding: 4rpx 10rpx;
 	border-radius: 6rpx;
 	font-size: 28rpx;
+	color: #E5C07B;
+	-webkit-text-fill-color: #E5C07B;
 }
 
 /* 链接 */
@@ -679,22 +1134,22 @@ export default {
 }
 
 /* ===== Highlight.js 代码高亮主题（深色） ===== */
-.hljs-keyword { color: #DCDCDC; }
-.hljs-string { color: #D4D4D4; }
-.hljs-number { color: #BFBFBF; }
-.hljs-function { color: #D4D4D4; }
-.hljs-title { color: #D4D4D4; }
-.hljs-params { color: #C7C7C7; }
-.hljs-comment { color: #8A8A8A; font-style: italic; }
-.hljs-built_in { color: #CFCFCF; }
-.hljs-attr { color: #CFCFCF; }
-.hljs-literal { color: #BFBFBF; }
-.hljs-type { color: #CFCFCF; }
-.hljs-variable { color: #DCDCDC; }
-.hljs-selector-class { color: #CFCFCF; }
-.hljs-selector-id { color: #D4D4D4; }
-.hljs-selector-tag { color: #DCDCDC; }
-.hljs-property { color: #C7C7C7; }
+.hljs-keyword { color: #C678DD; }
+.hljs-string { color: #98C379; }
+.hljs-number { color: #D19A66; }
+.hljs-function { color: #61AFEF; }
+.hljs-title { color: #61AFEF; }
+.hljs-params { color: #ABB2BF; }
+.hljs-comment { color: #7F848E; font-style: italic; }
+.hljs-built_in { color: #56B6C2; }
+.hljs-attr { color: #E5C07B; }
+.hljs-literal { color: #D19A66; }
+.hljs-type { color: #E5C07B; }
+.hljs-variable { color: #E06C75; }
+.hljs-selector-class { color: #E5C07B; }
+.hljs-selector-id { color: #E06C75; }
+.hljs-selector-tag { color: #E06C75; }
+.hljs-property { color: #E06C75; }
 
 /* ===== KaTeX 数学公式样式 ===== */
 

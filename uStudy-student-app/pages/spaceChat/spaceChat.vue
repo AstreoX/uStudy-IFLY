@@ -240,13 +240,13 @@
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'view_quiz_results'"
 							:key="'quiz-results-' + segIdx"
 							class="quiz-tool-wrap"
+							:class="{ 'quiz-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isQuizToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<!-- 胶囊指示器 -->
 							<view class="quiz-tool-pill"
 								:class="{
 									'quiz-tool-running': seg.toolCall.status === 'running',
 									'quiz-tool-done': seg.toolCall.status === 'done',
-									'quiz-tool-expanded': seg.toolCall.status === 'done' && isQuizToolExpanded(seg.toolCall.id),
 									'quiz-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
 								@click="seg.toolCall.status === 'done' && toggleQuizTool(seg.toolCall.id)"
@@ -267,39 +267,40 @@
 							</view>
 
 							<!-- 测验列表卡片 -->
-							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.quizzes?.length && isQuizToolExpanded(seg.toolCall.id)"
-								class="quiz-tool-results-card">
-								<view v-for="(quiz, idx) in seg.toolCall.result.quizzes" :key="idx"
-									class="quiz-result-item"
-									:class="{
-										'quiz-result-clickable': getQuizClickAction(quiz) !== 'disabled',
-										'quiz-result-evaluating': quiz.attempt_status === 'pending' || quiz.attempt_status === 'evaluating'
-									}"
-									@click="onQuizItemClick(quiz)"
-								>
-									<view class="quiz-result-row">
-										<text class="quiz-result-title">{{ quiz.title }}</text>
-										<text class="quiz-result-difficulty"
-											:class="'difficulty-' + quiz.difficulty">{{ getDifficultyLabel(quiz.difficulty) }}</text>
-									</view>
-									<view class="quiz-result-meta">
-										<text v-if="quiz.attempt_status === 'pending' || quiz.attempt_status === 'evaluating'"
-											class="quiz-result-evaluating-text">评估中</text>
-										<text v-else-if="quiz.has_attempt" class="quiz-result-score">{{ quiz.score }}/{{ quiz.total_score }}</text>
-										<text v-else class="quiz-result-no-attempt">未作答</text>
-										<text class="quiz-result-date">{{ quiz.created_at }}</text>
-										<image v-if="getQuizClickAction(quiz) !== 'disabled'"
-											class="quiz-result-arrow"
-											src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit" />
+								<view v-if="(isQuizToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) && seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.quizzes?.length"
+									class="quiz-tool-results-card"
+									:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }">
+									<view v-for="(quiz, idx) in seg.toolCall.result.quizzes" :key="idx"
+										class="quiz-result-item"
+										:class="{
+											'quiz-result-clickable': getQuizClickAction(quiz) !== 'disabled',
+											'quiz-result-evaluating': quiz.attempt_status === 'pending' || quiz.attempt_status === 'evaluating'
+										}"
+										@click="onQuizItemClick(quiz)"
+									>
+										<view class="quiz-result-row">
+											<text class="quiz-result-title">{{ quiz.title }}</text>
+											<text class="quiz-result-difficulty"
+												:class="'difficulty-' + quiz.difficulty">{{ getDifficultyLabel(quiz.difficulty) }}</text>
+										</view>
+										<view class="quiz-result-meta">
+											<text v-if="quiz.attempt_status === 'pending' || quiz.attempt_status === 'evaluating'"
+												class="quiz-result-evaluating-text">评估中</text>
+											<text v-else-if="quiz.has_attempt" class="quiz-result-score">{{ quiz.score }}/{{ quiz.total_score }}</text>
+											<text v-else class="quiz-result-no-attempt">未作答</text>
+											<text class="quiz-result-date">{{ quiz.created_at }}</text>
+											<image v-if="getQuizClickAction(quiz) !== 'disabled'"
+												class="quiz-result-arrow"
+												src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit" />
+										</view>
 									</view>
 								</view>
-							</view>
-
 							<!-- 无测验 -->
-							<view v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success && isQuizToolExpanded(seg.toolCall.id) && !seg.toolCall.result?.quizzes?.length"
-								class="quiz-tool-empty">
-								<text class="quiz-tool-empty-text">{{ seg.toolCall.result?.message || '当前学习空间没有测验' }}</text>
-							</view>
+								<view v-else-if="(isQuizToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) && seg.toolCall.status === 'done' && seg.toolCall.success && !seg.toolCall.result?.quizzes?.length"
+									class="quiz-tool-empty"
+									:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }">
+									<text class="quiz-tool-empty-text">{{ seg.toolCall.result?.message || '当前学习空间没有测验' }}</text>
+								</view>
 						</view>
 
 						<!-- 测验详情工具：pill + 可折叠分析卡片 -->
@@ -307,13 +308,13 @@
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'view_quiz_attempt_detail'"
 							:key="'quiz-detail-' + segIdx"
 							class="quiz-tool-wrap"
+							:class="{ 'quiz-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isQuizToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<!-- 胶囊指示器 -->
 							<view class="quiz-tool-pill"
 								:class="{
 									'quiz-tool-running': seg.toolCall.status === 'running',
 									'quiz-tool-done': seg.toolCall.status === 'done',
-									'quiz-tool-expanded': seg.toolCall.status === 'done' && isQuizToolExpanded(seg.toolCall.id),
 									'quiz-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
 								@click="seg.toolCall.status === 'done' && toggleQuizTool(seg.toolCall.id)"
@@ -334,9 +335,10 @@
 							</view>
 
 							<!-- 详情分析卡片 -->
-							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result && isQuizToolExpanded(seg.toolCall.id)"
-								class="quiz-tool-detail-card quiz-tool-detail-clickable"
-								@click="navigateToResult(seg.toolCall.arguments?.quiz_id)">
+								<view v-if="(isQuizToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) && seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result"
+									class="quiz-tool-detail-card quiz-tool-detail-clickable"
+									:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
+									@click="navigateToResult(seg.toolCall.arguments?.quiz_id)">
 								<!-- 得分概览区 -->
 								<view class="quiz-detail-score-section">
 									<view class="quiz-detail-score-header">
@@ -399,13 +401,13 @@
 									<text class="quiz-detail-footer-text">查看完整评估结果</text>
 									<image class="quiz-detail-footer-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit" />
 								</view>
-							</view>
-
+								</view>
 							<!-- 失败 -->
-							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success && isQuizToolExpanded(seg.toolCall.id)"
-								class="quiz-tool-empty">
-								<text class="quiz-tool-empty-text">{{ seg.toolCall.result?.message || '获取测验详情失败' }}</text>
-							</view>
+								<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success && (isQuizToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
+									class="quiz-tool-empty"
+									:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }">
+									<text class="quiz-tool-empty-text">{{ seg.toolCall.result?.message || '获取测验详情失败' }}</text>
+								</view>
 						</view>
 
 						<!-- 搜索类工具：来源卡片 -->
@@ -469,15 +471,16 @@
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'create_note'"
 							:key="'note-tool-' + segIdx"
 							class="note-tool-wrap"
+							:class="{ 'note-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isNoteToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<!-- pill 指示器 -->
 							<view class="graph-tool-pill"
 								:class="{
 									'graph-tool-pending': seg.toolCall.status === 'pending_confirmation',
 									'graph-tool-running': seg.toolCall.status === 'running',
-									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
 									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
+								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleNoteTool(seg.toolCall.id)"
 							>
 								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
 								<text class="graph-tool-pill-text">{{ getNoteToolText(seg.toolCall) }}</text>
@@ -486,8 +489,9 @@
 									class="graph-tool-status-icon graph-tool-status-pending"
 									src="/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg" mode="aspectFit" />
 								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
-									class="graph-tool-status-icon"
-									src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+									class="graph-tool-chevron"
+									:class="{ 'graph-tool-chevron-up': isNoteToolExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
 								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
 									class="graph-tool-status-icon graph-tool-status-failed"
 									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
@@ -495,40 +499,57 @@
 
 							<!-- 笔记卡片 -->
 							<NoteCreationCard
+								v-if="seg.toolCall.status === 'pending_confirmation' || seg.toolCall.status === 'running' || (seg.toolCall.status === 'done' && seg.toolCall.success && (isNoteToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)))"
+								:class="{ 'tool-card-leave': seg.toolCall.status === 'done' && isToolCollapsing(seg.toolCall.id) }"
+								:flat="seg.toolCall.status === 'done' && seg.toolCall.success && (isNoteToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
 								:tool-call="seg.toolCall"
 								:space-id="spaceId"
 								:conversation-id="conversationId"
 							/>
 						</view>
 
-						<!-- 笔记读写工具（list_notes / view_note_detail / update_note）：pill + 详情卡片 -->
+						<!-- 笔记读写工具（list_notes / view_note_detail / update_note / delete_note）：pill + 详情卡片 -->
 						<view
 							v-else-if="seg.type === 'tool' && (seg.toolCall.tool === 'list_notes' || seg.toolCall.tool === 'view_note_detail' || seg.toolCall.tool === 'update_note' || seg.toolCall.tool === 'delete_note')"
 							:key="'note-rw-' + segIdx"
 							class="note-tool-wrap"
+							:class="{ 'note-expanded-container': seg.toolCall.tool !== 'delete_note' && seg.toolCall.status === 'done' && seg.toolCall.success && (isNoteToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<!-- pill 指示器 -->
 							<view class="graph-tool-pill"
 								:class="{
 									'graph-tool-running': seg.toolCall.status === 'running',
-									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
 									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
+								@click="seg.toolCall.tool !== 'delete_note' && seg.toolCall.status === 'done' && seg.toolCall.success && toggleNoteTool(seg.toolCall.id)"
 							>
 								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
 								<text class="graph-tool-pill-text">{{ getNoteToolText(seg.toolCall) }}</text>
 								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
-								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
-									class="graph-tool-status-icon"
-									src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+								<template v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success">
+									<image v-if="seg.toolCall.tool === 'delete_note'"
+										class="graph-tool-status-icon"
+										src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+									<image v-else
+										class="graph-tool-chevron"
+										:class="{ 'graph-tool-chevron-up': isNoteToolExpanded(seg.toolCall.id) }"
+										src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+								</template>
 								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
 									class="graph-tool-status-icon graph-tool-status-failed"
 									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
 							</view>
 
-							<!-- 详情卡片（仅 done+success 时显示） -->
+							<!-- 详情卡片（非 delete_note 时可展开/折叠） -->
+							<view
+								v-if="seg.toolCall.tool !== 'delete_note' && seg.toolCall.status === 'done' && seg.toolCall.success && (isNoteToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
+								:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
+							>
+								<NoteDisplayCard :tool-call="seg.toolCall" :flat="true" />
+							</view>
+							<!-- delete_note 保留原始行为 -->
 							<NoteDisplayCard
-								v-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+								v-else-if="seg.toolCall.tool === 'delete_note' && seg.toolCall.status === 'done' && seg.toolCall.success"
 								:tool-call="seg.toolCall"
 							/>
 						</view>
@@ -694,7 +715,7 @@
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'get_graph_overview'"
 							:key="'graph-overview-' + segIdx"
 							class="graph-overview-wrap"
-							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id) }"
+							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<!-- pill 指示器 -->
 							<view class="graph-tool-pill"
@@ -718,11 +739,12 @@
 							</view>
 
 							<!-- 详情卡片 (done + success + 有快照) -->
-							<view
-								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id] && isGraphToolExpanded(seg.toolCall.id)"
-								class="graph-overview-card"
-								@click="showGraphQuickView = true"
-							>
+								<view
+									v-if="(isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) && seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id]"
+									class="graph-overview-card"
+									:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
+									@click="showGraphQuickView = true"
+								>
 								<!-- Header -->
 								<view class="graph-overview-header">
 									<view class="graph-overview-icon-wrap">
@@ -753,7 +775,7 @@
 										<text class="graph-overview-hint-text">快速查看</text>
 									</view>
 								</view>
-							</view>
+								</view>
 						</view>
 
 						<!-- 知识图谱变更工具：pill + 详情卡片 -->
@@ -761,7 +783,7 @@
 							v-else-if="seg.type === 'tool' && isGraphMutationTool(seg.toolCall.tool)"
 							:key="'graph-mutation-' + segIdx"
 							class="gm-wrap"
-							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id) }"
+							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<!-- pill 指示器（复用样式） -->
 							<view class="graph-tool-pill"
@@ -785,10 +807,11 @@
 							</view>
 
 							<!-- 详情卡片 (done + success + 有快照数据) -->
-							<view
-								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id] && isGraphToolExpanded(seg.toolCall.id)"
-								class="gm-card"
-							>
+								<view
+									v-if="(isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) && seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id]"
+									class="gm-card"
+									:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
+								>
 								<!-- Header -->
 								<view class="gm-card-header">
 									<view class="gm-card-icon-wrap"
@@ -823,7 +846,7 @@
 										:highlight-mode="graphMutationSnapshots[seg.toolCall.id].highlightMode"
 									/>
 								</view>
-							</view>
+								</view>
 						</view>
 
 						<!-- 知识图谱查询工具：pill + 详情卡片 -->
@@ -831,7 +854,7 @@
 							v-else-if="seg.type === 'tool' && isGraphQueryTool(seg.toolCall.tool)"
 							:key="'graph-query-' + segIdx"
 							class="gm-wrap"
-							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id) }"
+							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<!-- pill 指示器 -->
 							<view class="graph-tool-pill"
@@ -855,10 +878,11 @@
 							</view>
 
 							<!-- 详情卡片 (done + success + 有快照数据) -->
-							<view
-								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id] && isGraphToolExpanded(seg.toolCall.id)"
-								class="gm-card"
-							>
+								<view
+									v-if="(isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) && seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id]"
+									class="gm-card"
+									:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
+								>
 								<view class="gm-card-header">
 									<view class="gm-card-icon-wrap gm-icon-query">
 										<image class="gm-card-icon-img" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
@@ -883,7 +907,7 @@
 										:highlight-mode="graphMutationSnapshots[seg.toolCall.id].highlightMode"
 									/>
 								</view>
-							</view>
+								</view>
 						</view>
 
 						<!-- 学习路径工具：pill + 详情卡片 -->
@@ -891,7 +915,7 @@
 							v-else-if="seg.type === 'tool' && isLearningPathTool(seg.toolCall.tool)"
 							:key="'lp-tool-' + segIdx"
 							class="gm-wrap"
-							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id) }"
+							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<!-- pill 指示器 -->
 							<view class="graph-tool-pill"
@@ -915,10 +939,11 @@
 							</view>
 
 							<!-- 详情卡片 (done + success + 有快照数据) -->
-							<view
-								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id] && isGraphToolExpanded(seg.toolCall.id)"
-								class="gm-card"
-							>
+								<view
+									v-if="(isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) && seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id]"
+									class="gm-card"
+									:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
+								>
 								<view class="gm-card-header">
 									<view class="gm-card-icon-wrap"
 										:class="{
@@ -950,7 +975,7 @@
 										:highlight-edge-color="graphMutationSnapshots[seg.toolCall.id].highlightEdgeColor || '#FFD93D'"
 									/>
 								</view>
-							</view>
+								</view>
 						</view>
 
 						<!-- 后序遍历工具：pill + 知识图谱卡片 -->
@@ -958,7 +983,7 @@
 							v-else-if="seg.type === 'tool' && isPostorderTool(seg.toolCall.tool)"
 							:key="'postorder-' + segIdx"
 							class="gm-wrap"
-							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id) }"
+							:class="{ 'gm-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
 						>
 							<!-- pill -->
 							<view class="graph-tool-pill"
@@ -982,10 +1007,11 @@
 							</view>
 
 							<!-- 详情卡片 (done + success + 有快照) -->
-							<view
-								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id] && isGraphToolExpanded(seg.toolCall.id)"
-								class="gm-card"
-							>
+								<view
+									v-if="(isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) && seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id]"
+									class="gm-card"
+									:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
+								>
 								<view class="gm-card-header">
 									<view class="gm-card-icon-wrap gm-icon-postorder">
 										<image class="gm-card-icon-img" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
@@ -1010,7 +1036,7 @@
 										:highlight-mode="graphMutationSnapshots[seg.toolCall.id].highlightMode"
 									/>
 								</view>
-							</view>
+								</view>
 						</view>
 
 						<!-- 其他知识图谱工具：行内 pill -->
@@ -1383,8 +1409,14 @@
 				>
 					<view class="model-menu-accent"></view>
 					<view class="model-menu-item-info">
-						<text class="model-menu-item-name">{{ m.display_name }}</text>
-						<text class="model-menu-item-desc">{{ m.locked ? '升级订阅解锁' : m.description }}</text>
+						<text
+							class="model-menu-item-name"
+							:style="{ color: m.locked ? '#9CA3AF' : '#C7CBD4', '-webkit-text-fill-color': m.locked ? '#9CA3AF' : '#C7CBD4' }"
+						>{{ m.display_name }}</text>
+						<text
+							class="model-menu-item-desc"
+							:style="{ color: '#A1A1AA', '-webkit-text-fill-color': '#A1A1AA' }"
+						>{{ m.locked ? '升级订阅解锁' : m.description }}</text>
 					</view>
 					<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
 				</view>
@@ -1425,7 +1457,11 @@
 
 				<view class="custom-placeholder-row">
 					<image class="placeholder-sparkle-icon" src="/static/icons/phosphor-icons/SVGs/fill/sparkle-fill.svg" mode="aspectFit"></image>
-					<text v-if="!inputText" class="placeholder-text">有问题，尽管问</text>
+					<text
+						v-if="!inputText"
+						class="placeholder-text"
+						:style="{ color: '#A1A1AA', '-webkit-text-fill-color': '#A1A1AA' }"
+					>有问题，尽管问</text>
 				</view>
 
 				<textarea
@@ -1449,7 +1485,10 @@
 					<view class="input-bottom-left">
 						<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
 							<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
-							<text class="model-selector-label">{{ selectedModelName }}</text>
+							<text
+								class="model-selector-label"
+								:style="{ color: '#C7CBD4', '-webkit-text-fill-color': '#C7CBD4' }"
+							>{{ selectedModelName }}</text>
 							<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
 						</view>
 					</view>
@@ -1753,20 +1792,30 @@
 	const PLANNING_TOOLS = new Set(['get_tool_details'])
 	const PLANNING_TOOL_TEXT = '正在规划下一步……'
 
-	// 记忆类工具集合（使用行内波浪文字而非卡片）
+	// 记忆类工具集合（使用行内银光掠过效果）
 	const MEMORY_TOOLS = new Set([
+		// 旧版工具名
 		'write_to_long_term_memory',
 		'delete_from_long_term_memory',
 		'write_to_space_memory',
-		'delete_from_space_memory'
+		'delete_from_space_memory',
+		// 新版向量记忆工具名
+		'remember',
+		'remember_space',
+		'forget',
+		'search_memories'
 	])
 
 	// 记忆工具显示文字
 	const MEMORY_TOOL_TEXT = {
-		write_to_long_term_memory: '正在更新长期记忆…',
-		delete_from_long_term_memory: '正在删除长期记忆…',
-		write_to_space_memory: '正在更新学习空间偏好…',
-		delete_from_space_memory: '正在删除学习空间偏好…'
+		write_to_long_term_memory: '记忆信息到长期偏好中…',
+		remember: '记忆信息到长期偏好中…',
+		write_to_space_memory: '记忆信息到学习空间偏好中…',
+		remember_space: '记忆信息到学习空间偏好中…',
+		search_memories: '查询记忆中…',
+		delete_from_long_term_memory: '优化记忆中…',
+		delete_from_space_memory: '优化记忆中…',
+		forget: '优化记忆中…'
 	}
 
 	// 知识图谱类工具集合（使用行内 pill 而非卡片）
@@ -1958,6 +2007,8 @@
 				expandedSearchResults: {}, // { toolCallId: true }
 				expandedQuizTools: {}, // { toolCallId: true/false }
 				expandedGraphTools: {}, // { toolCallId: true/false }
+				expandedNoteTools: {}, // { toolCallId: true/false }
+				collapsingTools: {}, // { toolCallId: true } — 正在播放折叠动画
 				// 图表详情卡片展开状态（默认展开）
 				expandedChartDetails: {}, // { toolCallId: true/false }
 
@@ -5123,9 +5174,17 @@
 			},
 
 			toggleQuizTool(toolCallId) {
-				this.expandedQuizTools = {
-					...this.expandedQuizTools,
-					[toolCallId]: this.expandedQuizTools[toolCallId] === false
+				const isCurrentlyExpanded = this.expandedQuizTools[toolCallId] !== false
+				if (isCurrentlyExpanded) {
+					// Collapsing: play exit animation first, then hide
+					this.collapsingTools = { ...this.collapsingTools, [toolCallId]: true }
+					setTimeout(() => {
+						this.expandedQuizTools = { ...this.expandedQuizTools, [toolCallId]: false }
+						const { [toolCallId]: _, ...rest } = this.collapsingTools
+						this.collapsingTools = rest
+					}, 200)
+				} else {
+					this.expandedQuizTools = { ...this.expandedQuizTools, [toolCallId]: true }
 				}
 			},
 
@@ -5133,10 +5192,40 @@
 				return this.expandedGraphTools[toolCallId] !== false
 			},
 
+			isNoteToolExpanded(toolCallId) {
+				return this.expandedNoteTools[toolCallId] !== false
+			},
+
+			toggleNoteTool(toolCallId) {
+				const isCurrentlyExpanded = this.expandedNoteTools[toolCallId] !== false
+				if (isCurrentlyExpanded) {
+					this.collapsingTools = { ...this.collapsingTools, [toolCallId]: true }
+					setTimeout(() => {
+						this.expandedNoteTools = { ...this.expandedNoteTools, [toolCallId]: false }
+						const { [toolCallId]: _, ...rest } = this.collapsingTools
+						this.collapsingTools = rest
+					}, 200)
+				} else {
+					this.expandedNoteTools = { ...this.expandedNoteTools, [toolCallId]: true }
+				}
+			},
+
+			isToolCollapsing(toolCallId) {
+				return !!this.collapsingTools[toolCallId]
+			},
+
 			toggleGraphTool(toolCallId) {
-				this.expandedGraphTools = {
-					...this.expandedGraphTools,
-					[toolCallId]: this.expandedGraphTools[toolCallId] === false
+				const isCurrentlyExpanded = this.expandedGraphTools[toolCallId] !== false
+				if (isCurrentlyExpanded) {
+					// Collapsing: play exit animation first, then hide
+					this.collapsingTools = { ...this.collapsingTools, [toolCallId]: true }
+					setTimeout(() => {
+						this.expandedGraphTools = { ...this.expandedGraphTools, [toolCallId]: false }
+						const { [toolCallId]: _, ...rest } = this.collapsingTools
+						this.collapsingTools = rest
+					}, 200)
+				} else {
+					this.expandedGraphTools = { ...this.expandedGraphTools, [toolCallId]: true }
 				}
 			},
 
@@ -6534,7 +6623,8 @@
 	.input-field {
 		width: 100%;
 		font-size: 28rpx;
-		color: rgb(248, 248, 248);
+		color: #F5F5F5;
+		-webkit-text-fill-color: #F5F5F5;
 		min-height: 40rpx;
 		line-height: 1.4;
 		padding: 24rpx 28rpx 12rpx 72rpx;
@@ -6629,7 +6719,8 @@
 	}
 
 	.input-placeholder {
-		color: #A79D92;
+		color: #A1A1AA;
+		-webkit-text-fill-color: #A1A1AA;
 		font-size: 28rpx;
 	}
 
@@ -6650,7 +6741,8 @@
 	}
 
 	.placeholder-text {
-		color: #A79D92;
+		color: #A1A1AA;
+		-webkit-text-fill-color: #A1A1AA;
 		font-size: 28rpx;
 	}
 
@@ -6691,13 +6783,13 @@
 		}
 	}
 
-	/* ========== 记忆工具行内波浪文字 ========== */
+	/* ========== 记忆工具行内银光掠过 ========== */
 	.memory-tool-inline {
 		margin: 8rpx 0;
 		max-height: 0;
 		opacity: 0;
 		overflow: hidden;
-		transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
+		transition: max-height 0.4s ease, opacity 0.4s ease, margin 0.4s ease;
 	}
 
 	.memory-tool-active {
@@ -6711,24 +6803,38 @@
 		margin: 0;
 	}
 
+	.memory-tool-done .memory-tool-text {
+		animation: none;
+	}
+
 	.memory-tool-text {
 		display: inline-block;
 		font-size: 26rpx;
-		color: #9ca3af;
+		font-style: italic;
+		color: rgba(192, 199, 210, 0.5);
 		background: linear-gradient(
 			90deg,
-			#6b7280 0%,
-			#9ca3af 15%,
-			#d1d5db 30%,
-			#9ca3af 45%,
-			#6b7280 60%,
-			#6b7280 100%
+			rgba(160, 170, 185, 0.4) 0%,
+			rgba(200, 210, 225, 0.7) 20%,
+			rgba(230, 238, 250, 1) 40%,
+			rgba(200, 210, 225, 0.7) 60%,
+			rgba(160, 170, 185, 0.4) 80%,
+			rgba(160, 170, 185, 0.4) 100%
 		);
-		background-size: 300% 100%;
+		background-size: 250% 100%;
 		-webkit-background-clip: text;
 		background-clip: text;
 		-webkit-text-fill-color: transparent;
-		animation: wave-shimmer 2s ease-in-out infinite;
+		animation: memory-shimmer 2s ease-in-out infinite;
+	}
+
+	@keyframes memory-shimmer {
+		0% {
+			background-position: 100% 50%;
+		}
+		100% {
+			background-position: -100% 50%;
+		}
 	}
 
 	/* ========== 规划工具行内银光掠过 ========== */
@@ -6868,6 +6974,22 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12rpx;
+	}
+
+	/* ========== 笔记工具展开容器 ========== */
+	.note-expanded-container {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 0;
+		gap: 0;
+	}
+
+	.note-expanded-container .graph-tool-pill {
+		border: none;
+		background: transparent;
+		border-radius: 24rpx 24rpx 0 0;
+		padding: 20rpx 24rpx 16rpx;
 	}
 
 	.graph-tool-expanded {
@@ -7029,6 +7151,7 @@
 		border-radius: 24rpx;
 		padding: 20rpx 24rpx;
 		overflow: hidden;
+			animation: tool-card-enter 0.28s ease-out;
 	}
 
 	.graph-overview-header {
@@ -7222,7 +7345,7 @@
 		border: 1rpx solid rgba(255, 255, 255, 0.08);
 		border-radius: 24rpx;
 		padding: 20rpx 24rpx;
-		animation: gm-card-enter 0.35s ease-out;
+		animation: tool-card-enter 0.28s ease-out;
 	}
 
 	.gm-card-header {
@@ -7343,6 +7466,34 @@
 		}
 	}
 
+
+	/* ========== 工具卡片展开/折叠过渡动画 ========== */
+	.tool-card-leave {
+		animation: tool-card-leave 0.2s ease-in forwards;
+		pointer-events: none;
+	}
+
+	@keyframes tool-card-enter {
+		from {
+			opacity: 0;
+			transform: translateY(-8rpx);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@keyframes tool-card-leave {
+		from {
+			opacity: 1;
+			transform: translateY(0);
+		}
+		to {
+			opacity: 0;
+			transform: translateY(-8rpx);
+		}
+	}
 	/* ========== 展开态统一容器 ========== */
 	.gm-expanded-container {
 		background: rgba(255, 255, 255, 0.04);
@@ -7363,7 +7514,6 @@
 		border: none;
 		background: transparent;
 		border-radius: 0 0 24rpx 24rpx;
-		animation: none;
 	}
 
 	.gm-expanded-container .graph-overview-card {
@@ -8087,6 +8237,7 @@
 		background: rgba(255, 255, 255, 0.04);
 		border: 1rpx solid rgba(255, 255, 255, 0.08);
 		border-radius: 20rpx;
+		transition: all 0.25s ease;
 	}
 
 	.quiz-tool-running {
@@ -8099,9 +8250,42 @@
 		border-color: rgba(255, 255, 255, 0.12);
 	}
 
-	.quiz-tool-expanded {
-		background: rgba(255, 255, 255, 0.08);
-		border-color: rgba(255, 255, 255, 0.2);
+	.quiz-expanded-container {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		overflow: hidden;
+	}
+
+	.quiz-expanded-container .quiz-tool-pill {
+		border: none;
+		background: transparent;
+		border-radius: 0;
+		padding: 18rpx 20rpx 14rpx;
+	}
+
+	.quiz-expanded-container .quiz-tool-results-card {
+		border: none;
+		background: transparent;
+		border-radius: 0;
+		margin-top: 0;
+			animation: tool-card-enter 0.28s ease-out;
+	}
+
+	.quiz-expanded-container .quiz-tool-detail-card {
+		border: none;
+		background: transparent;
+		border-radius: 0;
+		margin-top: 0;
+			animation: tool-card-enter 0.28s ease-out;
+	}
+
+	.quiz-expanded-container .quiz-tool-empty {
+		border: none;
+		background: transparent;
+		border-radius: 0;
+		margin-top: 0;
+			animation: tool-card-enter 0.28s ease-out;
 	}
 
 	.quiz-tool-failed {
@@ -8918,14 +9102,15 @@
 	.model-selector-icon {
 		width: 28rpx;
 		height: 28rpx;
-		filter: brightness(0) invert(0.58) sepia(0.2);
+		filter: brightness(0) invert(0.7);
 		opacity: 1;
 		flex-shrink: 0;
 	}
 
 	.model-selector-label {
 		font-size: 24rpx;
-		color: #C8BCAE;
+		color: #C7CBD4;
+		-webkit-text-fill-color: #C7CBD4;
 		white-space: nowrap;
 		max-width: 280rpx;
 		overflow: hidden;
@@ -8935,7 +9120,7 @@
 	.model-selector-chevron {
 		width: 20rpx;
 		height: 20rpx;
-		filter: brightness(0) invert(0.45) sepia(0.15);
+		filter: brightness(0) invert(0.62);
 		opacity: 1;
 		flex-shrink: 0;
 	}
@@ -9012,7 +9197,8 @@
 	.model-menu-item-name {
 		font-size: 28rpx;
 		font-weight: 500;
-		color: #C8BCAE;
+		color: #C7CBD4;
+		-webkit-text-fill-color: #C7CBD4;
 	}
 
 	.model-menu-item-active .model-menu-item-name {
@@ -9020,12 +9206,14 @@
 	}
 
 	.model-menu-item-active .model-menu-item-desc {
-		color: rgba(205, 216, 255, 0.78);
+		color: #A1A1AA;
+		-webkit-text-fill-color: #A1A1AA;
 	}
 
 	.model-menu-item-desc {
 		font-size: 22rpx;
-		color: #7E746B;
+		color: #A1A1AA;
+		-webkit-text-fill-color: #A1A1AA;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -9042,7 +9230,7 @@
 	.model-menu-lock {
 		width: 28rpx;
 		height: 28rpx;
-		filter: brightness(0) invert(0.45) sepia(0.15);
+		filter: brightness(0) invert(0.58);
 		opacity: 1;
 		flex-shrink: 0;
 		margin-left: 16rpx;

@@ -1,5 +1,5 @@
 <template>
-  <view class="ncc-card">
+  <view class="ncc-card" :class="{ 'ncc-flat': flat }">
     <!-- ======== 待确认预览模式 ======== -->
     <template v-if="isPending && !isPendingEditing">
       <!-- Header -->
@@ -181,6 +181,10 @@ export default {
     conversationId: {
       type: [String, Number],
       default: ''
+    },
+    flat: {
+      type: Boolean,
+      default: false
     }
   },
   data() {
@@ -689,5 +693,12 @@ export default {
   color: rgba(255, 255, 255, 0.85);
   line-height: 1.7;
   word-break: break-word;
+}
+
+.ncc-flat {
+  border: none;
+  background: transparent;
+  border-radius: 0 0 24rpx 24rpx;
+  padding: 20rpx 24rpx 14rpx;
 }
 </style>
