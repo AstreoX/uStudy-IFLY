@@ -1457,6 +1457,18 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 					}
 				})
 				// #endif
+				// #ifndef H5
+				// APP 原生端：检测内容减少时主动同步行数，确保从滚动模式正确回退
+				const text = this.inputText || ''
+				if (!text) {
+					this.textareaLineCount = 1
+				} else {
+					const explicitLines = text.split('\n').length
+					if (explicitLines < this.textareaLineCount) {
+						this.textareaLineCount = explicitLines
+					}
+				}
+				// #endif
 			},
 
 			onTextareaLineChange(e) {
