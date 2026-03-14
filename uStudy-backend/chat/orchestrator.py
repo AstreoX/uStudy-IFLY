@@ -38,6 +38,7 @@ from chat.tools.memory_executor import MemoryToolExecutor, format_memory_for_pro
 from chat.tools.quiz_generation_tools import QUIZ_GENERATION_TOOLS, QuizGenerationToolExecutor
 from chat.tools.quiz_result_tools import QUIZ_RESULT_TOOLS, QUIZ_RESULT_TOOL_NAMES, QuizResultToolExecutor
 from chat.tools.rag_tools import RAG_TOOLS, RAGToolExecutor
+from chat.tools.base import ToolResult
 from chat.tools.client_tool_bridge import create_pending_request, wait_for_result
 from chat.tools.schedule_tools import SCHEDULE_TOOLS
 from chat.tools.web_tools import WEB_TOOLS, WebToolExecutor
@@ -865,10 +866,45 @@ class LLMOrchestrator:
                             tool_call.arguments,
                         )
                     elif tool_call.name in self._note_tool_names:
-                        tool_result = await self.note_tool_executor.execute(
-                            tool_call.name,
-                            tool_call.arguments,
-                        )
+                        if tool_call.name == "create_note":
+                            # Require user confirmation before creating note
+                            await create_pending_request(
+                                self.conversation_id,
+                                tool_call.id,
+                                tool_call.name,
+                                tool_call.arguments,
+                            )
+                            yield {
+                                "event": SSEEventType.CLIENT_TOOL_REQUEST,
+                                "data": {
+                                    "tool_call_id": tool_call.id,
+                                    "tool": tool_call.name,
+                                    "params": tool_call.arguments,
+                                },
+                            }
+                            confirmation = await wait_for_result(
+                                tool_call.id, timeout=120.0
+                            )
+                            if confirmation.success:
+                                # User confirmed — execute with (possibly modified) arguments
+                                modified_args = (confirmation.data or {}).get(
+                                    "arguments", tool_call.arguments
+                                )
+                                tool_result = await self.note_tool_executor.execute(
+                                    tool_call.name, modified_args,
+                                )
+                            else:
+                                tool_result = ToolResult(
+                                    success=False,
+                                    data=None,
+                                    message=confirmation.message or "用户取消了笔记创建",
+                                )
+                        else:
+                            # Other note tools (list, view, update, delete) — auto-execute
+                            tool_result = await self.note_tool_executor.execute(
+                                tool_call.name,
+                                tool_call.arguments,
+                            )
                     else:
                         tool_result = await self.graph_tool_executor.execute(
                             tool_call.name,
