@@ -80,19 +80,25 @@ function linkifyRawUrls(text) {
 	})
 }
 
+const MARKDOWN_TEXT_COLOR = '#E5E5E5'
+const MARKDOWN_MUTED_COLOR = '#A3A3A3'
+const MARKDOWN_BORDER_COLOR = '#333333'
+const MARKDOWN_SURFACE_COLOR = '#111111'
+const MARKDOWN_SURFACE_ELEVATED_COLOR = '#1A1A1A'
+
 // 代码块内联样式（rich-text 不支持外部 CSS）
-const CODE_WRAPPER_STYLE = 'background:#171412; border:1px solid #3A302A; border-radius:12px; margin:16px 0; overflow:hidden;'
-const CODE_HEADER_STYLE = 'display:flex; justify-content:space-between; align-items:center; padding:8px 16px; background:#231D19; border-bottom:1px solid #3A302A;'
-const CODE_LANG_STYLE = 'color:#9F9488; font-size:12px;'
+const CODE_WRAPPER_STYLE = `background:${MARKDOWN_SURFACE_COLOR}; border:1px solid ${MARKDOWN_BORDER_COLOR}; border-radius:12px; margin:16px 0; overflow:hidden;`
+const CODE_HEADER_STYLE = `display:flex; justify-content:space-between; align-items:center; padding:8px 16px; background:${MARKDOWN_SURFACE_ELEVATED_COLOR}; border-bottom:1px solid ${MARKDOWN_BORDER_COLOR};`
+const CODE_LANG_STYLE = `color:${MARKDOWN_MUTED_COLOR}; font-size:12px;`
 const CODE_COPY_STYLE = 'color:#5c90f7; font-size:12px; text-decoration:none;'
 const CODE_PRE_STYLE = 'overflow-x:auto; margin:0; padding:16px; white-space:pre; background:transparent;'
-const CODE_STYLE = 'font-family:SF Mono,Monaco,Consolas,monospace; font-size:13px; color:#e0e0e0;'
+const CODE_STYLE = `font-family:SF Mono,Monaco,Consolas,monospace; font-size:13px; color:${MARKDOWN_TEXT_COLOR};`
 
 // Table inline styles (dark theme, rpx units for app)
 const TABLE_WRAPPER_STYLE = 'overflow-x:auto; margin:24rpx 0;'
 const TABLE_STYLE = 'border-collapse:collapse; width:100%;'
-const TABLE_TH_STYLE = 'border:1px solid #3A302A; padding:16rpx 24rpx; background:#231D19; font-weight:600; color:#F2EBE0; text-align:left;'
-const TABLE_TD_STYLE = 'border:1px solid #3A302A; padding:16rpx 24rpx; color:#F2EBE0;'
+const TABLE_TH_STYLE = `border:1px solid ${MARKDOWN_BORDER_COLOR}; padding:16rpx 24rpx; background:${MARKDOWN_SURFACE_ELEVATED_COLOR}; font-weight:600; color:${MARKDOWN_TEXT_COLOR}; text-align:left;`
+const TABLE_TD_STYLE = `border:1px solid ${MARKDOWN_BORDER_COLOR}; padding:16rpx 24rpx; color:${MARKDOWN_TEXT_COLOR};`
 
 function parseSimpleMarkdown(text) {
 	if (!text) return { html: '', codeContents: [] }
@@ -158,7 +164,7 @@ function parseSimpleMarkdown(text) {
 			).join('<br/>')
 			html = `<div style="border-left:3px solid ${cfg.color};background:${cfg.bg};padding:10px 14px;margin:10px 0;border-radius:0 6px 6px 0;">` +
 				`<div style="color:${cfg.color};font-weight:600;margin-bottom:4px;font-size:13px;">${title}</div>` +
-				`<div style="color:#F2EBE0;font-size:14px;line-height:1.6;">${body}</div>` +
+				`<div style="color:${MARKDOWN_TEXT_COLOR};font-size:14px;line-height:1.6;">${body}</div>` +
 				`</div>`
 		} else {
 			const body = stripped.map(l => escapeHtml(l)
@@ -166,7 +172,7 @@ function parseSimpleMarkdown(text) {
 				.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
 				.replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
 			).join('<br/>')
-			html = `<blockquote style="border-left:3px solid #3A302A;padding-left:12px;margin:8px 0;color:#9F9488;">${body}</blockquote>`
+			html = `<blockquote style="border-left:3px solid ${MARKDOWN_BORDER_COLOR};padding-left:12px;margin:8px 0;color:${MARKDOWN_MUTED_COLOR};">${body}</blockquote>`
 		}
 		const idx = blockquoteBlocks.length
 		blockquoteBlocks.push(html)
@@ -561,7 +567,7 @@ export default {
 .markdown-content {
 	font-size: 30rpx;
 	line-height: 1.6;
-	color: #F2EBE0;
+	color: #E5E5E5;
 	word-break: break-word;
 }
 </style>
@@ -580,7 +586,7 @@ export default {
 
 .markdown-content strong {
 	font-weight: 600;
-	color: #F2EBE0;
+	color: #E5E5E5;
 }
 
 .markdown-content em {
@@ -593,7 +599,7 @@ export default {
 .markdown-content h3 {
 	font-weight: 600;
 	margin: 24rpx 0 16rpx 0;
-	color: #F2EBE0;
+	color: #E5E5E5;
 }
 
 .markdown-content h1 { font-size: 40rpx; }
@@ -643,16 +649,16 @@ export default {
 
 /* 引用 */
 .markdown-content blockquote {
-	border-left: 4rpx solid #3A302A;
+	border-left: 4rpx solid #333333;
 	padding-left: 20rpx;
 	margin: 16rpx 0;
-	color: #9F9488;
+	color: #A3A3A3;
 }
 
 /* 分隔线 */
 .markdown-content hr {
 	border: none;
-	border-top: 1px solid #3A302A;
+	border-top: 1px solid #333333;
 	margin: 24rpx 0;
 }
 
@@ -664,31 +670,31 @@ export default {
 }
 .markdown-content th,
 .markdown-content td {
-	border: 1px solid rgba(255, 255, 255, 0.2);
+	border: 1px solid #333333;
 	padding: 16rpx 24rpx;
 }
 .markdown-content th {
-	background: rgba(255, 255, 255, 0.08);
+	background: #1A1A1A;
 	font-weight: 600;
 }
 
 /* ===== Highlight.js 代码高亮主题（深色） ===== */
-.hljs-keyword { color: #c792ea; }
-.hljs-string { color: #c3e88d; }
-.hljs-number { color: #f78c6c; }
-.hljs-function { color: #82aaff; }
-.hljs-title { color: #82aaff; }
-.hljs-params { color: #89ddff; }
-.hljs-comment { color: #676e95; font-style: italic; }
-.hljs-built_in { color: #ffcb6b; }
-.hljs-attr { color: #ffcb6b; }
-.hljs-literal { color: #f78c6c; }
-.hljs-type { color: #ffcb6b; }
-.hljs-variable { color: #f07178; }
-.hljs-selector-class { color: #ffcb6b; }
-.hljs-selector-id { color: #82aaff; }
-.hljs-selector-tag { color: #f07178; }
-.hljs-property { color: #89ddff; }
+.hljs-keyword { color: #DCDCDC; }
+.hljs-string { color: #D4D4D4; }
+.hljs-number { color: #BFBFBF; }
+.hljs-function { color: #D4D4D4; }
+.hljs-title { color: #D4D4D4; }
+.hljs-params { color: #C7C7C7; }
+.hljs-comment { color: #8A8A8A; font-style: italic; }
+.hljs-built_in { color: #CFCFCF; }
+.hljs-attr { color: #CFCFCF; }
+.hljs-literal { color: #BFBFBF; }
+.hljs-type { color: #CFCFCF; }
+.hljs-variable { color: #DCDCDC; }
+.hljs-selector-class { color: #CFCFCF; }
+.hljs-selector-id { color: #D4D4D4; }
+.hljs-selector-tag { color: #DCDCDC; }
+.hljs-property { color: #C7C7C7; }
 
 /* ===== KaTeX 数学公式样式 ===== */
 
@@ -720,27 +726,27 @@ export default {
 .katex {
 	font-size: 1.1em;
 	line-height: 1.2;
-	color: #F2EBE0;
+	color: #E5E5E5;
 }
 
 .katex .katex-html {
-	color: #F2EBE0;
+	color: #E5E5E5;
 }
 
 /* 分数线颜色 */
 .katex .frac-line {
-	background: #F2EBE0;
+	background: #E5E5E5;
 }
 
 /* 根号线颜色 */
 .katex .sqrt-line {
-	background: #F2EBE0;
+	background: #E5E5E5;
 }
 
 /* 矩阵括号颜色 */
 .katex .delimsizing,
 .katex .delimsizinginner {
-	color: #F2EBE0;
+	color: #E5E5E5;
 }
 
 /* 上下标 */
@@ -750,16 +756,16 @@ export default {
 
 /* 操作符 */
 .katex .mop {
-	color: #82aaff;
+	color: #D4D4D4;
 }
 
 /* 变量 */
 .katex .mord.mathnormal {
-	color: #F2EBE0;
+	color: #E5E5E5;
 }
 
 /* 数字 */
 .katex .mord.text {
-	color: #f78c6c;
+	color: #BFBFBF;
 }
 </style>
