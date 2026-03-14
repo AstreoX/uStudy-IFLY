@@ -86,10 +86,10 @@ export default {
 	},
 	methods: {
 		// 解析 SSE 数据缓冲区
-		parseSSEBuffer(buffer, onEvent) {
+		parseSSEBuffer(buffer, pendingEvent, onEvent) {
 			const lines = buffer.split('\n')
 			const remaining = lines.pop()
-			let currentEvent = 'message'
+			let currentEvent = pendingEvent || 'message'
 			let hasComment = false
 
 			for (const line of lines) {
@@ -113,7 +113,7 @@ export default {
 				onEvent('_heartbeat', null)
 			}
 
-			return remaining
+			return { remaining, pendingEvent: currentEvent }
 		},
 
 		// 监听 trigger 变化，启动 fetch
@@ -161,6 +161,7 @@ export default {
 				const reader = response.body.getReader()
 				const decoder = new TextDecoder()
 				let buffer = ''
+				let pendingEvent = 'message'
 				let doneEventData = null
 
 				while (true) {
@@ -169,12 +170,13 @@ export default {
 					if (done) {
 						const finalEvents = []
 						if (buffer) {
-							this.parseSSEBuffer(buffer + '\n', (eventType, eventData) => {
+							const finalResult = this.parseSSEBuffer(buffer + '\n', pendingEvent, (eventType, eventData) => {
 								finalEvents.push({ eventType, data: eventData })
 								if (eventType === 'done') {
 									doneEventData = eventData
 								}
 							})
+							pendingEvent = finalResult.pendingEvent
 						}
 						console.log('[SSE-Renderjs] Stream ended, requestId:', requestId,
 							'finalEvents:', finalEvents.length, 'hasDone:', !!doneEventData)
@@ -197,12 +199,14 @@ export default {
 					buffer += chunk
 
 					const events = []
-					buffer = this.parseSSEBuffer(buffer, (eventType, eventData) => {
+					const result = this.parseSSEBuffer(buffer, pendingEvent, (eventType, eventData) => {
 						events.push({ eventType, data: eventData })
 						if (eventType === 'done') {
 							doneEventData = eventData
 						}
 					})
+					buffer = result.remaining
+					pendingEvent = result.pendingEvent
 					if (events.length > 0) {
 						this.$ownerInstance.callMethod('onSseEvents', { requestId, events })
 					}

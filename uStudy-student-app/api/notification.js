@@ -18,7 +18,9 @@ const MAX_RETRIES = RETRY_DELAYS.length
  *
  * @param {Object} callbacks
  * @param {Function} [callbacks.onMasteryUpdate] - Called with { node_name, change, new_mastery }
+ * @param {Function} [callbacks.onArtifactStream] - Called with { task_id, note_id, delta, chars_total, status }
  * @param {Function} [callbacks.onArtifactReady] - Called with { note_id, space_id, status, title, error_message }
+ * @param {Function} [callbacks.onConnected] - Called with { isReconnect }
  * @returns {Function} Abort function to close the connection
  */
 export function connectNotificationStream(callbacks) {
@@ -37,6 +39,7 @@ export function connectNotificationStream(callbacks) {
       scheduleReconnect()
     }
 
+    callbacks.onConnected?.({ isReconnect: retryCount > 0 })
     innerAbort = connectSSE({
       url: '/api/notifications/stream',
       method: 'GET',
@@ -53,6 +56,9 @@ export function connectNotificationStream(callbacks) {
 
         if (eventType === 'mastery_update') {
           callbacks.onMasteryUpdate?.(data)
+        }
+        if (eventType === 'artifact_stream') {
+          callbacks.onArtifactStream?.(data)
         }
         if (eventType === 'artifact_ready') {
           callbacks.onArtifactReady?.(data)

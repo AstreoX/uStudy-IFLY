@@ -533,40 +533,12 @@
 							/>
 						</view>
 
-						<!-- 交互式演示工具：Artifact 卡片 -->
-						<view
+						<ArtifactGenerationCard
 							v-else-if="seg.type === 'tool' && (seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact')"
 							:key="'artifact-tool-' + segIdx"
-							class="tool-call-card artifact-card"
-							:class="{
-								'tool-call-running': isArtifactGenerating(seg.toolCall),
-								'ac-success': isArtifactSuccess(seg.toolCall),
-								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
-							}"
-						>
-							<view class="tool-call-header">
-								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
-								<text class="tool-call-name">{{ getArtifactHeaderText(seg.toolCall) }}</text>
-								<view v-if="isArtifactGenerating(seg.toolCall)" class="tool-call-spinner"></view>
-								<image v-else-if="isArtifactSuccess(seg.toolCall)" class="tool-call-status-icon"
-									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
-								<image v-else-if="seg.toolCall.status === 'done'" class="tool-call-status-icon tool-call-status-failed"
-									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
-							</view>
-							<view v-if="isArtifactGenerating(seg.toolCall)" class="ac-body">
-								<text class="ac-status-text">正在生成交互演示，完成后会通知你...</text>
-								<view class="ac-progress-bar"><view class="ac-progress-fill"></view></view>
-							</view>
-							<view v-else-if="isArtifactSuccess(seg.toolCall)" class="ac-body">
-								<text class="ac-status-text ac-done-text">交互演示已生成</text>
-								<view class="ac-view-btn" @click="handleViewArtifact(seg.toolCall)">
-									<text class="ac-view-btn-text">查看笔记</text>
-								</view>
-							</view>
-							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="ac-body">
-								<text class="ac-status-text ac-error-text">{{ seg.toolCall.result?.message || '生成失败' }}</text>
-							</view>
-						</view>
+							:tool-call="seg.toolCall"
+							@view="handleViewArtifact(seg.toolCall)"
+						/>
 
 						<!-- 图表生成工具：pill + 可折叠图片详情卡片 -->
 						<view
@@ -1136,6 +1108,30 @@
 							</view>
 						</view>
 
+						<!-- 文档检索工具：pill-only -->
+						<view
+							v-else-if="seg.type === 'tool' && isDocRetrievalTool(seg.toolCall.tool)"
+							:key="'doc-tool-' + segIdx"
+						>
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+							>
+								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getDocRetrievalToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-status-icon"
+									src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+						</view>
+
 						<!-- 非记忆类工具：原有卡片样式 -->
 						<view
 							v-else-if="seg.type === 'tool'"
@@ -1233,6 +1229,30 @@
 							<text class="quiz-entry-meta">点击进入测试</text>
 						</view>
 						<image class="quiz-entry-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit" />
+					</view>
+
+					<!-- 引用来源列表 -->
+					<view v-if="msg.citations && msg.citations.length && !msg.isStreaming" class="citation-footer">
+						<view class="citation-footer-header">
+							<image class="citation-footer-icon" src="/static/icons/lucide/book-search.svg" mode="aspectFit" />
+							<text class="citation-footer-label">参考来源</text>
+						</view>
+						<view
+							v-for="cite in msg.citations"
+							:key="cite.index"
+							class="citation-item"
+							@click="openCitationSource(cite)"
+						>
+							<text class="citation-index">[{{ cite.index }}]</text>
+							<view class="citation-info">
+								<text class="citation-title">{{ cite.title }}</text>
+								<text v-if="cite.page_number" class="citation-meta">第{{ cite.page_number }}页</text>
+								<text v-if="cite.source_type === 'web'" class="citation-meta">{{ getDomain(cite.url) }}</text>
+								<text v-if="cite.source_type === 'academic'" class="citation-meta">学术论文</text>
+							</view>
+							<image v-if="cite.url" class="citation-arrow"
+								src="/static/icons/phosphor-icons/SVGs/regular/link.svg" mode="aspectFit" />
+						</view>
 					</view>
 
 					<!-- AI 消息操作图标 (流式输出完成后显示，排除未完成的工具请求) -->
@@ -1535,6 +1555,35 @@
 			</view>
 		</view>
 
+		<!-- 引用详情抽屉 -->
+		<view v-if="showCitationDetail" class="cite-drawer-wrapper" @touchmove.stop.prevent>
+			<view class="cite-drawer-overlay" :class="{ 'overlay-show': citationDetailAnimVisible }" @click="closeCitationDetail" />
+			<view class="cite-drawer-container" :class="{ 'drawer-show': citationDetailAnimVisible }">
+				<view class="cite-drawer-handle"><view class="handle-bar" /></view>
+				<view class="cite-drawer-header">
+					<view class="cite-drawer-badge">[{{ citationDetail.index }}]</view>
+					<view class="cite-drawer-title-col">
+						<text class="cite-drawer-title">{{ citationDetail.title }}</text>
+						<view class="cite-drawer-meta-row">
+							<text v-if="citationDetail.page_number" class="cite-drawer-meta">第{{ citationDetail.page_number }}页</text>
+							<text v-if="citationDetail.source_type === 'web'" class="cite-drawer-meta">{{ getDomain(citationDetail.url) }}</text>
+							<text v-if="citationDetail.source_type === 'academic'" class="cite-drawer-meta">学术论文</text>
+							<text v-if="citationDetail.score" class="cite-drawer-meta">相关度 {{ Math.round(citationDetail.score * 100) }}%</text>
+						</view>
+					</view>
+				</view>
+				<scroll-view scroll-y class="cite-drawer-body">
+					<text class="cite-drawer-content">{{ citationDetail.content || citationDetail.snippet || '' }}</text>
+				</scroll-view>
+				<view v-if="citationDetail.url" class="cite-drawer-footer">
+					<view class="cite-drawer-open-btn" @click="openCitationUrl(citationDetail.url)">
+						<image class="cite-drawer-open-icon" src="/static/icons/phosphor-icons/SVGs/regular/link.svg" mode="aspectFit" />
+						<text class="cite-drawer-open-text">打开链接</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
 		<!-- SSE Renderjs 组件 (仅 Android App) -->
 		<!-- #ifdef APP-PLUS -->
 		<sse-renderjs
@@ -1557,6 +1606,7 @@
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
 	import NoteCreationCard from '@/components/note-creation-card/note-creation-card.vue'
 	import NoteDisplayCard from '@/components/note-display-card/note-display-card.vue'
+	import ArtifactGenerationCard from '@/components/artifact-generation-card/artifact-generation-card.vue'
 	import PythonExecutionCard from '@/components/python-execution-card/python-execution-card.vue'
 	import KnowledgeTreeMini from '@/components/knowledge-tree-mini/knowledge-tree-mini.vue'
 	import { generateQuiz, getTaskStatus, getSpaceGraph } from '@/api/space'
@@ -1803,6 +1853,16 @@
 		mark_review_completed:  { running: '正在标记复习完成…', done: '已标记复习完成', failed: '标记复习失败' }
 	}
 
+	// 文档检索类工具（pill-only，无详情卡片）
+	const DOC_RETRIEVAL_TOOLS = new Set([
+		'search_documents', 'web_fetch'
+	])
+
+	const DOC_RETRIEVAL_TOOL_TEXT = {
+		search_documents: { running: '正在搜索文档…', done: '已搜索文档', failed: '搜索文档失败' },
+		web_fetch:        { running: '正在获取网页…', done: '已获取网页', failed: '获取网页失败' }
+	}
+
 	export default {
 		components: {
 			UCapsuleToast,
@@ -1813,6 +1873,7 @@
 			ImageSourcePicker,
 			NoteCreationCard,
 			NoteDisplayCard,
+			ArtifactGenerationCard,
 			PythonExecutionCard,
 			KnowledgeTreeMini,
 			// #ifdef APP-PLUS
@@ -1954,7 +2015,12 @@
 
 				// 图谱变更工具快照
 				graphMutationSnapshots: {},
-				gmCanvasCounter: 0
+				gmCanvasCounter: 0,
+
+				// 引用详情抽屉
+				citationDetail: null,
+				showCitationDetail: false,
+				citationDetailAnimVisible: false
 			}
 		},
 
@@ -2362,8 +2428,16 @@
 							}
 						]
 					},
+					onArtifactStream: (data) => {
+						this.onArtifactStream(data)
+					},
 					onArtifactReady: (data) => {
 						this.onArtifactReady(data)
+					},
+					onConnected: ({ isReconnect }) => {
+						if (isReconnect) {
+							this.restoreArtifactToolCalls({ onlyGenerating: true })
+						}
 					}
 				})
 			},
@@ -3078,6 +3152,7 @@
 							role: m.role === 'user' ? 'user' : 'ai',
 							content: m.content,
 							attachments: m.attachments || [],
+							citations: m.citations || null,
 							created_at: m.created_at
 						}
 						if (msg.role === 'ai' && m.tool_calls && m.tool_calls.length > 0) {
@@ -3088,15 +3163,9 @@
 							msg.segments = segments
 							msg.toolCalls = m.tool_calls
 						}
-						// 修正 artifact 卡片的 generating 状态 + 恢复图谱变更快照
+						// 恢复图谱变更快照
 						if (msg.segments) {
 							for (const seg of msg.segments) {
-								if (seg.type === 'tool' && seg.toolCall &&
-									(seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact') &&
-									seg.toolCall.status === 'done' && seg.toolCall.success &&
-									seg.toolCall.result?.status === 'generating') {
-									seg.toolCall = { ...seg.toolCall, result: { ...seg.toolCall.result, status: 'done' } }
-								}
 								if (seg.type === 'tool' && seg.toolCall &&
 									seg.toolCall.tool === 'get_graph_overview' &&
 									seg.toolCall.status === 'done' && seg.toolCall.success) {
@@ -3128,6 +3197,7 @@
 					})
 					this.nextId = this.messages.length + 1
 					clearPendingMessages(this.conversationId)
+					await this.restoreArtifactToolCalls({ onlyGenerating: true })
 					this.$nextTick(() => this.scrollToLatestMessage())
 				} catch (err) {
 					console.warn('[SpaceChat] recoverFromBackground failed:', err)
@@ -3153,6 +3223,7 @@
 						role: 'ai',
 						content: '',
 						isStreaming: true,
+						citations: null,
 					}
 					this.messages.push(aiMsg)
 				}
@@ -3199,6 +3270,7 @@
 							if (data.content && !data.resumed) {
 								aiMsg.content = data.content
 							}
+							aiMsg.citations = data.citations || null
 						}
 					},
 					onComplete: () => {
@@ -3289,7 +3361,8 @@
 					thinkingStartTime: 0,
 					thinkingDuration: 0,
 					isStreaming: true,
-					isWaitingOutput: true
+					isWaitingOutput: true,
+					citations: null
 				})
 				this.scrollToLatestMessage()
 				this.startHeightMonitor(aiMsgId)
@@ -3349,7 +3422,7 @@
 						this.handleClientToolRequest(aiMsgId, data)
 					},
 
-					onDone: (fullContent) => {
+					onDone: (fullContent, citations) => {
 						// 先刷新缓冲区中剩余内容
 						this.flushThinkingBuffer()
 						this.flushTypewriter()
@@ -3371,14 +3444,17 @@
 								for (const seg of msg.streamSegments) {
 									if (seg.type === 'tool') {
 										const tc = this.activeToolCalls.find(t => t.id === seg.toolCall.id)
-										finalSegments.push({
-											type: 'tool',
-											toolCall: tc ? {
-												...tc,
-												arguments: tc.arguments ? { ...tc.arguments } : null,
-												result: tc.result ? { ...tc.result } : null
-											} : { ...seg.toolCall }
-										})
+										const resolved = tc ? {
+											...tc,
+											arguments: tc.arguments ? { ...tc.arguments } : null,
+											result: tc.result ? { ...tc.result } : null
+										} : { ...seg.toolCall }
+										// done 事件已到达，所有工具必定已完成；强制修正未收到 tool_call(done) 的残留 running 状态
+										if (resolved.status === 'running') {
+											resolved.status = 'done'
+											resolved.success = true
+										}
+										finalSegments.push({ type: 'tool', toolCall: resolved })
 									} else {
 										finalSegments.push({ ...seg })
 									}
@@ -3402,6 +3478,8 @@
 							}
 							// 保存完整文本用于复制等功能
 							msg.content = fullContent
+							// 保存引用来源
+							msg.citations = citations || null
 							// 清理流式片段
 							delete msg.streamSegments
 							// 保存工具调用记录（兼容旧逻辑）
@@ -3576,7 +3654,7 @@
 
 				// 添加 AI 消息占位并启动 SSE
 				const aiMsgId = this.nextId++
-				this.messages.push({ id: aiMsgId, role: 'ai', content: '', thinkingContent: '', isThinkingExpanded: true, thinkingStartTime: 0, thinkingDuration: 0, isStreaming: true, isWaitingOutput: true })
+				this.messages.push({ id: aiMsgId, role: 'ai', content: '', thinkingContent: '', isThinkingExpanded: true, thinkingStartTime: 0, thinkingDuration: 0, isStreaming: true, isWaitingOutput: true, citations: null })
 				this.scrollToLatestMessage()
 				this.startHeightMonitor(aiMsgId)
 				this.activeToolCalls = []
@@ -3614,7 +3692,7 @@
 					},
 					onToolCall: (data) => { this.handleToolCallEvent(aiMsgId, data) },
 					onClientToolRequest: (data) => { this.handleClientToolRequest(aiMsgId, data) },
-					onDone: (fullContent) => {
+					onDone: (fullContent, citations) => {
 						this.flushThinkingBuffer()
 						this.flushTypewriter()
 						if (this.showPreKnowledgeCard) this.schedulePreKnowledgeDismiss()
@@ -3627,7 +3705,13 @@
 								for (const seg of aiMsg.streamSegments) {
 									if (seg.type === 'tool') {
 										const tc = this.activeToolCalls.find(t => t.id === seg.toolCall.id)
-										finalSegments.push({ type: 'tool', toolCall: tc ? { ...tc } : { ...seg.toolCall } })
+										const resolved = tc ? { ...tc } : { ...seg.toolCall }
+										// done 事件已到达，所有工具必定已完成；强制修正未收到 tool_call(done) 的残留 running 状态
+										if (resolved.status === 'running') {
+											resolved.status = 'done'
+											resolved.success = true
+										}
+										finalSegments.push({ type: 'tool', toolCall: resolved })
 									} else {
 										finalSegments.push({ ...seg })
 									}
@@ -3640,6 +3724,7 @@
 							}
 							aiMsg.segments = finalSegments
 							aiMsg.content = fullContent
+							aiMsg.citations = citations || null
 							delete aiMsg.streamSegments
 							if (this.activeToolCalls.length > 0) {
 								aiMsg.toolCalls = this.activeToolCalls.map(tc => ({ ...tc }))
@@ -3739,6 +3824,7 @@
 							role: m.role === 'user' ? 'user' : 'ai',
 							content: m.content,
 							attachments: m.attachments || [],
+							citations: m.citations || null,
 							created_at: m.created_at
 						}
 						if (msg.role === 'ai' && m.tool_calls && m.tool_calls.length > 0) {
@@ -3749,15 +3835,9 @@
 							msg.segments = segments
 							msg.toolCalls = m.tool_calls
 						}
-						// 修正历史加载中 artifact 卡片的 generating 状态 + 恢复图谱变更快照
+						// 恢复图谱变更快照
 						if (msg.segments) {
 							for (const seg of msg.segments) {
-								if (seg.type === 'tool' && seg.toolCall &&
-									(seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact') &&
-									seg.toolCall.status === 'done' && seg.toolCall.success &&
-									seg.toolCall.result?.status === 'generating') {
-									seg.toolCall = { ...seg.toolCall, result: { ...seg.toolCall.result, status: 'done' } }
-								}
 								if (seg.type === 'tool' && seg.toolCall &&
 									seg.toolCall.tool === 'get_graph_overview' &&
 									seg.toolCall.status === 'done' && seg.toolCall.success) {
@@ -3795,6 +3875,7 @@
 					} else {
 						this.mergePendingMessages()
 					}
+					await this.restoreArtifactToolCalls({ onlyGenerating: true })
 					this.$nextTick(() => this.scrollToLatestMessage())
 				} catch (err) {
 					uni.showToast({ title: '加载对话失败', icon: 'none' })
@@ -3966,12 +4047,14 @@
 							this.handleGenerateTestToolCompletion(aiMsgId, result.task_id)
 						}
 					}
-					// 同步更新 streamSegments 中的工具片段
+					// 同步更新 streamSegments 中的工具片段（用新数组引用确保响应式更新）
 					if (msg.streamSegments) {
-						const seg = msg.streamSegments.find(s => s.type === 'tool' && s.toolCall && s.toolCall.id === id)
-						if (seg && toolCall) {
-							seg.toolCall = { ...toolCall }
-						}
+						msg.streamSegments = msg.streamSegments.map(s => {
+							if (s.type === 'tool' && s.toolCall && s.toolCall.id === id && toolCall) {
+								return { type: 'tool', toolCall: { ...toolCall } }
+							}
+							return s
+						})
 					}
 				}
 
@@ -4178,16 +4261,8 @@
 			},
 
 			// ===== Artifact 辅助方法 =====
-			isArtifactGenerating(toolCall) {
-				return toolCall.status === 'running' ||
-					(toolCall.status === 'done' && toolCall.success && toolCall.result?.status === 'generating')
-			},
-			isArtifactSuccess(toolCall) {
-				return toolCall.status === 'done' && toolCall.success && toolCall.result?.status !== 'generating'
-			},
-			getArtifactHeaderText(toolCall) {
-				const title = toolCall.arguments?.title || toolCall.result?.title || '交互演示'
-				return toolCall.tool === 'update_artifact' ? `更新演示「${title}」` : `创建演示「${title}」`
+			isArtifactTool(toolName) {
+				return toolName === 'create_artifact' || toolName === 'update_artifact'
 			},
 			handleViewArtifact(toolCall) {
 				const noteId = toolCall.result?.note_id
@@ -4196,35 +4271,176 @@
 					url: `/pages/artifactViewer/artifactViewer?spaceId=${this.spaceId}&noteId=${noteId}`
 				})
 			},
-			onArtifactReady(data) {
-				const { note_id, space_id, status, title, error_message } = data
-				if (String(space_id) !== String(this.spaceId)) return
-				if (note_id) {
-					this.updateArtifactToolCallStatus(note_id, status)
+			walkArtifactToolCalls(visitor) {
+				for (const msg of this.messages) {
+					for (const segmentKey of ['segments', 'streamSegments']) {
+						const segments = msg[segmentKey]
+						if (!Array.isArray(segments)) continue
+						for (let index = 0; index < segments.length; index++) {
+							const seg = segments[index]
+							if (seg?.type === 'tool' && this.isArtifactTool(seg.toolCall?.tool)) {
+								if (visitor(seg, msg, segmentKey, index)) {
+									return true
+								}
+							}
+						}
+					}
 				}
+				return false
+			},
+			applyArtifactSnapshot(payload, { appendDelta = false } = {}) {
+				const {
+					taskId,
+					noteId,
+					title,
+					status,
+					delta,
+					codeSnapshot,
+					htmlSize,
+					errorMessage
+				} = payload
+				let updated = false
+
+				this.walkArtifactToolCalls((seg) => {
+					const currentResult = seg.toolCall?.result || {}
+					const taskMatched = taskId && String(currentResult.task_id) === String(taskId)
+					const noteMatched = noteId && String(currentResult.note_id) === String(noteId)
+					if (!taskMatched && !noteMatched) {
+						return false
+					}
+
+					const nextResult = { ...currentResult }
+					if (taskId) nextResult.task_id = taskId
+					if (noteId) nextResult.note_id = noteId
+					if (title) {
+						nextResult.artifact_title = title
+						if (!nextResult.title) {
+							nextResult.title = title
+						}
+					}
+					if (status) {
+						nextResult.status = status
+						nextResult.artifact_progress_status = status
+					}
+					if (typeof codeSnapshot === 'string') {
+						nextResult.code_snapshot = codeSnapshot
+					} else if (appendDelta && delta) {
+						nextResult.code_snapshot = `${nextResult.code_snapshot || ''}${delta}`
+					}
+					if (typeof htmlSize === 'number') {
+						nextResult.html_size = htmlSize
+					}
+					if (errorMessage) {
+						nextResult.message = errorMessage
+					}
+
+					seg.toolCall = {
+						...seg.toolCall,
+						result: nextResult
+					}
+					updated = true
+					return true
+				})
+
+				if (updated) {
+					this.$forceUpdate()
+				}
+				return updated
+			},
+			resolveArtifactTaskStatus(taskResult) {
+				if (taskResult.artifact_progress_status) {
+					return taskResult.artifact_progress_status
+				}
+				if (taskResult.status === 'failed') return 'failed'
+				if (taskResult.status === 'done') return 'done'
+				return 'streaming'
+			},
+			async refreshArtifactTaskSnapshot(taskId) {
+				if (!taskId) return null
+				try {
+					const taskResult = await getTaskStatus(taskId)
+					if (taskResult.task_type !== 'generate_artifact') {
+						return taskResult
+					}
+
+					this.applyArtifactSnapshot({
+						taskId,
+						noteId: taskResult.note_id,
+						title: taskResult.artifact_title,
+						status: this.resolveArtifactTaskStatus(taskResult),
+						codeSnapshot: typeof taskResult.code_snapshot === 'string' ? taskResult.code_snapshot : undefined,
+						htmlSize: typeof taskResult.html_size === 'number' ? taskResult.html_size : undefined,
+						errorMessage: taskResult.error_message || ''
+					})
+					return taskResult
+				} catch (error) {
+					console.warn('[SpaceChat] refreshArtifactTaskSnapshot failed:', taskId, error)
+					return null
+				}
+			},
+			async restoreArtifactToolCalls({ onlyGenerating = true } = {}) {
+				const taskIds = new Set()
+				this.walkArtifactToolCalls((seg) => {
+					const taskId = seg.toolCall?.result?.task_id
+					const currentStatus = seg.toolCall?.result?.artifact_progress_status || seg.toolCall?.result?.status
+					if (!taskId) return false
+					if (
+						onlyGenerating &&
+						currentStatus !== 'generating' &&
+						currentStatus !== 'streaming'
+					) {
+						return false
+					}
+					taskIds.add(taskId)
+					return false
+				})
+
+				if (!taskIds.size) return
+				await Promise.allSettled(
+					Array.from(taskIds).map(taskId => this.refreshArtifactTaskSnapshot(taskId))
+				)
+			},
+			onArtifactStream(data) {
+				const { note_id, space_id, task_id, title, status, delta } = data || {}
+				if (String(space_id) !== String(this.spaceId)) return
+				this.applyArtifactSnapshot({
+					taskId: task_id,
+					noteId: note_id,
+					title,
+					status: status || 'streaming',
+					delta
+				}, { appendDelta: true })
+			},
+			async onArtifactReady(data) {
+				const { note_id, space_id, task_id, status, title, error_message } = data || {}
+				if (String(space_id) !== String(this.spaceId)) return
+
+				const refreshed = task_id ? await this.refreshArtifactTaskSnapshot(task_id) : null
+				if (task_id) {
+					if (!refreshed) {
+						this.applyArtifactSnapshot({
+							taskId: task_id,
+							noteId: note_id,
+							title,
+							status,
+							errorMessage: error_message || ''
+						})
+					}
+				} else {
+					this.applyArtifactSnapshot({
+						taskId: task_id,
+						noteId: note_id,
+						title,
+						status,
+						errorMessage: error_message || ''
+					})
+				}
+
 				if (status === 'done') {
 					uni.showToast({ title: `「${title || '交互演示'}」已生成`, icon: 'none', duration: 3000 })
 				} else if (status === 'failed') {
 					uni.showToast({ title: '演示生成失败', icon: 'none', duration: 3000 })
 				}
-			},
-			updateArtifactToolCallStatus(noteId, newStatus) {
-				for (const msg of this.messages) {
-					const updateSegments = (segments) => {
-						if (!Array.isArray(segments)) return false
-						for (const seg of segments) {
-							if (seg.type === 'tool' && seg.toolCall &&
-								(seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact') &&
-								seg.toolCall.result?.note_id === noteId) {
-								seg.toolCall = { ...seg.toolCall, result: { ...seg.toolCall.result, status: newStatus } }
-								return true
-							}
-						}
-						return false
-					}
-					if (updateSegments(msg.segments) || updateSegments(msg.streamSegments)) break
-				}
-				this.$forceUpdate()
 			},
 
 			/**
@@ -4859,6 +5075,19 @@
 				return ['web_search', 'academic_search', 'encyclopedia_search', 'course_search'].includes(toolName)
 			},
 
+			isDocRetrievalTool(toolName) {
+				return DOC_RETRIEVAL_TOOLS.has(toolName)
+			},
+
+			getDocRetrievalToolText(toolCall) {
+				const texts = DOC_RETRIEVAL_TOOL_TEXT[toolCall.tool]
+				if (!texts) return toolCall.tool
+				if (toolCall.status === 'running') return texts.running
+				if (toolCall.status === 'done' && toolCall.success) return texts.done
+				if (toolCall.status === 'done' && !toolCall.success) return texts.failed
+				return texts.done
+			},
+
 			/**
 			 * 获取可见搜索结果（折叠时只显示前2条）
 			 */
@@ -5273,6 +5502,37 @@
 
 			onInputBlur() {
 				// keyboardHeight 会通过 onKeyboardHeightChange 自动重置
+			},
+
+			openCitationSource(cite) {
+				this.citationDetail = cite
+				this.showCitationDetail = true
+				this.$nextTick(() => {
+					setTimeout(() => { this.citationDetailAnimVisible = true }, 10)
+				})
+			},
+
+			closeCitationDetail() {
+				this.citationDetailAnimVisible = false
+				setTimeout(() => {
+					this.showCitationDetail = false
+					this.citationDetail = null
+				}, 300)
+			},
+
+			openCitationUrl(url) {
+				if (!url) return
+				// #ifdef APP-PLUS
+				plus.runtime.openURL(url)
+				// #endif
+				// #ifdef H5
+				window.open(url, '_blank')
+				// #endif
+			},
+
+			getDomain(url) {
+				if (!url) return ''
+				try { return new URL(url).hostname } catch { return url }
 			},
 
 			copyMessage(msg) {
@@ -5911,6 +6171,189 @@
 
 	.bubble-ai {
 		background-color: transparent;
+	}
+
+	/* 引用来源列表 */
+	.citation-footer {
+		margin-top: 12px;
+		padding-top: 12px;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.citation-footer-header {
+		display: flex;
+		align-items: center;
+		margin-bottom: 8px;
+	}
+	.citation-footer-icon {
+		width: 14px;
+		height: 14px;
+		margin-right: 6px;
+		filter: brightness(0) saturate(100%) invert(45%) sepia(85%) saturate(1500%) hue-rotate(200deg) brightness(100%) contrast(96%);
+	}
+	.citation-footer-label {
+		font-size: 12px;
+		color: rgba(255, 255, 255, 0.65);
+	}
+	.citation-item {
+		display: flex;
+		align-items: center;
+		padding: 6px 8px;
+		margin-bottom: 4px;
+		border-radius: 8px;
+		background: rgba(255, 255, 255, 0.04);
+	}
+	.citation-index {
+		font-size: 11px;
+		color: #3b82f6;
+		font-weight: 600;
+		margin-right: 8px;
+		flex-shrink: 0;
+	}
+	.citation-info {
+		flex: 1;
+		overflow: hidden;
+		display: flex;
+		align-items: center;
+	}
+	.citation-title {
+		font-size: 13px;
+		color: rgba(255, 255, 255, 0.7);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.citation-meta {
+		font-size: 11px;
+		color: rgba(255, 255, 255, 0.3);
+		margin-left: 8px;
+		flex-shrink: 0;
+	}
+	.citation-arrow {
+		width: 14px;
+		height: 14px;
+		opacity: 0.5;
+		margin-left: 8px;
+		flex-shrink: 0;
+		filter: invert(1);
+	}
+
+	/* 引用详情抽屉 */
+	.cite-drawer-wrapper {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 1000;
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-end;
+	}
+	.cite-drawer-overlay {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(0, 0, 0, 0);
+		transition: background 200ms ease;
+	}
+	.cite-drawer-overlay.overlay-show {
+		background: rgba(0, 0, 0, 0.6);
+	}
+	.cite-drawer-container {
+		position: relative;
+		background: rgba(20, 20, 30, 0.95);
+		-webkit-backdrop-filter: blur(24px) saturate(180%);
+		backdrop-filter: blur(24px) saturate(180%);
+		border-top-left-radius: 32rpx;
+		border-top-right-radius: 32rpx;
+		border: 1rpx solid rgba(255, 255, 255, 0.12);
+		border-bottom: none;
+		max-height: 65vh;
+		display: flex;
+		flex-direction: column;
+		transform: translateY(100%);
+		transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+	}
+	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+		.cite-drawer-container {
+			background: rgba(20, 20, 30, 0.98);
+		}
+	}
+	.cite-drawer-container.drawer-show {
+		transform: translateY(0);
+	}
+	.cite-drawer-handle {
+		display: flex;
+		justify-content: center;
+		padding: 12rpx 0;
+	}
+	.cite-drawer-header {
+		display: flex;
+		align-items: flex-start;
+		padding: 0 32rpx 20rpx;
+		gap: 16rpx;
+	}
+	.cite-drawer-badge {
+		color: #3b82f6;
+		font-weight: 700;
+		font-size: 28rpx;
+		flex-shrink: 0;
+		margin-top: 4rpx;
+	}
+	.cite-drawer-title-col {
+		flex: 1;
+		overflow: hidden;
+	}
+	.cite-drawer-title {
+		font-size: 30rpx;
+		color: #fff;
+		font-weight: 600;
+	}
+	.cite-drawer-meta-row {
+		display: flex;
+		gap: 12rpx;
+		margin-top: 6rpx;
+		flex-wrap: wrap;
+	}
+	.cite-drawer-meta {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.4);
+	}
+	.cite-drawer-body {
+		flex: 1;
+		max-height: 45vh;
+		padding: 0 32rpx 24rpx;
+	}
+	.cite-drawer-content {
+		font-size: 28rpx;
+		color: rgba(255, 255, 255, 0.75);
+		line-height: 1.8;
+		white-space: pre-wrap;
+	}
+	.cite-drawer-footer {
+		padding: 16rpx 32rpx;
+		padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.cite-drawer-open-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 16rpx;
+		border-radius: 16rpx;
+		background: rgba(59, 130, 246, 0.12);
+	}
+	.cite-drawer-open-icon {
+		width: 28rpx;
+		height: 28rpx;
+		margin-right: 8rpx;
+	}
+	.cite-drawer-open-text {
+		font-size: 28rpx;
+		color: #3b82f6;
+		font-weight: 500;
 	}
 
 	/* AI 消息操作图标 */

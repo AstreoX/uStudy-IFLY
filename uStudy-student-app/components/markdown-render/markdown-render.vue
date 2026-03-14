@@ -277,6 +277,15 @@ function parseSimpleMarkdown(text) {
 		content = content.split(item.key).join(item.html)
 	}
 
+	// 引用标记 [1], [2] → 上标徽章样式
+	// 在链接处理和 protected segments 恢复之后执行；[text](url) 已在前面被替换为 protected segment，无需 lookbehind
+	content = content.replace(
+		/\[(\d{1,2})\](?!\()/g,
+		'<span style="display:inline-block;background:#3b82f6;color:#fff;font-size:10px;' +
+		'line-height:14px;padding:0 4px;border-radius:7px;vertical-align:super;' +
+		'margin:0 1px;font-weight:600;">$1</span>'
+	)
+
 	content = content.replace(/\n/g, '<br/>')
 
 	content = content

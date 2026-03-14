@@ -16,6 +16,11 @@
       <text class="loading-text">正在加载演示内容...</text>
     </view>
 
+    <!-- Generating -->
+    <view v-else-if="isGenerating && !htmlContent && !loadError" class="loading-container">
+      <text class="loading-text">{{ generatingText }}</text>
+    </view>
+
     <!-- Error -->
     <view v-else-if="loadError" class="error-container">
       <image class="error-icon" src="/static/icons/phosphor-icons/SVGs/regular/warning-circle.svg" mode="aspectFit"></image>
@@ -50,6 +55,7 @@
 
 <script>
 import { getNoteDetail } from '@/api/note'
+import { connectNotificationStream } from '@/api/notification'
 
 export default {
   data() {
@@ -58,16 +64,35 @@ export default {
       noteId: '',
       title: '',
       htmlContent: '',
+      streamContent: '',
+      streamCharsTotal: 0,
       fileUrl: '',
       loading: true,
-      loadError: null
+      loadError: null,
+      isGenerating: false,
+      notificationAbort: null,
+      notePollTimer: null
+    }
+  },
+
+  computed: {
+    generatingText() {
+      if (this.streamCharsTotal > 0) {
+        return `正在接收交互式笔记代码… 已接收 ${this.formatBytes(this.streamCharsTotal)}`
+      }
+      return '正在接收交互式笔记代码…'
     }
   },
 
   onLoad(options) {
     this.spaceId = options.spaceId || ''
     this.noteId = options.noteId || ''
+    this.setupNotificationStream()
     this.loadNote()
+  },
+
+  onUnload() {
+    this.cleanupStreamingResources()
   },
 
   methods: {
@@ -80,7 +105,7 @@ export default {
       }
     },
 
-    async loadNote() {
+    async loadNote({ silent = false } = {}) {
       if (!this.spaceId || !this.noteId) {
         this.loading = false
         this.loadError = '参数缺失'
@@ -88,29 +113,163 @@ export default {
       }
 
       try {
-        this.loading = true
+        if (!silent) {
+          this.loading = true
+        }
         this.loadError = null
         const detail = await getNoteDetail(this.spaceId, this.noteId)
         this.title = detail.title || '交互演示'
+        const metadata = detail.metadata_ || {}
+        this.isGenerating = !!metadata.generating
         const content = detail.content || ''
+
+        if (content.trim()) {
+          this.isGenerating = false
+          this.streamContent = content
+          this.streamCharsTotal = Math.max(this.streamCharsTotal, content.length)
+          this.stopNotePolling()
+
+          // #ifdef H5
+          this.htmlContent = content
+          // #endif
+
+          // #ifdef APP-PLUS
+          this.writeAndLoadHtml(content)
+          // #endif
+          return
+        }
+
+        if (this.isGenerating) {
+          this.scheduleNotePolling()
+          return
+        }
 
         if (!content.trim()) {
           this.loadError = '演示内容为空'
           return
         }
-
-        // #ifdef H5
-        this.htmlContent = content
-        // #endif
-
-        // #ifdef APP-PLUS
-        this.writeAndLoadHtml(content)
-        // #endif
       } catch (error) {
+        if (silent && this.isGenerating) {
+          console.warn('[ArtifactViewer] silent refresh failed:', error)
+          this.scheduleNotePolling()
+          return
+        }
         this.loadError = error.message || '加载失败'
       } finally {
-        this.loading = false
+        if (!silent) {
+          this.loading = false
+        }
       }
+    },
+
+    setupNotificationStream() {
+      if (this.notificationAbort) return
+      this.notificationAbort = connectNotificationStream({
+        onArtifactStream: (data) => {
+          this.onArtifactStream(data)
+        },
+        onArtifactReady: (data) => {
+          this.onArtifactReady(data)
+        }
+      })
+    },
+
+    onArtifactStream(data) {
+      if (!this.isMatchingArtifactEvent(data)) return
+
+      this.loading = false
+      this.loadError = null
+      this.isGenerating = true
+      if (data.title) {
+        this.title = data.title
+      }
+
+      const delta = data.delta || ''
+      if (!delta) return
+
+      this.streamContent += delta
+      this.streamCharsTotal = Math.max(
+        Number(data.chars_total) || 0,
+        this.streamContent.length
+      )
+
+      const renderable = this.extractRenderableHtml(this.streamContent)
+      if (renderable) {
+        this.htmlContent = renderable
+      }
+
+      this.scheduleNotePolling()
+    },
+
+    async onArtifactReady(data) {
+      if (!this.isMatchingArtifactEvent(data)) return
+
+      if (data.status === 'failed') {
+        this.isGenerating = false
+        this.stopNotePolling()
+        this.loading = false
+        this.loadError = data.error_message || '交互演示生成失败'
+        return
+      }
+
+      await this.loadNote({ silent: !!this.htmlContent })
+    },
+
+    isMatchingArtifactEvent(data) {
+      return (
+        data &&
+        String(data.space_id) === String(this.spaceId) &&
+        String(data.note_id) === String(this.noteId)
+      )
+    },
+
+    scheduleNotePolling() {
+      if (this.notePollTimer) return
+      this.notePollTimer = setTimeout(async () => {
+        this.notePollTimer = null
+        if (!this.isGenerating) return
+        await this.loadNote({ silent: true })
+      }, 2000)
+    },
+
+    stopNotePolling() {
+      if (this.notePollTimer) {
+        clearTimeout(this.notePollTimer)
+        this.notePollTimer = null
+      }
+    },
+
+    cleanupStreamingResources() {
+      this.stopNotePolling()
+      if (this.notificationAbort) {
+        this.notificationAbort()
+        this.notificationAbort = null
+      }
+    },
+
+    extractRenderableHtml(content) {
+      if (!content) return ''
+      let normalized = String(content).trim()
+      normalized = normalized.replace(/^```html?\s*/i, '')
+      normalized = normalized.replace(/```$/i, '').trim()
+
+      const doctypeIndex = normalized.search(/<!doctype/i)
+      const htmlIndex = normalized.search(/<html/i)
+      const startIndex = doctypeIndex >= 0
+        ? doctypeIndex
+        : htmlIndex >= 0
+          ? htmlIndex
+          : -1
+
+      if (startIndex < 0) return ''
+      return normalized.slice(startIndex)
+    },
+
+    formatBytes(bytes) {
+      const value = Number(bytes) || 0
+      if (value < 1024) return `${value} B`
+      if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+      return `${(value / (1024 * 1024)).toFixed(1)} MB`
     },
 
     // APP-PLUS: write HTML to temp file, load via web-view

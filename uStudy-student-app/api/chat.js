@@ -143,7 +143,7 @@ export function sendMessage(conversationId, content, callbacks, attachmentIds = 
         callbacks.onTitle?.(data.title)
         break
       case 'done':
-        callbacks.onDone?.(data.content)
+        callbacks.onDone?.(data.content, data.citations)
         break
       case 'error':
         callbacks.onError?.(data.message)
@@ -306,7 +306,7 @@ export function sendQuickChatMessage(conversationId, content, callbacks, attachm
         callbacks.onTitle?.(data.title)
         break
       case 'done':
-        callbacks.onDone?.(data.content)
+        callbacks.onDone?.(data.content, data.citations)
         break
       case 'error':
         callbacks.onError?.(data.message)
