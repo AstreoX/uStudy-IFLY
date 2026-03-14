@@ -464,14 +464,74 @@
 							</view>
 						</view>
 
-						<!-- 笔记创建工具：确认卡片 -->
-						<NoteCreationCard
+						<!-- 笔记创建工具：pill + 详情卡片 -->
+						<view
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'create_note'"
 							:key="'note-tool-' + segIdx"
-							:tool-call="seg.toolCall"
-							:space-id="spaceId"
-							:conversation-id="conversationId"
-						/>
+							class="note-tool-wrap"
+						>
+							<!-- pill 指示器 -->
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-pending': seg.toolCall.status === 'pending_confirmation',
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+							>
+								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getNoteToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'pending_confirmation'"
+									class="graph-tool-status-icon graph-tool-status-pending"
+									src="/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-status-icon"
+									src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- 笔记卡片 -->
+							<NoteCreationCard
+								:tool-call="seg.toolCall"
+								:space-id="spaceId"
+								:conversation-id="conversationId"
+							/>
+						</view>
+
+						<!-- 笔记读写工具（list_notes / view_note_detail / update_note）：pill + 详情卡片 -->
+						<view
+							v-else-if="seg.type === 'tool' && (seg.toolCall.tool === 'list_notes' || seg.toolCall.tool === 'view_note_detail' || seg.toolCall.tool === 'update_note' || seg.toolCall.tool === 'delete_note')"
+							:key="'note-rw-' + segIdx"
+							class="note-tool-wrap"
+						>
+							<!-- pill 指示器 -->
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+							>
+								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getNoteToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-status-icon"
+									src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+
+							<!-- 详情卡片（仅 done+success 时显示） -->
+							<NoteDisplayCard
+								v-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+								:tool-call="seg.toolCall"
+							/>
+						</view>
 
 						<!-- 交互式演示工具：Artifact 卡片 -->
 						<view
@@ -508,45 +568,59 @@
 							</view>
 						</view>
 
-						<!-- 图表生成工具：图片预览卡片 -->
+						<!-- 图表生成工具：pill + 可折叠图片详情卡片 -->
 						<view
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'generate_chart'"
 							:key="'chart-tool-' + segIdx"
-							class="tool-call-card"
-							:class="{
-								'tool-call-running': seg.toolCall.status === 'running',
-								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
-								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
-							}"
+							class="chart-tool-wrap"
 						>
-							<view class="tool-call-header">
-								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
-								<text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
-								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
-								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
-									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
-								<image v-else class="tool-call-status-icon tool-call-status-failed"
+							<!-- pill 指示器（done+success 时可点击折叠/展开） -->
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+									'graph-tool-expanded': seg.toolCall.status === 'done' && seg.toolCall.success && isChartExpanded(seg.toolCall.id),
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleChartExpand(seg.toolCall.id)"
+							>
+								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getChartToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-chevron"
+									:class="{ 'graph-tool-chevron-up': isChartExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
 									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
 							</view>
-							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.image_url" class="chart-image-preview">
+
+							<!-- 详情卡片：图片预览（done + success + 展开时显示） -->
+							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.image_url && isChartExpanded(seg.toolCall.id)"
+								class="chart-detail-card"
+							>
 								<image
 									:src="getFullImageUrl(seg.toolCall.result.image_url)"
 									mode="widthFix"
 									class="chart-preview-img"
 									@click="previewChartImage(seg.toolCall.result.image_url)"
 								/>
+								<!-- 自动保存徽章 -->
+								<view v-if="seg.toolCall.result?.auto_saved" class="chart-saved-badge">
+									<image class="chart-saved-icon" src="/static/icons/phosphor-icons/SVGs/regular/notebook-white.svg" mode="aspectFit" />
+									<text class="chart-saved-text">已保存为笔记</text>
+									<template v-if="seg.toolCall.result?.node_label">
+										<text class="chart-saved-text chart-saved-node"> · </text>
+										<image class="chart-saved-icon" src="/static/icons/phosphor-icons/SVGs/regular/push-pin-white.svg" mode="aspectFit" />
+										<text class="chart-saved-text chart-saved-node">{{ seg.toolCall.result.node_label }}</text>
+									</template>
+								</view>
 							</view>
-							<view v-if="seg.toolCall.result?.auto_saved" class="chart-saved-badge">
-								<image class="chart-saved-icon" src="/static/icons/phosphor-icons/SVGs/regular/notebook-white.svg" mode="aspectFit" />
-								<text class="chart-saved-text">已保存为笔记</text>
-								<template v-if="seg.toolCall.result?.node_label">
-									<text class="chart-saved-text chart-saved-node"> · </text>
-									<image class="chart-saved-icon" src="/static/icons/phosphor-icons/SVGs/regular/push-pin-white.svg" mode="aspectFit" />
-									<text class="chart-saved-text chart-saved-node">{{ seg.toolCall.result.node_label }}</text>
-								</template>
-							</view>
-							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
-								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '图表生成失败' }}</text>
+
+							<!-- 错误信息（done + failed 时显示） -->
+							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="chart-error-msg">
+								<text class="chart-error-text">{{ seg.toolCall.result?.message || '图表生成失败' }}</text>
 							</view>
 						</view>
 
@@ -1527,6 +1601,7 @@
 	import PreKnowledgeCard from '@/components/pre-knowledge-card/pre-knowledge-card.vue'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
 	import NoteCreationCard from '@/components/note-creation-card/note-creation-card.vue'
+	import NoteDisplayCard from '@/components/note-display-card/note-display-card.vue'
 	import KnowledgeTreeMini from '@/components/knowledge-tree-mini/knowledge-tree-mini.vue'
 	import { generateQuiz, getTaskStatus, getSpaceGraph } from '@/api/space'
 	import { createConversation, getConversation, sendMessage as sendChatMessage, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage } from '@/api/chat'
@@ -1595,6 +1670,8 @@
 		create_note: '创建笔记',
 		list_notes: '查看笔记',
 		view_note_detail: '查看笔记详情',
+		update_note: '更新笔记',
+		delete_note: '删除笔记',
 		// 图表生成工具
 		generate_chart: '生成图表',
 		// 交互演示工具
@@ -1655,8 +1732,10 @@
 		create_note: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
 		list_notes: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
 		view_note_detail: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
+		update_note: '/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg',
+		delete_note: '/static/icons/phosphor-icons/SVGs/regular/trash.svg',
 		// 图表生成工具
-		generate_chart: '/static/icons/phosphor-icons/SVGs/regular/image.svg',
+		generate_chart: '/static/icons/lucide/chart-area.svg',
 		// 交互演示工具
 		create_artifact: '/static/icons/phosphor-icons/SVGs/regular/code.svg',
 		update_artifact: '/static/icons/phosphor-icons/SVGs/regular/code.svg',
@@ -1777,6 +1856,7 @@
 			PreKnowledgeCard,
 			ImageSourcePicker,
 			NoteCreationCard,
+			NoteDisplayCard,
 			KnowledgeTreeMini,
 			// #ifdef APP-PLUS
 			SseRenderjs,
@@ -1862,6 +1942,8 @@
 				expandedGraphTools: {}, // { toolCallId: true/false }
 				// 代码块展开状态
 				expandedCodeBlocks: {}, // { toolCallId: true }
+				// 图表详情卡片展开状态（默认展开）
+				expandedChartDetails: {}, // { toolCallId: true/false }
 
 				// +号弹窗相关
 				showPlusPopup: false,
@@ -4133,6 +4215,13 @@
 				})
 			},
 
+			getChartToolText(toolCall) {
+				if (toolCall.status === 'running') return '正在生成图表…'
+				if (toolCall.status === 'done' && toolCall.success) return '已生成图表'
+				if (toolCall.status === 'done' && !toolCall.success) return '图表生成失败'
+				return '生成图表'
+			},
+
 			// ===== Artifact 辅助方法 =====
 			isArtifactGenerating(toolCall) {
 				return toolCall.status === 'running' ||
@@ -4268,6 +4357,45 @@
 					return texts.done
 				}
 				return texts.failed
+			},
+
+			getNoteToolText(toolCall) {
+				const tool = toolCall.tool
+				if (tool === 'create_note') {
+					if (toolCall.status === 'pending_confirmation') return '创建笔记 — 待确认'
+					if (toolCall.status === 'running') return '正在创建笔记…'
+					if (toolCall.status === 'done' && toolCall.success) return '已创建笔记'
+					if (toolCall.status === 'done' && !toolCall.success) return '创建笔记失败'
+					return '创建笔记'
+				}
+				if (tool === 'list_notes') {
+					if (toolCall.status === 'running') return '正在查看笔记列表…'
+					if (toolCall.status === 'done' && toolCall.success) {
+						const count = toolCall.result?.notes?.length || 0
+						return '已查看笔记 · ' + count + ' 篇'
+					}
+					if (toolCall.status === 'done' && !toolCall.success) return '查看笔记失败'
+					return '查看笔记'
+				}
+				if (tool === 'view_note_detail') {
+					if (toolCall.status === 'running') return '正在查看笔记…'
+					if (toolCall.status === 'done' && toolCall.success) return '已查看笔记详情'
+					if (toolCall.status === 'done' && !toolCall.success) return '查看笔记失败'
+					return '查看笔记'
+				}
+				if (tool === 'update_note') {
+					if (toolCall.status === 'running') return '正在更新笔记…'
+					if (toolCall.status === 'done' && toolCall.success) return '已更新笔记'
+					if (toolCall.status === 'done' && !toolCall.success) return '更新笔记失败'
+					return '更新笔记'
+				}
+				if (tool === 'delete_note') {
+					if (toolCall.status === 'running') return '正在删除笔记…'
+					if (toolCall.status === 'done' && toolCall.success) return '已删除笔记'
+					if (toolCall.status === 'done' && !toolCall.success) return '删除笔记失败'
+					return '删除笔记'
+				}
+				return toolCall.tool
 			},
 
 			isReviewTool(toolName) {
@@ -4875,6 +5003,17 @@
 				this.expandedCodeBlocks = {
 					...this.expandedCodeBlocks,
 					[toolCallId]: !this.expandedCodeBlocks[toolCallId]
+				}
+			},
+
+			isChartExpanded(toolCallId) {
+				return this.expandedChartDetails[toolCallId] !== false
+			},
+
+			toggleChartExpand(toolCallId) {
+				this.expandedChartDetails = {
+					...this.expandedChartDetails,
+					[toolCallId]: this.expandedChartDetails[toolCallId] === false
 				}
 			},
 
@@ -6324,6 +6463,26 @@
 		filter: invert(40%) sepia(90%) saturate(2000%) hue-rotate(345deg) brightness(90%) contrast(95%);
 	}
 
+	/* pending pill 样式（琥珀色） */
+	.graph-tool-pending {
+		border-color: rgba(232, 168, 56, 0.3);
+		background: rgba(232, 168, 56, 0.06);
+	}
+
+	.graph-tool-pending .graph-tool-pill-icon {
+		filter: invert(73%) sepia(54%) saturate(491%) hue-rotate(353deg) brightness(94%) contrast(89%);
+	}
+
+	.graph-tool-status-pending {
+		filter: invert(73%) sepia(54%) saturate(491%) hue-rotate(353deg) brightness(94%) contrast(89%);
+	}
+
+	.note-tool-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
 	.graph-tool-expanded {
 		border-color: rgba(255, 255, 255, 0.2);
 		background: rgba(255, 255, 255, 0.08);
@@ -7352,10 +7511,18 @@
 		color: rgba(138, 180, 248, 0.9);
 	}
 
-	/* ========== 图表预览 ========== */
-	.chart-image-preview {
-		margin-top: 12rpx;
-		border-radius: 12rpx;
+	/* ========== 图表生成卡片（pill + 详情） ========== */
+	.chart-tool-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
+	.chart-detail-card {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 16rpx;
 		overflow: hidden;
 	}
 
@@ -7365,9 +7532,21 @@
 	}
 
 	.chart-saved-badge {
-		margin-top: 8rpx;
+		margin-top: 12rpx;
 		display: flex;
 		align-items: center;
+	}
+
+	.chart-error-msg {
+		padding: 12rpx 16rpx;
+		background: rgba(239, 68, 68, 0.06);
+		border: 1rpx solid rgba(239, 68, 68, 0.15);
+		border-radius: 16rpx;
+	}
+
+	.chart-error-text {
+		font-size: 24rpx;
+		color: rgba(239, 68, 68, 0.8);
 	}
 
 	.chart-saved-icon {

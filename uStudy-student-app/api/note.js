@@ -46,7 +46,7 @@ export function getNoteDetail(spaceId, noteId) {
 export function updateNote(spaceId, noteId, data) {
   return request({
     url: `/api/spaces/${spaceId}/notes/${noteId}`,
-    method: 'PUT',
+    method: 'PATCH',
     data
   })
 }
