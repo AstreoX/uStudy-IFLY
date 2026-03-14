@@ -167,54 +167,71 @@
 							<text class="planning-tool-text">{{ planningToolText }}</text>
 						</view>
 
-						<!-- 复习事件工具：自定义卡片渲染 -->
+						<!-- 复习工具：pill + 可折叠详情卡片 -->
 						<view
-							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'get_review_events'"
+							v-else-if="seg.type === 'tool' && isReviewTool(seg.toolCall.tool)"
 							:key="'review-tool-' + segIdx"
-							class="tool-call-card"
-							:class="{
-								'tool-call-running': seg.toolCall.status === 'running',
-								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
-								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
-							}"
+							class="review-tool-wrap"
 						>
-							<!-- Header -->
-							<view class="tool-call-header">
-								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
-								<text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
-								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
-								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
-									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
-								<image v-else class="tool-call-status-icon tool-call-status-failed"
+							<!-- pill -->
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+									'graph-tool-expanded': seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+								@click="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
+							>
+								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getReviewToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<!-- get_review_events: chevron -->
+								<image v-else-if="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-chevron"
+									:class="{ 'graph-tool-chevron-up': isGraphToolExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+								<!-- mark_review_completed: circle-check -->
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-status-icon"
+									src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
 									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
 							</view>
 
-							<!-- 复习事件列表 (done + success + 有 items) -->
-							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.items?.length"
-								class="review-events-list">
-								<view v-for="(item, idx) in seg.toolCall.result.items" :key="idx" class="review-event-item">
+							<!-- 复习事项详情卡片 -->
+							<view
+								v-if="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && getReviewDisplayItems(seg.toolCall).length && isGraphToolExpanded(seg.toolCall.id)"
+								class="review-card"
+							>
+								<view v-for="(item, idx) in getReviewDisplayItems(seg.toolCall)" :key="idx" class="review-event-item">
 									<view class="review-event-header">
 										<text class="review-event-label">{{ item.activity_title }}</text>
 										<text v-if="item.study_depth" class="review-event-depth">{{ item.study_depth }}</text>
 									</view>
 									<view class="review-event-meta">
 										<text class="review-event-round">第{{ item.review_number }}次复习</text>
-										<text class="review-event-urgency"
+										<view class="review-event-urgency-badge"
 											:class="{ 'urgency-overdue': item.overdue_days > 0 }">
-											{{ item.urgency }}
-										</text>
+											<text class="review-event-urgency-text"
+												:class="{ 'urgency-overdue-text': item.overdue_days > 0 }">
+												{{ item.urgency }}
+											</text>
+										</view>
 									</view>
+								</view>
+								<view class="review-card-footer">
+									<text class="review-card-count">共 {{ getReviewDisplayItems(seg.toolCall).length }} 条待复习</text>
 								</view>
 							</view>
 
 							<!-- 无复习项 -->
-							<view v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" class="tool-call-result">
-								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '当前没有待复习项' }}</text>
-							</view>
-
-							<!-- 失败 -->
-							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
-								<text class="tool-call-result-text">{{ seg.toolCall.result?.message || '获取复习事件失败' }}</text>
+							<view
+								v-if="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && !getReviewDisplayItems(seg.toolCall).length && isGraphToolExpanded(seg.toolCall.id)"
+								class="review-card review-card-empty"
+							>
+								<text class="review-empty-text">当前没有待复习项</text>
 							</view>
 						</view>
 
@@ -1027,16 +1044,16 @@
 								:class="{
 									'graph-tool-running': seg.toolCall.status === 'running',
 									'graph-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
-									'graph-tool-expanded': seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
+									'graph-tool-expanded': isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && isGraphToolExpanded(seg.toolCall.id),
 									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
 								}"
-								@click="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
+								@click="isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && toggleGraphTool(seg.toolCall.id)"
 							>
 								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
 								<text class="graph-tool-pill-text">{{ getScheduleToolText(seg.toolCall) }}</text>
 								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
 								<!-- get_schedule 用 chevron（可展开） -->
-								<image v-else-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success"
+								<image v-else-if="isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success"
 									class="graph-tool-chevron"
 									:class="{ 'graph-tool-chevron-up': isGraphToolExpanded(seg.toolCall.id) }"
 									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
@@ -1049,12 +1066,13 @@
 									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
 							</view>
 
-							<!-- get_schedule 日程详情卡片 -->
+							<!-- 日程详情卡片（get/add/update_schedule） -->
 							<view
-								v-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && getScheduleEvents(seg.toolCall.result).length && isGraphToolExpanded(seg.toolCall.id)"
-								class="schedule-card"
+								v-if="isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && getScheduleDisplayEvents(seg.toolCall).length && isGraphToolExpanded(seg.toolCall.id)"
+								class="schedule-card schedule-card-clickable"
+								@click="openNativeCalendar"
 							>
-								<template v-for="(group, gIdx) in groupScheduleByDate(getScheduleEvents(seg.toolCall.result))" :key="'dh-' + gIdx">
+								<template v-for="(group, gIdx) in groupScheduleByDate(getScheduleDisplayEvents(seg.toolCall))" :key="'dh-' + gIdx">
 									<view class="schedule-date-header">
 										<view class="schedule-date-dot" :class="{ 'schedule-date-dot-today': group.isToday }"></view>
 										<text class="schedule-date-text" :class="{ 'schedule-date-text-today': group.isToday }">{{ group.label }}</text>
@@ -1075,14 +1093,14 @@
 										</view>
 									</view>
 								</template>
-								<view class="schedule-card-footer">
-									<text class="schedule-card-count">共 {{ getScheduleEvents(seg.toolCall.result).length }} 个日程</text>
+								<view v-if="seg.toolCall.tool === 'get_schedule'" class="schedule-card-footer">
+									<text class="schedule-card-count">共 {{ getScheduleDisplayEvents(seg.toolCall).length }} 个日程</text>
 								</view>
 							</view>
 
 							<!-- get_schedule 无日程 -->
 							<view
-								v-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && !getScheduleEvents(seg.toolCall.result).length && isGraphToolExpanded(seg.toolCall.id)"
+								v-if="seg.toolCall.tool === 'get_schedule' && seg.toolCall.status === 'done' && seg.toolCall.success && !getScheduleDisplayEvents(seg.toolCall).length && isGraphToolExpanded(seg.toolCall.id)"
 								class="schedule-card schedule-card-empty"
 							>
 								<text class="schedule-empty-text">该日期范围内没有日程安排</text>
@@ -1737,6 +1755,17 @@
 		add_schedule:     { running: '正在添加日程…',     done: '已添加日程',     failed: '添加日程失败' },
 		delete_schedule:  { running: '正在删除日程…',     done: '已删除日程',     failed: '删除日程失败' },
 		update_schedule:  { running: '正在更新日程…',     done: '已更新日程',     failed: '更新日程失败' }
+	}
+
+	// 复习工具集合
+	const REVIEW_TOOLS = new Set([
+		'get_review_events', 'mark_review_completed'
+	])
+
+	// 复习工具显示文字 { running, done, failed }
+	const REVIEW_TOOL_TEXT = {
+		get_review_events:      { running: '正在查看复习事项…', done: '查看复习事项', failed: '获取复习事项失败' },
+		mark_review_completed:  { running: '正在标记复习完成…', done: '已标记复习完成', failed: '标记复习失败' }
 	}
 
 	export default {
@@ -4060,6 +4089,25 @@
 				return new Date(`${datePart}T${timePart}:00`).toISOString()
 			},
 
+			openNativeCalendar() {
+				// #ifdef APP-PLUS
+				try {
+					const Intent = plus.android.importClass('android.content.Intent')
+					const Uri = plus.android.importClass('android.net.Uri')
+					const intent = new Intent(Intent.ACTION_VIEW)
+					intent.setData(Uri.parse('content://com.android.calendar/time/' + Date.now()))
+					const main = plus.android.runtimeMainActivity()
+					main.startActivity(intent)
+				} catch (e) {
+					// fallback: 直接用 scheme 打开
+					plus.runtime.openURL('content://com.android.calendar/time/' + Date.now())
+				}
+				// #endif
+				// #ifdef H5
+				uni.showToast({ title: '请在手机端打开日历', icon: 'none' })
+				// #endif
+			},
+
 			/**
 			 * 获取工具显示名称
 			 */
@@ -4222,12 +4270,65 @@
 				return texts.failed
 			},
 
+			isReviewTool(toolName) {
+				return REVIEW_TOOLS.has(toolName)
+			},
+
+			getReviewToolText(toolCall) {
+				const texts = REVIEW_TOOL_TEXT[toolCall.tool]
+				if (!texts) return toolCall.tool
+				if (toolCall.status === 'running') return texts.running
+				if (toolCall.status === 'done' && toolCall.success) {
+					if (toolCall.tool === 'get_review_events') {
+						const total = toolCall.result?.total || toolCall.result?.items?.length || 0
+						if (total > 0) return texts.done + ' · ' + total + ' 条待复习'
+					}
+					if (toolCall.tool === 'mark_review_completed' && toolCall.result?.completed_count) {
+						return texts.done + ' · ' + toolCall.result.completed_count + ' 条'
+					}
+					return texts.done
+				}
+				return texts.failed
+			},
+
+			getReviewDisplayItems(toolCall) {
+				const result = toolCall.result
+				if (!result) return []
+				if (toolCall.tool === 'get_review_events') {
+					return result.items || []
+				}
+				return []
+			},
+
+			isScheduleDetailTool(tool) {
+				return tool === 'get_schedule' || tool === 'add_schedule' || tool === 'update_schedule'
+			},
+
 			getScheduleEvents(result) {
-				if (!result) { console.log('[schedule-debug] result is falsy:', result); return [] }
-				console.log('[schedule-debug] result keys:', Object.keys(result), 'has events:', !!result.events, 'events length:', result.events?.length, 'has data.events:', !!result.data?.events)
+				if (!result) return []
 				if (result.events) return result.events
 				if (result.data?.events) return result.data.events
-				console.log('[schedule-debug] no events found, returning []')
+				return []
+			},
+
+			getScheduleDisplayEvents(toolCall) {
+				const result = toolCall.result
+				if (!result) return []
+				if (toolCall.tool === 'get_schedule') {
+					if (result.events) return result.events
+					if (result.data?.events) return result.data.events
+					return []
+				}
+				// add_schedule / update_schedule: single event → wrap as array
+				if (result.start_time) {
+					return [{
+						id: result.id || result.updated_id,
+						title: result.title || '',
+						start_time: result.start_time,
+						end_time: result.end_time || result.start_time,
+						details: result.details
+					}]
+				}
 				return []
 			},
 
@@ -6319,7 +6420,8 @@
 
 	.schedule-event-bar {
 		width: 4rpx;
-		height: 48rpx;
+		min-height: 48rpx;
+		align-self: stretch;
 		border-radius: 2rpx;
 		flex-shrink: 0;
 	}
@@ -6341,6 +6443,10 @@
 	.schedule-event-desc {
 		font-size: 22rpx;
 		color: rgba(255, 255, 255, 0.4);
+	}
+
+	.schedule-card-clickable:active {
+		opacity: 0.7;
 	}
 
 	.schedule-card-footer {
@@ -7365,12 +7471,41 @@
 		color: rgba(248, 113, 113, 0.9);
 	}
 
-	/* ========== 复习事件列表 ========== */
-	.review-events-list {
-		margin-top: 12rpx;
+	/* ========== 复习工具 pill + 卡片 ========== */
+	.review-tool-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 12rpx;
+	}
+
+	.review-card {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 16rpx 20rpx 12rpx;
 		display: flex;
 		flex-direction: column;
 		gap: 8rpx;
+	}
+
+	.review-card-empty {
+		align-items: center;
+		padding: 24rpx 16rpx;
+	}
+
+	.review-empty-text {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.4);
+	}
+
+	.review-card-footer {
+		margin-top: 4rpx;
+		text-align: right;
+	}
+
+	.review-card-count {
+		font-size: 22rpx;
+		color: rgba(255, 255, 255, 0.4);
 	}
 
 	.review-event-item {
@@ -7395,8 +7530,8 @@
 
 	.review-event-depth {
 		font-size: 20rpx;
-		color: rgba(139, 92, 246, 0.9);
-		background: rgba(139, 92, 246, 0.15);
+		color: rgba(129, 140, 248, 0.9);
+		background: rgba(129, 140, 248, 0.12);
 		padding: 2rpx 10rpx;
 		border-radius: 6rpx;
 	}
@@ -7413,13 +7548,23 @@
 		color: rgba(255, 255, 255, 0.5);
 	}
 
-	.review-event-urgency {
-		font-size: 22rpx;
-		color: rgba(34, 197, 94, 0.9);
+	.review-event-urgency-badge {
+		background: rgba(94, 194, 105, 0.10);
+		padding: 2rpx 10rpx;
+		border-radius: 6rpx;
 	}
 
-	.review-event-urgency.urgency-overdue {
-		color: rgba(251, 191, 36, 0.9);
+	.review-event-urgency-badge.urgency-overdue {
+		background: rgba(232, 168, 56, 0.10);
+	}
+
+	.review-event-urgency-text {
+		font-size: 22rpx;
+		color: rgba(94, 194, 105, 0.9);
+	}
+
+	.review-event-urgency-text.urgency-overdue-text {
+		color: rgba(232, 168, 56, 0.9);
 	}
 
 	/* ========== 测验工具 - 胶囊 + 卡片 ========== */
