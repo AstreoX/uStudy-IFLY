@@ -295,9 +295,9 @@ export default {
       colorSchemes: [
         { hex: '#0F6FFF', gradient: 'linear-gradient(135deg, #0F6FFF 0%, #69B8FF 48%, #B1DD8B 100%)' },
         { hex: '#8B5CF6', gradient: 'linear-gradient(135deg, #8B5CF6 0%, #C084FC 52%, #F9A8D4 100%)' },
-        { hex: '#F97316', gradient: 'linear-gradient(135deg, #F97316 0%, #FB7185 52%, #FDE68A 100%)' },
+        { hex: '#F97316', gradient: 'linear-gradient(135deg, #FBC2EB 0%, #A6C1EE 100%)' },
         { hex: '#10B981', gradient: 'linear-gradient(135deg, #10B981 0%, #2DD4BF 50%, #67E8F9 100%)' },
-        { hex: '#EF4444', gradient: 'linear-gradient(135deg, #EF4444 0%, #F97316 48%, #F59E0B 100%)' }
+        { hex: '#EF4444', gradient: 'linear-gradient(135deg, #b721ff 0%, #21d4fd 100%)' }
       ],
       currentColor: '',
       isUpdatingColor: false,
@@ -484,7 +484,15 @@ export default {
 
       try {
         const space = await getSpace(this.spaceId)
-        this.currentColor = space.color || '#0F6FFF'
+        // 兼容旧版hex值，映射到新值
+        const legacyColorMap = {
+          '#A18CD1': '#8B5CF6',
+          '#FA709A': '#F97316',
+          '#84FAB0': '#10B981',
+          '#F43B37': '#EF4444'
+        }
+        const rawColor = (space.color || '#0F6FFF').toUpperCase()
+        this.currentColor = legacyColorMap[rawColor] || space.color || '#0F6FFF'
         this.isCollaborative = !!space.is_collaborative
         this.userRole = space.user_role || ''
         this.spaceDescription = space.description || ''

@@ -208,57 +208,12 @@
 							</view>
 						</view>
 
-						<!-- 代码执行工具：代码 + 输出卡片 -->
+						<!-- 代码执行工具：pill + 可折叠详情卡片 -->
 						<view
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'run_python_code'"
 							:key="'code-tool-' + segIdx"
-							class="tool-call-card code-execution-card"
-							:class="{
-								'tool-call-running': seg.toolCall.status === 'running',
-								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
-								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
-							}"
 						>
-							<view class="tool-call-header">
-								<image class="tool-call-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
-								<text class="tool-call-name">{{ seg.toolCall.arguments?.description || getToolDisplayName(seg.toolCall.tool) }}</text>
-								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
-								<image v-else-if="seg.toolCall.success" class="tool-call-status-icon"
-									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg" mode="aspectFit" />
-								<image v-else class="tool-call-status-icon tool-call-status-failed"
-									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
-							</view>
-							<!-- Collapsible code block -->
-							<view class="code-block-section">
-								<view class="code-toggle-link" @click="toggleCodeExpand(seg.toolCall.id)">
-									<text class="code-toggle-text">{{ isCodeExpanded(seg.toolCall.id) ? '收起代码' : '查看代码' }}</text>
-									<image class="code-toggle-chevron" :class="{ 'code-toggle-chevron-expanded': isCodeExpanded(seg.toolCall.id) }"
-										src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
-								</view>
-								<view class="code-block-wrapper" :class="{ 'code-block-collapsed': !isCodeExpanded(seg.toolCall.id) }">
-									<view class="code-block-pre">
-										<text class="code-block-code">{{ seg.toolCall.arguments?.code || '' }}</text>
-									</view>
-								</view>
-							</view>
-							<!-- Output section -->
-							<view v-if="seg.toolCall.status === 'done'" class="code-output-section">
-								<view v-if="seg.toolCall.result?.stdout" class="code-output-stdout">
-									<text class="code-output-text">{{ seg.toolCall.result.stdout }}</text>
-								</view>
-								<view v-if="seg.toolCall.result?.stderr" class="code-output-stderr">
-									<text class="code-output-text code-output-text-error">{{ seg.toolCall.result.stderr }}</text>
-								</view>
-								<view v-if="seg.toolCall.result?.image_url" class="chart-image-preview">
-									<image
-										:src="getFullImageUrl(seg.toolCall.result.image_url)"
-										mode="widthFix"
-										class="chart-preview-img"
-										@click="previewChartImage(seg.toolCall.result.image_url)"
-									/>
-								</view>
-								<text v-if="!seg.toolCall.success && seg.toolCall.result?.message" class="tool-call-result-text">{{ seg.toolCall.result.message }}</text>
-							</view>
+							<PythonExecutionCard :tool-call="seg.toolCall" />
 						</view>
 
 						<!-- 学习空间查询工具：胶囊指示器 + 结果卡片 -->
@@ -751,6 +706,7 @@
 	import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 	import UInputModal from '@/components/u-input-modal/u-input-modal.vue'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
+	import PythonExecutionCard from '@/components/python-execution-card/python-execution-card.vue'
 	import { goBack } from '@/utils/navigation'
 	import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
 	import { setSseEventBus, clearSseEventBus, handleSseEvents, handleSseComplete, handleSseError, connectSSE } from '@/utils/sse'
@@ -860,6 +816,7 @@
 			MarkdownRender,
 			UInputModal,
 			ImageSourcePicker,
+			PythonExecutionCard,
 			// #ifdef APP-PLUS
 			SseRenderjs,
 			// #endif
@@ -913,8 +870,6 @@
 				expandedSearchResults: {}, // { toolCallId: true }
 				expandedSpaceQueries: {}, // { toolCallId: true/false }
 				expandedGraphTools: {}, // { toolCallId: true/false } — 日程工具折叠状态
-				// 代码块展开状态
-				expandedCodeBlocks: {}, // { toolCallId: true }
 
 				// 问题反馈相关
 				showFeedbackModal: false,
@@ -1789,17 +1744,6 @@
 				this.expandedGraphTools = {
 					...this.expandedGraphTools,
 					[toolCallId]: this.expandedGraphTools[toolCallId] === false
-				}
-			},
-
-			isCodeExpanded(toolCallId) {
-				return !!this.expandedCodeBlocks[toolCallId]
-			},
-
-			toggleCodeExpand(toolCallId) {
-				this.expandedCodeBlocks = {
-					...this.expandedCodeBlocks,
-					[toolCallId]: !this.expandedCodeBlocks[toolCallId]
 				}
 			},
 
@@ -3384,94 +3328,6 @@
 	.chart-preview-img {
 		width: 100%;
 		border-radius: 12rpx;
-	}
-
-	/* ========== 代码执行卡片 ========== */
-	.code-execution-card .code-block-section {
-		margin-top: 12rpx;
-	}
-
-	.code-toggle-link {
-		display: flex;
-		align-items: center;
-		gap: 6rpx;
-	}
-
-	.code-toggle-text {
-		font-size: 22rpx;
-		color: rgba(255, 255, 255, 0.4);
-	}
-
-	.code-toggle-chevron {
-		width: 24rpx;
-		height: 24rpx;
-		opacity: 0.4;
-		transition: transform 0.2s ease;
-	}
-
-	.code-toggle-chevron-expanded {
-		transform: rotate(180deg);
-	}
-
-	.code-block-wrapper {
-		max-height: 600rpx;
-		overflow: hidden;
-		transition: max-height 0.3s ease, opacity 0.2s ease, margin-top 0.2s ease;
-		opacity: 1;
-		margin-top: 10rpx;
-	}
-
-	.code-block-collapsed {
-		max-height: 0;
-		opacity: 0;
-		margin-top: 0;
-	}
-
-	.code-block-pre {
-		padding: 16rpx 20rpx;
-		background: rgba(0, 0, 0, 0.35);
-		border-radius: 10rpx;
-		overflow-x: auto;
-	}
-
-	.code-block-code {
-		font-family: 'Menlo', 'Consolas', monospace;
-		font-size: 22rpx;
-		line-height: 1.5;
-		color: rgba(255, 255, 255, 0.85);
-		white-space: pre;
-	}
-
-	.code-output-section {
-		margin-top: 12rpx;
-		padding-top: 12rpx;
-		border-top: 1px solid rgba(255, 255, 255, 0.06);
-	}
-
-	.code-output-stdout {
-		padding: 12rpx 16rpx;
-		background: rgba(0, 0, 0, 0.25);
-		border-radius: 10rpx;
-	}
-
-	.code-output-stderr {
-		margin-top: 8rpx;
-		padding: 12rpx 16rpx;
-		background: rgba(220, 38, 38, 0.1);
-		border-radius: 10rpx;
-		border-left: 4rpx solid rgba(220, 38, 38, 0.4);
-	}
-
-	.code-output-text {
-		font-family: 'Menlo', 'Consolas', monospace;
-		font-size: 22rpx;
-		line-height: 1.5;
-		color: rgba(255, 255, 255, 0.8);
-		word-break: break-all;
-	}
-
-	.code-output-text-error {
-		color: rgba(248, 113, 113, 0.9);
 	}
 
 	/* 学习空间列表 */

@@ -702,6 +702,11 @@ function _cleanOldSuggestionCache(currentKey) {
 			hexToColorName(hex) {
 				const colorMap = {
 					'#0F6FFF': 'blueGreen',
+					'#8B5CF6': 'purplePink',
+					'#F97316': 'pinkYellow',
+					'#10B981': 'mintCyan',
+					'#EF4444': 'redPurple',
+					// 兼容旧版hex值（已创建的空间可能存了旧值）
 					'#A18CD1': 'purplePink',
 					'#FA709A': 'pinkYellow',
 					'#84FAB0': 'mintCyan',
@@ -764,10 +769,10 @@ function _cleanOldSuggestionCache(currentKey) {
 			getCardGradient(color) {
 				const gradients = {
 					blueGreen: 'background: linear-gradient(to bottom right, #0F6FFF 0%, #B1DD8B 100%);',
-					purplePink: 'background: linear-gradient(to bottom right, #A18CD1 0%, #FBC2EB 100%);',
-					pinkYellow: 'background: linear-gradient(to bottom right, #FA709A 0%, #FEE140 100%);',
-					mintCyan: 'background: linear-gradient(to bottom right, #84FAB0 0%, #38F9D7 100%);',
-					redPurple: 'background: linear-gradient(to bottom right, #F43B37 0%, #453A94 100%);'
+					purplePink: 'background: linear-gradient(to bottom right, #8B5CF6 0%, #F9A8D4 100%);',
+					pinkYellow: 'background: linear-gradient(to bottom right, #FBC2EB 0%, #A6C1EE 100%);',
+					mintCyan: 'background: linear-gradient(to bottom right, #10B981 0%, #67E8F9 100%);',
+					redPurple: 'background: linear-gradient(to bottom right, #b721ff 0%, #21d4fd 100%);'
 				}
 				return gradients[color] || gradients.blueGreen
 			},
@@ -1667,6 +1672,7 @@ function _cleanOldSuggestionCache(currentKey) {
 		height: calc(100vh / 26 * 7);
 		border-radius: 36rpx;
 		padding: 20rpx 30rpx 30rpx;
+		border: 2rpx solid #000000;
 		transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
 		transform-origin: center top;
 		pointer-events: auto;

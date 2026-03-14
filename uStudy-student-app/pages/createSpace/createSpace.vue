@@ -491,10 +491,10 @@
 				// 颜色名称到十六进制映射
 				const colorMap = {
 					'blueGreen': '#0F6FFF',
-					'purplePink': '#A18CD1',
-					'pinkYellow': '#FA709A',
-					'mintCyan': '#84FAB0',
-					'redPurple': '#F43B37'
+					'purplePink': '#8B5CF6',
+					'pinkYellow': '#F97316',
+					'mintCyan': '#10B981',
+					'redPurple': '#EF4444'
 				}
 
 				// 合并选中的预设偏好和自定义偏好
