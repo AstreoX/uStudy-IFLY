@@ -106,6 +106,40 @@
         </view>
       </view>
 
+      <!-- Activation Code Section -->
+      <view class="activation-card glass-card">
+        <view class="activation-header">
+          <image
+            class="activation-icon"
+            src="/static/icons/phosphor-icons/SVGs/regular/crown.svg"
+            mode="aspectFit"
+          ></image>
+          <view class="activation-text">
+            <text class="activation-title">激活码</text>
+            <text class="activation-subtitle">输入激活码开通会员权益</text>
+          </view>
+        </view>
+        <view class="activation-input-row">
+          <input
+            class="activation-input"
+            type="text"
+            v-model="activationCode"
+            placeholder="请输入激活码"
+            :maxlength="20"
+            :disabled="activating"
+            placeholder-class="activation-placeholder"
+          />
+          <view
+            class="activation-btn"
+            :class="{ 'activation-btn-disabled': !activationCode.trim() || activating }"
+            @click="handleActivate"
+          >
+            <text class="activation-btn-text">{{ activating ? '验证中...' : '激活' }}</text>
+          </view>
+        </view>
+        <text v-if="activationError" class="activation-error">{{ activationError }}</text>
+      </view>
+
       <!-- Bottom spacer for nav bar clearance -->
       <view class="bottom-spacer"></view>
     </scroll-view>
@@ -121,6 +155,7 @@
 <script>
 import { useUserStore } from '@/store/user'
 import config from '@/config'
+import { activateCode } from '@/api/auth'
 import { getSpaces, getSpaceGraph } from '@/api/space'
 import { getActivityTimeline, getStudySuggestion } from '@/api/activity'
 import { getDueReviews } from '@/api/review'
@@ -209,7 +244,10 @@ export default {
       timelineLoading: false,
       dueReviewCount: 0,
       aiSuggestion: null,
-      suggestionLoading: false
+      suggestionLoading: false,
+      activationCode: '',
+      activating: false,
+      activationError: ''
     }
   },
 
@@ -278,6 +316,38 @@ export default {
   },
 
   methods: {
+    async handleActivate() {
+      const code = this.activationCode.trim()
+      if (!code || this.activating) return
+
+      this.activating = true
+      this.activationError = ''
+
+      try {
+        const response = await activateCode(code)
+        if (response.success) {
+          this.userStore.updateSubscription(
+            response.subscription_tier,
+            response.subscription_expires_at
+          )
+          this.activationCode = ''
+          uni.showToast({
+            title: response.message || '激活成功',
+            icon: 'none'
+          })
+        }
+      } catch (error) {
+        const detail = error.data?.detail || error.message || '激活失败，请稍后重试'
+        if (typeof detail === 'object') {
+          this.activationError = detail.message || '激活失败'
+        } else {
+          this.activationError = detail
+        }
+      } finally {
+        this.activating = false
+      }
+    },
+
     calculateScrollHeight() {
       const systemInfo = uni.getSystemInfoSync()
       // Top bar height ~ 3.5/26 vh, nav bar ~ 3/26 vh
@@ -800,6 +870,92 @@ export default {
 /* Timeline section */
 .timeline-section {
   margin-top: 24rpx;
+}
+
+/* Activation Code Card */
+.activation-card {
+  padding: 28rpx 30rpx;
+}
+
+.activation-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+}
+
+.activation-icon {
+  width: 40rpx;
+  height: 40rpx;
+  opacity: 0.6;
+  filter: brightness(0) invert(1);
+}
+
+.activation-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.activation-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.activation-subtitle {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.activation-input-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.activation-input {
+  flex: 1;
+  height: 72rpx;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  border-radius: 14rpx;
+  padding: 0 20rpx;
+  font-size: 28rpx;
+  color: #ffffff;
+  letter-spacing: 2rpx;
+}
+
+.activation-placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.activation-btn {
+  height: 72rpx;
+  padding: 0 32rpx;
+  background: linear-gradient(135deg, #0088FF 0%, #0066DD 100%);
+  border-radius: 14rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.activation-btn-disabled {
+  background: rgba(0, 136, 255, 0.3);
+}
+
+.activation-btn-text {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.activation-error {
+  font-size: 24rpx;
+  color: #F87171;
+  margin-top: 12rpx;
 }
 
 /* Bottom spacer */

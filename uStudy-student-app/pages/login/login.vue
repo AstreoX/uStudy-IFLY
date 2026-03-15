@@ -20,15 +20,9 @@
 
     <!-- Buttons Section -->
     <view class="buttons-section">
-      <!-- Apple ID Button -->
-      <button class="btn apple-btn" @tap="handleAppleLogin">
-        <image class="apple-icon" src="/static/icons/apple-logo.svg" mode="aspectFit" />
-        <text class="btn-text">使用 Apple ID 继续</text>
-      </button>
-
       <!-- Login Button -->
       <button class="btn login-btn" @tap="handleEmailLogin">
-        <text class="btn-text login-text">登录</text>
+        <text class="btn-text">登录</text>
       </button>
 
       <!-- Register Button -->
@@ -40,8 +34,8 @@
 </template>
 
 <script>
-import { appleLogin, getMe } from '@/api/auth'
-import { getTokens, setTokens, clearAuth } from '@/utils/storage'
+import { getMe } from '@/api/auth'
+import { getTokens, clearAuth } from '@/utils/storage'
 import { useUserStore } from '@/store/user'
 
 export default {
@@ -67,72 +61,6 @@ export default {
     }
   },
   methods: {
-    async handleAppleLogin() {
-      // #ifdef APP-PLUS
-      const systemInfo = uni.getSystemInfoSync()
-      if (systemInfo.platform !== 'ios') {
-        uni.showToast({
-          title: 'Apple 登录仅支持 iOS',
-          icon: 'none'
-        })
-        return
-      }
-
-      try {
-        uni.showLoading({ title: '登录中...' })
-        const loginResult = await new Promise((resolve, reject) => {
-          uni.login({
-            provider: 'apple',
-            success: resolve,
-            fail: reject
-          })
-        })
-
-        const authResult = loginResult.authResult || {}
-        const idToken =
-          authResult.identityToken ||
-          authResult.id_token ||
-          authResult.token
-
-        if (!idToken) {
-          throw new Error('Apple 登录凭证缺失')
-        }
-
-        const tokenResp = await appleLogin(idToken)
-        setTokens({
-          access_token: tokenResp.access_token,
-          refresh_token: tokenResp.refresh_token
-        })
-
-        const user = await getMe()
-        const userStore = useUserStore()
-        userStore.setUser(user)
-
-        uni.reLaunch({
-          url: '/pages/index/index'
-        })
-      } catch (error) {
-        console.error('Apple login failed:', error)
-        const detail = error?.data?.detail
-        const message =
-          (detail && typeof detail === 'object' ? detail.message : detail) ||
-          'Apple 登录失败'
-        uni.showToast({
-          title: message,
-          icon: 'none'
-        })
-      } finally {
-        uni.hideLoading()
-      }
-      // #endif
-
-      // #ifndef APP-PLUS
-      uni.showToast({
-        title: 'Apple 登录仅支持 iOS App',
-        icon: 'none'
-      })
-      // #endif
-    },
     handleEmailLogin() {
       uni.navigateTo({
         url: '/pages/emailLogin/emailLogin'
@@ -322,34 +250,21 @@ export default {
   transform: scale(0.98);
 }
 
-/* Apple Button - Glassmorphism */
-.apple-btn {
+/* Login Button - Blue (previously Apple style) */
+.login-btn {
   background-color: #007AFF;
   border: 1rpx solid rgba(255, 255, 255, 0.3);
 }
 
-.apple-icon {
-  width: 52rpx;
-  height: 52rpx;
-  margin-right: 18rpx;
-  filter: brightness(0) invert(1);
-}
-
-/* Login Button - Glassmorphism */
-.login-btn {
+/* Register Button - White (previously Login style) */
+.register-btn {
   background-color: #FFFFFF;
   border: 1rpx solid rgba(255, 255, 255, 0.4);
 }
 
-.login-text {
+.register-text {
   color: #000000 !important;
   font-weight: 600;
-}
-
-/* Register Button - Glassmorphism */
-.register-btn {
-  background-color: #1C1C1E;
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
 }
 
 .btn-text {
@@ -357,9 +272,5 @@ export default {
   font-weight: 500;
   color: #FFFFFF;
   letter-spacing: 1rpx;
-}
-
-.register-text {
-  color: rgba(255, 255, 255, 0.8);
 }
 </style>

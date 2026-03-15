@@ -94,3 +94,11 @@ export function updateNickname(nickname) {
     data: { nickname }
   })
 }
+
+export function activateCode(code) {
+  return request({
+    url: '/api/auth/activate',
+    method: 'POST',
+    data: { code }
+  })
+}
