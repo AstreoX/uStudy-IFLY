@@ -4412,9 +4412,11 @@
 
 				this.walkArtifactToolCalls((seg) => {
 					const currentResult = seg.toolCall?.result || {}
-					const taskMatched = taskId && String(currentResult.task_id) === String(taskId)
-					const noteMatched = noteId && String(currentResult.note_id) === String(noteId)
-					if (!taskMatched && !noteMatched) {
+					if (taskId) {
+						if (String(currentResult.task_id) !== String(taskId)) return false
+					} else if (noteId) {
+						if (String(currentResult.note_id) !== String(noteId)) return false
+					} else {
 						return false
 					}
 

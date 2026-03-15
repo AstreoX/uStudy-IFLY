@@ -1004,7 +1004,14 @@ export default {
         if (fromNode && toNode) {
           const edgeKey = fromNode.label + '→' + toNode.label
           const edgeColor = highlightEdgeSet.has(edgeKey) ? this.highlightEdgeColor : null
-          this.drawPathEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, edgeColor)
+          const scale = this.treeScale || 1
+          const outlineSize = Math.max(2, 3 * scale)
+          const fromR = fromNode.isOnPath ? (fromNode.radius || 5) + outlineSize : 0
+          const toR = toNode.isOnPath ? (toNode.radius || 5) + outlineSize : 0
+          const clipped = this.clipEdgeToRing(fromNode.x, fromNode.y, toNode.x, toNode.y, fromR, toR)
+          if (clipped) {
+            this.drawPathEdge(ctx, clipped[0], clipped[1], clipped[2], clipped[3], edgeColor)
+          }
         }
       })
 
@@ -1045,7 +1052,18 @@ export default {
             const toLabel = toNode.label
             const isHighlightEdge = this.highlightLabelSet.has(fromLabel) && this.highlightLabelSet.has(toLabel)
             if (isHighlightEdge) {
-              this.drawEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, this.highlightColor, edgeWidth * 2.5)
+              const scale = this.treeScale || 1
+              const fromRadius = fromNode.radius || 5
+              const toRadius = toNode.radius || 5
+              const outlineSize = Math.max(2, 4 * scale)
+              const ringOffset = outlineSize + 4 * scale
+              const clipped = this.clipEdgeToRing(
+                fromNode.x, fromNode.y, toNode.x, toNode.y,
+                fromRadius + ringOffset, toRadius + ringOffset
+              )
+              if (clipped) {
+                this.drawEdge(ctx, clipped[0], clipped[1], clipped[2], clipped[3], this.highlightColor, edgeWidth * 2.5)
+              }
             } else {
               this.drawEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, 'rgba(255, 255, 255, 0.25)', edgeWidth)
             }
@@ -1115,6 +1133,20 @@ export default {
       ctx.moveTo(x1, y1)
       ctx.lineTo(x2, y2)
       ctx.stroke()
+    },
+
+    /**
+     * Clip edge endpoints to stop at node ring boundaries instead of node centers.
+     * Returns adjusted [x1, y1, x2, y2] coordinates, or null if nodes overlap.
+     */
+    clipEdgeToRing(x1, y1, x2, y2, r1, r2) {
+      const dx = x2 - x1
+      const dy = y2 - y1
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist <= r1 + r2) return null
+      const ux = dx / dist
+      const uy = dy / dist
+      return [x1 + ux * r1, y1 + uy * r1, x2 - ux * r2, y2 - uy * r2]
     },
 
     /**
