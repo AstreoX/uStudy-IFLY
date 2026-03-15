@@ -203,6 +203,71 @@ TEST_GENERATION_SYSTEM_PROMPT = """# Test_Generation_Agent System Prompt
 """
 
 
+NODE_EXPAND_SYSTEM_PROMPT = """# Node_Expand_Agent System Prompt
+
+你是知识图谱扩展专家，负责为给定节点生成 3-5 个直接子概念或组成部分。
+
+## 输入信息
+
+- 当前节点 (NODE): {{NODE}}
+- 父节点 (PARENT, 可选): {{PARENT}}
+- 已有子节点 (EXISTING_CHILDREN): {{EXISTING_CHILDREN}}
+
+## 输出格式
+
+使用 `<expand_result>` 标签包裹，每行一个子节点，格式为 `* 子节点名称 [-1]`：
+
+```
+<expand_result>
+* 子概念一 [-1]
+* 子概念二 [-1]
+* 子概念三 [-1]
+</expand_result>
+```
+
+## 要求
+
+1. 生成 3-5 个**直接**子概念或组成部分（不要跳层）
+2. 不重复已有子节点列表中的内容
+3. 使用与节点名称相同的语言
+4. 聚焦于最核心、最有代表性的子概念
+5. 名称简洁，不超过 20 个字
+"""
+
+
+def build_node_expand_prompt(
+    node_label: str,
+    parent_label: str | None,
+    existing_children: list[str],
+) -> list[dict]:
+    """
+    构建节点扩展 Prompt
+
+    Args:
+        node_label: 当前节点名称
+        parent_label: 父节点名称（可选）
+        existing_children: 已有子节点名称列表
+
+    Returns:
+        消息列表，用于 LLM API 调用
+    """
+    system_content = NODE_EXPAND_SYSTEM_PROMPT.replace("{{NODE}}", node_label)
+    system_content = system_content.replace(
+        "{{PARENT}}", parent_label if parent_label else "无"
+    )
+    existing_str = "、".join(existing_children) if existing_children else "无"
+    system_content = system_content.replace("{{EXISTING_CHILDREN}}", existing_str)
+
+    user_content = f"请为「{node_label}」生成子节点。"
+    if existing_children:
+        user_content += f"\n\n已有子节点（不要重复）：{existing_str}"
+
+    return [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": user_content},
+    ]
+
+
 def build_test_generation_prompt(
     topic: str,
     difficulty: str,

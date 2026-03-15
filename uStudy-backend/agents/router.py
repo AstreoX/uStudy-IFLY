@@ -145,3 +145,49 @@ async def get_task_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "TASK_NOT_FOUND", "message": "任务不存在"},
         )
+
+
+@router.post(
+    "/expand-node",
+    response_model=AgentTaskResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="扩展知识图谱节点（异步）",
+    description="为指定节点生成 3-5 个子节点，异步执行。返回任务 ID，通过 GET /tasks/{task_id} 查询状态。",
+)
+async def expand_node(
+    space_id: Annotated[UUID, Query(description="学习空间 ID")],
+    node_id: Annotated[UUID, Query(description="目标节点 ID")],
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AgentTaskResponse:
+    """
+    启动节点扩展任务
+
+    - **space_id**: 学习空间 ID
+    - **node_id**: 要扩展的节点 ID
+
+    返回 202 Accepted，包含任务 ID。
+    """
+    service = AgentService(db)
+
+    try:
+        return await service.create_expand_node_task(
+            user_id=user.id,
+            space_id=space_id,
+            node_id=node_id,
+        )
+    except SpaceNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "SPACE_NOT_FOUND", "message": "学习空间不存在"},
+        )
+    except SpaceAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "SPACE_ACCESS_DENIED", "message": "无权访问该学习空间"},
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NODE_NOT_FOUND", "message": str(e)},
+        )

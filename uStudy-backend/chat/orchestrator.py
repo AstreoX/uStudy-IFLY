@@ -890,6 +890,7 @@ class LLMOrchestrator:
                                 modified_args = (confirmation.data or {}).get(
                                     "arguments", tool_call.arguments
                                 )
+                                tool_call.arguments = modified_args
                                 tool_result = await self.note_tool_executor.execute(
                                     tool_call.name, modified_args,
                                 )

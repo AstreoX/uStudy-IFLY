@@ -17,6 +17,7 @@ from agents.exceptions import (
     TaskNotFoundError,
 )
 from agents.knowledge_graph_agent import KnowledgeGraphAgent
+from agents.node_expand_agent import NodeExpandAgent
 from agents.schemas import (
     AgentTaskResponse,
     AgentTaskResultResponse,
@@ -26,7 +27,7 @@ from agents.schemas import (
 )
 from agents.test_generation_agent import TestGenerationAgent
 from db.database import AsyncSessionLocal
-from db.models import AgentTask, AgentTaskStatus, AgentTaskType, DifficultyLevel, Quiz, Space
+from db.models import AgentTask, AgentTaskStatus, AgentTaskType, DifficultyLevel, Node, Quiz, Space
 
 logger = logging.getLogger(__name__)
 
@@ -459,6 +460,152 @@ class AgentService:
                             "error_message": str(e),
                             "debug_logs": truncated_logs,
                         },
+                    )
+                )
+                await session.commit()
+
+    async def create_expand_node_task(
+        self,
+        user_id: UUID,
+        space_id: UUID,
+        node_id: UUID,
+    ) -> AgentTaskResponse:
+        """
+        创建节点扩展任务
+
+        Args:
+            user_id: 用户 ID
+            space_id: 学习空间 ID
+            node_id: 目标节点 ID
+
+        Returns:
+            任务创建响应
+
+        Raises:
+            SpaceNotFoundError: 学习空间不存在
+            SpaceAccessDeniedError: 无权访问该学习空间
+            ValueError: 节点不存在
+        """
+        # 1. 验证 space 存在且属于当前用户
+        await self._verify_space_ownership(space_id, user_id)
+
+        # 2. 验证节点存在
+        result = await self.db.execute(
+            select(Node).where(Node.id == node_id, Node.space_id == space_id)
+        )
+        if not result.scalar_one_or_none():
+            raise ValueError(f"节点不存在: {node_id}")
+
+        # 3. 创建任务记录
+        task = AgentTask(
+            user_id=user_id,
+            space_id=space_id,
+            task_type=AgentTaskType.EXPAND_NODE,
+            status=AgentTaskStatus.PENDING,
+            input_data={"node_id": str(node_id)},
+        )
+        self.db.add(task)
+        await self.db.commit()
+        await self.db.refresh(task)
+
+        logger.info("创建节点扩展任务: task_id=%s, node_id=%s", task.id, node_id)
+
+        # 4. 启动后台任务
+        background_task = asyncio.create_task(
+            self._run_expand_node_task(
+                task_id=task.id,
+                user_id=user_id,
+                space_id=space_id,
+                node_id=node_id,
+            ),
+            name=f"expand_node_task_{task.id}",
+        )
+        background_task.add_done_callback(self._handle_task_exception)
+
+        return AgentTaskResponse(
+            task_id=task.id,
+            status=AgentTaskStatusEnum(task.status.value),
+            task_type=task.task_type.value,
+            created_at=task.created_at,
+        )
+
+    async def _run_expand_node_task(
+        self,
+        task_id: UUID,
+        user_id: UUID,
+        space_id: UUID,
+        node_id: UUID,
+    ) -> None:
+        """后台执行节点扩展任务，在独立的 AsyncSession 中运行"""
+        async with AsyncSessionLocal() as session:
+            try:
+                # 更新状态为 running
+                await session.execute(
+                    update(AgentTask)
+                    .where(AgentTask.id == task_id)
+                    .values(
+                        status=AgentTaskStatus.RUNNING,
+                        started_at=datetime.now(timezone.utc),
+                    )
+                )
+                await session.commit()
+
+                logger.info("开始执行节点扩展任务: task_id=%s", task_id)
+
+                # 执行 Agent
+                agent = NodeExpandAgent(session)
+                node_count, edge_count = await agent.expand(
+                    user_id=user_id,
+                    space_id=space_id,
+                    node_id=node_id,
+                )
+
+                # 更新状态为 done
+                await session.execute(
+                    update(AgentTask)
+                    .where(AgentTask.id == task_id)
+                    .values(
+                        status=AgentTaskStatus.DONE,
+                        completed_at=datetime.now(timezone.utc),
+                        output_data={
+                            "node_count": node_count,
+                            "edge_count": edge_count,
+                        },
+                    )
+                )
+                await session.commit()
+
+                logger.info(
+                    "节点扩展任务完成: task_id=%s, nodes=%d, edges=%d",
+                    task_id,
+                    node_count,
+                    edge_count,
+                )
+
+            except Exception as e:
+                logger.error("节点扩展任务失败: task_id=%s, error=%s", task_id, e)
+                await session.rollback()
+
+                debug_data: dict = {
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                }
+                if isinstance(e, LLMParsingErrorWithOutput):
+                    raw_output = e.llm_output
+                    debug_data["llm_raw_output"] = (
+                        raw_output[:MAX_DEBUG_OUTPUT_SIZE]
+                        if len(raw_output) > MAX_DEBUG_OUTPUT_SIZE
+                        else raw_output
+                    )
+
+                await session.execute(
+                    update(AgentTask)
+                    .where(AgentTask.id == task_id)
+                    .values(
+                        status=AgentTaskStatus.FAILED,
+                        completed_at=datetime.now(timezone.utc),
+                        error_message=str(e),
+                        output_data=debug_data,
                     )
                 )
                 await session.commit()

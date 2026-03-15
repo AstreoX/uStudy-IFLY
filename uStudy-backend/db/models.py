@@ -76,6 +76,7 @@ class AgentTaskType(str, enum.Enum):
 
     GENERATE_KNOWLEDGE_GRAPH = "generate_knowledge_graph"
     GENERATE_QUIZ = "generate_quiz"
+    EXPAND_NODE = "expand_node"
 
 
 class QuickChatToolTaskStatus(str, enum.Enum):
