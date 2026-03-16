@@ -171,7 +171,7 @@
               <view class="status-badge" :class="'status-' + getDocStatus(doc.id)">
                 <view class="status-dot" :style="{ backgroundColor: getStatusColor(getDocStatus(doc.id)) }"></view>
                 <text class="status-text" :style="{ color: getStatusColor(getDocStatus(doc.id)) }">
-                  {{ getStatusLabel(getDocStatus(doc.id)) }}
+                  {{ getStatusLabel(getDocStatus(doc.id), doc.id) }}
                 </text>
               </view>
 
@@ -316,7 +316,8 @@ export default {
       fileSizeExceeded: false,
 
       processingStatuses: {},  // { documentId: ProcessingStatusResponse }
-      loadingStatuses: false
+      loadingStatuses: false,
+      processingPollTimer: null  // 轮询定时器
     }
   },
 
@@ -470,6 +471,14 @@ export default {
     if (this.spaceId && !this.loading) {
       this.loadDocuments()
     }
+  },
+
+  onHide() {
+    this.stopProcessingPoll()
+  },
+
+  onUnload() {
+    this.stopProcessingPoll()
   },
 
   methods: {
@@ -1010,14 +1019,88 @@ export default {
 
         this.processingStatuses = statuses
       } catch (error) {
-        console.error('Failed to load processing statuses:', error)
+        // ignore
       } finally {
         this.loadingStatuses = false
       }
+
+      // 如果有正在处理的文档，启动轮询
+      this.checkAndStartPoll()
+    },
+
+    // 检查是否需要轮询
+    checkAndStartPoll() {
+      const hasProcessing = Object.values(this.processingStatuses).some(
+        s => s && (s.status === 'pending' || s.status === 'processing')
+      )
+      if (hasProcessing) {
+        this.startProcessingPoll()
+      } else {
+        this.stopProcessingPoll()
+      }
+    },
+
+    // 启动轮询
+    startProcessingPoll() {
+      if (this.processingPollTimer) return
+      this.processingPollTimer = setInterval(() => {
+        this.pollProcessingStatuses()
+      }, 3000)
+    },
+
+    // 停止轮询
+    stopProcessingPoll() {
+      if (this.processingPollTimer) {
+        clearInterval(this.processingPollTimer)
+        this.processingPollTimer = null
+      }
+    },
+
+    // 轮询处理状态（仅查询正在处理的文档）
+    async pollProcessingStatuses() {
+      const processingDocIds = Object.entries(this.processingStatuses)
+        .filter(([_, s]) => s && (s.status === 'pending' || s.status === 'processing'))
+        .map(([docId]) => docId)
+
+      if (processingDocIds.length === 0) {
+        this.stopProcessingPoll()
+        return
+      }
+
+      const statuses = { ...this.processingStatuses }
+
+      try {
+        const promises = processingDocIds.map(docId =>
+          getDocumentProcessingStatus(this.spaceId, docId)
+            .then(res => ({ docId, status: res }))
+            .catch(() => ({ docId, status: null }))
+        )
+
+        const results = await Promise.all(promises)
+
+        results.forEach(({ docId, status }) => {
+          if (status) {
+            statuses[docId] = status
+          }
+        })
+
+        this.processingStatuses = statuses
+      } catch (error) {
+        // ignore
+      }
+
+      // 全部完成则停止轮询
+      this.checkAndStartPoll()
     },
 
     // 获取状态标签
-    getStatusLabel(status) {
+    getStatusLabel(status, docId) {
+      if (status === 'processing' && docId) {
+        const data = this.processingStatuses[docId]
+        if (data && data.processed_chunks > 0) {
+          return `处理中... ${data.processed_chunks} 块`
+        }
+      }
       const labels = {
         'not_started': '未开始',
         'pending': '等待处理',
