@@ -18,7 +18,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.execute("COMMIT")
-    op.execute("ALTER TYPE agenttasktype ADD VALUE IF NOT EXISTS 'expand_node'")
+    op.execute("ALTER TYPE agenttasktype ADD VALUE IF NOT EXISTS 'EXPAND_NODE'")
 
 
 def downgrade() -> None:
