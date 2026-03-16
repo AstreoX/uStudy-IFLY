@@ -270,7 +270,8 @@ export default {
         FREE: 'Free',
         BASIC: 'Plus',
         PREMIUM: 'Ultra',
-        ALPHA: 'Alpha'
+        ALPHA: 'Alpha',
+        ULTRA: 'Ultra'
       }
       return labels[tier] || tier
     },
@@ -717,6 +718,14 @@ export default {
 
 .badge-alpha .badge-text {
   color: rgba(255, 255, 255, 0.6);
+}
+
+.badge-ultra {
+  background: rgba(147, 51, 234, 0.2);
+}
+
+.badge-ultra .badge-text {
+  color: #A855F7;
 }
 
 .badge-text {

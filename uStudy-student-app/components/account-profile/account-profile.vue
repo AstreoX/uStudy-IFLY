@@ -108,33 +108,29 @@
 
       <!-- Activation Code Section -->
       <view class="activation-card glass-card">
-        <view class="activation-header">
-          <image
-            class="activation-icon"
-            src="/static/icons/phosphor-icons/SVGs/regular/crown.svg"
-            mode="aspectFit"
-          ></image>
-          <view class="activation-text">
-            <text class="activation-title">激活码</text>
-            <text class="activation-subtitle">输入激活码开通会员权益</text>
-          </view>
-        </view>
         <view class="activation-input-row">
-          <input
-            class="activation-input"
-            type="text"
-            v-model="activationCode"
-            placeholder="请输入激活码"
-            :maxlength="20"
-            :disabled="activating"
-            placeholder-class="activation-placeholder"
-          />
+          <view class="activation-input-wrapper">
+            <image
+              class="activation-key-icon"
+              src="/static/icons/lucide/key-round.svg"
+              mode="aspectFit"
+            ></image>
+            <input
+              class="activation-input"
+              type="text"
+              v-model="activationCode"
+              placeholder="输入激活码开通会员"
+              :maxlength="20"
+              :disabled="activating"
+              placeholder-class="activation-placeholder"
+            />
+          </view>
           <view
             class="activation-btn"
             :class="{ 'activation-btn-disabled': !activationCode.trim() || activating }"
             @click="handleActivate"
           >
-            <text class="activation-btn-text">{{ activating ? '验证中...' : '激活' }}</text>
+            <text class="activation-btn-text">{{ activating ? '...' : '激活' }}</text>
           </view>
         </view>
         <text v-if="activationError" class="activation-error">{{ activationError }}</text>
@@ -293,7 +289,8 @@ export default {
         FREE: 'Free',
         BASIC: 'Plus',
         PREMIUM: 'Ultra',
-        ALPHA: 'Alpha'
+        ALPHA: 'Alpha',
+        ULTRA: 'Ultra'
       }
       return labels[tier] || tier
     },
@@ -748,6 +745,14 @@ export default {
   color: rgba(255, 255, 255, 0.6);
 }
 
+.badge-ultra {
+  background: rgba(147, 51, 234, 0.2);
+}
+
+.badge-ultra .badge-text {
+  color: #A855F7;
+}
+
 .badge-text {
   font-size: 24rpx;
   font-weight: 500;
@@ -874,54 +879,40 @@ export default {
 
 /* Activation Code Card */
 .activation-card {
-  padding: 28rpx 30rpx;
-}
-
-.activation-header {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 16rpx;
-  margin-bottom: 20rpx;
-}
-
-.activation-icon {
-  width: 40rpx;
-  height: 40rpx;
-  opacity: 0.6;
-  filter: brightness(0) invert(1);
-}
-
-.activation-text {
-  display: flex;
-  flex-direction: column;
-}
-
-.activation-title {
-  font-size: 28rpx;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.activation-subtitle {
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.45);
+  padding: 20rpx 24rpx;
 }
 
 .activation-input-row {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 16rpx;
+  gap: 12rpx;
+}
+
+.activation-input-wrapper {
+  flex: 1;
+  height: 76rpx;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  border-radius: 16rpx;
+  padding: 0 20rpx;
+  gap: 14rpx;
+}
+
+.activation-key-icon {
+  width: 36rpx;
+  height: 36rpx;
+  flex-shrink: 0;
+  opacity: 0.4;
+  filter: brightness(0) invert(1);
 }
 
 .activation-input {
   flex: 1;
-  height: 72rpx;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1rpx solid rgba(255, 255, 255, 0.12);
-  border-radius: 14rpx;
-  padding: 0 20rpx;
+  height: 76rpx;
   font-size: 28rpx;
   color: #ffffff;
   letter-spacing: 2rpx;
@@ -932,10 +923,10 @@ export default {
 }
 
 .activation-btn {
-  height: 72rpx;
-  padding: 0 32rpx;
+  height: 76rpx;
+  padding: 0 36rpx;
   background: linear-gradient(135deg, #0088FF 0%, #0066DD 100%);
-  border-radius: 14rpx;
+  border-radius: 16rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -956,6 +947,7 @@ export default {
   font-size: 24rpx;
   color: #F87171;
   margin-top: 12rpx;
+  padding-left: 4rpx;
 }
 
 /* Bottom spacer */
