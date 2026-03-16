@@ -90,6 +90,15 @@
 
           <view class="settings-divider"></view>
 
+          <view class="settings-item" @click="handleCheckUpdate">
+            <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/arrow-up.svg" mode="aspectFit"></image>
+            <text class="item-label">检查更新</text>
+            <text class="item-value">v{{ appVersion }}</text>
+            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+          </view>
+
+          <view class="settings-divider"></view>
+
           <view class="settings-item" @click="handleAnnouncements">
             <image class="item-icon" src="/static/icons/phosphor-icons/SVGs/regular/megaphone.svg" mode="aspectFit"></image>
             <text class="item-label">更新公告</text>
@@ -173,6 +182,7 @@
 
 <script>
 import { useUserStore } from '@/store/user'
+import { useUpdateStore } from '@/store/update'
 import { updateNickname } from '@/api/auth'
 import { uploadAvatar } from '@/api/user'
 import config from '@/config'
@@ -274,6 +284,10 @@ export default {
         ULTRA: 'Ultra'
       }
       return labels[tier] || tier
+    },
+
+    appVersion() {
+      return config.APP_VERSION_NAME
     },
 
     aboutContent() {
@@ -427,6 +441,21 @@ export default {
     // 关于弹窗
     handleAbout() {
       this.showAboutModal = true
+    },
+
+    async handleCheckUpdate() {
+      uni.showLoading({ title: '检查中...' })
+      try {
+        const updateStore = useUpdateStore()
+        const hasUpdate = await updateStore.checkForUpdatesManual()
+        uni.hideLoading()
+        if (!hasUpdate) {
+          this.showCustomToast('已是最新版本', 'success')
+        }
+      } catch (_) {
+        uni.hideLoading()
+        this.showCustomToast('检查更新失败，请稍后重试', 'error')
+      }
     },
 
     handleAnnouncements() {
@@ -778,6 +807,12 @@ export default {
   flex: 1;
   font-size: 32rpx;
   color: #ffffff;
+}
+
+.item-value {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.35);
+  margin-right: 8rpx;
 }
 
 .item-arrow {

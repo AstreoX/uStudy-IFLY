@@ -39,6 +39,29 @@ export const useUpdateStore = defineStore('update', {
       this.manifest = manifest
     },
 
+    async checkForUpdatesManual() {
+      const manifest = await fetchReleaseManifest()
+      this.manifest = manifest
+
+      if (isUpdateAvailable(manifest)) {
+        try {
+          const md = await fetchMarkdownContent(manifest.latestVersion.changelog)
+          this.changelogContent = md
+        } catch (_) {
+          this.changelogContent = ''
+        }
+        this.isForced = isForceUpdate(manifest)
+        this.downloadProgress = 0
+        this.downloadComplete = false
+        this.downloadedFilePath = ''
+        this.downloadError = ''
+        this.isDownloading = false
+        this.showUpdateDialog = true
+        return true
+      }
+      return false
+    },
+
     async checkForUpdates() {
       try {
         const manifest = await fetchReleaseManifest()
