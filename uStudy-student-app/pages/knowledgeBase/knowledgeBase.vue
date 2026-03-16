@@ -165,8 +165,8 @@
               <view class="creator-dot" :style="{ backgroundColor: getCreatorColor(doc.creator_user_id) }"></view>
               <text class="document-creator-name">{{ doc.creator_nickname }}</text>
             </view>
-            <!-- 处理状态行 (仅文档类型显示) -->
-            <view v-if="doc.doc_type === 'document'" class="document-status-row">
+            <!-- 处理状态行 (文档和链接类型显示) -->
+            <view v-if="doc.doc_type === 'document' || doc.doc_type === 'link'" class="document-status-row">
               <!-- 状态 Badge -->
               <view class="status-badge" :class="'status-' + getDocStatus(doc.id)">
                 <view class="status-dot" :style="{ backgroundColor: getStatusColor(getDocStatus(doc.id)) }"></view>
@@ -995,7 +995,7 @@ export default {
     async loadProcessingStatuses() {
       if (this.loadingStatuses) return
 
-      const fileDocuments = this.documents.filter(d => d.doc_type === 'document')
+      const fileDocuments = this.documents.filter(d => d.doc_type === 'document' || d.doc_type === 'link')
       if (fileDocuments.length === 0) return
 
       this.loadingStatuses = true
@@ -1045,7 +1045,7 @@ export default {
       if (this.processingPollTimer) return
       this.processingPollTimer = setInterval(() => {
         this.pollProcessingStatuses()
-      }, 3000)
+      }, 1500)
     },
 
     // 停止轮询
@@ -1097,9 +1097,15 @@ export default {
     getStatusLabel(status, docId) {
       if (status === 'processing' && docId) {
         const data = this.processingStatuses[docId]
-        if (data && data.processed_chunks > 0) {
-          return `处理中... ${data.processed_chunks} 块`
+        if (data) {
+          if (data.processed_chunks > 0 && data.chunk_count > 0) {
+            return `向量化 ${data.processed_chunks}/${data.chunk_count}`
+          }
+          if (data.chunk_count > 0 && data.processed_chunks === 0) {
+            return `向量化 0/${data.chunk_count}`
+          }
         }
+        return '解析文档中...'
       }
       const labels = {
         'not_started': '未开始',

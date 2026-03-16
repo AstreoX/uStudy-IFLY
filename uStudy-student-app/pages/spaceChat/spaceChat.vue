@@ -1160,6 +1160,29 @@
 							</view>
 						</view>
 
+						<!-- 知识库保存工具：pill -->
+						<view
+							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'save_to_knowledge_base'"
+							:key="'kb-tool-' + segIdx"
+						>
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+							>
+								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getKBToolText(seg.toolCall) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-status-icon"
+									src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+							</view>
+						</view>
+
 						<!-- 非记忆类工具：原有卡片样式 -->
 						<view
 							v-else-if="seg.type === 'tool'"
@@ -1727,7 +1750,11 @@
 		create_artifact: '创建交互演示',
 		update_artifact: '更新交互演示',
 		// 代码执行工具
-		run_python_code: '执行 Python 代码'
+		run_python_code: '执行 Python 代码',
+		// 知识库管理
+		save_to_knowledge_base: '保存到知识库',
+		// 深度爬取
+		web_crawl: '深度爬取网站'
 	}
 
 	// 工具图标映射
@@ -1789,7 +1816,11 @@
 		create_artifact: '/static/icons/phosphor-icons/SVGs/regular/code.svg',
 		update_artifact: '/static/icons/phosphor-icons/SVGs/regular/code.svg',
 		// 代码执行工具
-		run_python_code: '/static/icons/phosphor-icons/SVGs/regular/code.svg'
+		run_python_code: '/static/icons/phosphor-icons/SVGs/regular/code.svg',
+		// 知识库管理
+		save_to_knowledge_base: '/static/icons/phosphor-icons/SVGs/regular/bookmark-simple.svg',
+		// 深度爬取
+		web_crawl: '/static/icons/phosphor-icons/SVGs/regular/globe.svg'
 	}
 
 	// 规划类工具（行内银光掠过效果）
@@ -4639,6 +4670,20 @@
 					return texts.done
 				}
 				return texts.failed
+			},
+
+			getKBToolText(toolCall) {
+				if (toolCall.status === 'running') {
+					return '正在保存到知识库…'
+				}
+				if (toolCall.status === 'done' && toolCall.success) {
+					const title = toolCall.result?.data?.title || toolCall.arguments?.title || ''
+					return title ? `已保存「${title}」` : '已保存到知识库'
+				}
+				if (toolCall.status === 'done' && !toolCall.success) {
+					return '保存失败'
+				}
+				return '保存到知识库'
 			},
 
 			getNoteToolText(toolCall) {

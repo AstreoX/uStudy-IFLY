@@ -788,7 +788,11 @@
 		get_schedule: '查看日程',
 		add_schedule: '添加日程',
 		delete_schedule: '删除日程',
-		update_schedule: '更新日程'
+		update_schedule: '更新日程',
+		// 知识库管理
+		save_to_knowledge_base: '保存到知识库',
+		// 深度爬取
+		web_crawl: '深度爬取网站'
 	}
 
 	// 工具图标映射
@@ -815,7 +819,11 @@
 		get_schedule: '/static/icons/phosphor-icons/SVGs/regular/calendar.svg',
 		add_schedule: '/static/icons/phosphor-icons/SVGs/regular/calendar-plus.svg',
 		delete_schedule: '/static/icons/phosphor-icons/SVGs/regular/calendar-x.svg',
-		update_schedule: '/static/icons/phosphor-icons/SVGs/regular/calendar-check.svg'
+		update_schedule: '/static/icons/phosphor-icons/SVGs/regular/calendar-check.svg',
+		// 知识库管理
+		save_to_knowledge_base: '/static/icons/phosphor-icons/SVGs/regular/bookmark-simple.svg',
+		// 深度爬取
+		web_crawl: '/static/icons/phosphor-icons/SVGs/regular/globe.svg'
 	}
 
 	// 记忆类工具集合（使用行内银光掠过效果）
