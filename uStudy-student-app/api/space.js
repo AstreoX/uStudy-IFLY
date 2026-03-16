@@ -330,6 +330,18 @@ export function getDocumentProcessingStatus(spaceId, documentId) {
   })
 }
 
+/**
+ * 重新处理失败的文档
+ * @param {string|number} spaceId
+ * @param {string} documentId
+ */
+export function reprocessDocument(spaceId, documentId) {
+  return request({
+    url: `/api/rag/spaces/${spaceId}/documents/${documentId}/reprocess`,
+    method: 'POST'
+  })
+}
+
 // ============ 空间分享 API ============
 
 /**

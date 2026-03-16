@@ -65,19 +65,24 @@
 
 					<!-- 用户消息操作图标 -->
 					<view v-if="!isAiStreaming" class="user-msg-actions">
-						<image
-							class="user-msg-action-icon"
-							src="/static/icons/phosphor-icons/SVGs/regular/copy.svg"
-							mode="aspectFit"
-							@click="copyMessage(msg)"
-						></image>
-						<image
+						<view class="user-msg-action-btn" @click="copyMessage(msg)">
+							<image
+								class="user-msg-action-icon"
+								src="/static/icons/phosphor-icons/SVGs/regular/copy.svg"
+								mode="aspectFit"
+							></image>
+						</view>
+						<view
 							v-if="isLastUserMessage(msg)"
-							class="user-msg-action-icon"
-							src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg"
-							mode="aspectFit"
+							class="user-msg-action-btn"
 							@click="editMessage(msg)"
-						></image>
+						>
+							<image
+								class="user-msg-action-icon"
+								src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg"
+								mode="aspectFit"
+							></image>
+						</view>
 					</view>
 				</template>
 
@@ -4187,6 +4192,21 @@
 		margin-top: 8rpx;
 	}
 
+	.user-msg-action-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 12rpx;
+		transition: background-color 0.15s ease, transform 0.1s ease;
+	}
+
+	.user-msg-action-btn:active {
+		transform: scale(0.88);
+		background-color: rgba(255, 255, 255, 0.08);
+	}
+
 	.user-msg-action-icon {
 		width: 32rpx;
 		height: 32rpx;
@@ -5036,6 +5056,9 @@
 		font-size: 26rpx;
 		font-weight: 500;
 		color: rgba(255, 255, 255, 0.7);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.graph-tool-running .graph-tool-pill-text {

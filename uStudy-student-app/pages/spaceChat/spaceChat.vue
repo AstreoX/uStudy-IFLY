@@ -1183,6 +1183,62 @@
 							</view>
 						</view>
 
+						<!-- 深度爬取工具：pill + 可展开页面列表 -->
+						<view
+							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'web_crawl'"
+							:key="'crawl-tool-' + segIdx"
+							class="search-tool-wrap"
+						>
+							<!-- 指示器 pill -->
+							<view class="search-indicator"
+								:class="{
+									'search-indicator-running': seg.toolCall.status === 'running',
+									'search-indicator-expanded': seg.toolCall.status === 'done' && isSearchExpanded(seg.toolCall.id),
+									'search-indicator-collapsed': seg.toolCall.status === 'done' && !isSearchExpanded(seg.toolCall.id)
+								}"
+								@click="toggleSearchResults(seg.toolCall.id)">
+								<image class="search-indicator-globe"
+									:src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="search-indicator-text">
+									{{ seg.toolCall.status === 'running'
+										? '正在深度爬取网站…'
+										: '已爬取 ' + (seg.toolCall.result?.pages?.length || 0) + ' 个页面' }}
+								</text>
+								<view v-if="seg.toolCall.status === 'running'" class="search-indicator-spinner"></view>
+								<image v-else class="search-indicator-chevron"
+									:class="{ 'search-chevron-up': isSearchExpanded(seg.toolCall.id) }"
+									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+							</view>
+
+							<!-- 爬取页面卡片横向滚动 -->
+							<scroll-view
+								v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.pages?.length && isSearchExpanded(seg.toolCall.id)"
+								class="search-sources-scroll" scroll-x :show-scrollbar="false">
+								<view class="search-sources-row">
+									<view v-for="(page, idx) in seg.toolCall.result.pages" :key="idx"
+										class="search-source-card" @click="openSearchResultUrl(page.url)">
+										<view class="search-source-head">
+											<view class="search-source-num">
+												<text class="search-source-num-text">{{ idx + 1 }}</text>
+											</view>
+											<text class="search-source-site">{{ formatDisplayUrl(page.url) }}</text>
+										</view>
+										<text class="search-source-title">{{ page.title }}</text>
+									</view>
+								</view>
+							</scroll-view>
+
+							<!-- 无结果 -->
+							<view v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success && !seg.toolCall.result?.pages?.length" class="search-tool-empty">
+								<text class="search-tool-empty-text">{{ seg.toolCall.result?.message || '未爬取到页面' }}</text>
+							</view>
+
+							<!-- 失败 -->
+							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="search-tool-error">
+								<text class="search-tool-error-text">{{ seg.toolCall.result?.message || '深度爬取失败' }}</text>
+							</view>
+						</view>
+
 						<!-- 非记忆类工具：原有卡片样式 -->
 						<view
 							v-else-if="seg.type === 'tool'"
@@ -4677,7 +4733,8 @@
 					return '正在保存到知识库…'
 				}
 				if (toolCall.status === 'done' && toolCall.success) {
-					const title = toolCall.result?.data?.title || toolCall.arguments?.title || ''
+					let title = toolCall.result?.data?.title || toolCall.arguments?.title || ''
+					if (title.length > 20) title = title.slice(0, 20) + '…'
 					return title ? `已保存「${title}」` : '已保存到知识库'
 				}
 				if (toolCall.status === 'done' && !toolCall.success) {
@@ -7061,6 +7118,9 @@
 		font-size: 26rpx;
 		font-weight: 500;
 		color: rgba(255, 255, 255, 0.7);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.graph-tool-running .graph-tool-pill-text {
@@ -7068,8 +7128,8 @@
 	}
 
 	.graph-tool-spinner {
-		width: 28rpx;
-		height: 28rpx;
+		width: 22rpx;
+		height: 22rpx;
 		border: 2rpx solid rgba(74, 108, 247, 0.3);
 		border-top-color: #4A6CF7;
 		border-radius: 50%;

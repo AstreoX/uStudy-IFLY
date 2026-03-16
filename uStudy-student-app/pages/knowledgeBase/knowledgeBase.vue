@@ -185,6 +185,16 @@
                 <image class="error-icon" src="/static/icons/phosphor-icons/SVGs/regular/warning.svg" mode="aspectFit"></image>
                 <text class="error-text">查看错误</text>
               </view>
+
+              <!-- 重试 Badge (仅失败时) -->
+              <view
+                v-if="getDocStatus(doc.id) === 'failed'"
+                class="retry-badge"
+                :class="{ 'retry-badge-disabled': retryingDocIds[doc.id] }"
+                @click.stop="retryProcessing(doc.id)"
+              >
+                <text class="retry-text">{{ retryingDocIds[doc.id] ? '重试中...' : '重试' }}</text>
+              </view>
             </view>
           </view>
           <view v-if="canDeleteDocument(doc)" class="document-action delete-btn" @click.stop="showDeleteConfirm(doc)">
@@ -253,7 +263,7 @@
 </template>
 
 <script>
-import { getSpace, getSpaceDocuments, getSpaceMembers, deleteSpaceDocument, addSpaceLink, uploadSpaceDocument, getDocumentProcessingStatus } from '@/api/space'
+import { getSpace, getSpaceDocuments, getSpaceMembers, deleteSpaceDocument, addSpaceLink, uploadSpaceDocument, getDocumentProcessingStatus, reprocessDocument } from '@/api/space'
 import config from '@/config'
 import { getTokens } from '@/utils/storage'
 import { useUserStore } from '@/store/user'
@@ -316,6 +326,7 @@ export default {
       fileSizeExceeded: false,
 
       processingStatuses: {},  // { documentId: ProcessingStatusResponse }
+      retryingDocIds: {},  // { documentId: true } 正在重试的文档
       loadingStatuses: false,
       processingPollTimer: null  // 轮询定时器
     }
@@ -1151,6 +1162,26 @@ export default {
       this.showCustomToast(msg, 'error')
     },
 
+    // 重试处理失败的文档
+    async retryProcessing(docId) {
+      if (this.retryingDocIds[docId]) return
+      this.retryingDocIds = { ...this.retryingDocIds, [docId]: true }
+      try {
+        await reprocessDocument(this.spaceId, docId)
+        this.processingStatuses = {
+          ...this.processingStatuses,
+          [docId]: { ...this.processingStatuses[docId], status: 'pending', error_message: null }
+        }
+        this.checkAndStartPoll()
+        this.showCustomToast('已重新提交处理', 'success')
+      } catch (error) {
+        this.showCustomToast(error.message || '重试失败', 'error')
+      } finally {
+        const { [docId]: _, ...rest } = this.retryingDocIds
+        this.retryingDocIds = rest
+      }
+    },
+
   }
 }
 </script>
@@ -1674,6 +1705,27 @@ export default {
   font-weight: 500;
   margin-bottom: 0;
   max-width: none;
+}
+
+.retry-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5rpx 14rpx;
+  border-radius: 999rpx;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1rpx solid rgba(59, 130, 246, 0.25);
+  transition: background 150ms ease;
+}
+.retry-badge:active {
+  background: rgba(59, 130, 246, 0.22);
+}
+.retry-badge-disabled {
+  opacity: 0.5;
+}
+.retry-text {
+  font-size: 20rpx;
+  color: #60a5fa;
+  font-weight: 500;
 }
 
 .storage-container {
