@@ -98,26 +98,10 @@
 					}, 5000)
 				} catch (error) {}
 			},
-			requestNotificationPermission() {
+			async requestNotificationPermission() {
 				try {
-					if (plus.os.name !== 'Android') return
-					const Build = plus.android.importClass('android.os.Build')
-					if (Build.VERSION.SDK_INT < 33) return
-					const main = plus.android.runtimeMainActivity()
-					const ContextCompat = plus.android.importClass('androidx.core.content.ContextCompat')
-					const PERMISSION = 'android.permission.POST_NOTIFICATIONS'
-					const granted = ContextCompat.checkSelfPermission(main, PERMISSION)
-					if (granted === 0) return
-					plus.android.requestPermissions(
-						[PERMISSION],
-						(result) => {
-							const ok = result && result.granted && result.granted.length > 0
-							console.log('[App] POST_NOTIFICATIONS permission:', ok ? 'granted' : 'denied')
-						},
-						(err) => {
-							console.warn('[App] Notification permission request failed:', err)
-						}
-					)
+					const { ensureNotificationPermission } = await import('@/utils/permission')
+					await ensureNotificationPermission()
 				} catch (e) {
 					console.warn('[App] Notification permission check failed:', e)
 				}

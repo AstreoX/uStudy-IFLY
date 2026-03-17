@@ -113,6 +113,42 @@
         </view>
 
         <view class="settings-section">
+          <text class="section-caption">复习设置</text>
+          <view class="settings-card review-mode-card">
+            <view class="review-mode-header">
+              <text class="palette-title">复习提醒模式</text>
+              <text class="palette-desc">控制系统如何帮你安排复习计划</text>
+            </view>
+
+            <view
+              v-for="option in reviewModeOptions"
+              :key="option.value"
+              class="review-mode-option"
+              :class="{
+                'review-mode-selected': reviewMode === option.value,
+                'review-mode-loading': isUpdatingReviewMode && pendingReviewMode === option.value
+              }"
+              @click="selectReviewMode(option.value)"
+            >
+              <view class="review-radio">
+                <view v-if="reviewMode === option.value" class="review-radio-dot"></view>
+                <view
+                  v-if="isUpdatingReviewMode && pendingReviewMode === option.value"
+                  class="review-radio-spinner"
+                ></view>
+              </view>
+              <view class="review-option-copy">
+                <view class="review-option-title-row">
+                  <text class="review-option-label">{{ option.label }}</text>
+                  <text v-if="option.tag" class="review-option-tag">{{ option.tag }}</text>
+                </view>
+                <text class="review-option-desc">{{ option.desc }}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <view class="settings-section">
           <text class="section-caption">空间外观</text>
           <view class="settings-card palette-card">
             <view class="palette-copy">
@@ -312,7 +348,10 @@ export default {
       sharePopupVisible: false,
       displayShareCode: '',
       currentShareMode: 'clone',
-      isGeneratingShareCode: false
+      isGeneratingShareCode: false,
+      reviewMode: 3,
+      isUpdatingReviewMode: false,
+      pendingReviewMode: null
     }
   },
 
@@ -419,6 +458,15 @@ export default {
       return items
     },
 
+    reviewModeOptions() {
+      return [
+        { value: 3, label: '完整模式', tag: '推荐', desc: '生成复习建议、自动出测试题，并通过邮件提醒' },
+        { value: 2, label: '测试模式', tag: null, desc: '生成复习建议和测试题，但不发送邮件通知' },
+        { value: 1, label: '仅提醒', tag: null, desc: '仅生成复习建议，不自动出测试题' },
+        { value: 0, label: '关闭复习', tag: null, desc: '不生成任何复习相关内容' }
+      ]
+    },
+
     collaborationGroupLabel() {
       return '协作'
     },
@@ -496,6 +544,7 @@ export default {
         this.isCollaborative = !!space.is_collaborative
         this.userRole = space.user_role || ''
         this.spaceDescription = space.description || ''
+        this.reviewMode = space.review_mode ?? 3
 
         await Promise.all([
           this.loadMemberCount(),
@@ -567,6 +616,24 @@ export default {
       } finally {
         this.isUpdatingColor = false
         this.pendingColor = ''
+      }
+    },
+
+    async selectReviewMode(value) {
+      if (this.reviewMode === value || this.isUpdatingReviewMode) return
+
+      this.isUpdatingReviewMode = true
+      this.pendingReviewMode = value
+
+      try {
+        await updateSpace(this.spaceId, { review_mode: value })
+        this.reviewMode = value
+        this.showCustomToast('复习模式已更新', 'success')
+      } catch (error) {
+        this.showCustomToast(error.message || '更新失败，请重试', 'error')
+      } finally {
+        this.isUpdatingReviewMode = false
+        this.pendingReviewMode = null
       }
     },
 
@@ -1402,6 +1469,114 @@ export default {
   font-size: 30rpx;
   font-weight: 600;
   color: rgb(248, 248, 248);
+}
+
+/* ── Review Mode ── */
+
+.review-mode-card {
+  padding: 24rpx 22rpx;
+}
+
+.review-mode-header {
+  margin-bottom: 16rpx;
+}
+
+.review-mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 20rpx 16rpx;
+  margin-top: 8rpx;
+  border-radius: 20rpx;
+  border: 1.5rpx solid rgba(255, 255, 255, 0.06);
+  background: rgb(41, 41, 41);
+  transition: all 0.2s ease;
+}
+
+.review-mode-option:active {
+  background: rgb(46, 46, 48);
+}
+
+.review-mode-selected {
+  border-color: rgba(94, 106, 210, 0.6);
+  background: rgba(94, 106, 210, 0.1);
+}
+
+.review-mode-loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.review-radio {
+  width: 36rpx;
+  height: 36rpx;
+  flex-shrink: 0;
+  margin-top: 4rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2rpx solid rgba(255, 255, 255, 0.24);
+  background: transparent;
+  transition: border-color 0.2s ease;
+}
+
+.review-mode-selected .review-radio {
+  border-color: #5E6AD2;
+}
+
+.review-radio-dot {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 50%;
+  background: #5E6AD2;
+}
+
+.review-radio-spinner {
+  width: 20rpx;
+  height: 20rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.2);
+  border-top-color: #5E6AD2;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.review-option-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-option-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.review-option-label {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: rgb(248, 248, 248);
+}
+
+.review-option-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 34rpx;
+  padding: 0 12rpx;
+  border-radius: 8rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+  color: #94A1FF;
+  background: rgba(94, 106, 210, 0.18);
+  border: 1rpx solid rgba(94, 106, 210, 0.3);
+}
+
+.review-option-desc {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  line-height: 1.45;
+  color: #7C8598;
 }
 
 @keyframes spin {

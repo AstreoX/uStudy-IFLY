@@ -747,6 +747,7 @@
 	import { setSseEventBus, clearSseEventBus, handleSseEvents, handleSseComplete, handleSseError, connectSSE } from '@/utils/sse'
 	import { savePendingMessage, getPendingMessages, removePendingMessage, savePendingMessagesFromArray, clearPendingMessages } from '@/utils/messageDraft'
 	import { startBackgroundMonitor, stopBackgroundMonitor, getActiveMonitor } from '@/utils/backgroundChatMonitor'
+	import { ensureAlbumWritePermission, ensureCameraPermission, isPermissionDenied, guideToSettings } from '@/utils/permission'
 	// #ifdef APP-PLUS
 	import SseRenderjs from '@/components/sse-renderjs/sse-renderjs.vue'
 	// #endif
@@ -1524,8 +1525,10 @@
 				this.showImageSourcePicker = true
 			},
 
-			handleCameraSelect() {
+			async handleCameraSelect() {
 				this.showImageSourcePicker = false
+				const permitted = await ensureCameraPermission()
+				if (!permitted) return
 				uni.chooseImage({
 					count: 1,
 					sizeType: ['original', 'compressed'],
@@ -1536,14 +1539,17 @@
 						}
 					},
 					fail: (err) => {
-						if (err.errMsg !== 'chooseImage:fail cancel') {
+						if (err.errMsg === 'chooseImage:fail cancel') return
+						if (isPermissionDenied(err)) {
+							guideToSettings('需要相机权限', '拍照需要相机权限，请在设置中开启')
+						} else {
 							uni.showToast({ title: '拍照失败', icon: 'none' })
 						}
 					}
 				})
 			},
 
-			handleAlbumSelect() {
+			async handleAlbumSelect() {
 				this.showImageSourcePicker = false
 				const remainingSlots = 9 - this.pendingAttachments.length
 				uni.chooseImage({
@@ -1556,7 +1562,10 @@
 						}
 					},
 					fail: (err) => {
-						if (err.errMsg !== 'chooseImage:fail cancel') {
+						if (err.errMsg === 'chooseImage:fail cancel') return
+						if (isPermissionDenied(err)) {
+							guideToSettings('需要相册权限', '选择图片需要访问相册权限，请在设置中开启')
+						} else {
 							uni.showToast({ title: '选择图片失败', icon: 'none' })
 						}
 					}
@@ -3408,7 +3417,9 @@
 			/**
 			 * 保存图片到相册（可选功能）
 			 */
-			saveImage(url) {
+			async saveImage(url) {
+				const permitted = await ensureAlbumWritePermission()
+				if (!permitted) return
 				uni.showLoading({ title: '保存中...' })
 				uni.downloadFile({
 					url: url,
@@ -3420,9 +3431,13 @@
 									uni.hideLoading()
 									uni.showToast({ title: '已保存到相册', icon: 'success' })
 								},
-								fail: () => {
+								fail: (err) => {
 									uni.hideLoading()
-									uni.showToast({ title: '保存失败', icon: 'none' })
+									if (isPermissionDenied(err)) {
+										guideToSettings('需要存储权限', '保存图片需要访问相册权限，请在设置中开启')
+									} else {
+										uni.showToast({ title: '保存失败', icon: 'none' })
+									}
 								}
 							})
 						}
@@ -4318,13 +4333,13 @@
 		width: 44rpx;
 		height: 44rpx;
 		margin-right: 24rpx;
-		filter: brightness(0) invert(0.58) sepia(0.2);
+		filter: brightness(0) invert(0.75);
 		opacity: 1;
 	}
 
 	.popup-option-text {
 		font-size: 30rpx;
-		color: #C8BCAE;
+		color: rgba(255, 255, 255, 0.85);
 		font-weight: 500;
 	}
 

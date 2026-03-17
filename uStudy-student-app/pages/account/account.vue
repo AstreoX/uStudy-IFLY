@@ -211,6 +211,7 @@ import UToast from '@/components/u-toast/u-toast.vue'
 import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 import { goBack } from '@/utils/navigation'
 import { syncWebCalendarToDevice } from '@/utils/calendarSync'
+import { ensureCameraPermission, isPermissionDenied, guideToSettings } from '@/utils/permission'
 
 export default {
   components: {
@@ -337,6 +338,12 @@ export default {
 
     async chooseAndUploadImage(sourceType) {
       try {
+        // 拍照时先请求相机权限
+        if (sourceType.includes('camera')) {
+          const permitted = await ensureCameraPermission()
+          if (!permitted) return
+        }
+
         // 选择图片
         const chooseRes = await new Promise((resolve, reject) => {
           uni.chooseImage({
@@ -379,6 +386,14 @@ export default {
         uni.hideLoading()
         if (error.errMsg && error.errMsg.includes('cancel')) {
           return // 用户取消，不显示错误
+        }
+        if (isPermissionDenied(error)) {
+          const isCamera = sourceType.includes('camera')
+          guideToSettings(
+            isCamera ? '需要相机权限' : '需要相册权限',
+            isCamera ? '拍照需要相机权限，请在设置中开启' : '选择图片需要访问相册权限，请在设置中开启'
+          )
+          return
         }
         this.showCustomToast(error.message || '上传失败，请重试', 'error')
       }

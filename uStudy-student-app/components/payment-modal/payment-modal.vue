@@ -112,6 +112,7 @@
 
 <script>
 import { createOrder, notifyPaid } from '@/api/payment'
+import { ensureAlbumWritePermission, isPermissionDenied, guideToSettings } from '@/utils/permission'
 import config from '@/config'
 
 const API_BASE_URL = config.API_BASE_URL
@@ -240,6 +241,9 @@ export default {
       this.saving = true
 
       try {
+        const permitted = await ensureAlbumWritePermission()
+        if (!permitted) return
+
         const imgInfo = await new Promise((resolve, reject) => {
           uni.getImageInfo({ src: this.saveQrCodeSrc, success: resolve, fail: reject })
         })
@@ -250,28 +254,15 @@ export default {
 
         uni.showToast({ title: '已保存到相册', icon: 'success' })
       } catch (err) {
-        const errMsg = err?.errMsg || ''
-        if (errMsg.includes('deny') || errMsg.includes('authorize') || errMsg.includes('permission')) {
-          this.guideToSettings()
+        if (isPermissionDenied(err)) {
+          guideToSettings('需要相册权限', '请在设置中允许访问相册，以便保存收款码')
         } else {
-          console.error('Save QR failed:', errMsg)
+          console.error('Save QR failed:', err?.errMsg || '')
           uni.showToast({ title: '保存失败，请重试', icon: 'none' })
         }
       } finally {
         this.saving = false
       }
-    },
-    guideToSettings() {
-      uni.showModal({
-        title: '需要相册权限',
-        content: '请在设置中允许访问相册，以便保存收款码',
-        confirmText: '去设置',
-        success: (res) => {
-          if (res.confirm) {
-            uni.openSetting()
-          }
-        }
-      })
     },
     handleDone() {
       this.$emit('close')

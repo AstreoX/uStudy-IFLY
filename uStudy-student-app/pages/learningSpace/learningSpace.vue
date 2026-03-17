@@ -130,6 +130,7 @@
 
 			<!-- 扩展按钮 -->
 			<view
+				v-if="canEditGraph"
 				class="expand-node-btn"
 				:class="{ 'expand-node-btn--loading': isExpandingNode }"
 				@click.stop="handleExpandNode"
@@ -284,10 +285,12 @@
 				<!-- 简单旋转加载器 -->
 				<view class="loading-spinner-simple"></view>
 				<text class="loading-text">{{ loadingText }}</text>
-				<!-- 不确定性进度条 -->
+				<!-- 确定性进度条 -->
 				<view class="loading-progress-bar">
-					<view class="loading-progress-fill"></view>
+					<view class="loading-progress-fill-determinate"
+						:style="{ width: fakeProgress + '%' }"></view>
 				</view>
+				<text class="loading-progress-text">{{ Math.floor(fakeProgress) }}%</text>
 			</view>
 		</view>
 
@@ -496,6 +499,7 @@
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
 	import { useUserStore } from '@/store/user'
 	import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
+	import { ensureCameraPermission, isPermissionDenied, guideToSettings } from '@/utils/permission'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
@@ -734,6 +738,8 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				isLoading: false,
 				loadingText: '正在生成知识图谱...',
 				taskId: null,
+				fakeProgress: 0,
+				fakeProgressTimer: null,
 
 				// 图谱加载失败状态
 				graphLoadFailed: false,
@@ -952,6 +958,14 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				return self?.color || '#0088FF'
 			},
 
+			canEditGraph() {
+				if (!this.isCollaborative || this.userRole === 'owner') return true
+				const self = this.spaceMembers.find(
+					member => String(member.user_id) === String(this.currentUserId || '')
+				)
+				return !!self?.can_edit_graph
+			},
+
 			selectedMemberColor() {
 				if (!this.selectedMemberUserId) {
 					return this.selfMemberColor
@@ -1034,7 +1048,9 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				if (this.taskId) {
 					this.isLoading = true
 					this.loadingText = '正在生成知识图谱...'
+					this.startFakeProgress()
 					await this.waitForTask(this.taskId)
+					this.stopFakeProgress(true)
 
 					// 等待3秒，确保数据库事务commit完成
 					this.loadingText = '知识图谱生成中，请稍候...'
@@ -1059,6 +1075,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 				this.isLoading = false
 			} catch (err) {
+				this.stopFakeProgress(false)
 				this.isLoading = false
 				this.graphLoadFailed = true
 				// 用户友好的错误消息
@@ -1121,6 +1138,10 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		},
 
 		beforeDestroy() {
+			// 清理伪进度条定时器
+			clearInterval(this.fakeProgressTimer)
+			this.fakeProgressTimer = null
+
 			// 移除学习路径更新事件监听
 			uni.$off('learningPathUpdated', this.handleLearningPathUpdated)
 
@@ -1552,6 +1573,33 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 			},
 
 			// ========== 数据加载方法 ==========
+			startFakeProgress() {
+				this.fakeProgress = 0
+				clearInterval(this.fakeProgressTimer)
+				this.fakeProgressTimer = setInterval(() => {
+					if (this.fakeProgress >= 99) {
+						clearInterval(this.fakeProgressTimer)
+						this.fakeProgressTimer = null
+						return
+					}
+					let base
+					if (this.fakeProgress < 30) base = 4
+					else if (this.fakeProgress < 60) base = 2.5
+					else if (this.fakeProgress < 85) base = 1.5
+					else base = 0.5
+					const increment = base * (0.5 + Math.random())
+					this.fakeProgress = Math.min(this.fakeProgress + increment, 99)
+				}, 500)
+			},
+
+			stopFakeProgress(done) {
+				clearInterval(this.fakeProgressTimer)
+				this.fakeProgressTimer = null
+				if (done) {
+					this.fakeProgress = 100
+				}
+			},
+
 			async waitForTask(taskId) {
 				const maxAttempts = 150 // 最多等待 5 分钟（每 2 秒一次）
 				for (let i = 0; i < maxAttempts; i++) {
@@ -1890,6 +1938,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 					this.graphLoadFailed = false
 					this.isLoading = true
 					this.loadingText = '正在重新生成知识图谱...'
+					this.startFakeProgress()
 
 					// 使用空间名称作为 topic 重新生成
 					const taskRes = await generateKnowledgeGraph(this.spaceId, {
@@ -1898,6 +1947,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 					// 等待任务完成
 					await this.waitForTask(taskRes.task_id)
+					this.stopFakeProgress(true)
 
 					// 等待3秒，确保数据库事务commit完成
 					this.loadingText = '知识图谱生成中，请稍候...'
@@ -1910,6 +1960,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 					// 成功后重置重试计数
 					this.regenerateAttempts = 0
 				} catch (err) {
+					this.stopFakeProgress(false)
 					this.isLoading = false
 					this.graphLoadFailed = true
 					// 用户友好的错误消息
@@ -2127,8 +2178,10 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				this.showImageSourcePicker = true
 			},
 
-			handleCameraSelect() {
+			async handleCameraSelect() {
 				this.showImageSourcePicker = false
+				const permitted = await ensureCameraPermission()
+				if (!permitted) return
 				uni.chooseImage({
 					count: 1,
 					sizeType: ['original', 'compressed'],
@@ -2139,14 +2192,17 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						}
 					},
 					fail: (err) => {
-						if (err.errMsg !== 'chooseImage:fail cancel') {
+						if (err.errMsg === 'chooseImage:fail cancel') return
+						if (isPermissionDenied(err)) {
+							guideToSettings('需要相机权限', '拍照需要相机权限，请在设置中开启')
+						} else {
 							uni.showToast({ title: '拍照失败', icon: 'none' })
 						}
 					}
 				})
 			},
 
-			handleAlbumSelect() {
+			async handleAlbumSelect() {
 				this.showImageSourcePicker = false
 				const remainingSlots = 9 - this.pendingAttachments.length - this.uploadingFiles.length
 				uni.chooseImage({
@@ -2159,7 +2215,10 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						}
 					},
 					fail: (err) => {
-						if (err.errMsg !== 'chooseImage:fail cancel') {
+						if (err.errMsg === 'chooseImage:fail cancel') return
+						if (isPermissionDenied(err)) {
+							guideToSettings('需要相册权限', '选择图片需要访问相册权限，请在设置中开启')
+						} else {
 							uni.showToast({ title: '选择图片失败', icon: 'none' })
 						}
 					}
@@ -5978,7 +6037,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		color: rgba(255, 255, 255, 0.7);
 	}
 
-	/* 不确定性进度条 */
+	/* 确定性进度条 */
 	.loading-progress-bar {
 		width: 400rpx;
 		height: 6rpx;
@@ -5988,23 +6047,17 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		margin-top: 16rpx;
 	}
 
-	.loading-progress-fill {
+	.loading-progress-fill-determinate {
 		height: 100%;
-		background: linear-gradient(90deg,
-			transparent 0%,
-			rgba(0, 136, 255, 0.8) 50%,
-			transparent 100%
-		);
-		animation: progressIndeterminate 1.5s ease-in-out infinite;
+		background: rgba(0, 136, 255, 0.8);
+		border-radius: 3rpx;
+		transition: width 0.5s ease;
 	}
 
-	@keyframes progressIndeterminate {
-		0% {
-			transform: translateX(-100%);
-		}
-		100% {
-			transform: translateX(400rpx);
-		}
+	.loading-progress-text {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.5);
+		margin-top: 8rpx;
 	}
 
 	/* 图谱加载失败样式 */
@@ -6318,13 +6371,13 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		width: 44rpx;
 		height: 44rpx;
 		margin-right: 24rpx;
-		filter: brightness(0) invert(0.58) sepia(0.2);
+		filter: brightness(0) invert(0.75);
 		opacity: 1;
 	}
 
 	.popup-option-text {
 		font-size: 30rpx;
-		color: #C8BCAE;
+		color: rgba(255, 255, 255, 0.85);
 		font-weight: 500;
 	}
 
