@@ -270,6 +270,9 @@ export function sendMessage(conversationId, content, callbacks, attachmentIds = 
         case 'tool_call':
           callbacks.onToolCall?.(data)
           break
+        case 'client_tool_request':
+          callbacks.onClientToolRequest?.(data)
+          break
         case 'done':
           callbacks.onDone?.(data.content)
           break
@@ -288,5 +291,13 @@ export function sendMessage(conversationId, content, callbacks, attachmentIds = 
         callbacks.onError?.(err.message || 'Connection failed')
       }
     }
+  })
+}
+
+export function submitToolResult(conversationId, data) {
+  return request({
+    url: `/api/conversations/${conversationId}/tool-result`,
+    method: 'POST',
+    data
   })
 }

@@ -35,6 +35,16 @@
           </view>
         </view>
       </view>
+
+      <!-- 扩展按钮 -->
+      <view
+        class="kg-expand-btn"
+        :class="{ 'kg-expand-btn--loading': isExpandingNode }"
+        @click.stop="handleExpandNode"
+      >
+        <text class="kg-expand-btn-text">{{ isExpandingNode ? '生成中...' : '扩展' }}</text>
+      </view>
+
       <!-- 内联笔记预览 -->
       <view class="kg-notes-inline">
         <text v-if="nodeNotesLoading" class="kg-notes-hint">加载笔记...</text>
@@ -149,7 +159,7 @@
 </template>
 
 <script>
-import { getSpaceGraph, getSpaceNotes, getNoteDetail } from '@/api/space'
+import { getSpaceGraph, getSpaceNotes, getNoteDetail, expandNode, getTaskStatus } from '@/api/space'
 import { getMasteryColor, getMasteryGlowColor } from '@/utils/mastery-colors'
 import {
   buildTreeFromEdges, computeLayout, getNodeBaseRadius,
@@ -246,7 +256,10 @@ export default {
       // Note preview popup
       previewNote: null,
       previewNoteLoading: false,
-      previewNoteError: ''
+      previewNoteError: '',
+
+      // 节点扩展状态
+      isExpandingNode: false
     }
   },
 
@@ -379,6 +392,137 @@ export default {
     handleQuickLearn() {
       if (!this.selectedNode) return
       this.$emit('quick-learn', { node: this.selectedNode })
+    },
+
+    // ========== 节点扩展 ==========
+    async handleExpandNode() {
+      if (this.isExpandingNode || !this.selectedNode || !this.spaceId) return
+      this.isExpandingNode = true
+
+      const parentNode = this.selectedNode
+
+      try {
+        const res = await expandNode(this.spaceId, parentNode.id)
+        const taskId = res.task_id
+
+        // 轮询任务状态
+        const task = await this._pollTaskUntilDone(taskId)
+
+        // 重新拉取图谱数据
+        const graphData = await getSpaceGraph(this.spaceId)
+        if (!graphData || !graphData.nodes || graphData.nodes.length === 0) return
+
+        await this.mergeExpandedNodes(graphData, parentNode)
+
+        const nodeCount = task.node_count || 0
+        if (nodeCount > 0) {
+          // 通知父组件（可选）
+          this.$emit('graph-loaded', { nodeCount: this.nodes.length, edgeCount: this.edges.length })
+        }
+      } catch (e) {
+        console.error('节点扩展失败:', e)
+      } finally {
+        this.isExpandingNode = false
+      }
+    },
+
+    async _pollTaskUntilDone(taskId) {
+      const maxAttempts = 90 // 最多 3 分钟（每 2 秒一次）
+      for (let i = 0; i < maxAttempts; i++) {
+        const task = await getTaskStatus(taskId)
+        if (task.status === 'done') return task
+        if (task.status === 'failed') throw new Error(task.error_message || '节点扩展失败')
+        await new Promise(resolve => setTimeout(resolve, 2000))
+      }
+      throw new Error('节点扩展超时，请稍后重试')
+    },
+
+    async mergeExpandedNodes(newGraphData, parentNode) {
+      const existingIds = new Set(this.nodes.map(n => n.id))
+
+      const { nodes: rawNodes, edges: rawEdges } = newGraphData
+      const { nodes: processedNodes, edges: processedEdges, learningPath } = buildTreeFromEdges(rawNodes, rawEdges)
+
+      // 识别新节点
+      const addedNodes = processedNodes.filter(n => !existingIds.has(n.id))
+      if (addedNodes.length === 0) return
+
+      // 保留已有节点的当前位置
+      processedNodes.forEach(n => {
+        if (existingIds.has(n.id)) {
+          const existing = this.nodeMap.get(n.id)
+          if (existing) {
+            n.x = existing.x
+            n.y = existing.y
+          }
+        } else {
+          // 新节点：起始位置 = 父节点位置
+          n.x = parentNode.x
+          n.y = parentNode.y
+        }
+      })
+
+      // 更新数据
+      this.nodes = processedNodes
+      this.edges = processedEdges
+      this.learningPath = learningPath
+
+      // 重建缓存
+      this.rebuildCaches()
+
+      // 重新计算布局（确定新节点目标位置）
+      computeLayout(this.nodes, this.canvasWidth, this.canvasHeight)
+
+      // 记录新节点目标位置，并重置起始位置为父节点
+      const addedIds = addedNodes.map(n => n.id)
+      addedIds.forEach(id => {
+        const node = this.nodeMap.get(id)
+        if (!node) return
+        node._expandTargetX = node.x
+        node._expandTargetY = node.y
+        node.x = parentNode.x
+        node.y = parentNode.y
+      })
+
+      this.runExpandNodeAnimation(addedIds, parentNode)
+    },
+
+    runExpandNodeAnimation(newNodeIds, parentNode) {
+      const startTime = Date.now()
+      const duration = 600
+
+      const animate = () => {
+        const elapsed = Date.now() - startTime
+        const t = Math.min(elapsed / duration, 1)
+        const eased = 1 - Math.pow(1 - t, 3)
+
+        newNodeIds.forEach(id => {
+          const node = this.nodeMap.get(id)
+          if (!node || node._expandTargetX === undefined) return
+          node.x = parentNode.x + (node._expandTargetX - parentNode.x) * eased
+          node.y = parentNode.y + (node._expandTargetY - parentNode.y) * eased
+        })
+
+        this.drawGraph()
+        this.requestMinimapRender()
+
+        if (t < 1) {
+          requestAnimationFrame(animate)
+        } else {
+          newNodeIds.forEach(id => {
+            const node = this.nodeMap.get(id)
+            if (!node) return
+            node.x = node._expandTargetX
+            node.y = node._expandTargetY
+            delete node._expandTargetX
+            delete node._expandTargetY
+          })
+          this.drawGraph()
+          this.requestMinimapRender(true)
+        }
+      }
+
+      requestAnimationFrame(animate)
     },
 
     getNoteTitle(note) {
@@ -1585,6 +1729,37 @@ export default {
   font-weight: 500;
   color: #818CF8;
   white-space: nowrap;
+  line-height: 1;
+}
+
+/* Expand button */
+.kg-expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 12px 6px;
+  padding: 6px 0;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.kg-expand-btn:hover {
+  background: rgba(99, 102, 241, 0.22);
+}
+
+.kg-expand-btn--loading {
+  opacity: 0.6;
+  cursor: default;
+  pointer-events: none;
+}
+
+.kg-expand-btn-text {
+  font-size: 12px;
+  color: #818CF8;
+  font-weight: 500;
   line-height: 1;
 }
 

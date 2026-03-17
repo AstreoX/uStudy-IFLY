@@ -273,6 +273,20 @@ export function getTaskStatus(taskId) {
 }
 
 /**
+ * 扩展知识图谱节点（生成子节点，异步任务）
+ * @param {string} spaceId
+ * @param {string} nodeId
+ * @returns {Promise<Object>} { task_id, status, task_type, created_at }
+ */
+export function expandNode(spaceId, nodeId) {
+  return request({
+    url: `/api/agents/expand-node?space_id=${spaceId}&node_id=${nodeId}`,
+    method: 'POST',
+    data: {}
+  })
+}
+
+/**
  * 获取学习空间笔记列表
  * @param {string|number} spaceId
  * @param {Object} [options]
@@ -305,5 +319,20 @@ export function getNoteDetail(spaceId, noteId) {
   return request({
     url: `/api/spaces/${spaceId}/notes/${noteId}`,
     method: 'GET'
+  })
+}
+
+/**
+ * 更新笔记
+ * @param {string|number} spaceId
+ * @param {string|number} noteId
+ * @param {Object} data - { title?, content?, node_id?, sort_order? }
+ * @returns {Promise<Object>}
+ */
+export function updateNote(spaceId, noteId, data) {
+  return request({
+    url: `/api/spaces/${spaceId}/notes/${noteId}`,
+    method: 'PATCH',
+    data
   })
 }

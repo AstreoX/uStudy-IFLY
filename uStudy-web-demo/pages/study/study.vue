@@ -545,6 +545,14 @@
                         </text>
                       </view>
 
+                      <!-- Note creation: rich card -->
+                      <NoteCreationCard
+                        v-else-if="seg.toolCall.tool === 'create_note'"
+                        :tool-call="seg.toolCall"
+                        :space-id="spaceId"
+                        :conversation-id="conversationId"
+                      />
+
                       <!-- Regular tools: card -->
                       <view
                         v-else
@@ -730,6 +738,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 import StudyMaterialsPanel from '@/components/study/StudyMaterialsPanel.vue'
 import QuizPanel from '@/components/study/quiz/QuizPanel.vue'
 import NotesPanel from '@/components/study/notes/NotesPanel.vue'
+import NoteCreationCard from '@/components/study/notes/NoteCreationCard.vue'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UMasteryToast from '@/components/u-mastery-toast/u-mastery-toast.vue'
 import UQuizNotification from '@/components/u-quiz-notification/u-quiz-notification.vue'
@@ -772,7 +781,12 @@ const TOOL_DISPLAY_NAMES = {
   mark_review_completed: 'Mark Reviewed',
   academic_search: '学术搜索',
   encyclopedia_search: '百科搜索',
-  course_search: 'B站课程搜索'
+  course_search: 'B站课程搜索',
+  create_note: '创建笔记',
+  list_notes: 'List Notes',
+  view_note_detail: 'View Note',
+  update_note: 'Update Note',
+  delete_note: 'Delete Note'
 }
 
 // Graph-mutating tools (trigger auto-refresh of knowledge graph)
@@ -813,6 +827,7 @@ const TOOL_ICON_SVGS = {
   search: '<svg viewBox="0 0 256 256" width="14" height="14"><circle cx="116" cy="116" r="84" fill="none" stroke="currentColor" stroke-width="16"/><line x1="175.4" y1="175.4" x2="224" y2="224" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/></svg>',
   calendar: '<svg viewBox="0 0 256 256" width="14" height="14"><rect x="40" y="40" width="176" height="176" rx="8" fill="none" stroke="currentColor" stroke-width="16"/><line x1="176" y1="24" x2="176" y2="56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><line x1="80" y1="24" x2="80" y2="56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><line x1="40" y1="88" x2="216" y2="88" fill="none" stroke="currentColor" stroke-width="16"/></svg>',
   review: '<svg viewBox="0 0 256 256" width="14" height="14"><circle cx="128" cy="128" r="96" fill="none" stroke="currentColor" stroke-width="16"/><polyline points="128 80 128 128 168 152" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>',
+  note: '<svg viewBox="0 0 256 256" width="14" height="14"><path d="M200,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32ZM80,80h96a8,8,0,0,1,0,16H80a8,8,0,0,1,0-16Zm0,40h96a8,8,0,0,1,0,16H80a8,8,0,0,1,0-16Zm0,40h64a8,8,0,0,1,0,16H80a8,8,0,0,1,0-16Z" fill="currentColor"/></svg>',
   default: '<svg viewBox="0 0 256 256" width="14" height="14"><circle cx="128" cy="128" r="40" fill="none" stroke="currentColor" stroke-width="16"/><path d="M128,48a80,80,0,0,1,80,80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><path d="M48,128a80,80,0,0,1,80-80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><path d="M208,128a80,80,0,0,1-80,80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><path d="M128,208a80,80,0,0,1-80-80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/></svg>'
 }
 
@@ -829,14 +844,16 @@ const TOOL_ICON_MAP = {
   web_search: 'search', web_fetch: 'search', search_documents: 'search',
   write_to_long_term_memory: 'memory', delete_from_long_term_memory: 'memory',
   write_to_space_memory: 'memory', delete_from_space_memory: 'memory',
-  get_review_events: 'review', mark_review_completed: 'review'
+  get_review_events: 'review', mark_review_completed: 'review',
+  create_note: 'note', list_notes: 'note', view_note_detail: 'note',
+  update_note: 'note', delete_note: 'note'
 }
 
 const DEFAULT_BROWSER_URL = 'https://www.wikipedia.org'
 const BROWSER_LOAD_TIMEOUT_MS = 8000
 
 export default {
-  components: { HomeSidebar, KnowledgeGraph, MarkdownRender, StudyMaterialsPanel, QuizPanel, NotesPanel, UModal, UMasteryToast, UQuizNotification },
+  components: { HomeSidebar, KnowledgeGraph, MarkdownRender, StudyMaterialsPanel, QuizPanel, NotesPanel, NoteCreationCard, UModal, UMasteryToast, UQuizNotification },
   data() {
     return {
       sidebarCollapsed: false,
@@ -1943,6 +1960,10 @@ export default {
           this.handleToolCallEvent(aiMsgId, data)
         },
 
+        onClientToolRequest: (data) => {
+          this.handleClientToolRequest(aiMsgId, data)
+        },
+
         onDone: (fullContent) => {
           if (finalized) return
           finalized = true
@@ -2156,6 +2177,7 @@ export default {
           toolCall.status = 'done'
           toolCall.success = success
           toolCall.result = result
+          if (args) toolCall.arguments = args
 
           if (MEMORY_TOOLS.has(tool)) {
             const startTime = this.memoryToolStartTimes[id]
@@ -2195,6 +2217,55 @@ export default {
             seg.toolCall = { ...toolCall }
           }
         }
+      }
+
+      this.$forceUpdate()
+      if (this.isAutoScrollEnabled) {
+        this.$nextTick(() => this.scrollToBottom())
+      }
+    },
+
+    handleClientToolRequest(aiMsgId, data) {
+      const msg = this.messages.find(m => m.id === aiMsgId)
+      if (!msg) return
+
+      const { tool_call_id, tool, params } = data
+
+      // Find existing entry (created by tool_call running event)
+      const existing = this.activeToolCalls.find(tc => tc.id === tool_call_id)
+      if (existing) {
+        // Update status and arguments in-place
+        existing.status = 'pending_confirmation'
+        existing.arguments = params
+
+        // Sync to streamSegments
+        if (msg.streamSegments) {
+          const seg = msg.streamSegments.find(s => s.type === 'tool' && s.toolCall && s.toolCall.id === tool_call_id)
+          if (seg) {
+            seg.toolCall = { ...existing }
+          }
+        }
+      } else {
+        // Fallback: no running entry yet (edge case — tool_call_start not received)
+        if (msg.isWaitingOutput) msg.isWaitingOutput = false
+        this.flushThinkingBuffer()
+        this.flushTypewriter()
+
+        if (!msg.streamSegments) msg.streamSegments = []
+        if (msg.content && msg.content.length > 0) {
+          msg.streamSegments.push({ type: 'text', content: msg.content })
+          msg.content = ''
+        }
+
+        const toolCall = {
+          id: tool_call_id,
+          tool,
+          arguments: params,
+          status: 'pending_confirmation',
+          quizId: null
+        }
+        msg.streamSegments.push({ type: 'tool', toolCall })
+        this.activeToolCalls.push(toolCall)
       }
 
       this.$forceUpdate()
