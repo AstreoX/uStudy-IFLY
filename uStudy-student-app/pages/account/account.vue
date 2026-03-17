@@ -169,6 +169,24 @@
       @close="showLogoutModal = false"
     />
 
+    <!-- 更新弹窗 -->
+    <update-dialog
+      :visible="updateStore.showUpdateDialog"
+      :version-name="updateStore.manifest?.latestVersion?.versionName || ''"
+      :file-size-mb="updateStore.manifest?.latestVersion?.fileSizeMB || 0"
+      :is-forced="updateStore.isForced"
+      :changelog="updateStore.changelogContent"
+      :is-downloading="updateStore.isDownloading"
+      :download-progress="updateStore.downloadProgress"
+      :download-complete="updateStore.downloadComplete"
+      :download-error="updateStore.downloadError"
+      @skip="updateStore.skipThisVersion()"
+      @later="updateStore.dismissUpdate()"
+      @update="updateStore.downloadInBrowser()"
+      @install="updateStore.installUpdate()"
+      @browser="updateStore.fallbackToBrowser()"
+    />
+
     <!-- Toast -->
     <u-toast
       :visible="toast.visible"
@@ -190,6 +208,7 @@ import UModal from '@/components/u-modal/u-modal.vue'
 import UActionSheet from '@/components/u-action-sheet/u-action-sheet.vue'
 import UInputModal from '@/components/u-input-modal/u-input-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
+import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 import { goBack } from '@/utils/navigation'
 import { syncWebCalendarToDevice } from '@/utils/calendarSync'
 
@@ -198,7 +217,8 @@ export default {
     UModal,
     UActionSheet,
     UInputModal,
-    UToast
+    UToast,
+    UpdateDialog
   },
 
   data() {
@@ -227,6 +247,10 @@ export default {
   },
 
   computed: {
+    updateStore() {
+      return useUpdateStore()
+    },
+
     user() {
       const userStore = useUserStore()
       return userStore.user

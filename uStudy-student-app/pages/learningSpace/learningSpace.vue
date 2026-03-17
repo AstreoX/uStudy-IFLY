@@ -1603,8 +1603,8 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						}
 					}
 
-					// 从 KNOWLEDGE_TREE 边构建层级关系
-					const treeEdges = edges.filter(e => e.type === 'knowledge_tree')
+					// 从 KNOWLEDGE_TREE 边构建层级关系（过滤自环）
+					const treeEdges = edges.filter(e => e.type === 'knowledge_tree' && e.from_node_id !== e.to_node_id)
 					const parentMap = new Map()
 					const childrenMap = new Map()
 
@@ -1634,14 +1634,26 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						})
 					}
 
-					// 环检测：未被 BFS 访问的节点处于孤立环中，断开 parent 作为独立根
-					nodes.forEach(n => {
-						if (!visited.has(n.id)) {
-							parentMap.delete(n.id)
-							levels.set(n.id, 0)
-							console.warn('[Graph] 检测到环中的孤立节点，已断开:', n.label || n.id)
+					// 环检测：未被 BFS 访问的节点处于孤立环中
+					// 断开一个节点的 parent 作为子树根，再从它 BFS 恢复层级
+					const orphans = nodes.filter(n => !visited.has(n.id))
+					for (const orphan of orphans) {
+						if (visited.has(orphan.id)) continue
+						parentMap.delete(orphan.id)
+						const oQueue = [{ id: orphan.id, level: 0 }]
+						visited.add(orphan.id)
+						while (oQueue.length > 0) {
+							const { id, level } = oQueue.shift()
+							levels.set(id, level)
+							const children = childrenMap.get(id) || []
+							children.forEach(cid => {
+								if (!visited.has(cid)) {
+									visited.add(cid)
+									oQueue.push({ id: cid, level: level + 1 })
+								}
+							})
 						}
-					})
+					}
 
 					// 转换为本地节点格式
 					this.nodes = nodes.map(n => ({
@@ -1662,12 +1674,12 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						targetAngle: 0
 					}))
 
-					// 转换为本地边格式
+					// 转换为本地边格式（过滤自环）
 					this.edges = edges.map(e => ({
 						from: e.from_node_id,
 						to: e.to_node_id,
 						type: e.type
-					}))
+					})).filter(e => e.from !== e.to)
 
 					// 构建学习路径（从 LEARNING_PATH 类型的边）
 					const pathEdges = edges.filter(e => e.type === 'learning_path')
@@ -1713,8 +1725,8 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 					// 数据为空则跳过
 					if (!nodes || nodes.length === 0) return
 
-					// 从 KNOWLEDGE_TREE 边构建层级关系
-					const treeEdges = edges.filter(e => e.type === 'knowledge_tree')
+					// 从 KNOWLEDGE_TREE 边构建层级关系（过滤自环）
+					const treeEdges = edges.filter(e => e.type === 'knowledge_tree' && e.from_node_id !== e.to_node_id)
 					const parentMap = new Map()
 					const childrenMap = new Map()
 
@@ -1744,14 +1756,26 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						})
 					}
 
-					// 环检测：未被 BFS 访问的节点处于孤立环中，断开 parent 作为独立根
-					nodes.forEach(n => {
-						if (!visited.has(n.id)) {
-							parentMap.delete(n.id)
-							levels.set(n.id, 0)
-							console.warn('[Graph] 检测到环中的孤立节点，已断开:', n.label || n.id)
+					// 环检测：未被 BFS 访问的节点处于孤立环中
+					// 断开一个节点的 parent 作为子树根，再从它 BFS 恢复层级
+					const orphans = nodes.filter(n => !visited.has(n.id))
+					for (const orphan of orphans) {
+						if (visited.has(orphan.id)) continue
+						parentMap.delete(orphan.id)
+						const oQueue = [{ id: orphan.id, level: 0 }]
+						visited.add(orphan.id)
+						while (oQueue.length > 0) {
+							const { id, level } = oQueue.shift()
+							levels.set(id, level)
+							const children = childrenMap.get(id) || []
+							children.forEach(cid => {
+								if (!visited.has(cid)) {
+									visited.add(cid)
+									oQueue.push({ id: cid, level: level + 1 })
+								}
+							})
 						}
-					})
+					}
 
 					// 转换为本地节点格式
 					this.nodes = nodes.map(n => ({
@@ -1772,12 +1796,12 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						targetAngle: 0
 					}))
 
-					// 转换为本地边格式
+					// 转换为本地边格式（过滤自环）
 					this.edges = edges.map(e => ({
 						from: e.from_node_id,
 						to: e.to_node_id,
 						type: e.type
-					}))
+					})).filter(e => e.from !== e.to)
 
 					// 构建学习路径（从 LEARNING_PATH 类型的边）
 					const pathEdges = edges.filter(e => e.type === 'learning_path')

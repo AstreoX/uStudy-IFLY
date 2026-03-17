@@ -588,8 +588,8 @@ export default {
         return
       }
 
-      // Build parent-child relationships from knowledge_tree edges
-      const treeEdges = this.edges.filter(e => e.type === 'knowledge_tree' || !e.type)
+      // Build parent-child relationships from knowledge_tree edges (filter self-loops)
+      const treeEdges = this.edges.filter(e => (e.type === 'knowledge_tree' || !e.type) && e.from !== e.to)
       const parentMap = new Map()
       const childrenMap = new Map()
 
@@ -609,13 +609,15 @@ export default {
       // BFS to compute levels
       const levels = new Map()
       const queue = roots.map(r => ({ id: r.id, level: 0 }))
+      const visited = new Set(roots.map(r => r.id))
 
       while (queue.length > 0) {
         const { id, level } = queue.shift()
         levels.set(id, level)
         const children = childrenMap.get(id) || []
         children.forEach(cid => {
-          if (nodeIds.has(cid) && !levels.has(cid)) {
+          if (nodeIds.has(cid) && !visited.has(cid)) {
+            visited.add(cid)
             queue.push({ id: cid, level: level + 1 })
           }
         })
@@ -761,8 +763,8 @@ export default {
      * Render like learningSpace and then center-crop to fit card ratio.
      */
     computeConcentricLayout() {
-      // Build parent-child relationships from knowledge_tree edges
-      const treeEdges = this.edges.filter(e => e.type === 'knowledge_tree' || !e.type)
+      // Build parent-child relationships from knowledge_tree edges (filter self-loops)
+      const treeEdges = this.edges.filter(e => (e.type === 'knowledge_tree' || !e.type) && e.from !== e.to)
       const parentMap = new Map()
       const childrenMap = new Map()
 
@@ -780,16 +782,18 @@ export default {
 
       if (roots.length === 0) return
 
-      // BFS to compute levels
+      // BFS to compute levels (visited 防环)
       const levels = new Map()
       const queue = roots.map(r => ({ id: r.id, level: 0 }))
+      const visited = new Set(roots.map(r => r.id))
 
       while (queue.length > 0) {
         const { id, level } = queue.shift()
         levels.set(id, level)
         const children = childrenMap.get(id) || []
         children.forEach(cid => {
-          if (nodeIds.has(cid) && !levels.has(cid)) {
+          if (nodeIds.has(cid) && !visited.has(cid)) {
+            visited.add(cid)
             queue.push({ id: cid, level: level + 1 })
           }
         })
