@@ -1616,17 +1616,32 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						childrenMap.get(e.from_node_id).push(e.to_node_id)
 					})
 
-					// BFS 计算层级
+					// BFS 计算层级（visited 防环）
 					const roots = nodes.filter(n => !parentMap.has(n.id))
 					const levels = new Map()
 					const queue = roots.map(r => ({ id: r.id, level: 0 }))
+					const visited = new Set(roots.map(r => r.id))
 
 					while (queue.length > 0) {
 						const { id, level } = queue.shift()
 						levels.set(id, level)
 						const children = childrenMap.get(id) || []
-						children.forEach(cid => queue.push({ id: cid, level: level + 1 }))
+						children.forEach(cid => {
+							if (!visited.has(cid)) {
+								visited.add(cid)
+								queue.push({ id: cid, level: level + 1 })
+							}
+						})
 					}
+
+					// 环检测：未被 BFS 访问的节点处于孤立环中，断开 parent 作为独立根
+					nodes.forEach(n => {
+						if (!visited.has(n.id)) {
+							parentMap.delete(n.id)
+							levels.set(n.id, 0)
+							console.warn('[Graph] 检测到环中的孤立节点，已断开:', n.label || n.id)
+						}
+					})
 
 					// 转换为本地节点格式
 					this.nodes = nodes.map(n => ({
@@ -1711,17 +1726,32 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						childrenMap.get(e.from_node_id).push(e.to_node_id)
 					})
 
-					// BFS 计算层级
+					// BFS 计算层级（visited 防环）
 					const roots = nodes.filter(n => !parentMap.has(n.id))
 					const levels = new Map()
 					const queue = roots.map(r => ({ id: r.id, level: 0 }))
+					const visited = new Set(roots.map(r => r.id))
 
 					while (queue.length > 0) {
 						const { id, level } = queue.shift()
 						levels.set(id, level)
 						const children = childrenMap.get(id) || []
-						children.forEach(cid => queue.push({ id: cid, level: level + 1 }))
+						children.forEach(cid => {
+							if (!visited.has(cid)) {
+								visited.add(cid)
+								queue.push({ id: cid, level: level + 1 })
+							}
+						})
 					}
+
+					// 环检测：未被 BFS 访问的节点处于孤立环中，断开 parent 作为独立根
+					nodes.forEach(n => {
+						if (!visited.has(n.id)) {
+							parentMap.delete(n.id)
+							levels.set(n.id, 0)
+							console.warn('[Graph] 检测到环中的孤立节点，已断开:', n.label || n.id)
+						}
+					})
 
 					// 转换为本地节点格式
 					this.nodes = nodes.map(n => ({
@@ -3558,11 +3588,14 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 			},
 
 			// ========== 同心圆布局算法 ==========
-			// 计算子树大小（包含自身）
-			getSubtreeSize(nodeId) {
+			// 计算子树大小（包含自身，visited 防环）
+			getSubtreeSize(nodeId, _visited) {
+				const visited = _visited || new Set()
+				if (visited.has(nodeId)) return 0
+				visited.add(nodeId)
 				const children = this.nodes.filter(n => n.parent === nodeId)
 				if (children.length === 0) return 1
-				return 1 + children.reduce((sum, c) => sum + this.getSubtreeSize(c.id), 0)
+				return 1 + children.reduce((sum, c) => sum + this.getSubtreeSize(c.id, visited), 0)
 			},
 
 			// 初始化布局（确定性，只调用一次）
@@ -3598,8 +3631,12 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				this.invalidateGraphBoundsCache()
 			},
 
-			// 递归布局子树
-			layoutSubtree(parent, angleStart, angleEnd) {
+			// 递归布局子树（visited 防环）
+			layoutSubtree(parent, angleStart, angleEnd, _visited) {
+				const visited = _visited || new Set()
+				if (visited.has(parent.id)) return
+				visited.add(parent.id)
+
 				const children = this.nodes.filter(n => n.parent === parent.id)
 				if (children.length === 0) return
 
@@ -3624,7 +3661,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 					child.targetAngle = child.angle
 
 					// 递归布局该子节点的子树
-					this.layoutSubtree(child, currentAngle, currentAngle + angleRange)
+					this.layoutSubtree(child, currentAngle, currentAngle + angleRange, visited)
 
 					currentAngle += angleRange
 				})

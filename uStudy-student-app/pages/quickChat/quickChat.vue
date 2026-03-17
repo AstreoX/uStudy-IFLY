@@ -461,46 +461,34 @@
 							</view>
 						</view>
 
-						<!-- 非记忆类工具：原有卡片样式 -->
+						<!-- 默认工具：pill 胶囊样式 -->
 						<view
 							v-else-if="seg.type === 'tool'"
 							:key="'tool-' + segIdx"
-							class="tool-call-card"
-							:class="{
-								'tool-call-running': seg.toolCall.status === 'running',
-								'tool-call-pending': seg.toolCall.status === 'pending_confirmation',
-								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
-								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
-							}"
+							class="default-tool-wrap"
+							:class="{ 'default-tool-expanded': seg.toolCall.status === 'pending_confirmation' }"
 						>
-							<view class="tool-call-header">
-								<image
-									class="tool-call-icon"
-									:src="getToolIcon(seg.toolCall.tool)"
-									mode="aspectFit"
-								></image>
-								<text class="tool-call-name">{{ seg.toolCall.display_name || getToolDisplayName(seg.toolCall.tool) }}</text>
-								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
-								<image
-									v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
-									class="tool-call-status-icon"
-									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg"
-									mode="aspectFit"
-								></image>
-								<image
-									v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
-									class="tool-call-status-icon tool-call-status-failed"
-									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg"
-									mode="aspectFit"
-								></image>
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+							>
+								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ seg.toolCall.display_name || getToolDisplayName(seg.toolCall.tool) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-status-icon"
+									src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
 							</view>
 
-							<!-- 确认按钮区域 -->
-							<view v-if="seg.toolCall.status === 'pending_confirmation'" class="tool-confirm-actions">
-								<view class="tool-confirm-info">
-									<text class="tool-confirm-text">{{ getConfirmationText(seg.toolCall) }}</text>
-								</view>
-								<view class="tool-confirm-buttons">
+							<!-- 确认卡片 (pending_confirmation 时展开) -->
+							<view v-if="seg.toolCall.status === 'pending_confirmation'" class="space-mutation-confirm">
+								<text class="space-mutation-confirm-text">{{ getConfirmationText(seg.toolCall) }}</text>
+								<view class="space-mutation-confirm-buttons">
 									<view class="tool-btn tool-btn-cancel" @click="handleToolReject(msg.id, seg.toolCall)">
 										<text class="tool-btn-text">取消</text>
 									</view>
@@ -509,12 +497,6 @@
 									</view>
 								</view>
 							</view>
-
-							<!-- 执行结果 -->
-							<view v-if="seg.toolCall.status === 'done' && seg.toolCall.message" class="tool-call-result">
-								<text class="tool-call-result-text">{{ seg.toolCall.message }}</text>
-							</view>
-
 						</view>
 					</template>
 
@@ -3645,58 +3627,26 @@
 		background-color: #f0f0f0;
 	}
 
-	/* 工具调用卡片 */
-	.tool-call-card {
-		padding: 20rpx 24rpx;
-		background-color: rgba(255, 255, 255, 0.05);
-		border-radius: 16rpx;
-		border: 1rpx solid rgba(255, 255, 255, 0.1);
-	}
-
-	.tool-call-running {
-		border-color: rgba(59, 130, 246, 0.5);
-	}
-
-	.tool-call-pending {
-		border-color: rgba(251, 191, 36, 0.5);
-		background-color: rgba(251, 191, 36, 0.08);
-	}
-
-	.tool-call-success {
-		border-color: rgba(34, 197, 94, 0.3);
-	}
-
-	.tool-call-failed {
-		border-color: rgba(239, 68, 68, 0.3);
-	}
-
-	.tool-call-header {
+	/* ========== 默认工具 pill 容器 ========== */
+	.default-tool-wrap {
 		display: flex;
-		align-items: center;
+		flex-direction: column;
 		gap: 12rpx;
 	}
 
-	.tool-call-icon {
-		width: 32rpx;
-		height: 32rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.8;
+	.default-tool-expanded {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 24rpx;
+		padding: 0;
+		gap: 0;
 	}
 
-	.tool-call-name {
-		font-size: 26rpx;
-		color: rgba(255, 255, 255, 0.9);
-		font-weight: 500;
-		flex: 1;
-	}
-
-	.tool-call-spinner {
-		width: 24rpx;
-		height: 24rpx;
-		border: 2rpx solid rgba(59, 130, 246, 0.3);
-		border-top-color: #3b82f6;
-		border-radius: 50%;
-		animation: spin 0.8s linear infinite;
+	.default-tool-expanded .graph-tool-pill {
+		border: none;
+		background: transparent;
+		border-radius: 24rpx 24rpx 0 0;
+		padding: 20rpx 24rpx 16rpx;
 	}
 
 	@keyframes spin {
@@ -3968,37 +3918,6 @@
 		to { opacity: 0; transform: translateY(-8rpx); }
 	}
 
-	.tool-call-status-icon {
-		width: 28rpx;
-		height: 28rpx;
-		filter: brightness(0) saturate(100%) invert(62%) sepia(93%) saturate(404%) hue-rotate(93deg) brightness(95%) contrast(92%);
-	}
-
-	.tool-call-status-failed {
-		filter: brightness(0) saturate(100%) invert(42%) sepia(76%) saturate(2178%) hue-rotate(336deg) brightness(98%) contrast(89%);
-	}
-
-	/* 确认区域 */
-	.tool-confirm-actions {
-		margin-top: 16rpx;
-		padding-top: 16rpx;
-		border-top: 1rpx solid rgba(255, 255, 255, 0.1);
-	}
-
-	.tool-confirm-info {
-		margin-bottom: 16rpx;
-	}
-
-	.tool-confirm-text {
-		font-size: 26rpx;
-		color: rgba(255, 255, 255, 0.8);
-	}
-
-	.tool-confirm-buttons {
-		display: flex;
-		gap: 16rpx;
-	}
-
 	.tool-btn {
 		flex: 1;
 		height: 72rpx;
@@ -4025,18 +3944,6 @@
 		font-size: 28rpx;
 		color: rgb(248, 248, 248);
 		font-weight: 500;
-	}
-
-	/* 执行结果 */
-	.tool-call-result {
-		margin-top: 12rpx;
-		padding-top: 12rpx;
-		border-top: 1rpx solid rgba(255, 255, 255, 0.08);
-	}
-
-	.tool-call-result-text {
-		font-size: 24rpx;
-		color: rgba(255, 255, 255, 0.6);
 	}
 
 	/* 图表预览 */

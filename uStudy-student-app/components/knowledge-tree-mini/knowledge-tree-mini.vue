@@ -878,13 +878,20 @@ export default {
       })
     },
 
-    getSubtreeSize(nodeId, childrenMap) {
+    getSubtreeSize(nodeId, childrenMap, _visited) {
+      const visited = _visited || new Set()
+      if (visited.has(nodeId)) return 0
+      visited.add(nodeId)
       const children = childrenMap.get(nodeId) || []
       if (children.length === 0) return 1
-      return 1 + children.reduce((sum, cid) => sum + this.getSubtreeSize(cid, childrenMap), 0)
+      return 1 + children.reduce((sum, cid) => sum + this.getSubtreeSize(cid, childrenMap, visited), 0)
     },
 
-    layoutSubtree(parentId, angleStart, angleEnd, childrenMap, levels, baseRadius, levelSpacing, graphNodes) {
+    layoutSubtree(parentId, angleStart, angleEnd, childrenMap, levels, baseRadius, levelSpacing, graphNodes, _visited) {
+      const visited = _visited || new Set()
+      if (visited.has(parentId)) return
+      visited.add(parentId)
+
       const children = childrenMap.get(parentId) || []
       if (children.length === 0) return
 
@@ -921,7 +928,7 @@ export default {
         })
 
         // Recursively layout children
-        this.layoutSubtree(childId, currentAngle, currentAngle + angleRange, childrenMap, levels, baseRadius, levelSpacing, graphNodes)
+        this.layoutSubtree(childId, currentAngle, currentAngle + angleRange, childrenMap, levels, baseRadius, levelSpacing, graphNodes, visited)
 
         currentAngle += angleRange
       })

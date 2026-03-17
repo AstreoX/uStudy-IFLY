@@ -1239,43 +1239,27 @@
 							</view>
 						</view>
 
-						<!-- 非记忆类工具：原有卡片样式 -->
+						<!-- 默认工具：pill 胶囊样式 -->
 						<view
 							v-else-if="seg.type === 'tool'"
 							:key="'tool-' + segIdx"
-							class="tool-call-card"
-							:class="{
-								'tool-call-running': seg.toolCall.status === 'running',
-								'tool-call-success': seg.toolCall.status === 'done' && seg.toolCall.success,
-								'tool-call-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
-							}"
+							class="default-tool-wrap"
 						>
-							<view class="tool-call-header">
-								<image
-									class="tool-call-icon"
-									:src="getToolIcon(seg.toolCall.tool)"
-									mode="aspectFit"
-								></image>
-								<text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
-								<view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
-								<image
-									v-else-if="seg.toolCall.success"
-									class="tool-call-status-icon"
-									src="/static/icons/phosphor-icons/SVGs/fill/check-circle-fill.svg"
-									mode="aspectFit"
-								></image>
-								<image
-									v-else
-									class="tool-call-status-icon tool-call-status-failed"
-									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg"
-									mode="aspectFit"
-								></image>
-							</view>
-							<view v-if="seg.toolCall.arguments && Object.keys(seg.toolCall.arguments).length > 0" class="tool-call-args">
-								<text class="tool-call-args-text">{{ formatToolArgs(seg.toolCall.arguments) }}</text>
-							</view>
-							<view v-if="seg.toolCall.result && seg.toolCall.status === 'done'" class="tool-call-result">
-								<text class="tool-call-result-text">{{ seg.toolCall.result.message || '操作完成' }}</text>
+							<view class="graph-tool-pill"
+								:class="{
+									'graph-tool-running': seg.toolCall.status === 'running',
+									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+								}"
+							>
+								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
+								<text class="graph-tool-pill-text">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
+								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
+									class="graph-tool-status-icon"
+									src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
+								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
+									class="graph-tool-status-icon graph-tool-status-failed"
+									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
 							</view>
 						</view>
 					</template>
@@ -1749,6 +1733,10 @@
 
 	// 工具名称映射
 	const TOOL_DISPLAY_NAMES = {
+		// 快速对话独有工具（重绑定后在此页面显示）
+		view_learning_spaces: '查看学习空间',
+		rebind_to_learning_space: '绑定到学习空间',
+		create_learning_space: '创建学习空间',
 		// 知识图谱工具
 		get_graph_overview: '获取知识图谱',
 		add_node: '添加知识点',
@@ -1815,6 +1803,10 @@
 
 	// 工具图标映射
 	const TOOL_ICONS = {
+		// 快速对话独有工具（重绑定后在此页面显示）
+		view_learning_spaces: '/static/icons/phosphor-icons/SVGs/regular/eye.svg',
+		rebind_to_learning_space: '/static/icons/phosphor-icons/SVGs/regular/link.svg',
+		create_learning_space: '/static/icons/phosphor-icons/SVGs/regular/plus-circle.svg',
 		// 知识图谱工具
 		get_graph_overview: '/static/icons/phosphor-icons/SVGs/regular/graph.svg',
 		add_node: '/static/icons/phosphor-icons/SVGs/regular/plus-circle.svg',
@@ -8111,124 +8103,17 @@
 	}
 
 
-	/* ========== 工具调用卡片 ========== */
-	.tool-calls-container {
-		margin-top: 16rpx;
+	/* ========== 默认工具 pill 容器 ========== */
+	.default-tool-wrap {
 		display: flex;
 		flex-direction: column;
 		gap: 12rpx;
-		width: 500rpx;
-		max-width: 100%;
-	}
-
-	.tool-call-card {
-		background: rgba(255, 255, 255, 0.06);
-		border: 1rpx solid rgba(255, 255, 255, 0.1);
-		border-radius: 16rpx;
-		padding: 16rpx 20rpx;
-		transition: all 0.2s ease;
-		width: 500rpx;
-		max-width: 100%;
-	}
-
-	.tool-call-running {
-		border-color: rgba(59, 130, 246, 0.4);
-		background: rgba(59, 130, 246, 0.08);
-	}
-
-	.tool-call-success {
-		border-color: rgba(34, 197, 94, 0.3);
-		background: rgba(34, 197, 94, 0.06);
-	}
-
-	.tool-call-failed {
-		border-color: rgba(239, 68, 68, 0.3);
-		background: rgba(239, 68, 68, 0.06);
-	}
-
-	.tool-call-header {
-		display: flex;
-		align-items: center;
-		gap: 12rpx;
-	}
-
-	.tool-call-icon {
-		width: 32rpx;
-		height: 32rpx;
-		filter: brightness(0) invert(1);
-		opacity: 0.8;
-		flex-shrink: 0;
-	}
-
-	.tool-call-name {
-		flex: 1;
-		font-size: 26rpx;
-		color: rgba(255, 255, 255, 0.9);
-		font-weight: 500;
-	}
-
-	.tool-call-spinner {
-		width: 24rpx;
-		height: 24rpx;
-		border: 2rpx solid rgba(59, 130, 246, 0.3);
-		border-top-color: #3b82f6;
-		border-radius: 50%;
-		animation: tool-spin 0.8s linear infinite;
-		flex-shrink: 0;
 	}
 
 	@keyframes tool-spin {
 		to {
 			transform: rotate(360deg);
 		}
-	}
-
-	.tool-call-status-icon {
-		width: 28rpx;
-		height: 28rpx;
-		flex-shrink: 0;
-	}
-
-	.tool-call-status-icon:not(.tool-call-status-failed) {
-		filter: brightness(0) saturate(100%) invert(65%) sepia(52%) saturate(5765%) hue-rotate(108deg) brightness(92%) contrast(87%);
-	}
-
-	.tool-call-status-failed {
-		filter: brightness(0) saturate(100%) invert(39%) sepia(87%) saturate(2345%) hue-rotate(338deg) brightness(96%) contrast(93%);
-	}
-
-	.tool-call-args {
-		margin-top: 10rpx;
-		padding-top: 10rpx;
-		border-top: 1rpx solid rgba(255, 255, 255, 0.06);
-	}
-
-	.tool-call-args-text {
-		font-size: 22rpx;
-		color: rgba(255, 255, 255, 0.5);
-		line-height: 1.4;
-		word-break: break-all;
-	}
-
-	.tool-call-result {
-		margin-top: 10rpx;
-		padding: 10rpx 12rpx;
-		background: rgba(34, 197, 94, 0.1);
-		border-radius: 8rpx;
-	}
-
-	.tool-call-result-text {
-		font-size: 22rpx;
-		color: rgba(34, 197, 94, 0.9);
-		line-height: 1.4;
-	}
-
-	.tool-call-failed .tool-call-result {
-		background: rgba(239, 68, 68, 0.1);
-	}
-
-	.tool-call-failed .tool-call-result-text {
-		color: rgba(239, 68, 68, 0.9);
 	}
 
 	/* ========== Artifact 卡片 ========== */
