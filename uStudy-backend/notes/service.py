@@ -153,7 +153,14 @@ class NoteService:
             note.sort_order = request.sort_order
 
         await self.db.commit()
-        await self.db.refresh(note, attribute_names=["attachments"])
+
+        # Re-fetch with eagerly loaded attachments to avoid MissingGreenlet
+        result = await self.db.execute(
+            select(Note)
+            .options(selectinload(Note.attachments))
+            .where(Note.id == note_id)
+        )
+        note = result.scalar_one()
 
         return NoteResponse.model_validate(note)
 
