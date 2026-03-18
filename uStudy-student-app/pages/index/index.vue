@@ -40,6 +40,14 @@
 
 		<!-- 标题区域 -->
 		<view class="header" :class="{ 'header-hidden': isSelectionMode }">
+			<!-- 通知铃铛（暂时屏蔽） -->
+			<!-- <view class="notification-bell" @click="goToNotifications">
+				<image class="bell-icon" src="/static/icons/phosphor-icons/SVGs/regular/bell.svg" mode="aspectFit"></image>
+				<view v-if="notificationUnreadCount > 0" class="bell-badge">
+					<text class="bell-badge-text">{{ notificationUnreadCount > 99 ? '99+' : notificationUnreadCount }}</text>
+				</view>
+			</view> -->
+
 			<!-- 正常状态：显示 AI 学习建议 -->
 			<template v-if="!isEmptyState">
 				<text class="header-title" :class="{ 'suggestion-loading': suggestionLoading && !aiSuggestion }">{{ suggestionDecision }}</text>
@@ -237,9 +245,12 @@
 	import { getMe } from '@/api/auth'
 	import { getSpaces, getSpaceGraph, deleteSpace } from '@/api/space'
 	import { getStudySuggestion } from '@/api/activity'
+	import { getUnreadCount } from '@/api/notificationCenter'
+	import { connectNotificationStream } from '@/api/notification'
 	import { getTokens, getCardOrder, setCardOrder, clearAuth } from '@/utils/storage'
 	import { useUserStore } from '@/store/user'
 	import { useUpdateStore } from '@/store/update'
+	import { useNotificationStore } from '@/store/notification'
 	import KnowledgeTreeMini from '@/components/knowledge-tree-mini/knowledge-tree-mini.vue'
 import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 	import AnnouncementDialog from '@/components/announcement-dialog/announcement-dialog.vue'
@@ -359,12 +370,22 @@ function _cleanOldSuggestionCache(currentKey) {
 				expiryBannerDismissed: false,
 				// AI 学习建议
 				aiSuggestion: null,
-				suggestionLoading: false
+				suggestionLoading: false,
+				// 通知 SSE 断开函数
+				_notifAbort: null
 			}
 		},
 
 		async onShow() {
 			await this.initializePage()
+		},
+
+		onHide() {
+			// 离开首页时断开通知 SSE
+			if (this._notifAbort) {
+				this._notifAbort()
+				this._notifAbort = null
+			}
 		},
 
 		mounted() {
@@ -374,6 +395,14 @@ function _cleanOldSuggestionCache(currentKey) {
 		computed: {
 			updateStore() {
 				return useUpdateStore()
+			},
+
+			notificationStore() {
+				return useNotificationStore()
+			},
+
+			notificationUnreadCount() {
+				return this.notificationStore.unreadCount
 			},
 
 			// 真实学习空间数量
@@ -497,6 +526,8 @@ function _cleanOldSuggestionCache(currentKey) {
 					if (!loaded) return
 
 					this.loadStudySuggestion()  // 非阻塞，后台加载
+					this.fetchUnreadCount()     // 非阻塞
+					this.connectNotificationSSE()
 					this.bootState = 'ready'
 				} catch (error) {
 					this.setBootError('初始化失败，请重试', error)
@@ -582,6 +613,29 @@ function _cleanOldSuggestionCache(currentKey) {
 					_cleanOldSuggestionCache(key)
 				} catch (_e) {}
 				finally { this.suggestionLoading = false }
+			},
+
+			// ── 通知相关 ──
+
+			async fetchUnreadCount() {
+				try {
+					const res = await getUnreadCount()
+					this.notificationStore.setUnreadCount(res.count || 0)
+				} catch (_) {}
+			},
+
+			connectNotificationSSE() {
+				// 避免重复连接
+				if (this._notifAbort) return
+				this._notifAbort = connectNotificationStream({
+					onNewNotification: () => {
+						this.notificationStore.increment()
+					},
+				})
+			},
+
+			goToNotifications() {
+				uni.navigateTo({ url: '/pages/notifications/notifications' })
 			},
 
 			// 从后端加载学习空间
@@ -1644,6 +1698,50 @@ function _cleanOldSuggestionCache(currentKey) {
 	}
 	.suggestion-loading {
 		animation: suggestion-pulse 1.5s ease-in-out infinite;
+	}
+
+	/* ========== 通知铃铛 ========== */
+	.notification-bell {
+		position: fixed;
+		top: calc(var(--status-bar-height, 44px) + 20rpx);
+		right: 32rpx;
+		width: 64rpx;
+		height: 64rpx;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		border-radius: 50%;
+		background-color: rgba(255, 255, 255, 0.08);
+		border: 1rpx solid rgba(255, 255, 255, 0.12);
+		z-index: 56;
+	}
+
+	.bell-icon {
+		width: 40rpx;
+		height: 40rpx;
+		opacity: 0.7;
+		filter: brightness(0) invert(1);
+	}
+
+	.bell-badge {
+		position: absolute;
+		top: -6rpx;
+		right: -6rpx;
+		min-width: 30rpx;
+		height: 30rpx;
+		border-radius: 15rpx;
+		background: #ff4757;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0 6rpx;
+	}
+
+	.bell-badge-text {
+		font-size: 18rpx;
+		color: #ffffff;
+		font-weight: 600;
+		line-height: 1;
 	}
 
 	/* ========== 统一卡片容器 ========== */

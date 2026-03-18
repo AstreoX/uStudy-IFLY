@@ -150,6 +150,18 @@
 			}
 		},
 		{
+			"path": "pages/notifications/notifications",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTextStyle": "white",
+				"backgroundColor": "#0A0A12",
+				"app-plus": {
+					"animationType": "slide-in-right",
+					"animationDuration": 300
+				}
+			}
+		},
+		{
 			"path": "pages/spaceSettings/spaceSettings",
 			"style": {
 				"navigationStyle": "custom",

@@ -20,6 +20,7 @@ const MAX_RETRIES = RETRY_DELAYS.length
  * @param {Function} [callbacks.onMasteryUpdate] - Called with { node_name, change, new_mastery }
  * @param {Function} [callbacks.onArtifactStream] - Called with { task_id, note_id, delta, chars_total, status }
  * @param {Function} [callbacks.onArtifactReady] - Called with { note_id, space_id, status, title, error_message }
+ * @param {Function} [callbacks.onNewNotification] - Called with { id, notification_type, title, body, data }
  * @param {Function} [callbacks.onConnected] - Called with { isReconnect }
  * @returns {Function} Abort function to close the connection
  */
@@ -62,6 +63,9 @@ export function connectNotificationStream(callbacks) {
         }
         if (eventType === 'artifact_ready') {
           callbacks.onArtifactReady?.(data)
+        }
+        if (eventType === 'new_notification') {
+          callbacks.onNewNotification?.(data)
         }
       },
       onComplete: () => {

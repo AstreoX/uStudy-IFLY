@@ -618,31 +618,33 @@
 					</view>
 				</view>
 
-				<view class="custom-placeholder-row">
-					<image class="placeholder-sparkle-icon" src="/static/icons/phosphor-icons/SVGs/fill/sparkle-fill.svg" mode="aspectFit"></image>
-					<text
-						v-if="!inputText"
-						class="placeholder-text"
-						:style="{ color: '#A1A1AA', '-webkit-text-fill-color': '#A1A1AA' }"
-					>有问题，尽管问</text>
-				</view>
+				<view class="textarea-wrapper">
+					<view class="custom-placeholder-row">
+						<image class="placeholder-sparkle-icon" src="/static/icons/phosphor-icons/SVGs/fill/sparkle-fill.svg" mode="aspectFit"></image>
+						<text
+							v-if="!inputText"
+							class="placeholder-text"
+							:style="{ color: '#A1A1AA', '-webkit-text-fill-color': '#A1A1AA' }"
+						>有问题，尽管问</text>
+					</view>
 
-				<textarea
-					ref="textareaRef"
-					class="input-field"
-					v-model="inputText"
-					placeholder=""
-					:maxlength="-1"
-					:adjust-position="false"
-					confirm-type="send"
-					:auto-height="autoHeightEnabled"
-					:style="textareaStyle"
-					@input="onTextareaInput"
-					@linechange="onTextareaLineChange"
-					@confirm="sendMessage"
-					@focus="onInputFocus"
-					@blur="onInputBlur"
-				/>
+					<textarea
+						ref="textareaRef"
+						class="input-field"
+						v-model="inputText"
+						placeholder=""
+						:maxlength="-1"
+						:adjust-position="false"
+						confirm-type="send"
+						:auto-height="autoHeightEnabled"
+						:style="textareaStyle"
+						@input="onTextareaInput"
+						@linechange="onTextareaLineChange"
+						@confirm="sendMessage"
+						@focus="onInputFocus"
+						@blur="onInputBlur"
+					/>
+				</view>
 
 				<view class="input-bottom-row">
 					<!-- 左侧：模型选择 pill -->
@@ -1093,7 +1095,7 @@
 				return this.messages.some(msg => msg.role === 'ai' && msg.isStreaming)
 			},
 			canSend() {
-				return this.inputText.trim().length > 0 || this.pendingAttachments.length > 0
+				return this.inputText.trim().length > 0
 			},
 			selectedModelName() {
 				const model = this.availableModels.find(m => m.id === this.selectedModelId)
@@ -4260,6 +4262,10 @@
 		color: #A1A1AA;
 		-webkit-text-fill-color: #A1A1AA;
 		font-size: 28rpx;
+	}
+
+	.textarea-wrapper {
+		position: relative;
 	}
 
 	.custom-placeholder-row {
