@@ -8,13 +8,16 @@ import { request } from '@/utils/request'
  * @param {boolean} [options.freeOnly] - 仅返回自由笔记
  * @returns {Promise<Array>}
  */
-export function getSpaceNotes(spaceId, { nodeId, freeOnly } = {}) {
+export function getSpaceNotes(spaceId, { nodeId, freeOnly, folderId } = {}) {
   let url = `/api/spaces/${spaceId}/notes`
   const params = []
   if (nodeId !== undefined && nodeId !== null && nodeId !== '') {
     params.push(`node_id=${encodeURIComponent(nodeId)}`)
   }
   if (freeOnly) params.push('free_only=true')
+  if (folderId !== undefined && folderId !== null && folderId !== '') {
+    params.push(`folder_id=${encodeURIComponent(folderId)}`)
+  }
   if (params.length) url += '?' + params.join('&')
 
   return request({

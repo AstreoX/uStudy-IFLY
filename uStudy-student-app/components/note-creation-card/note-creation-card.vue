@@ -1,162 +1,182 @@
 <template>
-  <view class="ncc-card" :class="{ 'ncc-flat': flat }">
-    <!-- ======== 待确认预览模式 ======== -->
-    <template v-if="isPending && !isPendingEditing">
-      <!-- Header -->
-      <view class="ncc-card-header">
-        <view class="ncc-icon-wrap">
-          <image class="ncc-file-icon" src="/static/icons/phosphor-icons/SVGs/regular/file-text.svg" mode="aspectFit" />
-        </view>
-        <view class="ncc-title-col">
-          <text class="ncc-note-title">{{ displayTitle }}</text>
-          <text class="ncc-note-meta">{{ contentMeta }}</text>
-        </view>
-        <view class="ncc-edit-trigger" @click="enterPendingEdit">
-          <image class="ncc-edit-trigger-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
-          <text class="ncc-edit-trigger-text">编辑</text>
-        </view>
-      </view>
-      <!-- 分割线 -->
-      <view class="ncc-divider"></view>
-      <!-- 内容预览 -->
-      <view class="ncc-content-preview">
-        <MarkdownRender :content="displayContent" />
-      </view>
-      <!-- 关联知识节点 -->
-      <view v-if="nodeLabel" class="ncc-nodes-section">
-        <text class="ncc-nodes-label">关联知识节点</text>
-        <view class="ncc-nodes-row">
-          <view class="ncc-node-pill">
-            <text class="ncc-node-pill-text">{{ nodeLabel }}</text>
-          </view>
-        </view>
-      </view>
-      <!-- 操作按钮 -->
-      <view class="ncc-btns-row">
-        <view class="ncc-reject-btn" :class="{ 'ncc-btn-disabled': isSubmitting }" @click="handleCancel">
-          <text class="ncc-reject-btn-text">拒绝</text>
-        </view>
-        <view class="ncc-confirm-btn" :class="{ 'ncc-btn-disabled': isSubmitting }" @click="handleConfirm">
-          <text class="ncc-confirm-btn-text">{{ isSubmitting ? '提交中…' : '确认创建' }}</text>
-        </view>
-      </view>
-      <text v-if="submitError" class="ncc-error-text">{{ submitError }}</text>
-    </template>
+  <view class="ncc-wrap" :class="{ 'ncc-expanded': showDetail || isCollapsing }">
+    <!-- ======== Pill 指示器（始终可见） ======== -->
+    <view class="ncc-pill"
+      :class="{
+        'ncc-pill-pending': isPending,
+        'ncc-pill-running': isRunning,
+        'ncc-pill-failed': isDoneFailed
+      }"
+      @click="handlePillClick"
+    >
+      <image class="ncc-pill-icon" src="/static/icons/phosphor-icons/SVGs/regular/notebook.svg" mode="aspectFit" />
+      <text class="ncc-pill-text">{{ pillText }}</text>
+      <view v-if="isRunning" class="ncc-pill-spinner"></view>
+      <image v-else-if="isPending"
+        class="ncc-pill-status-icon ncc-pill-status-pending"
+        src="/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg" mode="aspectFit" />
+      <image v-else-if="isDoneSuccess"
+        class="ncc-pill-chevron"
+        :class="{ 'ncc-pill-chevron-up': isExpanded }"
+        src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+      <image v-else-if="isDoneFailed"
+        class="ncc-pill-status-icon ncc-pill-status-failed"
+        src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
+    </view>
 
-    <!-- ======== 待确认编辑模式 ======== -->
-    <template v-else-if="isPending && isPendingEditing">
-      <!-- 节点选择 -->
-      <view class="ncc-field-row">
-        <text class="ncc-field-label">挂载节点</text>
-        <picker mode="selector" :range="nodeOptionLabels" :value="selectedNodeIndex" @change="onNodePickerChange">
-          <view class="ncc-node-picker">
-            <text class="ncc-node-picker-text">{{ currentNodeLabel }}</text>
-            <image class="ncc-node-picker-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
-          </view>
-        </picker>
-      </view>
-      <!-- 标题 -->
-      <input class="ncc-title-input" v-model="editTitle" placeholder="笔记标题" maxlength="200" />
-      <!-- 内容编辑区 -->
-      <view class="ncc-edit-area">
-        <view class="ncc-edit-toolbar">
-          <view class="ncc-tab-group">
-            <text class="ncc-tab" :class="{ 'ncc-tab-active': editMode === 'code' }" @click="editMode = 'code'">编辑</text>
-            <text class="ncc-tab" :class="{ 'ncc-tab-active': editMode === 'preview' }" @click="editMode = 'preview'">预览</text>
-          </view>
-        </view>
-        <textarea v-if="editMode === 'code'" class="ncc-textarea" v-model="editContent" placeholder="笔记内容 (Markdown)" :auto-height="false"></textarea>
-        <view v-else class="ncc-preview-wrap"><MarkdownRender :content="editContent" /></view>
-      </view>
-      <!-- 按钮 -->
-      <view class="ncc-btns-row">
-        <view class="ncc-reject-btn" @click="exitPendingEdit">
-          <text class="ncc-reject-btn-text">返回预览</text>
-        </view>
-        <view class="ncc-reject-btn" :class="{ 'ncc-btn-disabled': isSubmitting }" @click="handleCancel">
-          <text class="ncc-reject-btn-text">拒绝</text>
-        </view>
-        <view class="ncc-confirm-btn" :class="{ 'ncc-btn-disabled': isSubmitting }" @click="handleConfirm">
-          <text class="ncc-confirm-btn-text">{{ isSubmitting ? '提交中…' : '确认创建' }}</text>
-        </view>
-      </view>
-      <text v-if="submitError" class="ncc-error-text">{{ submitError }}</text>
-    </template>
+    <!-- ======== 详情卡片 ======== -->
+    <view v-if="showDetail || isCollapsing" class="ncc-card"
+      :class="{ 'ncc-card-leave': isDoneSuccess && isCollapsing }">
 
-    <!-- ======== Running 状态 ======== -->
-    <template v-else-if="toolCall.status === 'running'">
-      <view class="ncc-card-header">
-        <view class="ncc-icon-wrap">
-          <image class="ncc-file-icon" src="/static/icons/phosphor-icons/SVGs/regular/file-text.svg" mode="aspectFit" />
-        </view>
-        <view class="ncc-title-col">
-          <text class="ncc-note-title">{{ displayTitle }}</text>
-          <text class="ncc-note-meta ncc-loading-text">正在创建笔记…</text>
-        </view>
-      </view>
-    </template>
-
-    <!-- ======== Done 查看模式 ======== -->
-    <template v-else-if="!isEditing">
-      <view class="ncc-card-header">
-        <view class="ncc-icon-wrap">
-          <image class="ncc-file-icon" src="/static/icons/phosphor-icons/SVGs/regular/file-text.svg" mode="aspectFit" />
-        </view>
-        <view class="ncc-title-col">
-          <text class="ncc-note-title">{{ displayTitle }}</text>
-          <text class="ncc-note-meta">{{ contentMeta }}</text>
-        </view>
-        <view v-if="canEdit" class="ncc-edit-trigger" @click="enterEditMode">
-          <image class="ncc-edit-trigger-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
-          <text class="ncc-edit-trigger-text">编辑</text>
-        </view>
-      </view>
-      <view class="ncc-divider"></view>
-      <view class="ncc-content-preview">
-        <MarkdownRender :content="displayContent" />
-      </view>
-      <view v-if="nodeLabel" class="ncc-nodes-section">
-        <text class="ncc-nodes-label">关联知识节点</text>
-        <view class="ncc-nodes-row">
-          <view class="ncc-node-pill">
-            <text class="ncc-node-pill-text">{{ nodeLabel }}</text>
+      <!-- 待确认预览模式 -->
+      <template v-if="isPending && !isPendingEditing">
+        <view class="ncc-card-header">
+          <view class="ncc-icon-wrap">
+            <image class="ncc-file-icon" src="/static/icons/phosphor-icons/SVGs/regular/file-text.svg" mode="aspectFit" />
+          </view>
+          <view class="ncc-title-col">
+            <text class="ncc-note-title">{{ displayTitle }}</text>
+            <text class="ncc-note-meta">{{ contentMeta }}</text>
+          </view>
+          <view class="ncc-edit-trigger" @click="enterPendingEdit">
+            <image class="ncc-edit-trigger-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
+            <text class="ncc-edit-trigger-text">编辑</text>
           </view>
         </view>
-      </view>
-    </template>
-
-    <!-- ======== Post-creation 编辑模式 ======== -->
-    <template v-else>
-      <view class="ncc-card-header">
-        <view class="ncc-icon-wrap">
-          <image class="ncc-file-icon" src="/static/icons/phosphor-icons/SVGs/regular/file-text.svg" mode="aspectFit" />
+        <view class="ncc-divider"></view>
+        <view class="ncc-content-preview">
+          <MarkdownRender :content="displayContent" />
         </view>
-        <view class="ncc-title-col">
-          <text class="ncc-note-title">编辑笔记</text>
-        </view>
-      </view>
-      <view class="ncc-divider"></view>
-      <input class="ncc-title-input" v-model="editTitle" placeholder="笔记标题" maxlength="200" />
-      <view class="ncc-edit-area">
-        <view class="ncc-edit-toolbar">
-          <view class="ncc-tab-group">
-            <text class="ncc-tab" :class="{ 'ncc-tab-active': editMode === 'code' }" @click="editMode = 'code'">编辑</text>
-            <text class="ncc-tab" :class="{ 'ncc-tab-active': editMode === 'preview' }" @click="editMode = 'preview'">预览</text>
+        <view v-if="nodeLabel" class="ncc-nodes-section">
+          <text class="ncc-nodes-label">关联知识节点</text>
+          <view class="ncc-nodes-row">
+            <view class="ncc-node-pill">
+              <text class="ncc-node-pill-text">{{ nodeLabel }}</text>
+            </view>
           </view>
         </view>
-        <textarea v-if="editMode === 'code'" class="ncc-textarea" v-model="editContent" placeholder="笔记内容 (Markdown)" :auto-height="false"></textarea>
-        <view v-else class="ncc-preview-wrap"><MarkdownRender :content="editContent" /></view>
-      </view>
-      <view class="ncc-btns-row">
-        <view class="ncc-reject-btn" :class="{ 'ncc-btn-disabled': isSaving }" @click="cancelEdit">
-          <text class="ncc-reject-btn-text">取消</text>
+        <view class="ncc-btns-row">
+          <view class="ncc-reject-btn" :class="{ 'ncc-btn-disabled': isSubmitting }" @click="handleCancel">
+            <text class="ncc-reject-btn-text">拒绝</text>
+          </view>
+          <view class="ncc-confirm-btn" :class="{ 'ncc-btn-disabled': isSubmitting }" @click="handleConfirm">
+            <text class="ncc-confirm-btn-text">{{ confirmBtnText }}</text>
+          </view>
         </view>
-        <view class="ncc-confirm-btn" :class="{ 'ncc-btn-disabled': isSaving }" @click="saveEdit">
-          <text class="ncc-confirm-btn-text">{{ isSaving ? '保存中…' : '保存' }}</text>
+        <text v-if="submitError" class="ncc-error-text">{{ submitError }}</text>
+      </template>
+
+      <!-- 待确认编辑模式 -->
+      <template v-else-if="isPending && isPendingEditing">
+        <view class="ncc-field-row">
+          <text class="ncc-field-label">挂载节点</text>
+          <picker mode="selector" :range="nodeOptionLabels" :value="selectedNodeIndex" @change="onNodePickerChange">
+            <view class="ncc-node-picker">
+              <text class="ncc-node-picker-text">{{ currentNodeLabel }}</text>
+              <image class="ncc-node-picker-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
+            </view>
+          </picker>
         </view>
-      </view>
-      <text v-if="saveError" class="ncc-error-text">{{ saveError }}</text>
-    </template>
+        <input class="ncc-title-input" v-model="editTitle" placeholder="笔记标题" maxlength="200" />
+        <view class="ncc-edit-area">
+          <view class="ncc-edit-toolbar">
+            <view class="ncc-tab-group">
+              <text class="ncc-tab" :class="{ 'ncc-tab-active': editMode === 'code' }" @click="editMode = 'code'">编辑</text>
+              <text class="ncc-tab" :class="{ 'ncc-tab-active': editMode === 'preview' }" @click="editMode = 'preview'">预览</text>
+            </view>
+          </view>
+          <textarea v-if="editMode === 'code'" class="ncc-textarea" v-model="editContent" placeholder="笔记内容 (Markdown)" :auto-height="false"></textarea>
+          <view v-else class="ncc-preview-wrap"><MarkdownRender :content="editContent" /></view>
+        </view>
+        <view class="ncc-btns-row">
+          <view class="ncc-reject-btn" @click="exitPendingEdit">
+            <text class="ncc-reject-btn-text">返回预览</text>
+          </view>
+          <view class="ncc-reject-btn" :class="{ 'ncc-btn-disabled': isSubmitting }" @click="handleCancel">
+            <text class="ncc-reject-btn-text">拒绝</text>
+          </view>
+          <view class="ncc-confirm-btn" :class="{ 'ncc-btn-disabled': isSubmitting }" @click="handleConfirm">
+            <text class="ncc-confirm-btn-text">{{ confirmBtnText }}</text>
+          </view>
+        </view>
+        <text v-if="submitError" class="ncc-error-text">{{ submitError }}</text>
+      </template>
+
+      <!-- Running 状态 -->
+      <template v-else-if="isRunning">
+        <view class="ncc-card-header">
+          <view class="ncc-icon-wrap">
+            <image class="ncc-file-icon" src="/static/icons/phosphor-icons/SVGs/regular/file-text.svg" mode="aspectFit" />
+          </view>
+          <view class="ncc-title-col">
+            <text class="ncc-note-title">{{ displayTitle }}</text>
+            <text class="ncc-note-meta ncc-loading-text">正在创建笔记…</text>
+          </view>
+        </view>
+      </template>
+
+      <!-- Done 查看模式 -->
+      <template v-else-if="isDoneSuccess && !isEditing">
+        <view class="ncc-card-header">
+          <view class="ncc-icon-wrap">
+            <image class="ncc-file-icon" src="/static/icons/phosphor-icons/SVGs/regular/file-text.svg" mode="aspectFit" />
+          </view>
+          <view class="ncc-title-col">
+            <text class="ncc-note-title">{{ displayTitle }}</text>
+            <text class="ncc-note-meta">{{ contentMeta }}</text>
+          </view>
+          <view v-if="canEdit" class="ncc-edit-trigger" @click="enterEditMode">
+            <image class="ncc-edit-trigger-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
+            <text class="ncc-edit-trigger-text">编辑</text>
+          </view>
+        </view>
+        <view class="ncc-divider"></view>
+        <view class="ncc-content-preview">
+          <MarkdownRender :content="displayContent" />
+        </view>
+        <view v-if="nodeLabel" class="ncc-nodes-section">
+          <text class="ncc-nodes-label">关联知识节点</text>
+          <view class="ncc-nodes-row">
+            <view class="ncc-node-pill">
+              <text class="ncc-node-pill-text">{{ nodeLabel }}</text>
+            </view>
+          </view>
+        </view>
+      </template>
+
+      <!-- Post-creation 编辑模式 -->
+      <template v-else-if="isDoneSuccess && isEditing">
+        <view class="ncc-card-header">
+          <view class="ncc-icon-wrap">
+            <image class="ncc-file-icon" src="/static/icons/phosphor-icons/SVGs/regular/file-text.svg" mode="aspectFit" />
+          </view>
+          <view class="ncc-title-col">
+            <text class="ncc-note-title">编辑笔记</text>
+          </view>
+        </view>
+        <view class="ncc-divider"></view>
+        <input class="ncc-title-input" v-model="editTitle" placeholder="笔记标题" maxlength="200" />
+        <view class="ncc-edit-area">
+          <view class="ncc-edit-toolbar">
+            <view class="ncc-tab-group">
+              <text class="ncc-tab" :class="{ 'ncc-tab-active': editMode === 'code' }" @click="editMode = 'code'">编辑</text>
+              <text class="ncc-tab" :class="{ 'ncc-tab-active': editMode === 'preview' }" @click="editMode = 'preview'">预览</text>
+            </view>
+          </view>
+          <textarea v-if="editMode === 'code'" class="ncc-textarea" v-model="editContent" placeholder="笔记内容 (Markdown)" :auto-height="false"></textarea>
+          <view v-else class="ncc-preview-wrap"><MarkdownRender :content="editContent" /></view>
+        </view>
+        <view class="ncc-btns-row">
+          <view class="ncc-reject-btn" :class="{ 'ncc-btn-disabled': isSaving }" @click="cancelEdit">
+            <text class="ncc-reject-btn-text">取消</text>
+          </view>
+          <view class="ncc-confirm-btn" :class="{ 'ncc-btn-disabled': isSaving }" @click="saveEdit">
+            <text class="ncc-confirm-btn-text">{{ isSaving ? '保存中…' : '保存' }}</text>
+          </view>
+        </view>
+        <text v-if="saveError" class="ncc-error-text">{{ saveError }}</text>
+      </template>
+    </view>
   </view>
 </template>
 
@@ -181,14 +201,12 @@ export default {
     conversationId: {
       type: [String, Number],
       default: ''
-    },
-    flat: {
-      type: Boolean,
-      default: false
     }
   },
   data() {
     return {
+      isExpanded: true,
+      isCollapsing: false,
       isEditing: false,
       isPendingEditing: false,
       editMode: 'code',
@@ -201,12 +219,33 @@ export default {
       submitError: '',
       savedContent: null,
       savedTitle: null,
-      graphNodes: []
+      graphNodes: [],
+      autoConfirmCountdown: 0,
+      autoConfirmTimer: null
     }
   },
   computed: {
     isPending() {
       return this.toolCall.status === 'pending_confirmation'
+    },
+    isRunning() {
+      return this.toolCall.status === 'running'
+    },
+    isDoneSuccess() {
+      return this.toolCall.status === 'done' && this.toolCall.success
+    },
+    isDoneFailed() {
+      return this.toolCall.status === 'done' && !this.toolCall.success
+    },
+    showDetail() {
+      return this.isPending || this.isRunning || (this.isDoneSuccess && this.isExpanded)
+    },
+    pillText() {
+      if (this.isPending) return '创建笔记 — 待确认'
+      if (this.isRunning) return '正在创建笔记…'
+      if (this.isDoneSuccess) return '已创建笔记'
+      if (this.isDoneFailed) return '创建笔记失败'
+      return '创建笔记'
     },
     nodeLabel() {
       const label = this.toolCall.arguments?.node_label
@@ -245,7 +284,12 @@ export default {
       return this.toolCall.result?.note_id
     },
     canEdit() {
-      return this.toolCall.status === 'done' && this.toolCall.success && this.noteId
+      return this.isDoneSuccess && this.noteId
+    },
+    confirmBtnText() {
+      if (this.isSubmitting) return '提交中…'
+      if (this.autoConfirmCountdown > 0) return `确认创建 (${this.autoConfirmCountdown})`
+      return '确认创建'
     },
     contentMeta() {
       const content = this.displayContent
@@ -264,6 +308,8 @@ export default {
     'toolCall.status'(newStatus) {
       if (newStatus === 'pending_confirmation') {
         this.initConfirmationMode()
+      } else {
+        this.clearAutoConfirmTimer()
       }
     }
   },
@@ -272,7 +318,47 @@ export default {
       this.initConfirmationMode()
     }
   },
+  beforeDestroy() {
+    this.clearAutoConfirmTimer()
+  },
   methods: {
+    handlePillClick() {
+      if (!this.isDoneSuccess) return
+      this.toggleExpand()
+    },
+
+    toggleExpand() {
+      if (this.isExpanded) {
+        this.isCollapsing = true
+        setTimeout(() => {
+          this.isExpanded = false
+          this.isCollapsing = false
+        }, 200)
+      } else {
+        this.isExpanded = true
+      }
+    },
+
+    startAutoConfirmTimer() {
+      this.clearAutoConfirmTimer()
+      this.autoConfirmCountdown = 60
+      this.autoConfirmTimer = setInterval(() => {
+        this.autoConfirmCountdown--
+        if (this.autoConfirmCountdown <= 0) {
+          this.clearAutoConfirmTimer()
+          this.handleConfirm()
+        }
+      }, 1000)
+    },
+
+    clearAutoConfirmTimer() {
+      if (this.autoConfirmTimer) {
+        clearInterval(this.autoConfirmTimer)
+        this.autoConfirmTimer = null
+      }
+      this.autoConfirmCountdown = 0
+    },
+
     onNodePickerChange(e) {
       const idx = e.detail.value
       this.editNodeLabel = this.nodeOptions[idx]?.value || 'FREE'
@@ -294,9 +380,12 @@ export default {
           this.graphNodes = []
         }
       }
+
+      this.startAutoConfirmTimer()
     },
 
     enterPendingEdit() {
+      this.clearAutoConfirmTimer()
       this.isPendingEditing = true
       this.editTitle = this.toolCall.arguments?.title || ''
       this.editContent = this.toolCall.arguments?.content || ''
@@ -315,6 +404,7 @@ export default {
 
     async handleConfirm() {
       if (this.isSubmitting) return
+      this.clearAutoConfirmTimer()
       this.isSubmitting = true
       this.submitError = ''
 
@@ -338,6 +428,7 @@ export default {
 
     async handleCancel() {
       if (this.isSubmitting) return
+      this.clearAutoConfirmTimer()
       this.isSubmitting = true
       this.submitError = ''
 
@@ -411,18 +502,164 @@ export default {
 </script>
 
 <style scoped>
-/* 卡片容器 */
-.ncc-card {
+/* ========== Wrap 容器 ========== */
+.ncc-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ncc-expanded {
   background: rgba(255, 255, 255, 0.04);
   border: 1rpx solid rgba(255, 255, 255, 0.08);
   border-radius: 24rpx;
-  padding: 24rpx 28rpx 20rpx;
+  padding: 0;
+  gap: 0;
+}
+
+/* ========== Pill 指示器 ========== */
+.ncc-pill {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 24rpx;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  border-radius: 24rpx;
+  transition: all 0.25s ease;
+}
+
+.ncc-expanded .ncc-pill {
+  border: none;
+  background: transparent;
+  border-radius: 24rpx 24rpx 0 0;
+  padding: 20rpx 24rpx 16rpx;
+}
+
+.ncc-pill-running {
+  border-color: rgba(74, 108, 247, 0.3);
+  background: rgba(74, 108, 247, 0.06);
+}
+
+.ncc-pill-failed {
+  border-color: rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.ncc-pill-pending {
+  border-color: rgba(232, 168, 56, 0.3);
+  background: rgba(232, 168, 56, 0.06);
+}
+
+.ncc-pill-icon {
+  width: 32rpx;
+  height: 32rpx;
+  flex-shrink: 0;
+  filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
+}
+
+.ncc-pill-pending .ncc-pill-icon {
+  filter: invert(73%) sepia(54%) saturate(491%) hue-rotate(353deg) brightness(94%) contrast(89%);
+}
+
+.ncc-pill-text {
+  flex: 1;
+  font-size: 26rpx;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ncc-pill-running .ncc-pill-text {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.ncc-pill-spinner {
+  width: 22rpx;
+  height: 22rpx;
+  border: 2rpx solid rgba(74, 108, 247, 0.3);
+  border-top-color: #4A6CF7;
+  border-radius: 50%;
+  animation: ncc-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.ncc-pill-status-icon {
+  width: 28rpx;
+  height: 28rpx;
+  flex-shrink: 0;
+  filter: invert(48%) sepia(30%) saturate(900%) hue-rotate(100deg) brightness(85%) contrast(90%);
+}
+
+.ncc-pill-status-pending {
+  filter: invert(73%) sepia(54%) saturate(491%) hue-rotate(353deg) brightness(94%) contrast(89%);
+}
+
+.ncc-pill-status-failed {
+  filter: invert(40%) sepia(90%) saturate(2000%) hue-rotate(345deg) brightness(90%) contrast(95%);
+}
+
+.ncc-pill-chevron {
+  width: 24rpx;
+  height: 24rpx;
+  flex-shrink: 0;
+  opacity: 0.35;
+  filter: brightness(0) invert(1);
+  transition: transform 0.2s ease;
+}
+
+.ncc-pill-chevron-up {
+  transform: rotate(180deg);
+}
+
+@keyframes ncc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ========== 详情卡片 ========== */
+.ncc-card {
+  border: none;
+  background: transparent;
+  border-radius: 0 0 24rpx 24rpx;
+  padding: 20rpx 24rpx 14rpx;
   display: flex;
   flex-direction: column;
   gap: 20rpx;
+  animation: ncc-card-enter 0.28s ease-out;
 }
 
-/* Header 行 */
+.ncc-card-leave {
+  animation: ncc-card-leave 0.2s ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes ncc-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-8rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ncc-card-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8rpx);
+  }
+}
+
+/* ========== Card 内部样式 ========== */
 .ncc-card-header {
   display: flex;
   flex-direction: row;
@@ -471,7 +708,6 @@ export default {
   font-style: italic;
 }
 
-/* 编辑触发按钮 */
 .ncc-edit-trigger {
   display: flex;
   flex-direction: row;
@@ -496,13 +732,11 @@ export default {
   color: rgba(255, 255, 255, 0.7);
 }
 
-/* 分割线 */
 .ncc-divider {
   height: 1rpx;
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* 内容预览 */
 .ncc-content-preview {
   font-size: 26rpx;
   color: rgba(255, 255, 255, 0.85);
@@ -510,7 +744,6 @@ export default {
   word-break: break-word;
 }
 
-/* 关联知识节点 */
 .ncc-nodes-section {
   display: flex;
   flex-direction: column;
@@ -542,7 +775,6 @@ export default {
   color: rgba(129, 140, 248, 0.9);
 }
 
-/* 操作按钮行 */
 .ncc-btns-row {
   display: flex;
   flex-direction: row;
@@ -592,7 +824,6 @@ export default {
   color: rgba(239, 68, 68, 0.9);
 }
 
-/* 编辑区域 */
 .ncc-field-row {
   display: flex;
   flex-direction: column;
@@ -693,12 +924,5 @@ export default {
   color: rgba(255, 255, 255, 0.85);
   line-height: 1.7;
   word-break: break-word;
-}
-
-.ncc-flat {
-  border: none;
-  background: transparent;
-  border-radius: 0 0 24rpx 24rpx;
-  padding: 20rpx 24rpx 14rpx;
 }
 </style>

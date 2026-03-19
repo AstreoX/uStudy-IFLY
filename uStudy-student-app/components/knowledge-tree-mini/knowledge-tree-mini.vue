@@ -176,6 +176,10 @@ export default {
     highlightEdgeColor: {
       type: String,
       default: '#FFD93D'
+    },
+    showAllLabels: {
+      type: Boolean,
+      default: false
     }
   },
 
@@ -1089,8 +1093,10 @@ export default {
         this.drawNode(ctx, node)
       })
 
-      // Draw labels only when node count <= 7 (too many nodes cause label overlap)
-      if (this.nodes.length <= 7) {
+      // Draw labels: all nodes when showAllLabels, otherwise only when <= 7 nodes
+      if (this.showAllLabels) {
+        this.drawNodeLabels(ctx, this.layoutNodes, { alpha: 0.85 })
+      } else if (this.nodes.length <= 7) {
         const labelNodes = this.layoutNodes.filter(node =>
           node.level === 0 || node.level === 1 || this.highlightLabelSet.has(node.label)
         )

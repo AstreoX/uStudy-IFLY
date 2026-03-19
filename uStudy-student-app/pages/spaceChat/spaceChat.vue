@@ -467,93 +467,21 @@
 							</view>
 						</view>
 
-						<!-- 笔记创建工具：pill + 详情卡片 -->
-						<view
+						<!-- 笔记创建工具（自包含 pill + 详情卡片） -->
+						<NoteCreationCard
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'create_note'"
 							:key="'note-tool-' + segIdx"
-							class="note-tool-wrap"
-							:class="{ 'note-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isNoteToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
-						>
-							<!-- pill 指示器 -->
-							<view class="graph-tool-pill"
-								:class="{
-									'graph-tool-pending': seg.toolCall.status === 'pending_confirmation',
-									'graph-tool-running': seg.toolCall.status === 'running',
-									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
-								}"
-								@click="seg.toolCall.status === 'done' && seg.toolCall.success && toggleNoteTool(seg.toolCall.id)"
-							>
-								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
-								<text class="graph-tool-pill-text">{{ getNoteToolText(seg.toolCall) }}</text>
-								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
-								<image v-else-if="seg.toolCall.status === 'pending_confirmation'"
-									class="graph-tool-status-icon graph-tool-status-pending"
-									src="/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg" mode="aspectFit" />
-								<image v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success"
-									class="graph-tool-chevron"
-									:class="{ 'graph-tool-chevron-up': isNoteToolExpanded(seg.toolCall.id) }"
-									src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
-								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
-									class="graph-tool-status-icon graph-tool-status-failed"
-									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
-							</view>
+							:tool-call="seg.toolCall"
+							:space-id="spaceId"
+							:conversation-id="conversationId"
+						/>
 
-							<!-- 笔记卡片 -->
-							<NoteCreationCard
-								v-if="seg.toolCall.status === 'pending_confirmation' || seg.toolCall.status === 'running' || (seg.toolCall.status === 'done' && seg.toolCall.success && (isNoteToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)))"
-								:class="{ 'tool-card-leave': seg.toolCall.status === 'done' && isToolCollapsing(seg.toolCall.id) }"
-								:flat="seg.toolCall.status === 'done' && seg.toolCall.success && (isNoteToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
-								:tool-call="seg.toolCall"
-								:space-id="spaceId"
-								:conversation-id="conversationId"
-							/>
-						</view>
-
-						<!-- 笔记读写工具（list_notes / view_note_detail / update_note / delete_note）：pill + 详情卡片 -->
-						<view
-							v-else-if="seg.type === 'tool' && (seg.toolCall.tool === 'list_notes' || seg.toolCall.tool === 'view_note_detail' || seg.toolCall.tool === 'update_note' || seg.toolCall.tool === 'delete_note')"
+						<!-- 笔记读写工具（自包含 pill + 详情卡片） -->
+						<NoteDisplayCard
+							v-else-if="seg.type === 'tool' && isNoteReadWriteTool(seg.toolCall.tool)"
 							:key="'note-rw-' + segIdx"
-							class="note-tool-wrap"
-							:class="{ 'note-expanded-container': seg.toolCall.tool !== 'delete_note' && seg.toolCall.status === 'done' && seg.toolCall.success && (isNoteToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
-						>
-							<!-- pill 指示器 -->
-							<view class="graph-tool-pill"
-								:class="{
-									'graph-tool-running': seg.toolCall.status === 'running',
-									'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
-								}"
-								@click="seg.toolCall.tool !== 'delete_note' && seg.toolCall.status === 'done' && seg.toolCall.success && toggleNoteTool(seg.toolCall.id)"
-							>
-								<image class="graph-tool-pill-icon" :src="getToolIcon(seg.toolCall.tool)" mode="aspectFit" />
-								<text class="graph-tool-pill-text">{{ getNoteToolText(seg.toolCall) }}</text>
-								<view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
-								<template v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success">
-									<image v-if="seg.toolCall.tool === 'delete_note'"
-										class="graph-tool-status-icon"
-										src="/static/icons/lucide/circle-check.svg" mode="aspectFit" />
-									<image v-else
-										class="graph-tool-chevron"
-										:class="{ 'graph-tool-chevron-up': isNoteToolExpanded(seg.toolCall.id) }"
-										src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit" />
-								</template>
-								<image v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success"
-									class="graph-tool-status-icon graph-tool-status-failed"
-									src="/static/icons/phosphor-icons/SVGs/fill/x-circle-fill.svg" mode="aspectFit" />
-							</view>
-
-							<!-- 详情卡片（非 delete_note 时可展开/折叠） -->
-							<view
-								v-if="seg.toolCall.tool !== 'delete_note' && seg.toolCall.status === 'done' && seg.toolCall.success && (isNoteToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id))"
-								:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
-							>
-								<NoteDisplayCard :tool-call="seg.toolCall" :flat="true" />
-							</view>
-							<!-- delete_note 保留原始行为 -->
-							<NoteDisplayCard
-								v-else-if="seg.toolCall.tool === 'delete_note' && seg.toolCall.status === 'done' && seg.toolCall.success"
-								:tool-call="seg.toolCall"
-							/>
-						</view>
+							:tool-call="seg.toolCall"
+						/>
 
 						<ArtifactGenerationCard
 							v-else-if="seg.type === 'tool' && (seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact')"
@@ -1656,6 +1584,7 @@
 						:canvas-height="graphQuickViewHeight"
 						:force-tree-mode="true"
 						:interactive="true"
+						:show-all-labels="true"
 						canvas-id-suffix="_quickview"
 					/>
 				</view>
@@ -1977,6 +1906,11 @@
 		update_schedule:  { running: '正在更新日程…',     done: '已更新日程',     failed: '更新日程失败' }
 	}
 
+	// 笔记读写工具集合（不含 create_note，那个由 NoteCreationCard 处理）
+	const NOTE_RW_TOOLS = new Set([
+		'list_notes', 'view_note_detail', 'update_note', 'delete_note'
+	])
+
 	// 复习工具集合
 	const REVIEW_TOOLS = new Set([
 		'get_review_events', 'mark_review_completed'
@@ -2094,7 +2028,6 @@
 				expandedSearchResults: {}, // { toolCallId: true }
 				expandedQuizTools: {}, // { toolCallId: true/false }
 				expandedGraphTools: {}, // { toolCallId: true/false }
-				expandedNoteTools: {}, // { toolCallId: true/false }
 				collapsingTools: {}, // { toolCallId: true } — 正在播放折叠动画
 				// 图表详情卡片展开状态（默认展开）
 				expandedChartDetails: {}, // { toolCallId: true/false }
@@ -4763,43 +4696,8 @@
 				return '保存到知识库'
 			},
 
-			getNoteToolText(toolCall) {
-				const tool = toolCall.tool
-				if (tool === 'create_note') {
-					if (toolCall.status === 'pending_confirmation') return '创建笔记 — 待确认'
-					if (toolCall.status === 'running') return '正在创建笔记…'
-					if (toolCall.status === 'done' && toolCall.success) return '已创建笔记'
-					if (toolCall.status === 'done' && !toolCall.success) return '创建笔记失败'
-					return '创建笔记'
-				}
-				if (tool === 'list_notes') {
-					if (toolCall.status === 'running') return '正在查看笔记列表…'
-					if (toolCall.status === 'done' && toolCall.success) {
-						const count = toolCall.result?.notes?.length || 0
-						return '已查看笔记 · ' + count + ' 篇'
-					}
-					if (toolCall.status === 'done' && !toolCall.success) return '查看笔记失败'
-					return '查看笔记'
-				}
-				if (tool === 'view_note_detail') {
-					if (toolCall.status === 'running') return '正在查看笔记…'
-					if (toolCall.status === 'done' && toolCall.success) return '已查看笔记详情'
-					if (toolCall.status === 'done' && !toolCall.success) return '查看笔记失败'
-					return '查看笔记'
-				}
-				if (tool === 'update_note') {
-					if (toolCall.status === 'running') return '正在更新笔记…'
-					if (toolCall.status === 'done' && toolCall.success) return '已更新笔记'
-					if (toolCall.status === 'done' && !toolCall.success) return '更新笔记失败'
-					return '更新笔记'
-				}
-				if (tool === 'delete_note') {
-					if (toolCall.status === 'running') return '正在删除笔记…'
-					if (toolCall.status === 'done' && toolCall.success) return '已删除笔记'
-					if (toolCall.status === 'done' && !toolCall.success) return '删除笔记失败'
-					return '删除笔记'
-				}
-				return toolCall.tool
+			isNoteReadWriteTool(toolName) {
+				return NOTE_RW_TOOLS.has(toolName)
 			},
 
 			isReviewTool(toolName) {
@@ -5372,24 +5270,6 @@
 
 			isGraphToolExpanded(toolCallId) {
 				return this.expandedGraphTools[toolCallId] !== false
-			},
-
-			isNoteToolExpanded(toolCallId) {
-				return this.expandedNoteTools[toolCallId] !== false
-			},
-
-			toggleNoteTool(toolCallId) {
-				const isCurrentlyExpanded = this.expandedNoteTools[toolCallId] !== false
-				if (isCurrentlyExpanded) {
-					this.collapsingTools = { ...this.collapsingTools, [toolCallId]: true }
-					setTimeout(() => {
-						this.expandedNoteTools = { ...this.expandedNoteTools, [toolCallId]: false }
-						const { [toolCallId]: _, ...rest } = this.collapsingTools
-						this.collapsingTools = rest
-					}, 200)
-				} else {
-					this.expandedNoteTools = { ...this.expandedNoteTools, [toolCallId]: true }
-				}
 			},
 
 			isToolCollapsing(toolCallId) {
@@ -7195,28 +7075,6 @@
 		filter: invert(73%) sepia(54%) saturate(491%) hue-rotate(353deg) brightness(94%) contrast(89%);
 	}
 
-	.note-tool-wrap {
-		display: flex;
-		flex-direction: column;
-		gap: 12rpx;
-	}
-
-	/* ========== 笔记工具展开容器 ========== */
-	.note-expanded-container {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1rpx solid rgba(255, 255, 255, 0.08);
-		border-radius: 24rpx;
-		padding: 0;
-		gap: 0;
-	}
-
-	.note-expanded-container .graph-tool-pill {
-		border: none;
-		background: transparent;
-		border-radius: 24rpx 24rpx 0 0;
-		padding: 20rpx 24rpx 16rpx;
-	}
-
 	.graph-tool-expanded {
 		border-color: rgba(255, 255, 255, 0.2);
 		background: rgba(255, 255, 255, 0.08);
@@ -7506,7 +7364,7 @@
 	.graph-quick-view-panel {
 		width: 100%;
 		max-width: 700rpx;
-		background: #1a1a2e;
+		background: #1a1a1a;
 		border: 1rpx solid rgba(255, 255, 255, 0.1);
 		border-radius: 32rpx;
 		overflow: hidden;
@@ -7533,7 +7391,8 @@
 		width: 36rpx;
 		height: 36rpx;
 		flex-shrink: 0;
-		filter: invert(38%) sepia(78%) saturate(2567%) hue-rotate(221deg) brightness(101%) contrast(94%);
+		filter: brightness(0) invert(1);
+		opacity: 0.6;
 	}
 
 	.graph-quick-view-title {

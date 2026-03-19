@@ -173,11 +173,17 @@ export function submitQuiz(quizId, data) {
 /**
  * 获取空间所有测验列表
  * @param {string} spaceId - 学习空间 ID
+ * @param {Object} [options]
+ * @param {string} [options.folderId] - 按文件夹筛选
  * @returns {Promise<Array>} List of QuizListItemResponse
  */
-export function getQuizzesBySpace(spaceId) {
+export function getQuizzesBySpace(spaceId, { folderId } = {}) {
+  let url = `/api/quizzes?space_id=${spaceId}`
+  if (folderId !== undefined && folderId !== null && folderId !== '') {
+    url += `&folder_id=${encodeURIComponent(folderId)}`
+  }
   return request({
-    url: `/api/quizzes?space_id=${spaceId}`,
+    url,
     method: 'GET'
   })
 }

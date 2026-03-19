@@ -16,7 +16,9 @@
         <text class="nav-title">笔记管理</text>
         <text v-if="spaceName" class="nav-subtitle">{{ spaceName }}</text>
       </view>
-      <view class="nav-spacer"></view>
+      <view class="nav-action" @click="showCreateFolderDialog">
+        <image class="nav-icon" src="/static/icons/lucide/folder-plus.svg" mode="aspectFit"></image>
+      </view>
     </view>
 
     <!-- Loading State -->
@@ -34,7 +36,7 @@
     </view>
 
     <!-- Empty State -->
-    <view v-else-if="notes.length === 0" class="state-container">
+    <view v-else-if="notes.length === 0 && currentFolders.length === 0" class="state-container">
       <image class="state-icon" src="/static/icons/phosphor-icons/SVGs/regular/notebook.svg" mode="aspectFit"></image>
       <text class="state-text">暂无笔记</text>
       <text class="state-sub">在与 AI 对话时可以让 AI 为你创建笔记</text>
@@ -43,6 +45,19 @@
     <!-- Notes List -->
     <scroll-view v-else class="content-scroll" scroll-y>
       <view class="content-body">
+        <!-- Breadcrumb -->
+        <view v-if="breadcrumbs.length > 0" class="breadcrumb-bar">
+          <view class="breadcrumb-item" @click="navigateToFolder(null)">
+            <text class="breadcrumb-text breadcrumb-link">全部</text>
+          </view>
+          <template v-for="(crumb, idx) in breadcrumbs" :key="crumb.id">
+            <text class="breadcrumb-sep">/</text>
+            <view class="breadcrumb-item" @click="navigateToFolder(crumb.id)">
+              <text class="breadcrumb-text" :class="{ 'breadcrumb-link': idx < breadcrumbs.length - 1 }">{{ crumb.name }}</text>
+            </view>
+          </template>
+        </view>
+
         <!-- Search Bar -->
         <view class="search-bar">
           <image class="search-icon" src="/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg" mode="aspectFit"></image>
@@ -55,13 +70,34 @@
           />
         </view>
 
+        <!-- Folders -->
+        <view v-if="currentFolders.length > 0" class="folder-section">
+          <view
+            v-for="folder in currentFolders"
+            :key="folder.id"
+            class="folder-card"
+            @click="navigateToFolder(folder.id)"
+            @longpress="showFolderActions(folder)"
+          >
+            <image class="folder-icon" src="/static/icons/lucide/folder.svg" mode="aspectFit"></image>
+            <view class="folder-info">
+              <text class="folder-name">{{ folder.name }}</text>
+              <text class="folder-count">{{ folder.items_count }} 条笔记</text>
+            </view>
+            <image class="folder-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+          </view>
+        </view>
+
         <!-- No search results -->
-        <view v-if="filteredNotes.length === 0" class="no-results">
+        <view v-if="filteredNotes.length === 0 && currentFolders.length === 0" class="no-results">
+          <text class="state-text">当前文件夹为空</text>
+        </view>
+        <view v-else-if="filteredNotes.length === 0 && searchQuery.trim()" class="no-results">
           <text class="state-text">没有匹配的笔记</text>
         </view>
 
         <!-- Notes -->
-        <view v-else class="list-section">
+        <view v-if="filteredNotes.length > 0" class="list-section">
           <text class="section-caption">{{ filteredNotes.length }} 条笔记</text>
           <view
             v-for="note in filteredNotes"
@@ -87,6 +123,9 @@
                 </view>
               </view>
               <view class="note-item-actions" @click.stop>
+                <view class="note-item-btn" @click.stop="showMoveNoteDialog(note)">
+                  <image class="note-item-btn-icon" src="/static/icons/lucide/folder-input.svg" mode="aspectFit" />
+                </view>
                 <view v-if="note.note_type !== 'interactive_html' && canEditNote(note)" class="note-item-btn" @click.stop="startEditNote(note)">
                   <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
                 </view>
@@ -320,6 +359,103 @@
       </view>
     </view>
 
+    <!-- Create Folder Dialog -->
+    <view v-if="showCreateFolder" class="folder-dialog-mask" @click="showCreateFolder = false">
+      <view class="folder-dialog" @click.stop>
+        <text class="folder-dialog-title">新建文件夹</text>
+        <input
+          class="folder-dialog-input"
+          v-model="newFolderName"
+          type="text"
+          placeholder="文件夹名称"
+          maxlength="100"
+          placeholder-style="color: #5C5B59"
+        />
+        <view class="folder-dialog-actions">
+          <view class="folder-dialog-btn folder-dialog-btn-cancel" @click="showCreateFolder = false">
+            <text class="folder-dialog-btn-text">取消</text>
+          </view>
+          <view class="folder-dialog-btn folder-dialog-btn-confirm" @click="doCreateFolder">
+            <text class="folder-dialog-btn-text folder-dialog-btn-text-confirm">创建</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- Move Note to Folder Picker -->
+    <view v-if="showMovePicker" class="folder-dialog-mask" @click="showMovePicker = false">
+      <view class="folder-picker-popup" @click.stop>
+        <view class="folder-picker-header">
+          <text class="folder-picker-title">移动到文件夹</text>
+          <view class="folder-picker-close" @click="showMovePicker = false">
+            <image class="folder-picker-close-icon" src="/static/icons/phosphor-icons/SVGs/regular/x.svg" mode="aspectFit"></image>
+          </view>
+        </view>
+        <scroll-view class="folder-picker-list" scroll-y>
+          <view
+            class="folder-picker-item"
+            :class="{ 'folder-picker-item-active': !moveTargetFolderId }"
+            @click="selectMoveTarget(null)"
+          >
+            <image class="folder-picker-item-icon" src="/static/icons/phosphor-icons/SVGs/regular/house.svg" mode="aspectFit"></image>
+            <text class="folder-picker-item-text">根目录（未分类）</text>
+          </view>
+          <view
+            v-for="folder in allFolders"
+            :key="folder.id"
+            class="folder-picker-item"
+            :class="{ 'folder-picker-item-active': moveTargetFolderId === folder.id }"
+            @click="selectMoveTarget(folder.id)"
+          >
+            <image class="folder-picker-item-icon" src="/static/icons/lucide/folder.svg" mode="aspectFit"></image>
+            <text class="folder-picker-item-text">{{ folder.name }}</text>
+          </view>
+        </scroll-view>
+        <view class="folder-picker-footer">
+          <view class="folder-dialog-btn folder-dialog-btn-confirm" @click="doMoveNote">
+            <text class="folder-dialog-btn-text folder-dialog-btn-text-confirm">确定移动</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- Folder Actions (rename/delete) -->
+    <view v-if="showFolderActionMenu" class="folder-dialog-mask" @click="showFolderActionMenu = false">
+      <view class="folder-action-popup" @click.stop>
+        <view class="folder-action-item" @click="startRenameFolder">
+          <image class="folder-action-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit"></image>
+          <text class="folder-action-text">重命名</text>
+        </view>
+        <view class="folder-action-item folder-action-item-danger" @click="doDeleteFolder">
+          <image class="folder-action-icon folder-action-icon-danger" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit"></image>
+          <text class="folder-action-text folder-action-text-danger">删除文件夹</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- Rename Folder Dialog -->
+    <view v-if="showRenameFolder" class="folder-dialog-mask" @click="showRenameFolder = false">
+      <view class="folder-dialog" @click.stop>
+        <text class="folder-dialog-title">重命名文件夹</text>
+        <input
+          class="folder-dialog-input"
+          v-model="renameFolderName"
+          type="text"
+          placeholder="新名称"
+          maxlength="100"
+          placeholder-style="color: #5C5B59"
+        />
+        <view class="folder-dialog-actions">
+          <view class="folder-dialog-btn folder-dialog-btn-cancel" @click="showRenameFolder = false">
+            <text class="folder-dialog-btn-text">取消</text>
+          </view>
+          <view class="folder-dialog-btn folder-dialog-btn-confirm" @click="doRenameFolder">
+            <text class="folder-dialog-btn-text folder-dialog-btn-text-confirm">确定</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
     <!-- Delete Confirm Modal -->
     <u-modal
       :visible="showDeleteModal"
@@ -343,6 +479,7 @@
 
 <script>
 import { getSpaceNotes, getNoteDetail, updateNote, deleteNote } from '@/api/note'
+import { getFolders, createFolder, updateFolder, deleteFolder as deleteFolderApi, moveNotes } from '@/api/folder'
 import { getSpace, getSpaceMembers, getSpaceGraph } from '@/api/space'
 import { useUserStore } from '@/store/user'
 import UToast from '@/components/u-toast/u-toast.vue'
@@ -391,13 +528,35 @@ export default {
         visible: false,
         message: '',
         type: 'info'
-      }
+      },
+      // Folder state
+      allFolders: [],
+      currentFolderId: null,
+      breadcrumbs: [],
+      showCreateFolder: false,
+      newFolderName: '',
+      showMovePicker: false,
+      moveNoteId: null,
+      moveTargetFolderId: null,
+      showFolderActionMenu: false,
+      activeFolderForAction: null,
+      showRenameFolder: false,
+      renameFolderName: ''
     }
   },
 
   computed: {
     deleteModalContent() {
       return `确定要删除笔记「${this.noteToDelete ? this.getNoteTitle(this.noteToDelete) : ''}」吗？此操作无法撤销。`
+    },
+
+    currentFolders() {
+      return this.allFolders.filter(f => {
+        const parentMatch = this.currentFolderId
+          ? f.parent_id === this.currentFolderId
+          : !f.parent_id
+        return parentMatch
+      })
     },
 
     filteredNotes() {
@@ -418,6 +577,7 @@ export default {
     this.pendingOpenNoteId = options.openNoteId || ''
     this.currentUserId = useUserStore().user?.id || ''
     this.loadCollaborationContext()
+    this.loadFolders()
     this.loadNotes()
   },
 
@@ -470,7 +630,11 @@ export default {
       try {
         this.loading = true
         this.loadError = null
-        const response = await getSpaceNotes(this.spaceId)
+        const opts = {}
+        if (this.currentFolderId) {
+          opts.folderId = this.currentFolderId
+        }
+        const response = await getSpaceNotes(this.spaceId, opts)
         this.notes = Array.isArray(response) ? response : []
         if (this.pendingOpenNoteId) {
           const targetId = this.pendingOpenNoteId
@@ -555,6 +719,128 @@ export default {
       uni.navigateTo({
         url: `/pages/artifactViewer/artifactViewer?spaceId=${this.spaceId}&noteId=${note.id}`
       })
+    },
+
+    // ============ Folder Methods ============
+
+    async loadFolders() {
+      if (!this.spaceId) return
+      try {
+        const folders = await getFolders(this.spaceId, 'notes')
+        this.allFolders = Array.isArray(folders) ? folders : []
+      } catch (e) {
+        this.allFolders = []
+      }
+    },
+
+    navigateToFolder(folderId) {
+      this.currentFolderId = folderId
+      this.searchQuery = ''
+      this.buildBreadcrumbs()
+      this.loadNotes()
+    },
+
+    buildBreadcrumbs() {
+      const crumbs = []
+      let currentId = this.currentFolderId
+      while (currentId) {
+        const folder = this.allFolders.find(f => f.id === currentId)
+        if (!folder) break
+        crumbs.unshift({ id: folder.id, name: folder.name })
+        currentId = folder.parent_id
+      }
+      this.breadcrumbs = crumbs
+    },
+
+    showCreateFolderDialog() {
+      this.newFolderName = ''
+      this.showCreateFolder = true
+    },
+
+    async doCreateFolder() {
+      const name = this.newFolderName.trim()
+      if (!name) return
+      try {
+        await createFolder(this.spaceId, {
+          name,
+          content_type: 'notes',
+          parent_id: this.currentFolderId || undefined
+        })
+        this.showCreateFolder = false
+        this.showCustomToast('文件夹已创建', 'success')
+        await this.loadFolders()
+      } catch (e) {
+        this.showCustomToast(e?.message || '创建失败', 'error')
+      }
+    },
+
+    showFolderActions(folder) {
+      this.activeFolderForAction = folder
+      this.showFolderActionMenu = true
+    },
+
+    startRenameFolder() {
+      this.showFolderActionMenu = false
+      this.renameFolderName = this.activeFolderForAction?.name || ''
+      this.showRenameFolder = true
+    },
+
+    async doRenameFolder() {
+      const name = this.renameFolderName.trim()
+      if (!name || !this.activeFolderForAction) return
+      try {
+        await updateFolder(this.spaceId, this.activeFolderForAction.id, { name })
+        this.showRenameFolder = false
+        this.showCustomToast('已重命名', 'success')
+        await this.loadFolders()
+        this.buildBreadcrumbs()
+      } catch (e) {
+        this.showCustomToast(e?.message || '重命名失败', 'error')
+      }
+    },
+
+    async doDeleteFolder() {
+      if (!this.activeFolderForAction) return
+      try {
+        await deleteFolderApi(this.spaceId, this.activeFolderForAction.id)
+        this.showFolderActionMenu = false
+        this.showCustomToast('文件夹已删除', 'success')
+        // If we're inside the deleted folder, navigate to root
+        if (this.currentFolderId === this.activeFolderForAction.id) {
+          this.currentFolderId = this.activeFolderForAction.parent_id || null
+        }
+        await this.loadFolders()
+        this.buildBreadcrumbs()
+        this.loadNotes()
+      } catch (e) {
+        this.showCustomToast(e?.message || '删除失败', 'error')
+      }
+    },
+
+    showMoveNoteDialog(note) {
+      this.moveNoteId = note.id
+      this.moveTargetFolderId = note.folder_id || null
+      this.showMovePicker = true
+    },
+
+    selectMoveTarget(folderId) {
+      this.moveTargetFolderId = folderId
+    },
+
+    async doMoveNote() {
+      if (!this.moveNoteId) return
+      try {
+        await moveNotes(this.spaceId, {
+          item_ids: [this.moveNoteId],
+          target_folder_id: this.moveTargetFolderId
+        })
+        this.showMovePicker = false
+        this.showCustomToast('已移动', 'success')
+        await this.loadFolders()
+        this.loadNotes()
+      } catch (e) {
+        this.showCustomToast(e?.message || '移动失败', 'error')
+      }
     },
 
     async handleNoteClick(note) {
@@ -1741,5 +2027,313 @@ export default {
 .node-picker-empty-text {
   font-size: 28rpx;
   color: rgba(248, 248, 248, 0.35);
+}
+
+/* ============ Nav Action Button ============ */
+.nav-action {
+  width: 72rpx;
+  height: 72rpx;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
+    0 2rpx 12rpx rgba(0, 0, 0, 0.25);
+}
+
+.nav-action:active {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+/* ============ Breadcrumb ============ */
+.breadcrumb-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6rpx;
+  padding: 0 6rpx;
+  margin-bottom: 4rpx;
+}
+
+.breadcrumb-item {
+  display: flex;
+  align-items: center;
+}
+
+.breadcrumb-text {
+  font-size: 24rpx;
+  color: rgba(248, 248, 248, 0.52);
+}
+
+.breadcrumb-link {
+  color: #4A6CF7;
+}
+
+.breadcrumb-sep {
+  font-size: 24rpx;
+  color: rgba(248, 248, 248, 0.25);
+  margin: 0 4rpx;
+}
+
+/* ============ Folder Cards ============ */
+.folder-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.folder-card {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 22rpx 28rpx;
+  border-radius: 30rpx;
+  background: rgb(36, 36, 36);
+  border: 2rpx solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.18);
+}
+
+.folder-card:active {
+  background: rgb(41, 41, 41);
+}
+
+.folder-icon {
+  width: 44rpx;
+  height: 44rpx;
+  flex-shrink: 0;
+  filter: brightness(0) saturate(100%) invert(51%) sepia(82%) saturate(1600%) hue-rotate(207deg) brightness(102%) contrast(94%);
+}
+
+.folder-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.folder-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: rgb(248, 248, 248);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-count {
+  font-size: 22rpx;
+  color: #7C8598;
+}
+
+.folder-arrow {
+  width: 28rpx;
+  height: 28rpx;
+  flex-shrink: 0;
+  filter: brightness(0) invert(0.46);
+}
+
+/* ============ Folder Dialog ============ */
+.folder-dialog-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.folder-dialog {
+  width: 560rpx;
+  background: rgb(42, 42, 44);
+  border-radius: 32rpx;
+  padding: 40rpx 36rpx 32rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+}
+
+.folder-dialog-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: rgb(248, 248, 248);
+  margin-bottom: 28rpx;
+  text-align: center;
+}
+
+.folder-dialog-input {
+  width: 100%;
+  height: 80rpx;
+  padding: 0 24rpx;
+  border-radius: 16rpx;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  color: rgb(248, 248, 248);
+  font-size: 28rpx;
+  margin-bottom: 28rpx;
+  box-sizing: border-box;
+}
+
+.folder-dialog-actions {
+  display: flex;
+  gap: 16rpx;
+}
+
+.folder-dialog-btn {
+  flex: 1;
+  height: 76rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16rpx;
+}
+
+.folder-dialog-btn-cancel {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+}
+
+.folder-dialog-btn-confirm {
+  background: rgba(74, 108, 247, 0.2);
+  border: 1rpx solid rgba(74, 108, 247, 0.4);
+}
+
+.folder-dialog-btn-text {
+  font-size: 28rpx;
+  color: rgba(248, 248, 248, 0.7);
+}
+
+.folder-dialog-btn-text-confirm {
+  color: #4A6CF7;
+  font-weight: 600;
+}
+
+/* ============ Folder Picker (Move) ============ */
+.folder-picker-popup {
+  width: 600rpx;
+  max-height: 700rpx;
+  background: rgb(42, 42, 44);
+  border-radius: 32rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+}
+
+.folder-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx 16rpx;
+}
+
+.folder-picker-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: rgb(248, 248, 248);
+}
+
+.folder-picker-close {
+  width: 56rpx;
+  height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.folder-picker-close-icon {
+  width: 32rpx;
+  height: 32rpx;
+  filter: brightness(0) invert(0.7);
+}
+
+.folder-picker-list {
+  flex: 1;
+  max-height: 480rpx;
+  padding: 0 16rpx;
+  box-sizing: border-box;
+}
+
+.folder-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 16rpx;
+  border-radius: 16rpx;
+  margin-bottom: 4rpx;
+}
+
+.folder-picker-item:active,
+.folder-picker-item-active {
+  background: rgba(74, 108, 247, 0.12);
+}
+
+.folder-picker-item-icon {
+  width: 36rpx;
+  height: 36rpx;
+  filter: brightness(0) invert(0.6);
+}
+
+.folder-picker-item-text {
+  flex: 1;
+  font-size: 28rpx;
+  color: rgba(248, 248, 248, 0.8);
+}
+
+.folder-picker-item-active .folder-picker-item-text {
+  color: #4A6CF7;
+}
+
+.folder-picker-footer {
+  padding: 16rpx 32rpx 28rpx;
+}
+
+/* ============ Folder Action Menu ============ */
+.folder-action-popup {
+  width: 500rpx;
+  background: rgb(42, 42, 44);
+  border-radius: 24rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  padding: 12rpx 0;
+}
+
+.folder-action-item {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx 32rpx;
+}
+
+.folder-action-item:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.folder-action-icon {
+  width: 40rpx;
+  height: 40rpx;
+  filter: brightness(0) invert(0.7);
+}
+
+.folder-action-icon-danger {
+  filter: brightness(0) saturate(100%) invert(44%) sepia(78%) saturate(2349%) hue-rotate(337deg) brightness(97%) contrast(93%);
+}
+
+.folder-action-text {
+  font-size: 30rpx;
+  color: rgba(248, 248, 248, 0.85);
+}
+
+.folder-action-text-danger {
+  color: rgba(239, 68, 68, 0.9);
 }
 </style>
