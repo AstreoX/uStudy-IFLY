@@ -15,10 +15,41 @@ from db.models import ReviewSchedule, Space, StudyActivityLog
 logger = logging.getLogger(__name__)
 
 # ── In-memory cache ──
-# Key: (user_id_str, date_str) → {"result": dict, "expires": datetime}
+# Key: (user_id_str, slot_str) → {"result": dict, "expires": datetime}
+# Slots (CST UTC+8): 00:00-07:59→prev_day_21, 08:00-11:59→today_08,
+#                    12:00-17:59→today_12, 18:00-20:59→today_18, 21:00-23:59→today_21
 _suggestion_cache: dict[tuple[str, str], dict] = {}
-_CACHE_TTL_MINUTES = 360  # 6 hours
 _MAX_CACHE_ENTRIES = 5000
+_CST = timezone(timedelta(hours=8))
+_UPDATE_HOURS_CST = [8, 12, 18, 21]
+
+
+def _get_slot_info() -> tuple[str, datetime]:
+    """返回 (当前槽标识符, 下次更新UTC时间)"""
+    now_cst = datetime.now(_CST)
+    today = now_cst.date()
+    current_hour = now_cst.hour
+
+    current_slot_hour = None
+    for h in _UPDATE_HOURS_CST:
+        if current_hour >= h:
+            current_slot_hour = h
+
+    if current_slot_hour is None:
+        yesterday = today - timedelta(days=1)
+        slot_str = f"{yesterday.strftime('%Y%m%d')}_21"
+        next_dt = datetime(today.year, today.month, today.day, 8, 0, 0, tzinfo=_CST)
+    else:
+        slot_str = f"{today.strftime('%Y%m%d')}_{current_slot_hour:02d}"
+        future = [h for h in _UPDATE_HOURS_CST if h > current_slot_hour]
+        if future:
+            next_dt = datetime(today.year, today.month, today.day, future[0], 0, 0, tzinfo=_CST)
+        else:
+            tomorrow = today + timedelta(days=1)
+            next_dt = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 8, 0, 0, tzinfo=_CST)
+
+    return slot_str, next_dt.astimezone(timezone.utc)
+
 
 _PREFERENCE_LABELS: dict[str, str] = {
     "university": "大学课程",
@@ -164,8 +195,9 @@ def _heuristic_suggestion(
 
 
 def _get_cached(user_id: UUID) -> dict | None:
-    """Return cached result if still valid."""
-    key = (str(user_id), str(datetime.now(timezone.utc).date()))
+    """Return cached result if still valid (within current time slot)."""
+    slot_str, _ = _get_slot_info()
+    key = (str(user_id), slot_str)
     entry = _suggestion_cache.get(key)
     if entry and datetime.now(timezone.utc) < entry["expires"]:
         return entry["result"]
@@ -175,50 +207,13 @@ def _get_cached(user_id: UUID) -> dict | None:
 def _set_cache(user_id: UUID, result: dict) -> None:
     if len(_suggestion_cache) >= _MAX_CACHE_ENTRIES:
         _suggestion_cache.pop(next(iter(_suggestion_cache)), None)
-    key = (str(user_id), str(datetime.now(timezone.utc).date()))
-    now = datetime.now(timezone.utc)
+    slot_str, next_update_utc = _get_slot_info()
+    key = (str(user_id), slot_str)
     _suggestion_cache[key] = {
         "result": result,
-        "generated_at": now,
-        "expires": now + timedelta(minutes=_CACHE_TTL_MINUTES),
+        "generated_at": datetime.now(timezone.utc),
+        "expires": next_update_utc,
     }
-
-
-def _get_expired_entry(user_id: UUID) -> dict | None:
-    """Return expired-but-present cache entry (for conditional renewal)."""
-    key = (str(user_id), str(datetime.now(timezone.utc).date()))
-    entry = _suggestion_cache.get(key)
-    if entry and datetime.now(timezone.utc) >= entry["expires"]:
-        return entry
-    return None
-
-
-def _extend_cache(user_id: UUID, result: dict) -> None:
-    """Renew cache with old result for another TTL period."""
-    if len(_suggestion_cache) >= _MAX_CACHE_ENTRIES:
-        _suggestion_cache.pop(next(iter(_suggestion_cache)), None)
-    key = (str(user_id), str(datetime.now(timezone.utc).date()))
-    now = datetime.now(timezone.utc)
-    _suggestion_cache[key] = {
-        "result": result,
-        "generated_at": now,
-        "expires": now + timedelta(minutes=_CACHE_TTL_MINUTES),
-    }
-
-
-async def _has_new_activities_since(
-    user_id: UUID, since: datetime, db: AsyncSession
-) -> bool:
-    """Lightweight check: any new study activity after `since`?"""
-    result = await db.execute(
-        select(StudyActivityLog.id)
-        .where(
-            StudyActivityLog.user_id == user_id,
-            StudyActivityLog.activity_time > since,
-        )
-        .limit(1)
-    )
-    return result.scalar_one_or_none() is not None
 
 
 async def _fetch_recent_activities(
@@ -294,23 +289,13 @@ async def get_ai_suggestion(
     Main entry point: returns a study suggestion dict with keys:
     decision, subject, guidance, title, source
     """
-    # Check cache
+    # Check cache (valid within current time slot)
     if not force_refresh:
         cached = _get_cached(user_id)
         if cached:
             return cached
 
-        # Cache expired — check if new activities warrant regeneration
-        expired = _get_expired_entry(user_id)
-        if expired:
-            has_new = await _has_new_activities_since(
-                user_id, expired["generated_at"], db
-            )
-            if not has_new:
-                _extend_cache(user_id, expired["result"])
-                return expired["result"]
-
-    # Gather data
+    # Cache expired or force refresh → regenerate
     activities = await _fetch_recent_activities(user_id, db)
     due_reviews = await _fetch_due_reviews(user_id, db)
     plain_reviews = [(r, a) for r, a, _prefs in due_reviews]
