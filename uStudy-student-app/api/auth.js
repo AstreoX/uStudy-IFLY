@@ -60,16 +60,6 @@ export function login(data) {
   })
 }
 
-export function appleLogin(idToken) {
-  return request({
-    url: '/api/auth/apple',
-    method: 'POST',
-    data: { id_token: idToken },
-    skipAuth: true,
-    skipRefresh: true
-  })
-}
-
 export function refreshToken(refreshTokenValue) {
   return request({
     url: '/api/auth/refresh',

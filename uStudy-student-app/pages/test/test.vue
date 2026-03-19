@@ -208,6 +208,7 @@
 <script>
 import { getQuizDetail, submitQuiz } from '@/api/space'
 import { setPendingEvaluation } from '@/utils/quizEvaluationBus'
+import { setQuizEvaluationResult } from '@/utils/storage'
 
 export default {
   data() {
@@ -605,7 +606,7 @@ export default {
       // Fire-and-forget: submit in background
       submitQuiz(quizId, { answers })
         .then(response => {
-          uni.setStorageSync('quizEvaluationResult', response)
+          setQuizEvaluationResult(response)
           setPendingEvaluation(quizId, { status: 'success', result: response })
         })
         .catch(error => {

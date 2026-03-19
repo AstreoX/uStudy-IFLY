@@ -870,8 +870,9 @@
 							<!-- 详情卡片 (done + success + 有快照数据) -->
 								<view
 									v-if="(isGraphToolExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) && seg.toolCall.status === 'done' && seg.toolCall.success && graphMutationSnapshots[seg.toolCall.id]"
-									class="gm-card"
+									class="gm-card gm-card-clickable"
 									:class="{ 'tool-card-leave': isToolCollapsing(seg.toolCall.id) }"
+									@click="openLpQuickView(seg.toolCall.id)"
 								>
 								<view class="gm-card-header">
 									<view class="gm-card-icon-wrap"
@@ -1591,6 +1592,48 @@
 			</view>
 		</view>
 
+		<!-- 学习路径快速预览弹窗 -->
+		<view
+			v-if="showLpQuickView && lpQuickViewToolCallId && graphMutationSnapshots[lpQuickViewToolCallId]"
+			class="graph-quick-view-overlay"
+			@click="showLpQuickView = false"
+		>
+			<view class="graph-quick-view-panel" @click.stop>
+				<!-- 头部 -->
+				<view class="graph-quick-view-header">
+					<view class="graph-quick-view-title-row">
+						<image class="graph-quick-view-title-icon" src="/static/icons/phosphor-icons/SVGs/regular/path.svg" mode="aspectFit" />
+						<text class="graph-quick-view-title">学习路径</text>
+					</view>
+					<view class="graph-quick-view-close" @click="showLpQuickView = false">
+						<image class="graph-quick-view-close-icon" src="/static/icons/phosphor-icons/SVGs/regular/x.svg" mode="aspectFit" />
+					</view>
+				</view>
+
+				<!-- 元信息 -->
+				<text class="graph-quick-view-meta">{{ (graphMutationSnapshots[lpQuickViewToolCallId].highlightNodeLabels || []).length }} 个路径节点 · {{ graphMutationSnapshots[lpQuickViewToolCallId].nodes.length }} 个节点</text>
+
+				<!-- 图谱画布（可拖动/缩放） -->
+				<view class="graph-quick-view-canvas" :style="{ height: graphQuickViewHeight + 'px' }">
+					<knowledge-tree-mini
+						:space-id="spaceId"
+						:nodes="graphMutationSnapshots[lpQuickViewToolCallId].nodes"
+						:edges="graphMutationSnapshots[lpQuickViewToolCallId].edges"
+						:canvas-width="graphQuickViewWidth"
+						:canvas-height="graphQuickViewHeight"
+						:force-tree-mode="true"
+						:interactive="true"
+						:show-only-highlight-labels="true"
+						canvas-id-suffix="_lp_quickview"
+						:highlight-node-labels="graphMutationSnapshots[lpQuickViewToolCallId].highlightNodeLabels"
+						:highlight-color="graphMutationSnapshots[lpQuickViewToolCallId].highlightColor"
+						:highlight-edge-pairs="graphMutationSnapshots[lpQuickViewToolCallId].highlightEdgePairs || []"
+						:highlight-edge-color="graphMutationSnapshots[lpQuickViewToolCallId].highlightEdgeColor || '#FFD93D'"
+					/>
+				</view>
+			</view>
+		</view>
+
 		<!-- 引用详情抽屉 -->
 		<view v-if="showCitationDetail" class="cite-drawer-wrapper" @touchmove.stop.prevent>
 			<view class="cite-drawer-overlay" :class="{ 'overlay-show': citationDetailAnimVisible }" @click="closeCitationDetail" />
@@ -1634,6 +1677,7 @@
 
 <script>
 	import config from '@/config/index.js'
+	import { getSelectedModelId, setSelectedModelId } from '@/utils/storage'
 	import UCapsuleToast from '@/components/u-capsule-toast/u-capsule-toast.vue'
 	import USnackbar from '@/components/u-snackbar/u-snackbar.vue'
 	import UInputModal from '@/components/u-input-modal/u-input-modal.vue'
@@ -2084,6 +2128,10 @@
 				graphQuickViewWidth: 300,
 				graphQuickViewHeight: 300,
 
+				// 学习路径详情弹窗
+				showLpQuickView: false,
+				lpQuickViewToolCallId: null,
+
 				// 图谱变更工具快照
 				graphMutationSnapshots: {},
 				gmCanvasCounter: 0,
@@ -2111,23 +2159,14 @@
 			},
 			// 从 debugLogs 提取进度百分比
 			calculatedQuizProgress() {
-				if (this.debugLogs.length === 0) {
-					console.log('[PROGRESS] debugLogs 为空')
-					return 0
-				}
+				if (this.debugLogs.length === 0) return 0
 				const lastLog = this.debugLogs[this.debugLogs.length - 1]
-				console.log('[PROGRESS] lastLog:', JSON.stringify(lastLog))
 				if (!lastLog.progress) {
-					// 如果没有 progress 字段，尝试从 iteration 估算
 					const iteration = lastLog.iteration || 0
-					const estimated = Math.min(90, iteration * 15)
-					console.log('[PROGRESS] 无 progress 字段，从 iteration 估算:', estimated)
-					return estimated
+					return Math.min(90, iteration * 15)
 				}
 				const match = String(lastLog.progress).match(/(\d+)/)
-				const result = match ? parseInt(match[1], 10) : 0
-				console.log('[PROGRESS] progress:', lastLog.progress, '-> 解析结果:', result)
-				return result
+				return match ? parseInt(match[1], 10) : 0
 			},
 			// SVG 圆环周长 (2 * PI * r, r=18)
 			progressCircumference() {
@@ -2261,7 +2300,7 @@
 
 		onShow() {
 			// 同步已保存的模型选择
-			const storedId = uni.getStorageSync('uStudy_selectedModelId')
+			const storedId = getSelectedModelId()
 			if (storedId && this.availableModels.some(m => m.id === storedId)) {
 				this.selectedModelId = storedId
 			}
@@ -2455,14 +2494,14 @@
 				}
 				this.selectedModelId = id
 				this.showModelMenu = false
-				uni.setStorageSync('uStudy_selectedModelId', id)
+				setSelectedModelId(id)
 			},
 			async loadModels() {
 				try {
 					const res = await getModels()
 					const models = res.models || res || []
 					this.availableModels = models
-					const storedId = uni.getStorageSync('uStudy_selectedModelId')
+					const storedId = getSelectedModelId()
 					const storedModel = models.find(m => m.id === storedId)
 					if (storedModel && !storedModel.locked) {
 						this.selectedModelId = storedId
@@ -5027,6 +5066,11 @@
 				this.$forceUpdate()
 			},
 
+			openLpQuickView(toolCallId) {
+				this.lpQuickViewToolCallId = toolCallId
+				this.showLpQuickView = true
+			},
+
 			async preparePostorderSnapshot(toolCallId, tool, toolCall) {
 				if (this.expandedGraphTools[toolCallId] === undefined) {
 					this.expandedGraphTools = { ...this.expandedGraphTools, [toolCallId]: false }
@@ -5352,7 +5396,7 @@
 			 * 打开搜索结果 URL
 			 */
 			openSearchResultUrl(url) {
-				if (!url) return
+				if (!url || !/^https?:\/\//i.test(String(url))) return
 				// #ifdef H5
 				window.open(url, '_blank')
 				// #endif
@@ -5682,7 +5726,7 @@
 			},
 
 			openCitationUrl(url) {
-				if (!url) return
+				if (!url || !/^https?:\/\//i.test(String(url))) return
 				// #ifdef APP-PLUS
 				plus.runtime.openURL(url)
 				// #endif
@@ -7453,6 +7497,11 @@
 		border-radius: 24rpx;
 		padding: 20rpx 24rpx;
 		animation: tool-card-enter 0.28s ease-out;
+	}
+
+	.gm-card-clickable:active {
+		opacity: 0.85;
+		transform: scale(0.99);
 	}
 
 	.gm-card-header {

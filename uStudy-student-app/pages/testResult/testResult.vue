@@ -225,6 +225,7 @@
 
 <script>
 import { getQuizAttempt } from '@/api/space'
+import { getQuizEvaluationResult, removeQuizEvaluationResult } from '@/utils/storage'
 
 export default {
   data() {
@@ -344,11 +345,11 @@ export default {
           return
         }
 
-        const result = uni.getStorageSync('quizEvaluationResult')
+        const result = getQuizEvaluationResult()
 
         if (result) {
           this.populateResult(result)
-          uni.removeStorageSync('quizEvaluationResult')
+          removeQuizEvaluationResult()
         } else {
           this.loadMockData()
         }

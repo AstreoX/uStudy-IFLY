@@ -495,6 +495,7 @@
 </template>
 
 <script>
+	import { getSelectedModelId, setSelectedModelId } from '@/utils/storage'
 	import { getSpace, getSpaceGraph, getSpaceMembers, getTaskStatus, generateKnowledgeGraph, addSpaceLink, uploadSpaceDocument, expandNode } from '@/api/space'
 	import { getSpaceNotes, getNoteDetail } from '@/api/note'
 	import { getModels } from '@/api/chat'
@@ -2027,14 +2028,14 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				}
 				this.selectedModelId = id
 				this.showModelMenu = false
-				uni.setStorageSync('uStudy_selectedModelId', id)
+				setSelectedModelId(id)
 			},
 			async loadModels() {
 				try {
 					const res = await getModels()
 					const models = res.models || res || []
 					this.availableModels = models
-					const storedId = uni.getStorageSync('uStudy_selectedModelId')
+					const storedId = getSelectedModelId()
 					const storedModel = models.find(m => m.id === storedId)
 					if (storedModel && !storedModel.locked) {
 						this.selectedModelId = storedId
@@ -4725,24 +4726,11 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				if (!node) return
 
 				uni.showActionSheet({
-					itemList: ['查看详情', '标记为已掌握', '添加笔记', '删除节点'],
+					itemList: ['标记为已掌握'],
 					success: (res) => {
 						switch (res.tapIndex) {
 							case 0:
-								// 查看详情
-								console.log('查看详情:', node.label)
-								break
-							case 1:
-								// 标记为已掌握
 								this.updateNodeMastery(node.id, 100)
-								break
-							case 2:
-								// 添加笔记
-								console.log('添加笔记:', node.label)
-								break
-							case 3:
-								// 删除节点
-								console.log('删除节点:', node.label)
 								break
 						}
 					}

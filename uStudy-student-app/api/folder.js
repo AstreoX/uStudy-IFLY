@@ -56,21 +56,6 @@ export function deleteFolder(spaceId, folderId) {
 }
 
 /**
- * 移动文件夹
- * @param {string} spaceId
- * @param {string} folderId
- * @param {Object} data - { target_parent_id }
- * @returns {Promise<Object>}
- */
-export function moveFolder(spaceId, folderId, data) {
-  return request({
-    url: `/api/spaces/${spaceId}/folders/${folderId}/move`,
-    method: 'POST',
-    data
-  })
-}
-
-/**
  * 批量移动笔记到文件夹
  * @param {string} spaceId
  * @param {Object} data - { item_ids: [], target_folder_id }

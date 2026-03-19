@@ -43,7 +43,7 @@
     </view>
 
     <!-- Notes List -->
-    <scroll-view v-else class="content-scroll" scroll-y>
+    <scroll-view v-else class="content-scroll" :scroll-y="!isSwiping" @scroll="onListScroll">
       <view class="content-body">
         <!-- Breadcrumb -->
         <view v-if="breadcrumbs.length > 0" class="breadcrumb-bar">
@@ -102,10 +102,28 @@
           <view
             v-for="note in filteredNotes"
             :key="note.id"
-            class="note-item"
-            @click="handleNoteClick(note)"
+            class="swipe-note-wrapper"
           >
-            <view class="note-main">
+            <!-- Swipe Action Buttons (behind content) -->
+            <view class="swipe-actions">
+              <view class="swipe-action-btn swipe-action-move" @click.stop="onSwipeActionMove(note)">
+                <image class="swipe-action-icon" src="/static/icons/lucide/folder-input.svg" mode="aspectFit" />
+                <text class="swipe-action-text">移动</text>
+              </view>
+              <view class="swipe-action-btn swipe-action-delete" @click.stop="onSwipeActionDelete(note)">
+                <image class="swipe-action-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit" />
+                <text class="swipe-action-text">删除</text>
+              </view>
+            </view>
+            <!-- Slidable Content -->
+            <view
+              class="note-item"
+              :style="noteSwipeStyle(note.id)"
+              @click="handleNoteItemClick(note)"
+              @touchstart="onSwipeTouchStart($event, note)"
+              @touchmove="onSwipeTouchMove($event, note)"
+              @touchend="onSwipeTouchEnd($event, note)"
+            >
               <view class="note-info">
                 <view class="note-title-row">
                   <text class="note-title">{{ getNoteTitle(note) }}</text>
@@ -122,17 +140,7 @@
                   </view>
                 </view>
               </view>
-              <view class="note-item-actions" @click.stop>
-                <view class="note-item-btn" @click.stop="showMoveNoteDialog(note)">
-                  <image class="note-item-btn-icon" src="/static/icons/lucide/folder-input.svg" mode="aspectFit" />
-                </view>
-                <view v-if="note.note_type !== 'interactive_html' && canEditNote(note)" class="note-item-btn" @click.stop="startEditNote(note)">
-                  <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg" mode="aspectFit" />
-                </view>
-                <view v-if="canEditNote(note)" class="note-item-btn note-item-btn-delete" @click.stop="showDeleteConfirm(note)">
-                  <image class="note-item-btn-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit" />
-                </view>
-              </view>
+              <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
             </view>
           </view>
         </view>
@@ -541,7 +549,16 @@ export default {
       showFolderActionMenu: false,
       activeFolderForAction: null,
       showRenameFolder: false,
-      renameFolderName: ''
+      renameFolderName: '',
+      // Swipe state
+      swipedNoteId: null,
+      swipeTouchStartX: 0,
+      swipeTouchStartY: 0,
+      swipeStartOffsetX: 0,
+      swipeCurrentOffsetX: 0,
+      swipeDirection: null,
+      isSwiping: false,
+      actionsWidthPx: 0
     }
   },
 
@@ -576,6 +593,8 @@ export default {
     this.spaceName = options.spaceName ? decodeURIComponent(options.spaceName) : ''
     this.pendingOpenNoteId = options.openNoteId || ''
     this.currentUserId = useUserStore().user?.id || ''
+    const sysInfo = uni.getSystemInfoSync()
+    this.actionsWidthPx = 320 * sysInfo.windowWidth / 750
     this.loadCollaborationContext()
     this.loadFolders()
     this.loadNotes()
@@ -950,6 +969,116 @@ export default {
       this.showDeleteModal = true
     },
 
+    // ============ Swipe-to-Reveal Actions ============
+
+    noteSwipeStyle(noteId) {
+      if (this.isSwiping && this.swipedNoteId === noteId) {
+        return {
+          transform: `translateX(${this.swipeCurrentOffsetX}px)`,
+          transition: 'none'
+        }
+      }
+      if (this.swipedNoteId === noteId && !this.isSwiping) {
+        return {
+          transform: `translateX(${-this.actionsWidthPx}px)`,
+          transition: 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+        }
+      }
+      return {
+        transform: 'translateX(0)',
+        transition: 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+      }
+    },
+
+    onSwipeTouchStart(e, note) {
+      if (this.swipedNoteId && this.swipedNoteId !== note.id) {
+        this.closeSwipe()
+      }
+      this.swipeTouchStartX = e.touches[0].clientX
+      this.swipeTouchStartY = e.touches[0].clientY
+      this.swipeDirection = null
+      this.isSwiping = false
+      this.swipeStartOffsetX = this.swipedNoteId === note.id ? -this.actionsWidthPx : 0
+      this.swipeCurrentOffsetX = this.swipeStartOffsetX
+    },
+
+    onSwipeTouchMove(e, note) {
+      const currentX = e.touches[0].clientX
+      const currentY = e.touches[0].clientY
+
+      if (!this.swipeDirection) {
+        const deltaX = Math.abs(currentX - this.swipeTouchStartX)
+        const deltaY = Math.abs(currentY - this.swipeTouchStartY)
+        if (deltaX > 10 || deltaY > 10) {
+          this.swipeDirection = deltaX > deltaY ? 'horizontal' : 'vertical'
+          if (this.swipeDirection === 'horizontal') {
+            this.isSwiping = true
+            this.swipedNoteId = note.id
+          }
+        }
+        return
+      }
+
+      if (this.swipeDirection === 'vertical') return
+
+      const deltaX = currentX - this.swipeTouchStartX
+      let newOffset = this.swipeStartOffsetX + deltaX
+      newOffset = Math.min(0, Math.max(-(this.actionsWidthPx + 40), newOffset))
+      this.swipeCurrentOffsetX = newOffset
+    },
+
+    onSwipeTouchEnd(e, note) {
+      if (this.swipeDirection !== 'horizontal' || !this.isSwiping) {
+        this.isSwiping = false
+        this.swipeDirection = null
+        return
+      }
+
+      this.isSwiping = false
+      this.swipeDirection = null
+
+      const snapThreshold = -this.actionsWidthPx * 0.35
+      if (this.swipeCurrentOffsetX < snapThreshold) {
+        this.swipeCurrentOffsetX = -this.actionsWidthPx
+        this.swipedNoteId = note.id
+      } else {
+        this.swipeCurrentOffsetX = 0
+        this.swipedNoteId = null
+      }
+    },
+
+    closeSwipe() {
+      this.swipedNoteId = null
+      this.swipeStartOffsetX = 0
+      this.swipeCurrentOffsetX = 0
+      this.isSwiping = false
+      this.swipeDirection = null
+    },
+
+    handleNoteItemClick(note) {
+      if (this.swipedNoteId) {
+        this.closeSwipe()
+        return
+      }
+      this.handleNoteClick(note)
+    },
+
+    onSwipeActionMove(note) {
+      this.closeSwipe()
+      this.showMoveNoteDialog(note)
+    },
+
+    onSwipeActionDelete(note) {
+      this.closeSwipe()
+      this.showDeleteConfirm(note)
+    },
+
+    onListScroll() {
+      if (this.swipedNoteId) {
+        this.closeSwipe()
+      }
+    },
+
     async doDeleteNote() {
       if (this.isDeleting || !this.noteToDelete) return
       if (!this.canEditNote(this.noteToDelete)) {
@@ -1274,23 +1403,77 @@ export default {
   color: rgba(248, 248, 248, 0.52);
 }
 
+/* ========== Swipe Wrapper ========== */
+.swipe-note-wrapper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 36rpx;
+}
+
+.swipe-actions {
+  position: absolute;
+  top: 2rpx;
+  right: 2rpx;
+  bottom: 2rpx;
+  display: flex;
+  align-items: stretch;
+  border-radius: 34rpx;
+  overflow: hidden;
+}
+
+.swipe-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 160rpx;
+  gap: 8rpx;
+}
+
+.swipe-action-move {
+  background: rgba(74, 108, 247, 0.9);
+}
+
+.swipe-action-delete {
+  background: rgba(239, 68, 68, 0.9);
+}
+
+.swipe-action-icon {
+  width: 40rpx;
+  height: 40rpx;
+  filter: brightness(0) invert(1);
+}
+
+.swipe-action-text {
+  font-size: 22rpx;
+  font-weight: 500;
+  color: rgb(248, 248, 248);
+}
+
 /* ========== Note Item ========== */
 .note-item {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
   padding: 24rpx 28rpx;
   border-radius: 36rpx;
   background: rgb(36, 36, 36);
   border: 2rpx solid rgba(255, 255, 255, 0.06);
   box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.18);
+  position: relative;
+  z-index: 1;
+  will-change: transform;
 }
 
 .note-item:active {
   background: rgb(41, 41, 41);
 }
 
-.note-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+.item-arrow {
+  width: 32rpx;
+  height: 32rpx;
+  flex-shrink: 0;
+  filter: brightness(0) invert(0.46);
 }
 
 .note-info {
@@ -1385,52 +1568,6 @@ export default {
 .note-creator-name {
   font-size: 22rpx;
   color: rgba(248, 248, 248, 0.42);
-}
-
-/* ========== Card Action Buttons ========== */
-.note-item-actions {
-  display: flex;
-  flex-direction: row;
-  gap: 12rpx;
-  flex-shrink: 0;
-  margin-left: 16rpx;
-  align-items: flex-start;
-}
-
-.note-item-btn {
-  width: 56rpx;
-  height: 56rpx;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1rpx solid rgba(255, 255, 255, 0.1);
-  border-radius: 16rpx;
-}
-
-.note-item-btn:active {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.note-item-btn-icon {
-  width: 30rpx;
-  height: 30rpx;
-  filter: brightness(0) invert(1);
-  opacity: 0.6;
-}
-
-.note-item-btn-delete {
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.3);
-}
-
-.note-item-btn-delete:active {
-  background: rgba(239, 68, 68, 0.25);
-}
-
-.note-item-btn-delete .note-item-btn-icon {
-  filter: brightness(0) saturate(100%) invert(44%) sepia(78%) saturate(2349%) hue-rotate(337deg) brightness(97%) contrast(93%);
-  opacity: 0.85;
 }
 
 /* ========== Shared Overlay Base ========== */

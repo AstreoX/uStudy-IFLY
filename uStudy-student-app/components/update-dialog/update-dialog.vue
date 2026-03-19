@@ -15,10 +15,10 @@
       <!-- Header -->
       <view class="update-header">
         <view class="version-badge">
-          <text class="version-badge-text">NEW</text>
+          <text class="version-badge-text">{{ isWgtUpdate ? '热更新' : 'NEW' }}</text>
         </view>
         <text class="update-title">发现新版本 v{{ versionName }}</text>
-        <text class="update-size">{{ fileSizeMb }} MB</text>
+        <text class="update-size">{{ fileSizeMb }} MB · {{ isWgtUpdate ? '热更新' : '完整更新' }}</text>
       </view>
 
       <!-- Changelog Area -->
@@ -92,7 +92,8 @@ export default {
     isDownloading: { type: Boolean, default: false },
     downloadProgress: { type: Number, default: 0 },
     downloadComplete: { type: Boolean, default: false },
-    downloadError: { type: String, default: '' }
+    downloadError: { type: String, default: '' },
+    isWgtUpdate: { type: Boolean, default: false }
   },
   emits: ['skip', 'later', 'update', 'install', 'browser'],
 

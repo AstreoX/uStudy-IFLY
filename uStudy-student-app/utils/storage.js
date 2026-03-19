@@ -112,3 +112,38 @@ export function setAnnouncementPrefs(prefs) {
     // Storage write failed
   }
 }
+
+// ========== Selected Model ==========
+const SELECTED_MODEL_KEY = config.SELECTED_MODEL_KEY
+
+export function getSelectedModelId() {
+  return uni.getStorageSync(SELECTED_MODEL_KEY) || null
+}
+
+export function setSelectedModelId(id) {
+  if (id) {
+    uni.setStorageSync(SELECTED_MODEL_KEY, id)
+  } else {
+    uni.removeStorageSync(SELECTED_MODEL_KEY)
+  }
+}
+
+// ========== Quiz Evaluation Result ==========
+const QUIZ_EVAL_KEY = config.QUIZ_EVALUATION_KEY
+
+export function getQuizEvaluationResult() {
+  try {
+    const data = uni.getStorageSync(QUIZ_EVAL_KEY)
+    return data || null
+  } catch (error) {
+    return null
+  }
+}
+
+export function setQuizEvaluationResult(result) {
+  uni.setStorageSync(QUIZ_EVAL_KEY, result)
+}
+
+export function removeQuizEvaluationResult() {
+  uni.removeStorageSync(QUIZ_EVAL_KEY)
+}

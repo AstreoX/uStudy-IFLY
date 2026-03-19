@@ -63,20 +63,6 @@ export function deleteConversation(conversationId) {
 }
 
 /**
- * 调试执行知识图谱工具调用
- * @param {string} spaceId - 学习空间 ID
- * @param {Object} toolCall - tool_call JSON（LLM 实际格式）
- * @returns {Promise<Object>} { raw_tool_output: string, parsed?: object }
- */
-export function executeToolCall(spaceId, toolCall) {
-  return request({
-    url: `/api/spaces/${spaceId}/tools/execute`,
-    method: 'POST',
-    data: toolCall
-  })
-}
-
-/**
  * 解析配额错误（从 SSE 连接错误中提取配额相关信息）
  */
 function parseQuotaError(errMessage) {

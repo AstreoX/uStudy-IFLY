@@ -69,6 +69,3 @@ export function stopTracking() {
   }
 }
 
-export function isTracking() {
-  return intervalId !== null
-}

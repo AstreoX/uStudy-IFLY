@@ -163,26 +163,3 @@ export function savePendingMessagesFromArray(conversationId, messages) {
   }
 }
 
-/**
- * 迁移临时对话的待同步消息到正式对话
- * @param {string} tempId - 临时对话ID
- * @param {string} realId - 正式对话ID
- */
-export function migratePendingMessages(tempId, realId) {
-  if (!tempId || !realId) return
-
-  try {
-    const tempKey = getStorageKey(tempId)
-    const raw = uni.getStorageSync(tempKey)
-    if (!raw) return
-
-    const messages = JSON.parse(raw)
-    if (Array.isArray(messages) && messages.length > 0) {
-      const realKey = getStorageKey(realId)
-      uni.setStorageSync(realKey, JSON.stringify(messages))
-    }
-    uni.removeStorageSync(tempKey)
-  } catch (err) {
-    console.warn('[messageDraft] migratePendingMessages failed:', err)
-  }
-}

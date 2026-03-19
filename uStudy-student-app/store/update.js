@@ -14,7 +14,11 @@ import {
   getBrowserDownloadUrl,
   downloadApk,
   installApk,
-  openInBrowser
+  openInBrowser,
+  canUseWgtUpdate,
+  getWgtDownloadUrl,
+  downloadWgt,
+  installWgt
 } from '@/utils/updater'
 
 export const useUpdateStore = defineStore('update', {
@@ -31,17 +35,36 @@ export const useUpdateStore = defineStore('update', {
     showAnnouncementDialog: false,
     currentAnnouncement: null,
     announcementContent: '',
-    pendingAnnouncements: []
+    pendingAnnouncements: [],
+    updateType: 'apk'
   }),
+
+  getters: {
+    displayFileSizeMB(state) {
+      if (!state.manifest?.latestVersion) return 0
+      if (state.updateType === 'wgt') {
+        return state.manifest.latestVersion.wgtFileSizeMB || 0
+      }
+      return state.manifest.latestVersion.fileSizeMB || 0
+    },
+    isWgtUpdate(state) {
+      return state.updateType === 'wgt'
+    }
+  },
 
   actions: {
     setManifest(manifest) {
       this.manifest = manifest
     },
 
+    _determineUpdateType() {
+      this.updateType = canUseWgtUpdate(this.manifest) ? 'wgt' : 'apk'
+    },
+
     async checkForUpdatesManual() {
       const manifest = await fetchReleaseManifest()
       this.manifest = manifest
+      this._determineUpdateType()
 
       if (isUpdateAvailable(manifest)) {
         try {
@@ -66,6 +89,7 @@ export const useUpdateStore = defineStore('update', {
       try {
         const manifest = await fetchReleaseManifest()
         this.manifest = manifest
+        this._determineUpdateType()
 
         if (isUpdateAvailable(manifest)) {
           const prefs = getUpdatePrefs()
@@ -201,11 +225,56 @@ export const useUpdateStore = defineStore('update', {
       }
     },
 
+    async startWgtDownload() {
+      const url = getWgtDownloadUrl(this.manifest)
+      if (!url) {
+        this.updateType = 'apk'
+        this.downloadInBrowser()
+        return
+      }
+
+      this.isDownloading = true
+      this.downloadProgress = 0
+      this.downloadComplete = false
+      this.downloadError = ''
+
+      try {
+        const filePath = await downloadWgt(url, (progress) => {
+          this.downloadProgress = progress
+        })
+        this.downloadedFilePath = filePath
+        this.downloadComplete = true
+        this.isDownloading = false
+      } catch (error) {
+        this.isDownloading = false
+        this.downloadError = error.message || '下载失败'
+      }
+    },
+
+    startUpdate() {
+      if (this.updateType === 'wgt') {
+        this.startWgtDownload()
+      } else {
+        this.downloadInBrowser()
+      }
+    },
+
     async installUpdate() {
       try {
-        await installApk(this.downloadedFilePath)
+        if (this.updateType === 'wgt') {
+          await installWgt(this.downloadedFilePath)
+        } else {
+          await installApk(this.downloadedFilePath)
+        }
       } catch (error) {
-        this.fallbackToBrowser()
+        if (this.updateType === 'wgt') {
+          this.updateType = 'apk'
+          this.downloadComplete = false
+          this.downloadedFilePath = ''
+          this.downloadError = 'WGT 安装失败，请使用完整更新'
+        } else {
+          this.fallbackToBrowser()
+        }
       }
     },
 

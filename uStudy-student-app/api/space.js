@@ -303,17 +303,6 @@ export function uploadSpaceDocument(spaceId, filePath, onProgress) {
 
 // ============ 工具模式 API ============
 
-/**
- * 获取工具目录（按分类组织）
- * @returns {Promise<Array>} [{ category: string, tools: [{ name, summary }] }]
- */
-export function getToolCatalog() {
-  return request({
-    url: '/api/spaces/tool-catalog',
-    method: 'GET'
-  })
-}
-
 // ============ RAG 文档处理状态 API ============
 
 /**

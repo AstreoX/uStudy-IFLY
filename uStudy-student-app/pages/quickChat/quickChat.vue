@@ -736,6 +736,7 @@
 
 <script>
 	import config from '@/config/index.js'
+	import { getSelectedModelId, setSelectedModelId } from '@/utils/storage'
 	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage, getQuickChatToolTaskStatus, listQuickChatToolTasks, bindQuickChatToolTask } from '@/api/chat'
 	import { executeCalendarTool } from '@/utils/calendar'
 	import { createCalendarEvent, getCalendarEvents, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendarEvents'
@@ -1169,14 +1170,14 @@
 				}
 				this.selectedModelId = id
 				this.showModelMenu = false
-				uni.setStorageSync('uStudy_selectedModelId', id)
+				setSelectedModelId(id)
 			},
 			async loadModels() {
 				try {
 					const res = await getModels()
 					const models = res.models || res || []
 					this.availableModels = models
-					const storedId = uni.getStorageSync('uStudy_selectedModelId')
+					const storedId = getSelectedModelId()
 					const storedModel = models.find(m => m.id === storedId)
 					if (storedModel && !storedModel.locked) {
 						this.selectedModelId = storedId
@@ -1957,7 +1958,7 @@
 			},
 
 			openSearchResultUrl(url) {
-				if (!url) return
+				if (!url || !/^https?:\/\//i.test(String(url))) return
 				// #ifdef H5
 				window.open(url, '_blank')
 				// #endif

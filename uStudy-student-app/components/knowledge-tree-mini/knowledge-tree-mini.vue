@@ -180,6 +180,10 @@ export default {
     showAllLabels: {
       type: Boolean,
       default: false
+    },
+    showOnlyHighlightLabels: {
+      type: Boolean,
+      default: false
     }
   },
 
@@ -1093,9 +1097,12 @@ export default {
         this.drawNode(ctx, node)
       })
 
-      // Draw labels: all nodes when showAllLabels, otherwise only when <= 7 nodes
+      // Draw labels: all nodes when showAllLabels, only highlight nodes when showOnlyHighlightLabels, otherwise only when <= 7 nodes
       if (this.showAllLabels) {
         this.drawNodeLabels(ctx, this.layoutNodes, { alpha: 0.85 })
+      } else if (this.showOnlyHighlightLabels && this.highlightLabelSet.size > 0) {
+        const labelNodes = this.layoutNodes.filter(node => this.highlightLabelSet.has(node.label))
+        this.drawNodeLabels(ctx, labelNodes, { alpha: 0.85 })
       } else if (this.nodes.length <= 7) {
         const labelNodes = this.layoutNodes.filter(node =>
           node.level === 0 || node.level === 1 || this.highlightLabelSet.has(node.label)

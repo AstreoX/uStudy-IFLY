@@ -271,6 +271,7 @@
 
 <script>
 import { getSpace, getSpaceDocuments, getSpaceMembers, deleteSpaceDocument, addSpaceLink, uploadSpaceDocument, getDocumentProcessingStatus, reprocessDocument } from '@/api/space'
+import { formatFileSize } from '@/api/attachment'
 import config from '@/config'
 import { getTokens } from '@/utils/storage'
 import { useUserStore } from '@/store/user'
@@ -520,6 +521,7 @@ export default {
   },
 
   methods: {
+    formatFileSize,
     onLinkInputFocus(field) {
       const sysInfo = uni.getSystemInfoSync()
       console.log(`[KnowledgeBase-KB] onInputFocus(${field}): screenH=${sysInfo.screenHeight}, windowH=${sysInfo.windowHeight}, model=${sysInfo.model}`)
@@ -673,13 +675,6 @@ export default {
       return len
     },
 
-    formatFileSize(bytes) {
-      if (!bytes) return ''
-      if (bytes < 1024) return `${bytes} B`
-      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-    },
-
     formatStorageSize(bytes) {
       if (!bytes || bytes === 0) return '0 MB'
       if (bytes < 1024) return `${bytes} B`
@@ -734,7 +729,9 @@ export default {
       // #endif
 
       // #ifdef APP-PLUS
-      plus.runtime.openURL(doc.url)
+      if (/^https?:\/\//i.test(String(doc.url || ''))) {
+        plus.runtime.openURL(doc.url)
+      }
       // #endif
 
       // #ifdef MP-WEIXIN

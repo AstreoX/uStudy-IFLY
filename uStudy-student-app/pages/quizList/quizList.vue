@@ -929,11 +929,13 @@ export default {
 
 .swipe-actions {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  top: 2rpx;
+  right: 2rpx;
+  bottom: 2rpx;
   display: flex;
   align-items: stretch;
+  border-radius: 34rpx;
+  overflow: hidden;
 }
 
 .swipe-action-btn {

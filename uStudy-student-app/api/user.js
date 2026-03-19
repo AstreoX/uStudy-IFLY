@@ -3,35 +3,28 @@
  */
 import config from '@/config'
 import { getTokens } from '@/utils/storage'
+import { ensureFreshToken } from '@/utils/request'
 
 const { API_BASE_URL } = config
 
-/**
- * 上传用户头像
- * @param {string} filePath - 图片文件路径
- * @returns {Promise<{success: boolean, avatar_url: string}>}
- */
-export function uploadAvatar(filePath) {
-  const tokens = getTokens()
-
+function doUpload(filePath, token) {
   return new Promise((resolve, reject) => {
     uni.uploadFile({
       url: `${API_BASE_URL}/api/upload/avatar`,
       filePath,
       name: 'file',
       header: {
-        Authorization: `Bearer ${tokens?.access_token}`
+        Authorization: `Bearer ${token}`
       },
       success: (res) => {
         if (res.statusCode === 200) {
           try {
-            const data = JSON.parse(res.data)
-            resolve(data)
+            resolve(JSON.parse(res.data))
           } catch {
             reject(new Error('响应解析失败'))
           }
         } else if (res.statusCode === 401) {
-          reject(new Error('请重新登录'))
+          reject({ statusCode: 401 })
         } else {
           try {
             const error = JSON.parse(res.data)
@@ -46,4 +39,23 @@ export function uploadAvatar(filePath) {
       }
     })
   })
+}
+
+/**
+ * 上传用户头像
+ * @param {string} filePath - 图片文件路径
+ * @returns {Promise<{success: boolean, avatar_url: string}>}
+ */
+export async function uploadAvatar(filePath) {
+  const tokens = getTokens()
+  const token = tokens?.access_token
+  try {
+    return await doUpload(filePath, token)
+  } catch (err) {
+    if (err?.statusCode === 401) {
+      const newToken = await ensureFreshToken()
+      return await doUpload(filePath, newToken)
+    }
+    throw err
+  }
 }

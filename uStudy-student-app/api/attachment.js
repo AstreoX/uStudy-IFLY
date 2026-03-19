@@ -122,18 +122,6 @@ export function formatFileSize(bytes) {
 }
 
 /**
- * 获取文件扩展名
- * @param {string} filename - 文件名
- * @returns {string} 扩展名（小写，不含点）
- */
-export function getFileExtension(filename) {
-  if (!filename) return ''
-  const lastDot = filename.lastIndexOf('.')
-  if (lastDot === -1) return ''
-  return filename.substring(lastDot + 1).toLowerCase()
-}
-
-/**
  * 将后端返回的相对路径转换为完整URL
  * @param {string} relativePath - 相对路径 (如 /uploads/attachments/images/xxx.webp)
  * @returns {string} 完整URL (如 http://localhost:8000/uploads/...)
