@@ -24,7 +24,8 @@
 				"backgroundColor": "#1D1E20",
 				"app-plus": {
 					"animationType": "slide-in-right",
-					"animationDuration": 300
+					"animationDuration": 300,
+					"softinputMode": "adjustResize"
 				}
 			}
 		},
@@ -109,7 +110,8 @@
 				"backgroundColor": "#1D1E20",
 				"app-plus": {
 					"animationType": "slide-in-right",
-					"animationDuration": 300
+					"animationDuration": 300,
+					"softinputMode": "adjustResize"
 				}
 			}
 		},
@@ -121,7 +123,8 @@
 				"backgroundColor": "#1D1E20",
 				"app-plus": {
 					"animationType": "slide-in-right",
-					"animationDuration": 300
+					"animationDuration": 300,
+					"softinputMode": "adjustResize"
 				}
 			}
 		},
@@ -253,7 +256,8 @@
 				"backgroundColor": "#1D1E20",
 				"app-plus": {
 					"animationType": "slide-in-right",
-					"animationDuration": 300
+					"animationDuration": 300,
+					"softinputMode": "adjustResize"
 				}
 			}
 		},

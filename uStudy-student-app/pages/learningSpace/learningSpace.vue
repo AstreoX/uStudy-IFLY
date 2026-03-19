@@ -1094,7 +1094,15 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 			// 存储回调引用以便清理
 			this.keyboardCallback = (res) => {
-				this.keyboardHeight = res.height
+				const sysInfo = uni.getSystemInfoSync()
+				console.log(`[LearningSpace-KB] keyboardHeightChange: height=${res.height}px, platform=${sysInfo.platform}, model=${sysInfo.model}`)
+				// Android: 系统通过 adjustPan/adjustResize 自动处理键盘避让，不需要手动偏移
+				// iOS: 需要手动设 bottom 偏移
+				if (sysInfo.platform === 'android') {
+					this.keyboardHeight = 0
+				} else {
+					this.keyboardHeight = res.height
+				}
 			}
 			uni.onKeyboardHeightChange(this.keyboardCallback)
 

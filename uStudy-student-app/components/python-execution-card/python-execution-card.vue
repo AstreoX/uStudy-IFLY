@@ -92,6 +92,15 @@
       <view v-if="showEmptyState" class="pxc-empty-state">
         <text class="pxc-empty-state-text">代码已执行，无文本或图像输出</text>
       </view>
+
+      <view v-if="isAutoSaved" class="pxc-saved-badge">
+        <image
+          class="pxc-saved-icon"
+          src="/static/icons/phosphor-icons/SVGs/regular/notebook-white.svg"
+          mode="aspectFit"
+        />
+        <text class="pxc-saved-text">已保存为笔记{{ noteTitle ? '「' + noteTitle + '」' : '' }}</text>
+      </view>
     </view>
   </view>
 </template>
@@ -164,6 +173,12 @@ export default {
     hasImage() {
       return !!this.imageUrl
     },
+    isAutoSaved() {
+      return !!this.toolCall?.result?.auto_saved
+    },
+    noteTitle() {
+      return this.toolCall?.result?.note_title || ''
+    },
     hasAnyRenderableOutput() {
       return this.hasStdout || this.hasStderr || this.hasImage
     },
@@ -192,10 +207,11 @@ export default {
       if (this.isRunning) return '正在执行 Python…'
       if (this.isFailed) return 'Python 执行失败'
       if (this.isSuccess) {
-        if (this.hasStdout && this.hasImage) return '已执行 Python · 文本与图像输出'
-        if (this.hasImage) return '已执行 Python · 图像输出'
-        if (this.hasStdout) return '已执行 Python · 文本输出'
-        return '已执行 Python'
+        const saved = this.isAutoSaved ? ' · 已保存' : ''
+        if (this.hasStdout && this.hasImage) return '已执行 Python · 文本与图像输出' + saved
+        if (this.hasImage) return '已执行 Python · 图像输出' + saved
+        if (this.hasStdout) return '已执行 Python · 文本输出' + saved
+        return '已执行 Python' + saved
       }
       return '执行 Python 代码'
     },
@@ -523,6 +539,25 @@ export default {
 .pxc-empty-state-text {
   font-size: 24rpx;
   color: rgba(255, 255, 255, 0.42);
+}
+
+.pxc-saved-badge {
+  margin-top: 12rpx;
+  display: flex;
+  align-items: center;
+}
+
+.pxc-saved-icon {
+  width: 28rpx;
+  height: 28rpx;
+  opacity: 0.5;
+  margin-right: 4rpx;
+  flex-shrink: 0;
+}
+
+.pxc-saved-text {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 @keyframes pxc-spin {

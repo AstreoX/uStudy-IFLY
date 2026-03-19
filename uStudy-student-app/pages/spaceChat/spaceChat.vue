@@ -2027,6 +2027,7 @@
 				textareaMaxLines: 4, // 输入框可撑高的最大行数
 				textareaLineCount: 1, // 记录 linechange 上报的真实行数（用于非 H5 兜底）
 				keyboardHeight: 0,
+				_initialWindowHeight: 0, // 键盘弹出前的窗口高度，用于检测 adjustResize
 				nextId: 1,
 				activeMoreMsgId: null,
 
@@ -2373,6 +2374,10 @@
 		},
 
 		mounted() {
+			// 记录初始窗口高度，用于判断 adjustResize 是否生效
+			this._initialWindowHeight = uni.getSystemInfoSync().windowHeight
+			console.log(`[SpaceChat-KB] mounted: initialWindowH=${this._initialWindowHeight}`)
+
 			// #ifdef APP-PLUS
 			if (this.$refs.sseRenderjs) {
 				setSseEventBus(this.$refs.sseRenderjs)
@@ -2406,7 +2411,19 @@
 
 			// 存储回调引用以便清理
 			this.keyboardCallback = (res) => {
-				this.keyboardHeight = res.height
+				const sysInfo = uni.getSystemInfoSync()
+				console.log(`[SpaceChat-KB] keyboardHeightChange: height=${res.height}px, windowH=${sysInfo.windowHeight}, initWindowH=${this._initialWindowHeight}, platform=${sysInfo.platform}, model=${sysInfo.model}`)
+
+				// Android: 系统通过 adjustPan(平移) 或 adjustResize(缩小viewport) 自动处理键盘避让，
+				// position:fixed 的输入栏已经被系统移到键盘上方，不需要再手动设 bottom 偏移，
+				// 否则会与系统行为双重叠加，导致输入框被顶到屏幕顶部（vivo 等机型尤为明显）
+				// iOS: 系统不自动处理 webview 键盘避让，需要手动设 bottom 偏移
+				if (sysInfo.platform === 'android') {
+					this.keyboardHeight = 0
+				} else {
+					this.keyboardHeight = res.height
+				}
+
 				if (res.height > 0) {
 					this.isAutoScrollEnabled = true
 					this.$nextTick(() => {
@@ -5756,12 +5773,15 @@
 			},
 
 			onInputFocus() {
+				const sysInfo = uni.getSystemInfoSync()
+				console.log(`[SpaceChat-KB] onInputFocus: currentKeyboardH=${this.keyboardHeight}px, screenH=${sysInfo.screenHeight}, windowH=${sysInfo.windowHeight}, model=${sysInfo.model}`)
 				if (this.isAutoScrollEnabled) {
 					this.scrollToLatestMessage()
 				}
 			},
 
 			onInputBlur() {
+				console.log(`[SpaceChat-KB] onInputBlur: keyboardH=${this.keyboardHeight}px (应即将归零)`)
 				// keyboardHeight 会通过 onKeyboardHeightChange 自动重置
 			},
 

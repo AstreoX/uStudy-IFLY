@@ -898,6 +898,7 @@
 				textareaMaxLines: 4, // 输入框可撑高的最大行数
 				textareaLineCount: 1, // 记录 linechange 上报的真实行数（用于非 H5 兜底）
 				keyboardHeight: 0,
+				_initialWindowHeight: 0, // 键盘弹出前的窗口高度，用于检测 adjustResize
 				nextId: 1,
 				cancelSSE: null,
 				isLoadingHistory: false,
@@ -1026,6 +1027,10 @@
 		},
 
 		mounted() {
+			// 记录初始窗口高度，用于判断 adjustResize 是否生效
+			this._initialWindowHeight = uni.getSystemInfoSync().windowHeight
+			console.log(`[QuickChat-KB] mounted: initialWindowH=${this._initialWindowHeight}`)
+
 			console.log('[QuickChat] mounted() fired — model selector code is active')
 			// #ifdef APP-PLUS
 			if (this.$refs.sseRenderjs) {
@@ -1045,7 +1050,17 @@
 			// 仅在非 H5 平台执行键盘监听
 			// #ifndef H5
 			uni.onKeyboardHeightChange((res) => {
-				this.keyboardHeight = res.height
+				const sysInfo = uni.getSystemInfoSync()
+				console.log(`[QuickChat-KB] keyboardHeightChange: height=${res.height}px, windowH=${sysInfo.windowHeight}, initWindowH=${this._initialWindowHeight}, platform=${sysInfo.platform}, model=${sysInfo.model}`)
+
+				// Android: 系统通过 adjustPan/adjustResize 自动处理键盘避让，不需要手动偏移
+				// iOS: 需要手动设 bottom 偏移
+				if (sysInfo.platform === 'android') {
+					this.keyboardHeight = 0
+				} else {
+					this.keyboardHeight = res.height
+				}
+
 				if (res.height > 0) {
 					this.isAutoScrollEnabled = true
 					this.$nextTick(() => {
@@ -3261,12 +3276,15 @@
 			},
 
 			onInputFocus() {
+				const sysInfo = uni.getSystemInfoSync()
+				console.log(`[QuickChat-KB] onInputFocus: currentKeyboardH=${this.keyboardHeight}px, screenH=${sysInfo.screenHeight}, windowH=${sysInfo.windowHeight}, model=${sysInfo.model}`)
 				if (this.isAutoScrollEnabled) {
 					this.scrollToLatestMessage()
 				}
 			},
 
 			onInputBlur() {
+				console.log(`[QuickChat-KB] onInputBlur: keyboardH=${this.keyboardHeight}px (应即将归零)`)
 				// keyboardHeight 会通过 onKeyboardHeightChange 自动重置
 			},
 

@@ -48,6 +48,7 @@
       v-if="showLinkDialog"
       class="link-dialog-overlay"
       :class="{ 'overlay-show': linkDialogVisible }"
+      :style="kbHeight > 0 ? { top: kbHeight + 'px', bottom: -kbHeight + 'px' } : {}"
       @click="closeLinkDialog"
     >
       <view
@@ -65,6 +66,9 @@
               placeholder="输入链接标题"
               placeholder-class="link-input-placeholder"
               maxlength="255"
+              :adjust-position="false"
+              @focus="onLinkInputFocus('title')"
+              @blur="onLinkInputBlur('title')"
             />
           </view>
           <view class="link-input-group">
@@ -76,6 +80,9 @@
               placeholder-class="link-input-placeholder"
               type="url"
               maxlength="2048"
+              :adjust-position="false"
+              @focus="onLinkInputFocus('url')"
+              @blur="onLinkInputBlur('url')"
             />
           </view>
         </view>
@@ -310,6 +317,7 @@ export default {
       linkTitle: '',
       linkUrl: '',
       isAddingLink: false,
+      kbHeight: 0, // Android 键盘高度，用于补偿 adjustPan 对 dialog 的影响
 
       // 上传状态
       isUploading: false,
@@ -474,6 +482,19 @@ export default {
     this.loadUserTier()
     this.loadCollaborationContext()
     this.loadDocuments()
+
+    // #ifndef H5
+    this._kbCallback = (res) => {
+      const sysInfo = uni.getSystemInfoSync()
+      console.log(`[KnowledgeBase-KB] keyboardHeightChange: height=${res.height}px, windowH=${sysInfo.windowHeight}, platform=${sysInfo.platform}, model=${sysInfo.model}`)
+      // Android 上 adjustPan 会把整个 webview（含 fixed 弹窗）顶上去，
+      // 需要记录键盘高度，用于给 dialog overlay 加 top 偏移来补偿
+      if (sysInfo.platform === 'android') {
+        this.kbHeight = res.height
+      }
+    }
+    uni.onKeyboardHeightChange(this._kbCallback)
+    // #endif
   },
 
   onShow() {
@@ -490,9 +511,23 @@ export default {
 
   onUnload() {
     this.stopProcessingPoll()
+    // #ifndef H5
+    if (this._kbCallback) {
+      uni.offKeyboardHeightChange(this._kbCallback)
+      this._kbCallback = null
+    }
+    // #endif
   },
 
   methods: {
+    onLinkInputFocus(field) {
+      const sysInfo = uni.getSystemInfoSync()
+      console.log(`[KnowledgeBase-KB] onInputFocus(${field}): screenH=${sysInfo.screenHeight}, windowH=${sysInfo.windowHeight}, model=${sysInfo.model}`)
+    },
+    onLinkInputBlur(field) {
+      console.log(`[KnowledgeBase-KB] onInputBlur(${field})`)
+    },
+
     showCustomToast(message, type = 'info') {
       this.toast = { visible: true, message, type }
     },
