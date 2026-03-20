@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select, update
 
 from chat.tools.base import ToolResult
@@ -46,6 +47,12 @@ async def create_pending_request(
 
     try:
         async with get_scoped_session() as db:
+            # Delete any stale row with the same tool_call_id (completed/timeout/pending)
+            await db.execute(
+                sa_delete(PendingClientToolRequest).where(
+                    PendingClientToolRequest.tool_call_id == tool_call_id
+                )
+            )
             row = PendingClientToolRequest(
                 id=uuid4(),
                 conversation_id=conversation_id,
@@ -179,8 +186,6 @@ async def cleanup_expired_requests(max_age_seconds: int = 300) -> int:
     Also purges stale in-memory events that may have been orphaned.
     """
     from datetime import timedelta
-
-    from sqlalchemy import delete as sa_delete
 
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
 
