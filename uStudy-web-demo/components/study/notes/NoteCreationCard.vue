@@ -307,9 +307,9 @@ export default {
             }
           }
         })
+        // Keep isSubmitting=true to prevent double-submit; card will transition on SSE done event
       } catch (error) {
         this.submitError = error?.message || '提交失败，请重试'
-      } finally {
         this.isSubmitting = false
       }
     },
@@ -325,9 +325,9 @@ export default {
           success: false,
           error: '用户取消了笔记创建'
         })
+        // Keep isSubmitting=true; card will transition on SSE done event
       } catch (error) {
         this.submitError = error?.message || '提交失败，请重试'
-      } finally {
         this.isSubmitting = false
       }
     },
@@ -506,6 +506,19 @@ export default {
 .ncc-node-select:focus {
   border-color: rgba(251, 191, 36, 0.5);
 }
+.ncc-node-select::-webkit-scrollbar {
+  width: 6px;
+}
+.ncc-node-select::-webkit-scrollbar-track {
+  background: #1e1e2e;
+}
+.ncc-node-select::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+.ncc-node-select::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
 
 .ncc-node-select option {
   background: #1e1e2e;
@@ -602,7 +615,9 @@ export default {
 
 .ncc-title-input {
   width: 100%;
-  padding: 10px 14px;
+  height: 40px;
+  line-height: 40px;
+  padding: 0 14px;
   font-size: 15px;
   font-weight: 600;
   color: #ffffff;
@@ -611,6 +626,7 @@ export default {
   border-radius: 6px;
   outline: none;
   box-sizing: border-box;
+  cursor: text;
 }
 
 .ncc-title-input:focus {

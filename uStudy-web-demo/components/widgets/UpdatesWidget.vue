@@ -94,6 +94,47 @@
 <script>
 import { getActivityTimeline, getStudySuggestion } from '@/api/activity'
 
+// ── 学习建议时间槽缓存（UTC+8）──
+// 更新时间点：08:00 / 12:00 / 18:00 / 21:00
+function _getCSTComponents() {
+  const now = new Date()
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000
+  const cstMs = utcMs + 8 * 3600 * 1000
+  const d = new Date(cstMs)
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+    hour: d.getUTCHours(),
+    cstMs
+  }
+}
+
+function _getSuggestionSlotKey() {
+  const { year, month, day, hour, cstMs } = _getCSTComponents()
+  const dateStr = `${year}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`
+  const slots = [8, 12, 18, 21]
+  let slot = null
+  for (const s of slots) { if (hour >= s) slot = s }
+  if (slot === null) {
+    const yd = new Date(cstMs - 86400000)
+    const yStr = `${yd.getUTCFullYear()}${String(yd.getUTCMonth() + 1).padStart(2, '0')}${String(yd.getUTCDate()).padStart(2, '0')}`
+    return `suggestion_${yStr}_21`
+  }
+  return `suggestion_${dateStr}_${String(slot).padStart(2, '0')}`
+}
+
+function _cleanOldSuggestionCache(currentKey) {
+  try {
+    const old = Object.keys(localStorage).filter(k => k.startsWith('suggestion_') && k !== currentKey)
+    old.sort().reverse()
+    old.slice(1).forEach(k => localStorage.removeItem(k))
+  } catch (_) {}
+}
+
+const TIMELINE_CACHE_KEY = 'timeline_cache_v1'
+const TIMELINE_CACHE_TTL = 5 * 60 * 1000
+
 // Inline SVG paths (Phosphor icons) replacing mobile image references
 const ICON_PATHS = {
   // Books icon — 学习新知识
@@ -216,24 +257,60 @@ export default {
 
   methods: {
     async loadData() {
-      try {
-        const [timelineRes, suggestionRes] = await Promise.allSettled([
-          getActivityTimeline(1, 15),
-          getStudySuggestion()
-        ])
+      const slotKey = _getSuggestionSlotKey()
 
-        if (timelineRes.status === 'fulfilled') {
-          this.items = timelineRes.value.items || []
+      // 1. 先查本地缓存（命中则跳过对应 API 请求）
+      let cachedTimeline = null
+      let cachedSuggestion = null
+      try {
+        const rawTimeline = localStorage.getItem(TIMELINE_CACHE_KEY)
+        if (rawTimeline) {
+          const { data, ts } = JSON.parse(rawTimeline)
+          if (Date.now() - ts < TIMELINE_CACHE_TTL) cachedTimeline = data
         }
-        if (suggestionRes.status === 'fulfilled') {
-          this.aiSuggestion = suggestionRes.value
-        }
-      } catch (_) {
-        // Silently fail — empty/fallback states handle display
-      } finally {
+      } catch (_) {}
+      try {
+        const rawSuggestion = localStorage.getItem(slotKey)
+        if (rawSuggestion) cachedSuggestion = JSON.parse(rawSuggestion)
+      } catch (_) {}
+
+      if (cachedTimeline) {
+        this.items = cachedTimeline
         this.loading = false
+      }
+      if (cachedSuggestion) {
+        this.aiSuggestion = cachedSuggestion
         this.suggestionLoading = false
       }
+
+      // 2. 未命中的部分并行请求 API
+      const requests = []
+      if (!cachedTimeline) requests.push(getActivityTimeline(1, 15).then(r => ({ type: 'timeline', r })))
+      if (!cachedSuggestion) requests.push(getStudySuggestion().then(r => ({ type: 'suggestion', r })))
+
+      if (requests.length === 0) return
+
+      const results = await Promise.allSettled(requests)
+      for (const res of results) {
+        if (res.status !== 'fulfilled') continue
+        const { type, r } = res.value
+        if (type === 'timeline') {
+          this.items = r.items || []
+          try { localStorage.setItem(TIMELINE_CACHE_KEY, JSON.stringify({ data: this.items, ts: Date.now() })) } catch (_) {}
+          this.loading = false
+        } else {
+          this.aiSuggestion = r
+          try {
+            localStorage.setItem(slotKey, JSON.stringify(r))
+            _cleanOldSuggestionCache(slotKey)
+          } catch (_) {}
+          this.suggestionLoading = false
+        }
+      }
+
+      // 确保 loading 状态最终归位
+      this.loading = false
+      this.suggestionLoading = false
     },
 
     getIconPath(type) {

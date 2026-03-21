@@ -42,7 +42,15 @@
         :class="{ 'kg-expand-btn--loading': isExpandingNode }"
         @click.stop="handleExpandNode"
       >
-        <text class="kg-expand-btn-text">{{ isExpandingNode ? '生成中...' : '扩展' }}</text>
+        <text v-if="!isExpandingNode" class="kg-expand-btn-text">扩展</text>
+        <view v-else class="kg-expand-loading">
+          <span class="kg-expand-btn-text">扩展中</span>
+          <view class="kg-expand-dots">
+            <span class="kg-expand-dot"></span>
+            <span class="kg-expand-dot"></span>
+            <span class="kg-expand-dot"></span>
+          </view>
+        </view>
       </view>
 
       <!-- 内联笔记预览 -->
@@ -1751,7 +1759,7 @@ export default {
 }
 
 .kg-expand-btn--loading {
-  opacity: 0.6;
+  opacity: 0.85;
   cursor: default;
   pointer-events: none;
 }
@@ -1761,6 +1769,43 @@ export default {
   color: #818CF8;
   font-weight: 500;
   line-height: 1;
+}
+
+.kg-expand-loading {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.kg-expand-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 0;
+}
+
+.kg-expand-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background-color: #818CF8;
+  border-radius: 50%;
+  animation: kg-expand-bounce 1.4s ease-in-out infinite;
+}
+
+.kg-expand-dot:nth-child(1) { animation-delay: 0s; }
+.kg-expand-dot:nth-child(2) { animation-delay: 0.2s; }
+.kg-expand-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes kg-expand-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
 }
 
 /* Loading */
@@ -1881,6 +1926,21 @@ export default {
 .kg-notes-list {
   max-height: 150px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+.kg-notes-list::-webkit-scrollbar {
+  width: 6px;
+}
+.kg-notes-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.kg-notes-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+.kg-notes-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 .kg-notes-item {
   padding: 5px 0;
