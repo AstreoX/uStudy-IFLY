@@ -212,7 +212,11 @@
 
 			<!-- ========== Account Tab ========== -->
 			<swiper-item class="swiper-item-content">
-				<account-profile ref="accountProfileRef" v-if="hasVisitedAccount" />
+				<account-profile
+					ref="accountProfileRef"
+					v-if="hasVisitedAccount"
+					:theme-mode="homeThemeMode"
+				/>
 			</swiper-item>
 		</swiper>
 
@@ -288,6 +292,7 @@
 	import { getUnreadCount } from '@/api/notificationCenter'
 	import { connectNotificationStream } from '@/api/notification'
 	import { getTokens, getCardOrder, setCardOrder, clearAuth } from '@/utils/storage'
+	import { getStoredThemeMode, normalizeThemeMode, persistThemeMode } from '@/utils/themeMode'
 	import { useUserStore } from '@/store/user'
 	import { useUpdateStore } from '@/store/update'
 	import { useNotificationStore } from '@/store/notification'
@@ -336,8 +341,6 @@ function _cleanOldSuggestionCache(currentKey) {
     old.slice(1).forEach(k => uni.removeStorageSync(k))
   } catch (_) {}
 }
-
-const HOME_THEME_STORAGE_KEY = 'home_theme_mode'
 
 	export default {
 		components: {
@@ -609,14 +612,7 @@ const HOME_THEME_STORAGE_KEY = 'home_theme_mode'
 			},
 
 			restoreThemeMode() {
-				let savedMode = 'dark'
-				try {
-					const raw = uni.getStorageSync(HOME_THEME_STORAGE_KEY)
-					if (raw === 'light' || raw === 'dark') {
-						savedMode = raw
-					}
-				} catch (_) {}
-				this.applyThemeMode(savedMode, { persist: false })
+				this.applyThemeMode(getStoredThemeMode('dark'), { persist: false })
 			},
 
 			toggleThemeMode() {
@@ -626,13 +622,11 @@ const HOME_THEME_STORAGE_KEY = 'home_theme_mode'
 			},
 
 			applyThemeMode(mode, options = {}) {
-				const normalizedMode = mode === 'light' ? 'light' : 'dark'
+				const normalizedMode = normalizeThemeMode(mode)
 				const { persist = true } = options
 				this.homeThemeMode = normalizedMode
 				if (persist) {
-					try {
-						uni.setStorageSync(HOME_THEME_STORAGE_KEY, normalizedMode)
-					} catch (_) {}
+					persistThemeMode(normalizedMode)
 				}
 				this.syncThemeSystemUi(normalizedMode)
 			},

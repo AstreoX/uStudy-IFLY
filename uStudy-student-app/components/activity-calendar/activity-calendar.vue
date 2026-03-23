@@ -1,5 +1,5 @@
 <template>
-  <view class="activity-calendar">
+  <view class="activity-calendar" :class="themeClass">
     <view class="calendar-wrapper">
       <!-- Fixed labels column -->
       <view class="labels-column">
@@ -50,6 +50,8 @@
 </template>
 
 <script>
+import { normalizeThemeMode } from '@/utils/themeMode'
+
 const MONTH_NAMES = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
 const DAY_LABELS = ['一', '', '三', '', '五', '', '']
 const CELL_SIZE = 20
@@ -59,6 +61,10 @@ export default {
   name: 'ActivityCalendar',
 
   props: {
+    themeMode: {
+      type: String,
+      default: 'dark'
+    },
     records: {
       type: Array,
       default: () => []
@@ -77,6 +83,10 @@ export default {
   },
 
   computed: {
+    themeClass() {
+      return `theme-${normalizeThemeMode(this.themeMode)}`
+    },
+
     recordMap() {
       const map = {}
       for (const r of this.records) {
@@ -177,9 +187,22 @@ export default {
 
 <style scoped>
 .activity-calendar {
+  --calendar-text-muted: rgba(255, 255, 255, 0.4);
+  --calendar-level-0: rgba(255, 255, 255, 0.06);
+  --calendar-level-1: rgba(52, 211, 153, 0.3);
+  --calendar-level-2: rgba(52, 211, 153, 0.6);
+  --calendar-level-3: rgba(52, 211, 153, 0.9);
   width: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.activity-calendar.theme-light {
+  --calendar-text-muted: rgba(31, 26, 22, 0.42);
+  --calendar-level-0: rgba(63, 53, 42, 0.08);
+  --calendar-level-1: rgba(47, 143, 98, 0.28);
+  --calendar-level-2: rgba(47, 143, 98, 0.54);
+  --calendar-level-3: rgba(47, 143, 98, 0.82);
 }
 
 .calendar-wrapper {
@@ -208,7 +231,7 @@ export default {
 
 .day-label-text {
   font-size: 18rpx;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--calendar-text-muted);
   line-height: 1;
 }
 
@@ -240,7 +263,7 @@ export default {
 
 .month-text {
   font-size: 18rpx;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--calendar-text-muted);
   white-space: nowrap;
   line-height: 1;
 }
@@ -265,19 +288,19 @@ export default {
 }
 
 .level-0 {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--calendar-level-0);
 }
 
 .level-1 {
-  background: rgba(52, 211, 153, 0.3);
+  background: var(--calendar-level-1);
 }
 
 .level-2 {
-  background: rgba(52, 211, 153, 0.6);
+  background: var(--calendar-level-2);
 }
 
 .level-3 {
-  background: rgba(52, 211, 153, 0.9);
+  background: var(--calendar-level-3);
 }
 
 /* Legend */
@@ -298,6 +321,6 @@ export default {
 
 .legend-text {
   font-size: 18rpx;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--calendar-text-muted);
 }
 </style>

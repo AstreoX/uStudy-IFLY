@@ -8,7 +8,7 @@
     />
 
     <!-- Drawer Container -->
-    <view class="drawer-container" :class="{ 'drawer-show': animationVisible }">
+    <view class="drawer-container" :class="[themeClass, { 'drawer-show': animationVisible }]">
       <!-- Handle bar -->
       <view class="drawer-handle">
         <view class="handle-bar" />
@@ -52,7 +52,7 @@
       <!-- Calendar -->
       <view class="calendar-section">
         <text class="section-title">学习日历</text>
-        <activity-calendar :records="calendarRecords" :months="6" />
+        <activity-calendar :theme-mode="themeMode" :records="calendarRecords" :months="6" />
       </view>
     </view>
   </view>
@@ -61,6 +61,7 @@
 <script>
 import { getContinuityScore, getContinuityCalendar } from '@/api/assessment'
 import ActivityCalendar from '@/components/activity-calendar/activity-calendar.vue'
+import { normalizeThemeMode } from '@/utils/themeMode'
 
 export default {
   name: 'ContinuityDrawer',
@@ -68,6 +69,10 @@ export default {
   components: { ActivityCalendar },
 
   props: {
+    themeMode: {
+      type: String,
+      default: 'dark'
+    },
     visible: {
       type: Boolean,
       default: false
@@ -92,12 +97,26 @@ export default {
   },
 
   computed: {
+    normalizedThemeMode() {
+      return normalizeThemeMode(this.themeMode)
+    },
+
+    themeClass() {
+      return `theme-${this.normalizedThemeMode}`
+    },
+
     displayScore() {
       return Math.round(this.scoreData.score)
     },
 
     scoreColor() {
       const s = this.scoreData.score
+      if (this.normalizedThemeMode === 'light') {
+        if (s >= 80) return '#2F8F62'
+        if (s >= 60) return '#A86412'
+        if (s >= 40) return '#C46B1A'
+        return '#D14F4F'
+      }
       if (s >= 80) return '#34D399'
       if (s >= 60) return '#FBBF24'
       if (s >= 40) return '#FB923C'
@@ -212,13 +231,26 @@ export default {
 }
 
 .drawer-container {
+  --drawer-surface: rgba(20, 20, 30, 0.95);
+  --drawer-surface-fallback: rgba(20, 20, 30, 0.98);
+  --drawer-border: rgba(255, 255, 255, 0.12);
+  --drawer-handle: rgba(255, 255, 255, 0.2);
+  --drawer-text-primary: rgba(255, 255, 255, 0.9);
+  --drawer-text-secondary: rgba(255, 255, 255, 0.7);
+  --drawer-text-muted: rgba(255, 255, 255, 0.5);
+  --drawer-surface-soft: rgba(255, 255, 255, 0.06);
+  --drawer-divider: rgba(255, 255, 255, 0.1);
+  --drawer-recovery-bg: rgba(255, 255, 255, 0.08);
+  --drawer-recovery-fill: linear-gradient(90deg, #34D399, #10B981);
+  --drawer-recovery-text: rgba(52, 211, 153, 0.8);
+  --drawer-section-title: rgba(255, 255, 255, 0.8);
   position: relative;
-  background: rgba(20, 20, 30, 0.95);
+  background: var(--drawer-surface);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
   border-top-left-radius: 32rpx;
   border-top-right-radius: 32rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  border: 1rpx solid var(--drawer-border);
   border-bottom: none;
   padding: 16rpx 32rpx;
   padding-bottom: calc(32rpx + env(safe-area-inset-bottom) + 100vh / 26 * 3);
@@ -228,9 +260,25 @@ export default {
   transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+.drawer-container.theme-light {
+  --drawer-surface: rgba(255, 249, 241, 0.96);
+  --drawer-surface-fallback: rgba(255, 249, 241, 0.99);
+  --drawer-border: rgba(63, 53, 42, 0.12);
+  --drawer-handle: rgba(63, 53, 42, 0.18);
+  --drawer-text-primary: #1f1a16;
+  --drawer-text-secondary: rgba(31, 26, 22, 0.78);
+  --drawer-text-muted: rgba(31, 26, 22, 0.5);
+  --drawer-surface-soft: rgba(63, 53, 42, 0.06);
+  --drawer-divider: rgba(63, 53, 42, 0.1);
+  --drawer-recovery-bg: rgba(63, 53, 42, 0.08);
+  --drawer-recovery-fill: linear-gradient(90deg, #2F8F62, #26754F);
+  --drawer-recovery-text: rgba(47, 143, 98, 0.9);
+  --drawer-section-title: rgba(31, 26, 22, 0.82);
+}
+
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .drawer-container {
-    background: rgba(20, 20, 30, 0.98);
+    background: var(--drawer-surface-fallback);
   }
 }
 
@@ -248,7 +296,7 @@ export default {
 .handle-bar {
   width: 72rpx;
   height: 8rpx;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--drawer-handle);
   border-radius: 4rpx;
 }
 
@@ -268,13 +316,13 @@ export default {
 
 .score-label {
   font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--drawer-text-muted);
   margin-top: 8rpx;
 }
 
 .score-desc {
   font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--drawer-text-secondary);
   margin-top: 12rpx;
 }
 
@@ -284,7 +332,7 @@ export default {
   flex-direction: row;
   align-items: center;
   justify-content: space-around;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--drawer-surface-soft);
   border-radius: 20rpx;
   padding: 24rpx 0;
   margin-bottom: 20rpx;
@@ -300,19 +348,19 @@ export default {
 .stats-value {
   font-size: 36rpx;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--drawer-text-primary);
 }
 
 .stats-label {
   font-size: 20rpx;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--drawer-text-muted);
   margin-top: 6rpx;
 }
 
 .stats-divider {
   width: 1rpx;
   height: 48rpx;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--drawer-divider);
 }
 
 /* Recovery */
@@ -322,21 +370,21 @@ export default {
 
 .recovery-bar-bg {
   height: 12rpx;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--drawer-recovery-bg);
   border-radius: 6rpx;
   overflow: hidden;
 }
 
 .recovery-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #34D399, #10B981);
+  background: var(--drawer-recovery-fill);
   border-radius: 6rpx;
   transition: width 300ms ease;
 }
 
 .recovery-text {
   font-size: 22rpx;
-  color: rgba(52, 211, 153, 0.8);
+  color: var(--drawer-recovery-text);
   margin-top: 8rpx;
   text-align: center;
   display: block;
@@ -350,7 +398,7 @@ export default {
 .section-title {
   font-size: 28rpx;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--drawer-section-title);
   margin-bottom: 16rpx;
   display: block;
 }

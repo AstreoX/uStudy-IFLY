@@ -1,5 +1,5 @@
 <template>
-  <view class="account-profile">
+  <view class="account-profile" :class="themeClass">
     <!-- Top Bar -->
     <view class="top-bar">
       <text class="top-bar-title">我的</text>
@@ -60,6 +60,7 @@
         <view class="analytics-row">
           <view class="analytics-left">
             <learning-radar
+              :theme-mode="themeMode"
               :current-values="radarCurrentValues"
               :last-week-values="radarLastWeekValues"
               @dimension-click="onDimensionClick"
@@ -98,6 +99,7 @@
             <text v-if="dueReviewCount > 0" class="due-review-badge">{{ dueReviewCount }}个待复习</text>
           </view>
           <learning-timeline
+            :theme-mode="themeMode"
             :items="recentItems"
             :loading="timelineLoading"
             :ai-suggestion="aiSuggestion"
@@ -142,6 +144,7 @@
 
     <!-- Continuity detail drawer -->
     <continuity-drawer
+      :theme-mode="themeMode"
       :visible="continuityDrawerVisible"
       @close="continuityDrawerVisible = false"
     />
@@ -160,6 +163,7 @@ import { saveRadarSnapshot, getLastWeekSnapshot } from '@/utils/radar-snapshot'
 import LearningRadar from '@/components/learning-radar/learning-radar.vue'
 import LearningTimeline from '@/components/learning-timeline/learning-timeline.vue'
 import ContinuityDrawer from '@/components/continuity-drawer/continuity-drawer.vue'
+import { normalizeThemeMode } from '@/utils/themeMode'
 
 // ── 学习建议时间槽缓存（UTC+8）──
 // 更新时间点：08:00 / 12:00 / 18:00 / 21:00
@@ -214,6 +218,13 @@ const AVATAR_GRADIENTS = [
 export default {
   name: 'AccountProfile',
 
+  props: {
+    themeMode: {
+      type: String,
+      default: 'dark'
+    }
+  },
+
   components: {
     LearningRadar,
     LearningTimeline,
@@ -248,6 +259,10 @@ export default {
   },
 
   computed: {
+    themeClass() {
+      return `theme-${normalizeThemeMode(this.themeMode)}`
+    },
+
     user() {
       return this.userStore.user
     },
@@ -556,10 +571,89 @@ export default {
 
 <style scoped>
 .account-profile {
+  --account-topbar-title: #ffffff;
+  --account-settings-btn-bg: rgba(255, 255, 255, 0.08);
+  --account-settings-btn-border: rgba(255, 255, 255, 0.12);
+  --account-surface: rgba(255, 255, 255, 0.08);
+  --account-surface-strong: rgba(255, 255, 255, 0.1);
+  --account-surface-fallback: rgba(80, 80, 95, 0.65);
+  --account-surface-input: rgba(255, 255, 255, 0.06);
+  --account-border: rgba(255, 255, 255, 0.15);
+  --account-border-soft: rgba(255, 255, 255, 0.12);
+  --account-divider: rgba(255, 255, 255, 0.06);
+  --account-text-primary: #ffffff;
+  --account-text-secondary: rgba(255, 255, 255, 0.85);
+  --account-text-muted: rgba(255, 255, 255, 0.45);
+  --account-text-faint: rgba(255, 255, 255, 0.25);
+  --account-icon-filter: brightness(0) invert(1);
+  --account-icon-opacity: 0.6;
+  --account-shadow: rgba(0, 0, 0, 0.3);
+  --account-shadow-soft: rgba(0, 0, 0, 0.18);
+  --account-avatar-edit-bg: rgba(0, 122, 255, 0.9);
+  --account-avatar-edit-border: #0A0A12;
+  --account-badge-free-bg: rgba(255, 255, 255, 0.1);
+  --account-badge-free-text: rgba(255, 255, 255, 0.6);
+  --account-badge-basic-bg: rgba(0, 122, 255, 0.2);
+  --account-badge-basic-text: #007AFF;
+  --account-badge-premium-bg: rgba(147, 51, 234, 0.2);
+  --account-badge-premium-text: #A855F7;
+  --account-badge-alpha-bg: rgba(255, 255, 255, 0.1);
+  --account-badge-alpha-text: rgba(255, 255, 255, 0.6);
+  --account-badge-ultra-bg: rgba(147, 51, 234, 0.2);
+  --account-badge-ultra-text: #A855F7;
+  --account-review-badge-bg: rgba(255, 149, 0, 0.12);
+  --account-review-badge-text: rgba(255, 149, 0, 0.9);
+  --account-activation-bg: linear-gradient(135deg, #0088FF 0%, #0066DD 100%);
+  --account-activation-disabled-bg: rgba(0, 136, 255, 0.3);
+  --account-activation-text: #ffffff;
+  --account-placeholder: rgba(255, 255, 255, 0.25);
+  --account-error: #F87171;
+  --account-avatar-text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.2);
   width: 100%;
   height: 100%;
   position: relative;
   z-index: 2;
+}
+
+.account-profile.theme-light {
+  --account-topbar-title: #1f1a16;
+  --account-settings-btn-bg: rgba(255, 255, 255, 0.82);
+  --account-settings-btn-border: rgba(63, 53, 42, 0.1);
+  --account-surface: rgba(255, 255, 255, 0.84);
+  --account-surface-strong: rgba(255, 255, 255, 0.92);
+  --account-surface-fallback: rgba(255, 249, 241, 0.96);
+  --account-surface-input: rgba(255, 249, 241, 0.96);
+  --account-border: rgba(63, 53, 42, 0.12);
+  --account-border-soft: rgba(63, 53, 42, 0.1);
+  --account-divider: rgba(63, 53, 42, 0.08);
+  --account-text-primary: #1f1a16;
+  --account-text-secondary: rgba(31, 26, 22, 0.82);
+  --account-text-muted: rgba(31, 26, 22, 0.58);
+  --account-text-faint: rgba(31, 26, 22, 0.38);
+  --account-icon-filter: brightness(0) saturate(100%);
+  --account-icon-opacity: 0.72;
+  --account-shadow: rgba(118, 101, 80, 0.16);
+  --account-shadow-soft: rgba(118, 101, 80, 0.12);
+  --account-avatar-edit-bg: #2F6EEA;
+  --account-avatar-edit-border: #F3EDE3;
+  --account-badge-free-bg: rgba(63, 53, 42, 0.08);
+  --account-badge-free-text: rgba(63, 53, 42, 0.72);
+  --account-badge-basic-bg: rgba(47, 110, 234, 0.14);
+  --account-badge-basic-text: #2F6EEA;
+  --account-badge-premium-bg: rgba(124, 58, 237, 0.14);
+  --account-badge-premium-text: #7C3AED;
+  --account-badge-alpha-bg: rgba(63, 53, 42, 0.08);
+  --account-badge-alpha-text: rgba(63, 53, 42, 0.72);
+  --account-badge-ultra-bg: rgba(124, 58, 237, 0.14);
+  --account-badge-ultra-text: #7C3AED;
+  --account-review-badge-bg: rgba(192, 122, 24, 0.12);
+  --account-review-badge-text: #A86412;
+  --account-activation-bg: linear-gradient(135deg, #2F6EEA 0%, #1F56C6 100%);
+  --account-activation-disabled-bg: rgba(47, 110, 234, 0.24);
+  --account-activation-text: #ffffff;
+  --account-placeholder: rgba(31, 26, 22, 0.35);
+  --account-error: #D14F4F;
+  --account-avatar-text-shadow: 0 2rpx 8rpx rgba(118, 101, 80, 0.12);
 }
 
 /* Top Bar */
@@ -581,7 +675,7 @@ export default {
 .top-bar-title {
   font-size: 40rpx;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--account-topbar-title);
 }
 
 .settings-btn {
@@ -592,15 +686,15 @@ export default {
   justify-content: center;
   align-items: center;
   border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.08);
-  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  background-color: var(--account-settings-btn-bg);
+  border: 1rpx solid var(--account-settings-btn-border);
 }
 
 .settings-icon {
   width: 44rpx;
   height: 44rpx;
-  opacity: 0.6;
-  filter: brightness(0) invert(1);
+  opacity: var(--account-icon-opacity);
+  filter: var(--account-icon-filter);
 }
 
 /* Scrollable Content */
@@ -611,8 +705,8 @@ export default {
 
 /* Glassmorphism card */
 .glass-card {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
+  background: var(--account-surface);
+  border: 1rpx solid var(--account-border);
   border-radius: 24rpx;
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
@@ -623,7 +717,7 @@ export default {
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .glass-card {
-    background: rgba(80, 80, 95, 0.65);
+    background: var(--account-surface-fallback);
   }
 }
 
@@ -648,7 +742,7 @@ export default {
   display: flex;
   justify-content: center;
   align-items: center;
-  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8rpx 32rpx var(--account-shadow);
   overflow: hidden;
 }
 
@@ -661,8 +755,8 @@ export default {
 .avatar-text {
   font-size: 48rpx;
   font-weight: 700;
-  color: #ffffff;
-  text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.2);
+  color: var(--account-text-primary);
+  text-shadow: var(--account-avatar-text-shadow);
 }
 
 .avatar-edit-badge {
@@ -671,19 +765,19 @@ export default {
   right: 0;
   width: 40rpx;
   height: 40rpx;
-  background: rgba(0, 122, 255, 0.9);
+  background: var(--account-avatar-edit-bg);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 3rpx solid #0A0A12;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.3);
+  border: 3rpx solid var(--account-avatar-edit-border);
+  box-shadow: 0 2rpx 8rpx var(--account-shadow);
 }
 
 .edit-badge-icon {
   font-size: 26rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--account-activation-text);
   line-height: 1;
 }
 
@@ -705,7 +799,7 @@ export default {
 .nickname {
   font-size: 36rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--account-text-primary);
 }
 
 .subscription-badge {
@@ -714,43 +808,43 @@ export default {
 }
 
 .badge-free {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--account-badge-free-bg);
 }
 
 .badge-free .badge-text {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--account-badge-free-text);
 }
 
 .badge-basic {
-  background: rgba(0, 122, 255, 0.2);
+  background: var(--account-badge-basic-bg);
 }
 
 .badge-basic .badge-text {
-  color: #007AFF;
+  color: var(--account-badge-basic-text);
 }
 
 .badge-premium {
-  background: rgba(147, 51, 234, 0.2);
+  background: var(--account-badge-premium-bg);
 }
 
 .badge-premium .badge-text {
-  color: #A855F7;
+  color: var(--account-badge-premium-text);
 }
 
 .badge-alpha {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--account-badge-alpha-bg);
 }
 
 .badge-alpha .badge-text {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--account-badge-alpha-text);
 }
 
 .badge-ultra {
-  background: rgba(147, 51, 234, 0.2);
+  background: var(--account-badge-ultra-bg);
 }
 
 .badge-ultra .badge-text {
-  color: #A855F7;
+  color: var(--account-badge-ultra-text);
 }
 
 .badge-text {
@@ -776,18 +870,18 @@ export default {
 .stat-value {
   font-size: 28rpx;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--account-text-secondary);
 }
 
 .stat-label {
   font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--account-text-muted);
 }
 
 .stat-divider {
   width: 2rpx;
   height: 24rpx;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--account-border);
 }
 
 /* Analytics Card */
@@ -821,7 +915,7 @@ export default {
 }
 
 .detail-row + .detail-row {
-  border-top: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-top: 1rpx solid var(--account-divider);
 }
 
 .detail-cell {
@@ -834,18 +928,18 @@ export default {
 }
 
 .detail-cell + .detail-cell {
-  border-left: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-left: 1rpx solid var(--account-divider);
 }
 
 .detail-value {
   font-size: 28rpx;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--account-text-primary);
 }
 
 .detail-label {
   font-size: 20rpx;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--account-text-muted);
   margin-top: 4rpx;
 }
 
@@ -860,14 +954,14 @@ export default {
 .section-title {
   font-size: 28rpx;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--account-text-secondary);
 }
 
 .due-review-badge {
   font-size: 22rpx;
   font-weight: 500;
-  color: rgba(255, 149, 0, 0.9);
-  background: rgba(255, 149, 0, 0.12);
+  color: var(--account-review-badge-text);
+  background: var(--account-review-badge-bg);
   padding: 4rpx 16rpx;
   border-radius: 12rpx;
 }
@@ -895,8 +989,8 @@ export default {
   display: flex;
   flex-direction: row;
   align-items: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  background: var(--account-surface-input);
+  border: 1rpx solid var(--account-border-soft);
   border-radius: 16rpx;
   padding: 0 20rpx;
   gap: 14rpx;
@@ -906,26 +1000,26 @@ export default {
   width: 36rpx;
   height: 36rpx;
   flex-shrink: 0;
-  opacity: 0.4;
-  filter: brightness(0) invert(1);
+  opacity: var(--account-icon-opacity);
+  filter: var(--account-icon-filter);
 }
 
 .activation-input {
   flex: 1;
   height: 76rpx;
   font-size: 28rpx;
-  color: #ffffff;
+  color: var(--account-text-primary);
   letter-spacing: 2rpx;
 }
 
 .activation-placeholder {
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--account-placeholder);
 }
 
 .activation-btn {
   height: 76rpx;
   padding: 0 36rpx;
-  background: linear-gradient(135deg, #0088FF 0%, #0066DD 100%);
+  background: var(--account-activation-bg);
   border-radius: 16rpx;
   display: flex;
   align-items: center;
@@ -934,18 +1028,18 @@ export default {
 }
 
 .activation-btn-disabled {
-  background: rgba(0, 136, 255, 0.3);
+  background: var(--account-activation-disabled-bg);
 }
 
 .activation-btn-text {
   font-size: 28rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--account-activation-text);
 }
 
 .activation-error {
   font-size: 24rpx;
-  color: #F87171;
+  color: var(--account-error);
   margin-top: 12rpx;
   padding-left: 4rpx;
 }

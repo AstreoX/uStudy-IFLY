@@ -1,5 +1,5 @@
 <template>
-  <view class="radar-container">
+  <view class="radar-container" :class="themeClass">
     <view class="radar-canvas-wrapper" :style="{ width: canvasSize + 'px', height: canvasSize + 'px' }">
       <canvas
         :id="canvasId"
@@ -30,18 +30,21 @@
 </template>
 
 <script>
+import { normalizeThemeMode } from '@/utils/themeMode'
+
 const DIMENSIONS = ['连续性', '专注度', '深入程度', '理解程度', '知识结构', '复习情况']
 const CURRENT_DEFAULTS = [0, 0, 0, 0, 0, 0]
 const GRID_LEVELS = [20, 40, 60, 80, 100]
 
 const TAP_TARGET_SIZE = 40
 
-const COLORS = {
+const DARK_COLORS = {
   grid: 'rgba(255, 255, 255, 0.08)',
   axis: 'rgba(255, 255, 255, 0.06)',
   current: {
     fill: 'rgba(52, 211, 153, 0.15)',
-    stroke: 'rgba(52, 211, 153, 0.65)'
+    stroke: 'rgba(52, 211, 153, 0.65)',
+    score: 'rgba(52, 211, 153, 0.9)'
   },
   lastWeek: {
     fill: 'rgba(251, 191, 36, 0.10)',
@@ -50,10 +53,29 @@ const COLORS = {
   label: 'rgba(255, 255, 255, 0.65)'
 }
 
+const LIGHT_COLORS = {
+  grid: 'rgba(63, 53, 42, 0.12)',
+  axis: 'rgba(63, 53, 42, 0.1)',
+  current: {
+    fill: 'rgba(47, 143, 98, 0.12)',
+    stroke: 'rgba(47, 143, 98, 0.72)',
+    score: 'rgba(47, 143, 98, 0.9)'
+  },
+  lastWeek: {
+    fill: 'rgba(192, 122, 24, 0.08)',
+    stroke: 'rgba(192, 122, 24, 0.48)'
+  },
+  label: 'rgba(31, 26, 22, 0.62)'
+}
+
 export default {
   name: 'LearningRadar',
 
   props: {
+    themeMode: {
+      type: String,
+      default: 'dark'
+    },
     currentValues: {
       type: Array,
       default: () => CURRENT_DEFAULTS
@@ -65,6 +87,16 @@ export default {
     labels: {
       type: Array,
       default: () => DIMENSIONS
+    }
+  },
+
+  computed: {
+    themeClass() {
+      return `theme-${normalizeThemeMode(this.themeMode)}`
+    },
+
+    themeColors() {
+      return normalizeThemeMode(this.themeMode) === 'light' ? LIGHT_COLORS : DARK_COLORS
     }
   },
 
@@ -91,6 +123,9 @@ export default {
         this.drawRadar()
       },
       deep: true
+    },
+    themeMode() {
+      this.drawRadar()
     }
   },
 
@@ -157,6 +192,7 @@ export default {
       if (!this.ctx || this.isDestroyed) return
 
       const ctx = this.ctx
+      const colors = this.themeColors
       const size = this.canvasSize
       const cx = size / 2
       const cy = size / 2
@@ -166,13 +202,13 @@ export default {
       try {
         ctx.clearRect(0, 0, size, size)
 
-        this.drawHexGridLines(ctx, cx, cy, maxRadius, sides)
-        this.drawAxisLines(ctx, cx, cy, maxRadius, sides)
+        this.drawHexGridLines(ctx, cx, cy, maxRadius, sides, colors)
+        this.drawAxisLines(ctx, cx, cy, maxRadius, sides, colors)
         if (this.lastWeekValues) {
-          this.drawDataPolygon(ctx, cx, cy, maxRadius, sides, this.lastWeekValues, COLORS.lastWeek, false)
+          this.drawDataPolygon(ctx, cx, cy, maxRadius, sides, this.lastWeekValues, colors.lastWeek, false)
         }
-        this.drawDataPolygon(ctx, cx, cy, maxRadius, sides, this.currentValues, COLORS.current, true)
-        this.drawLabels(ctx, cx, cy, maxRadius, sides)
+        this.drawDataPolygon(ctx, cx, cy, maxRadius, sides, this.currentValues, colors.current, true)
+        this.drawLabels(ctx, cx, cy, maxRadius, sides, colors)
       } catch (_e) {
         // Ensure draw is still called even if drawing operations fail
       }
@@ -188,7 +224,7 @@ export default {
       }
     },
 
-    drawHexGridLines(ctx, cx, cy, maxRadius, sides) {
+    drawHexGridLines(ctx, cx, cy, maxRadius, sides, colors) {
       GRID_LEVELS.forEach(level => {
         const radius = (level / 100) * maxRadius
 
@@ -202,20 +238,20 @@ export default {
           }
         }
         ctx.closePath()
-        ctx.setStrokeStyle(COLORS.grid)
+        ctx.setStrokeStyle(colors.grid)
         ctx.setLineWidth(1)
         ctx.stroke()
       })
     },
 
-    drawAxisLines(ctx, cx, cy, maxRadius, sides) {
+    drawAxisLines(ctx, cx, cy, maxRadius, sides, colors) {
       for (let i = 0; i < sides; i++) {
         const point = this.getHexPoint(cx, cy, maxRadius, i, sides)
 
         ctx.beginPath()
         ctx.moveTo(cx, cy)
         ctx.lineTo(point.x, point.y)
-        ctx.setStrokeStyle(COLORS.axis)
+        ctx.setStrokeStyle(colors.axis)
         ctx.setLineWidth(1)
         ctx.stroke()
       }
@@ -280,7 +316,7 @@ export default {
 
     },
 
-    drawLabels(ctx, cx, cy, maxRadius, sides) {
+    drawLabels(ctx, cx, cy, maxRadius, sides, colors) {
       const values = this.normalizeValues(this.currentValues, sides)
       const scoreFontSize = Math.max(10, Math.min(12, this.canvasSize / 16))
       const labelFontSize = Math.max(9, Math.min(11, this.canvasSize / 18))
@@ -304,13 +340,13 @@ export default {
 
         // Score on top
         ctx.setFontSize(scoreFontSize)
-        ctx.setFillStyle('rgba(52, 211, 153, 0.9)')
+        ctx.setFillStyle(colors.current.score)
         if (typeof ctx.setTextBaseline === 'function') ctx.setTextBaseline('bottom')
         ctx.fillText(String(Math.round(values[i])), point.x, point.y - gap)
 
         // Label below
         ctx.setFontSize(labelFontSize)
-        ctx.setFillStyle(COLORS.label)
+        ctx.setFillStyle(colors.label)
         if (typeof ctx.setTextBaseline === 'function') ctx.setTextBaseline('top')
         ctx.fillText(label, point.x, point.y + gap)
       })
@@ -323,11 +359,22 @@ export default {
 
 <style scoped>
 .radar-container {
+  --radar-legend-text: rgba(255, 255, 255, 0.6);
+  --radar-dot-current: #34D399;
+  --radar-dot-current-shadow: rgba(52, 211, 153, 0.5);
+  --radar-dot-last: #FBBF24;
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 100%;
   padding: 12rpx 0;
+}
+
+.radar-container.theme-light {
+  --radar-legend-text: rgba(31, 26, 22, 0.58);
+  --radar-dot-current: #2F8F62;
+  --radar-dot-current-shadow: rgba(47, 143, 98, 0.28);
+  --radar-dot-last: #C07A18;
 }
 
 .radar-canvas-wrapper {
@@ -367,17 +414,17 @@ export default {
 }
 
 .legend-dot--current {
-  background-color: #34D399;
-  box-shadow: 0 0 6rpx rgba(52, 211, 153, 0.5);
+  background-color: var(--radar-dot-current);
+  box-shadow: 0 0 6rpx var(--radar-dot-current-shadow);
 }
 
 .legend-dot--last {
-  background-color: #FBBF24;
+  background-color: var(--radar-dot-last);
   opacity: 0.7;
 }
 
 .legend-text {
   font-size: 18rpx;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--radar-legend-text);
 }
 </style>

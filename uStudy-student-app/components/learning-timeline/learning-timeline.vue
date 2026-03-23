@@ -1,5 +1,5 @@
 <template>
-  <view class="timeline-container">
+  <view class="timeline-container" :class="themeClass">
     <!-- Month header -->
     <view class="timeline-header">
       <text class="timeline-month">{{ monthLabel }}</text>
@@ -101,6 +101,8 @@
 </template>
 
 <script>
+import { normalizeThemeMode } from '@/utils/themeMode'
+
 const ICON_MAP = {
   '学习新知识': '/static/icons/phosphor-icons/SVGs/regular/books.svg',
   '复习': '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg',
@@ -124,6 +126,10 @@ export default {
   name: 'LearningTimeline',
 
   props: {
+    themeMode: {
+      type: String,
+      default: 'dark'
+    },
     items: {
       type: Array,
       default: () => []
@@ -149,6 +155,10 @@ export default {
   },
 
   computed: {
+    themeClass() {
+      return `theme-${normalizeThemeMode(this.themeMode)}`
+    },
+
     monthLabel() {
       const now = new Date()
       return `${now.getMonth() + 1}月 ${now.getFullYear()}`
@@ -299,7 +309,58 @@ export default {
 
 <style scoped>
 .timeline-container {
+  --timeline-text-strong: rgba(255, 255, 255, 0.9);
+  --timeline-text-primary: rgba(255, 255, 255, 0.85);
+  --timeline-text-secondary: rgba(255, 255, 255, 0.45);
+  --timeline-text-muted: rgba(255, 255, 255, 0.35);
+  --timeline-line: rgba(255, 255, 255, 0.12);
+  --timeline-node-bg: rgba(255, 255, 255, 0.08);
+  --timeline-node-border: rgba(255, 255, 255, 0.12);
+  --timeline-icon-filter: brightness(0) invert(1);
+  --timeline-icon-opacity: 0.7;
+  --timeline-tag-blue-text: rgba(0, 122, 255, 0.8);
+  --timeline-tag-blue-bg: rgba(0, 122, 255, 0.1);
+  --timeline-tag-blue-border: rgba(0, 122, 255, 0.2);
+  --timeline-tag-orange-text: rgba(255, 149, 0, 0.9);
+  --timeline-tag-orange-bg: rgba(255, 149, 0, 0.12);
+  --timeline-tag-orange-border: rgba(255, 149, 0, 0.25);
+  --timeline-tag-green-text: rgba(52, 199, 89, 0.95);
+  --timeline-tag-green-bg: rgba(52, 199, 89, 0.14);
+  --timeline-tag-green-border: rgba(52, 199, 89, 0.28);
+  --timeline-suggestion-node-bg: rgba(0, 122, 255, 0.2);
+  --timeline-suggestion-node-border: rgba(0, 122, 255, 0.35);
+  --timeline-suggestion-card-bg: linear-gradient(135deg, rgba(0, 122, 255, 0.15) 0%, rgba(100, 100, 255, 0.08) 100%);
+  --timeline-suggestion-card-border: rgba(0, 122, 255, 0.25);
+  --timeline-suggestion-title: rgba(255, 255, 255, 0.9);
+  --timeline-suggestion-reason: rgba(255, 255, 255, 0.45);
   width: 100%;
+}
+
+.timeline-container.theme-light {
+  --timeline-text-strong: #1f1a16;
+  --timeline-text-primary: rgba(31, 26, 22, 0.84);
+  --timeline-text-secondary: rgba(31, 26, 22, 0.58);
+  --timeline-text-muted: rgba(31, 26, 22, 0.4);
+  --timeline-line: rgba(63, 53, 42, 0.12);
+  --timeline-node-bg: rgba(255, 255, 255, 0.86);
+  --timeline-node-border: rgba(63, 53, 42, 0.1);
+  --timeline-icon-filter: brightness(0) saturate(100%);
+  --timeline-icon-opacity: 0.72;
+  --timeline-tag-blue-text: #2f6eea;
+  --timeline-tag-blue-bg: rgba(47, 110, 234, 0.12);
+  --timeline-tag-blue-border: rgba(47, 110, 234, 0.2);
+  --timeline-tag-orange-text: #a86412;
+  --timeline-tag-orange-bg: rgba(192, 122, 24, 0.12);
+  --timeline-tag-orange-border: rgba(192, 122, 24, 0.2);
+  --timeline-tag-green-text: #2f8f62;
+  --timeline-tag-green-bg: rgba(47, 143, 98, 0.12);
+  --timeline-tag-green-border: rgba(47, 143, 98, 0.2);
+  --timeline-suggestion-node-bg: rgba(47, 110, 234, 0.14);
+  --timeline-suggestion-node-border: rgba(47, 110, 234, 0.22);
+  --timeline-suggestion-card-bg: linear-gradient(135deg, rgba(47, 110, 234, 0.12) 0%, rgba(126, 153, 216, 0.08) 100%);
+  --timeline-suggestion-card-border: rgba(47, 110, 234, 0.18);
+  --timeline-suggestion-title: #1f1a16;
+  --timeline-suggestion-reason: rgba(31, 26, 22, 0.58);
 }
 
 /* Month header */
@@ -314,14 +375,14 @@ export default {
 .timeline-month {
   font-size: 24rpx;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--timeline-text-secondary);
   white-space: nowrap;
 }
 
 .timeline-header-line {
   flex: 1;
   height: 1rpx;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--timeline-line);
 }
 
 .timeline-scroll {
@@ -340,7 +401,7 @@ export default {
 .loading-text,
 .empty-text {
   font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--timeline-text-muted);
 }
 
 /* Timeline body */
@@ -355,7 +416,7 @@ export default {
   top: 0;
   bottom: 0;
   width: 2rpx;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--timeline-line);
 }
 
 /* Date group */
@@ -367,7 +428,7 @@ export default {
 .date-group-label {
   font-size: 22rpx;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--timeline-text-secondary);
 }
 
 /* Each entry */
@@ -391,8 +452,8 @@ export default {
   width: 48rpx;
   height: 48rpx;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  background: var(--timeline-node-bg);
+  border: 1rpx solid var(--timeline-node-border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -402,8 +463,8 @@ export default {
 .timeline-icon {
   width: 28rpx;
   height: 28rpx;
-  filter: brightness(0) invert(1);
-  opacity: 0.7;
+  filter: var(--timeline-icon-filter);
+  opacity: var(--timeline-icon-opacity);
 }
 
 /* Content area */
@@ -423,7 +484,7 @@ export default {
 
 .timeline-title {
   font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--timeline-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -433,14 +494,14 @@ export default {
 
 .timeline-date {
   font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--timeline-text-muted);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .timeline-subtitle {
   font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--timeline-text-secondary);
   margin-top: 4rpx;
 }
 
@@ -451,7 +512,7 @@ export default {
 
 .timeline-summary {
   font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--timeline-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -474,23 +535,23 @@ export default {
 
 .node-tag {
   font-size: 20rpx;
-  color: rgba(0, 122, 255, 0.8);
-  background: rgba(0, 122, 255, 0.1);
-  border: 1rpx solid rgba(0, 122, 255, 0.2);
+  color: var(--timeline-tag-blue-text);
+  background: var(--timeline-tag-blue-bg);
+  border: 1rpx solid var(--timeline-tag-blue-border);
   border-radius: 8rpx;
   padding: 4rpx 12rpx;
 }
 
 .review-tag {
-  color: rgba(255, 149, 0, 0.9);
-  background: rgba(255, 149, 0, 0.12);
-  border-color: rgba(255, 149, 0, 0.25);
+  color: var(--timeline-tag-orange-text);
+  background: var(--timeline-tag-orange-bg);
+  border-color: var(--timeline-tag-orange-border);
 }
 
 .review-done-tag {
-  color: rgba(52, 199, 89, 0.95);
-  background: rgba(52, 199, 89, 0.14);
-  border-color: rgba(52, 199, 89, 0.28);
+  color: var(--timeline-tag-green-text);
+  background: var(--timeline-tag-green-bg);
+  border-color: var(--timeline-tag-green-border);
 }
 
 /* Suggestion card — highlighted */
@@ -499,8 +560,8 @@ export default {
 }
 
 .timeline-node-suggestion {
-  background: rgba(0, 122, 255, 0.2);
-  border-color: rgba(0, 122, 255, 0.35);
+  background: var(--timeline-suggestion-node-bg);
+  border-color: var(--timeline-suggestion-node-border);
   top: 50%;
   transform: translateY(-50%);
 }
@@ -510,8 +571,8 @@ export default {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(135deg, rgba(0, 122, 255, 0.15) 0%, rgba(100, 100, 255, 0.08) 100%);
-  border: 1rpx solid rgba(0, 122, 255, 0.25);
+  background: var(--timeline-suggestion-card-bg);
+  border: 1rpx solid var(--timeline-suggestion-card-border);
   border-radius: 16rpx;
   padding: 20rpx 24rpx;
 }
@@ -519,12 +580,12 @@ export default {
 .suggestion-title {
   font-size: 26rpx;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--timeline-suggestion-title);
 }
 
 .suggestion-reason {
   font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--timeline-suggestion-reason);
   margin-top: 6rpx;
 }
 </style>

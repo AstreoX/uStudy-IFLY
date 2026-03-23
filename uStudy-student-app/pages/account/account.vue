@@ -1,5 +1,5 @@
 <template>
-  <view class="account-page">
+  <view class="account-page" :class="pageThemeClass">
     <!-- Aurora Background Layer -->
     <view class="aurora-bg">
       <view class="aurora-blob aurora-blob-1"></view>
@@ -213,6 +213,7 @@ import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 import { goBack } from '@/utils/navigation'
 import { syncWebCalendarToDevice } from '@/utils/calendarSync'
 import { ensureCameraPermission, isPermissionDenied, guideToSettings } from '@/utils/permission'
+import { getStoredThemeMode } from '@/utils/themeMode'
 
 export default {
   components: {
@@ -225,6 +226,7 @@ export default {
 
   data() {
     return {
+      homeThemeMode: 'dark',
       avatarGradients: [
         'linear-gradient(135deg, #0F6FFF 0%, #B1DD8B 100%)',
         'linear-gradient(135deg, #A18CD1 0%, #FBC2EB 100%)',
@@ -248,7 +250,23 @@ export default {
     }
   },
 
+  created() {
+    this.restoreThemeMode()
+  },
+
+  onShow() {
+    this.restoreThemeMode()
+  },
+
   computed: {
+    isLightTheme() {
+      return this.homeThemeMode === 'light'
+    },
+
+    pageThemeClass() {
+      return this.isLightTheme ? 'theme-light' : 'theme-dark'
+    },
+
     updateStore() {
       return useUpdateStore()
     },
@@ -322,6 +340,24 @@ export default {
   },
 
   methods: {
+    restoreThemeMode() {
+      this.homeThemeMode = getStoredThemeMode('dark')
+      this.syncThemeSystemUi(this.homeThemeMode)
+    },
+
+    syncThemeSystemUi(mode) {
+      // #ifdef APP-PLUS
+      try {
+        if (typeof plus !== 'undefined' && plus.navigator) {
+          plus.navigator.setStatusBarStyle(mode === 'light' ? 'dark' : 'light')
+          if (typeof plus.navigator.setStatusBarBackground === 'function') {
+            plus.navigator.setStatusBarBackground(mode === 'light' ? '#F3EDE3' : '#0A0A12')
+          }
+        }
+      } catch (_) {}
+      // #endif
+    },
+
     // Toast 辅助方法
     showCustomToast(message, type = 'info') {
       this.toast = { visible: true, message, type }
@@ -526,11 +562,94 @@ export default {
 
 <style>
 .account-page {
+  --account-page-bg: #0A0A12;
+  --account-aurora-blue-core: #1A6AFF;
+  --account-aurora-blue-mid: rgba(26, 106, 255, 0.3);
+  --account-aurora-orange-core: #FF6A1A;
+  --account-aurora-orange-mid: rgba(255, 106, 26, 0.3);
+  --account-aurora-blend-core: #FF9F45;
+  --account-aurora-blend-mid: rgba(255, 159, 69, 0.15);
+  --account-nav-btn-bg: rgba(255, 255, 255, 0.06);
+  --account-nav-btn-border: rgba(255, 255, 255, 0.1);
+  --account-nav-btn-outline: rgba(255, 255, 255, 0.04);
+  --account-nav-title: #ffffff;
+  --account-icon-filter: brightness(0) invert(1);
+  --account-surface: rgba(255, 255, 255, 0.08);
+  --account-surface-fallback: rgba(80, 80, 95, 0.65);
+  --account-surface-pressed: rgba(255, 255, 255, 0.05);
+  --account-border: rgba(255, 255, 255, 0.15);
+  --account-border-soft: rgba(255, 255, 255, 0.1);
+  --account-text-primary: #ffffff;
+  --account-text-secondary: rgba(255, 255, 255, 0.6);
+  --account-text-muted: rgba(255, 255, 255, 0.35);
+  --account-avatar-edit-bg: rgba(0, 122, 255, 0.9);
+  --account-avatar-edit-border: #0A0A12;
+  --account-badge-free-bg: rgba(255, 255, 255, 0.1);
+  --account-badge-free-text: rgba(255, 255, 255, 0.6);
+  --account-badge-basic-bg: rgba(0, 122, 255, 0.2);
+  --account-badge-basic-text: #007AFF;
+  --account-badge-premium-bg: rgba(147, 51, 234, 0.2);
+  --account-badge-premium-text: #A855F7;
+  --account-badge-alpha-bg: rgba(255, 255, 255, 0.1);
+  --account-badge-alpha-text: rgba(255, 255, 255, 0.6);
+  --account-badge-ultra-bg: rgba(147, 51, 234, 0.2);
+  --account-badge-ultra-text: #A855F7;
+  --account-danger-bg: rgba(239, 68, 68, 0.15);
+  --account-danger-border: rgba(239, 68, 68, 0.3);
+  --account-danger-text: #EF4444;
+  --account-nav-btn-highlight: rgba(255, 255, 255, 0.08);
+  --account-nav-btn-shadow: rgba(0, 0, 0, 0.25);
+  --account-shadow: rgba(0, 0, 0, 0.3);
+  --account-avatar-text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.2);
+  --account-avatar-edit-icon: #ffffff;
   width: 100%;
   min-height: 100vh;
-  background-color: #0A0A12;
+  background-color: var(--account-page-bg);
   position: relative;
   overflow: hidden;
+}
+
+.account-page.theme-light {
+  --account-page-bg: #F3EDE3;
+  --account-aurora-blue-core: #9AB9FF;
+  --account-aurora-blue-mid: rgba(154, 185, 255, 0.24);
+  --account-aurora-orange-core: #F5BB73;
+  --account-aurora-orange-mid: rgba(245, 187, 115, 0.22);
+  --account-aurora-blend-core: #FFD08C;
+  --account-aurora-blend-mid: rgba(255, 208, 140, 0.16);
+  --account-nav-btn-bg: rgba(255, 255, 255, 0.82);
+  --account-nav-btn-border: rgba(63, 53, 42, 0.1);
+  --account-nav-btn-outline: rgba(63, 53, 42, 0.04);
+  --account-nav-title: #1F1A16;
+  --account-icon-filter: brightness(0) saturate(100%);
+  --account-surface: rgba(255, 255, 255, 0.84);
+  --account-surface-fallback: rgba(255, 249, 241, 0.96);
+  --account-surface-pressed: rgba(63, 53, 42, 0.05);
+  --account-border: rgba(63, 53, 42, 0.12);
+  --account-border-soft: rgba(63, 53, 42, 0.1);
+  --account-text-primary: #1F1A16;
+  --account-text-secondary: rgba(31, 26, 22, 0.64);
+  --account-text-muted: rgba(31, 26, 22, 0.42);
+  --account-avatar-edit-bg: #2F6EEA;
+  --account-avatar-edit-border: #F3EDE3;
+  --account-badge-free-bg: rgba(63, 53, 42, 0.08);
+  --account-badge-free-text: rgba(63, 53, 42, 0.72);
+  --account-badge-basic-bg: rgba(47, 110, 234, 0.14);
+  --account-badge-basic-text: #2F6EEA;
+  --account-badge-premium-bg: rgba(124, 58, 237, 0.14);
+  --account-badge-premium-text: #7C3AED;
+  --account-badge-alpha-bg: rgba(63, 53, 42, 0.08);
+  --account-badge-alpha-text: rgba(63, 53, 42, 0.72);
+  --account-badge-ultra-bg: rgba(124, 58, 237, 0.14);
+  --account-badge-ultra-text: #7C3AED;
+  --account-danger-bg: rgba(209, 79, 79, 0.12);
+  --account-danger-border: rgba(209, 79, 79, 0.22);
+  --account-danger-text: #D14F4F;
+  --account-nav-btn-highlight: rgba(255, 255, 255, 0.68);
+  --account-nav-btn-shadow: rgba(118, 101, 80, 0.14);
+  --account-shadow: rgba(118, 101, 80, 0.18);
+  --account-avatar-text-shadow: 0 2rpx 8rpx rgba(118, 101, 80, 0.12);
+  --account-avatar-edit-icon: #ffffff;
 }
 
 /* Aurora Background (Blue-Orange) */
@@ -556,7 +675,7 @@ export default {
 .aurora-blob-1 {
   width: 900rpx;
   height: 900rpx;
-  background: radial-gradient(circle, #1A6AFF 0%, rgba(26, 106, 255, 0.3) 40%, transparent 70%);
+  background: radial-gradient(circle, var(--account-aurora-blue-core) 0%, var(--account-aurora-blue-mid) 40%, transparent 70%);
   top: -250rpx;
   left: -200rpx;
   animation: aurora-blue 14s ease-in-out infinite;
@@ -566,7 +685,7 @@ export default {
 .aurora-blob-2 {
   width: 850rpx;
   height: 850rpx;
-  background: radial-gradient(circle, #FF6A1A 0%, rgba(255, 106, 26, 0.3) 40%, transparent 70%);
+  background: radial-gradient(circle, var(--account-aurora-orange-core) 0%, var(--account-aurora-orange-mid) 40%, transparent 70%);
   bottom: -200rpx;
   right: -200rpx;
   animation: aurora-orange 16s ease-in-out infinite;
@@ -576,7 +695,7 @@ export default {
 .aurora-blob-3 {
   width: 600rpx;
   height: 600rpx;
-  background: radial-gradient(circle, #FF9F45 0%, rgba(255, 159, 69, 0.15) 40%, transparent 70%);
+  background: radial-gradient(circle, var(--account-aurora-blend-core) 0%, var(--account-aurora-blend-mid) 40%, transparent 70%);
   top: 40%;
   left: 25%;
   animation: aurora-blend 18s ease-in-out infinite;
@@ -625,20 +744,20 @@ export default {
   justify-content: center;
   align-items: center;
   border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.06);
+  background-color: var(--account-nav-btn-bg);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
-  border: 1rpx solid rgba(255, 255, 255, 0.1);
-  outline: 1rpx solid rgba(255, 255, 255, 0.04);
+  border: 1rpx solid var(--account-nav-btn-border);
+  outline: 1rpx solid var(--account-nav-btn-outline);
   outline-offset: 1rpx;
   box-shadow:
-    inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
-    0 2rpx 12rpx rgba(0, 0, 0, 0.25);
+    inset 0 1rpx 2rpx var(--account-nav-btn-highlight),
+    0 2rpx 12rpx var(--account-nav-btn-shadow);
 }
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .nav-left {
-    background: rgba(80, 80, 95, 0.65);
+    background: var(--account-surface-fallback);
   }
 }
 
@@ -650,13 +769,13 @@ export default {
 .nav-icon {
   width: 48rpx;
   height: 48rpx;
-  filter: brightness(0) invert(1);
+  filter: var(--account-icon-filter);
 }
 
 .nav-title {
   font-size: 34rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--account-nav-title);
 }
 
 /* Content Area */
@@ -672,8 +791,8 @@ export default {
 .profile-card {
   margin: 0 calc(100vw / 24);
   padding: 40rpx 30rpx;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
+  background: var(--account-surface);
+  border: 1rpx solid var(--account-border);
   border-radius: 24rpx;
   display: flex;
   flex-direction: column;
@@ -684,7 +803,7 @@ export default {
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .profile-card {
-    background: rgba(80, 80, 95, 0.65);
+    background: var(--account-surface-fallback);
   }
 }
 
@@ -700,7 +819,7 @@ export default {
   display: flex;
   justify-content: center;
   align-items: center;
-  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8rpx 32rpx var(--account-shadow);
   overflow: hidden;
 }
 
@@ -713,8 +832,8 @@ export default {
 .avatar-text {
   font-size: 64rpx;
   font-weight: 700;
-  color: #ffffff;
-  text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.2);
+  color: var(--account-text-primary);
+  text-shadow: var(--account-avatar-text-shadow);
 }
 
 .avatar-edit-badge {
@@ -723,32 +842,32 @@ export default {
   right: 0;
   width: 48rpx;
   height: 48rpx;
-  background: rgba(0, 122, 255, 0.9);
+  background: var(--account-avatar-edit-bg);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 3rpx solid #0A0A12;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.3);
+  border: 3rpx solid var(--account-avatar-edit-border);
+  box-shadow: 0 2rpx 8rpx var(--account-shadow);
 }
 
 .edit-badge-icon {
   font-size: 32rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--account-avatar-edit-icon);
   line-height: 1;
 }
 
 .nickname {
   font-size: 40rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--account-text-primary);
   margin-bottom: 8rpx;
 }
 
 .email {
   font-size: 28rpx;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--account-text-secondary);
   margin-bottom: 20rpx;
 }
 
@@ -758,43 +877,43 @@ export default {
 }
 
 .badge-free {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--account-badge-free-bg);
 }
 
 .badge-free .badge-text {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--account-badge-free-text);
 }
 
 .badge-basic {
-  background: rgba(0, 122, 255, 0.2);
+  background: var(--account-badge-basic-bg);
 }
 
 .badge-basic .badge-text {
-  color: #007AFF;
+  color: var(--account-badge-basic-text);
 }
 
 .badge-premium {
-  background: rgba(147, 51, 234, 0.2);
+  background: var(--account-badge-premium-bg);
 }
 
 .badge-premium .badge-text {
-  color: #A855F7;
+  color: var(--account-badge-premium-text);
 }
 
 .badge-alpha {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--account-badge-alpha-bg);
 }
 
 .badge-alpha .badge-text {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--account-badge-alpha-text);
 }
 
 .badge-ultra {
-  background: rgba(147, 51, 234, 0.2);
+  background: var(--account-badge-ultra-bg);
 }
 
 .badge-ultra .badge-text {
-  color: #A855F7;
+  color: var(--account-badge-ultra-text);
 }
 
 .badge-text {
@@ -812,8 +931,8 @@ export default {
 }
 
 .settings-card {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
+  background: var(--account-surface);
+  border: 1rpx solid var(--account-border);
   border-radius: 24rpx;
   overflow: hidden;
   -webkit-backdrop-filter: blur(20px);
@@ -822,7 +941,7 @@ export default {
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .settings-card {
-    background: rgba(80, 80, 95, 0.65);
+    background: var(--account-surface-fallback);
   }
 }
 
@@ -833,38 +952,38 @@ export default {
 }
 
 .settings-item:active {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--account-surface-pressed);
 }
 
 .item-icon {
   width: 44rpx;
   height: 44rpx;
   margin-right: 24rpx;
-  filter: brightness(0) invert(1);
+  filter: var(--account-icon-filter);
 }
 
 .item-label {
   flex: 1;
   font-size: 32rpx;
-  color: #ffffff;
+  color: var(--account-text-primary);
 }
 
 .item-value {
   font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--account-text-muted);
   margin-right: 8rpx;
 }
 
 .item-arrow {
   width: 32rpx;
   height: 32rpx;
-  filter: brightness(0) invert(1);
+  filter: var(--account-icon-filter);
   opacity: 0.4;
 }
 
 .settings-divider {
   height: 1rpx;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--account-border-soft);
   margin-left: 100rpx;
 }
 
@@ -894,14 +1013,14 @@ export default {
 }
 
 .logout-btn {
-  background-color: rgba(239, 68, 68, 0.15);
-  border: 1rpx solid rgba(239, 68, 68, 0.3);
+  background-color: var(--account-danger-bg);
+  border: 1rpx solid var(--account-danger-border);
 }
 
 .logout-text {
   font-size: 34rpx;
   font-weight: 500;
-  color: #EF4444;
+  color: var(--account-danger-text);
 }
 
 </style>
