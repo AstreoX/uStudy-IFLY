@@ -352,9 +352,9 @@ export default {
     storageLimits() {
       return {
         FREE: 30 * 1024 * 1024,    // 30MB
-        PLUS: 200 * 1024 * 1024,   // 200MB
-        ULTRA: 500 * 1024 * 1024,  // 500MB
-        ALPHA: 500 * 1024 * 1024   // 500MB - Alpha 内测用户
+        PLUS: 300 * 1024 * 1024,   // 300MB
+        ULTRA: 2 * 1024 * 1024 * 1024,  // 2GB
+        ALPHA: 2 * 1024 * 1024 * 1024   // 2GB - Alpha 内测用户
       }
     },
 
@@ -365,10 +365,10 @@ export default {
     // 单文件上传大小限制 (字节)
     uploadFileLimits() {
       return {
-        FREE: 10 * 1024 * 1024,    // 10MB
-        PLUS: 50 * 1024 * 1024,    // 50MB
-        ULTRA: 100 * 1024 * 1024,  // 100MB
-        ALPHA: 100 * 1024 * 1024   // 100MB
+        FREE: 50 * 1024 * 1024,    // 50MB
+        PLUS: 200 * 1024 * 1024,   // 200MB
+        ULTRA: 500 * 1024 * 1024,  // 500MB
+        ALPHA: 500 * 1024 * 1024   // 500MB
       }
     },
 
@@ -400,8 +400,8 @@ export default {
       if (currentIdx < 0 || currentIdx >= tierOrder.length - 1) return null
       const nextTier = tierOrder[currentIdx + 1]
       const labels = { PLUS: 'Plus', ULTRA: 'Ultra' }
-      const uploadLimits = { PLUS: 50, ULTRA: 100 }
-      const storageLimits = { PLUS: 200, ULTRA: 500 }
+      const uploadLimits = { PLUS: 200, ULTRA: 500 }
+      const storageLimits = { PLUS: 300, ULTRA: 2048 }
       return {
         label: labels[nextTier],
         uploadLimitMB: uploadLimits[nextTier],
@@ -446,7 +446,8 @@ export default {
         const tierLabel = this.expiredTierLabel
         if (this.fileSizeExceeded && this.pendingFileSize > 0) {
           const fileSizeMB = (this.pendingFileSize / (1024 * 1024)).toFixed(1)
-          return `你的 ${tierLabel} 订阅已到期，当前文件上传上限为 10MB，该文件 ${fileSizeMB}MB 无法上传。\n\n续费 ${tierLabel} 即可恢复更大上传额度。`
+          const freeUploadLimitMB = (this.uploadFileLimits.FREE / (1024 * 1024)).toFixed(0)
+          return `你的 ${tierLabel} 订阅已到期，当前文件上传上限为 ${freeUploadLimitMB}MB，该文件 ${fileSizeMB}MB 无法上传。\n\n续费 ${tierLabel} 即可恢复更大上传额度。`
         }
         return `你的 ${tierLabel} 订阅已到期，存储空间已降至 ${limitMB}MB。\n\n续费即可恢复原有空间和功能。`
       }

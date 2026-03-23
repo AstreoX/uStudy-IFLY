@@ -79,6 +79,12 @@ async function doPoll() {
 		// 优先使用 Redis streaming-status（更快）
 		const status = await getStreamingStatus(conversationId)
 
+		if (status.is_stopped) {
+			console.log('[BackgroundMonitor] Stream was stopped by user, stopping monitor silently')
+			stopBackgroundMonitor()
+			return
+		}
+
 		// AI 已完成：is_streaming=false 且有内容
 		if (status.partial_content && !status.is_streaming) {
 			const preview = status.partial_content.substring(0, 50)

@@ -507,6 +507,10 @@
 						<view class="typing-dot"></view>
 					</view>
 
+					<view v-if="msg.responseStatus === 'stopped' && !msg.isStreaming" class="ai-status-badge">
+						<text class="ai-status-badge-text">已终止</text>
+					</view>
+
 				</view>
 
 				<!-- AI 消息操作图标 (流式输出完成后显示) -->
@@ -647,16 +651,35 @@
 				</view>
 
 				<view class="input-bottom-row">
-					<!-- 左侧：模型选择 pill -->
-					<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
-						<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
-						<text
-							class="model-selector-label"
-							:style="{ color: '#C7CBD4', '-webkit-text-fill-color': '#C7CBD4' }"
-						>{{ selectedModelName }}</text>
-						<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
+					<view class="input-bottom-left">
+						<!-- 左侧：模型选择 pill -->
+						<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
+							<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
+							<text
+								class="model-selector-label"
+								:style="{ color: '#C7CBD4', '-webkit-text-fill-color': '#C7CBD4' }"
+							>{{ selectedModelName }}</text>
+							<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
+						</view>
+						<!-- 深度思考切换按钮 -->
+						<view
+							v-if="currentModelSupportsThinking"
+							class="thinking-toggle-btn"
+							@click="toggleThinking"
+						>
+							<image class="thinking-toggle-icon" src="/static/icons/phosphor-icons/SVGs/regular/brain.svg" mode="aspectFit"></image>
+							<text class="thinking-toggle-label">深度思考</text>
+							<view
+								class="thinking-toggle-indicator"
+								:class="{ 'thinking-toggle-indicator-active': thinkingEnabled }"
+							>
+								<view
+									class="thinking-toggle-indicator-core"
+									:class="{ 'thinking-toggle-indicator-core-active': thinkingEnabled }"
+								></view>
+							</view>
+						</view>
 					</view>
-					<view v-else class="input-bottom-row-spacer"></view>
 
 					<!-- 右侧：操作按钮 -->
 					<view class="right-actions">
@@ -736,8 +759,8 @@
 
 <script>
 	import config from '@/config/index.js'
-	import { getSelectedModelId, setSelectedModelId } from '@/utils/storage'
-	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage, getQuickChatToolTaskStatus, listQuickChatToolTasks, bindQuickChatToolTask } from '@/api/chat'
+	import { getSelectedModelId, setSelectedModelId, getThinkingMode, setThinkingMode } from '@/utils/storage'
+	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage, getQuickChatToolTaskStatus, listQuickChatToolTasks, bindQuickChatToolTask, stopStreamingReply } from '@/api/chat'
 	import { executeCalendarTool } from '@/utils/calendar'
 	import { createCalendarEvent, getCalendarEvents, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendarEvents'
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
@@ -951,11 +974,13 @@
 
 				// 后台监控：最后一条用户消息的发送时间
 				lastUserMessageTimestamp: null,
+				isStoppingReply: false,
 
 				// 模型选择相关
 				availableModels: [],
 				selectedModelId: null,
 				showModelMenu: false,
+				thinkingEnabled: true,
 
 				// 异步创建空间任务轮询
 				taskPollTimers: {},
@@ -995,18 +1020,16 @@
 			// 检查后台监控结果并恢复
 			const monitor = getActiveMonitor()
 			if (monitor && monitor.conversationId === this.conversationId) {
-				stopBackgroundMonitor()
-				// Scenario A: 同一页面实例（onHide → onShow），有 streaming AI 消息
-				if (this.messages.some(m => m.role === 'ai' && m.isStreaming)) {
-					this.recoverFromBackground()
-				} else {
-					// Scenario B: 新页面实例（页面销毁后重建），loadExistingConversation 已处理
-					clearPendingMessages(this.conversationId)
+				if (!this.isLoadingHistory) {
+					this.recoverFromBackground({
+						stopMonitorFirst: true
+					})
 				}
 			}
 
 			// 页面显示时，合并本地缓存的待同步消息（历史加载中不重复 merge）
-			if (this.conversationId && !this.isLoadingHistory) {
+			if (this.conversationId && !this.isLoadingHistory &&
+				(!monitor || monitor.conversationId !== this.conversationId)) {
 				this.mergePendingMessages()
 			}
 		},
@@ -1117,6 +1140,10 @@
 				const model = this.availableModels.find(m => m.id === this.selectedModelId)
 				return model ? model.display_name : '模型'
 			},
+			currentModelSupportsThinking() {
+				const model = this.availableModels.find(m => m.id === this.selectedModelId)
+				return model?.supports_thinking || false
+			},
 			autoHeightEnabled() {
 				// #ifdef H5
 				return false
@@ -1171,6 +1198,16 @@
 				this.selectedModelId = id
 				this.showModelMenu = false
 				setSelectedModelId(id)
+				// 切换模型后，若新模型不支持思考则自动关闭
+				if (!model?.supports_thinking) {
+					this.thinkingEnabled = false
+					setThinkingMode(false)
+				}
+			},
+			toggleThinking() {
+				if (!this.currentModelSupportsThinking) return
+				this.thinkingEnabled = !this.thinkingEnabled
+				setThinkingMode(this.thinkingEnabled)
 			},
 			async loadModels() {
 				try {
@@ -1184,6 +1221,11 @@
 					} else {
 						const defaultModel = models.find(m => m.is_default && !m.locked)
 						this.selectedModelId = defaultModel ? defaultModel.id : (models.find(m => !m.locked)?.id || null)
+					}
+					const currentModel = models.find(m => m.id === this.selectedModelId)
+					this.thinkingEnabled = !!currentModel?.supports_thinking && getThinkingMode()
+					if (!currentModel?.supports_thinking) {
+						setThinkingMode(false)
 					}
 				} catch (err) {
 					console.error('[QuickChat] Failed to load models:', err)
@@ -1229,36 +1271,94 @@
 				return monitor && monitor.conversationId === this.conversationId
 			},
 
+			buildHistoryMessage(msg) {
+				const mapped = {
+					id: this.nextId++,
+					role: msg.role === 'user' ? 'user' : 'ai',
+					content: msg.content || '',
+					attachments: msg.attachments || [],
+					created_at: msg.created_at,
+					isStreaming: false,
+					responseStatus: msg.response_status || 'completed'
+				}
+				if (mapped.role === 'ai' && msg.tool_calls && msg.tool_calls.length > 0) {
+					const segments = msg.tool_calls.map(tc => ({ type: 'tool', toolCall: { ...tc } }))
+					if (msg.content && msg.content.trim()) {
+						segments.push({ type: 'text', content: msg.content })
+					}
+					mapped.segments = segments
+					mapped.toolCalls = msg.tool_calls
+				}
+				return mapped
+			},
+
+			markLatestPendingUserMessageSynced() {
+				if (!this.conversationId) return
+				const userMsg = [...this.messages].reverse().find(
+					msg => msg.role === 'user' && msg.pendingId && !msg.synced
+				)
+				if (!userMsg) return
+				userMsg.synced = true
+				userMsg.isFailed = false
+				removePendingMessage(this.conversationId, userMsg.pendingId)
+			},
+
+			applyStoppedStatusToMessage(aiMsg, status) {
+				if (!aiMsg) return
+				aiMsg.content = status.partial_content || aiMsg.content || ''
+				if (status.partial_thinking) {
+					aiMsg.thinkingContent = status.partial_thinking
+				}
+				if (Array.isArray(status.tool_calls) && status.tool_calls.length > 0) {
+					aiMsg.toolCalls = status.tool_calls.map(tc => ({ ...tc }))
+					aiMsg.streamSegments = status.tool_calls.map(tc => ({
+						type: 'tool',
+						toolCall: { ...tc }
+					}))
+				}
+				aiMsg.isStreaming = false
+				aiMsg.isWaitingOutput = false
+				aiMsg.responseStatus = 'stopped'
+			},
+
 			/**
 			 * 从后台恢复时的处理
 			 * 优先从 Redis 获取流式状态，避免丢失正在生成的内容
 			 */
-			async recoverFromBackground() {
+			async recoverFromBackground(options = {}) {
 				if (!this.conversationId) return
+
+				const {
+					historyAlreadyLoaded = false,
+					stopMonitorFirst = false
+				} = options
 
 				console.log('[QuickChat] recoverFromBackground start')
 
 				try {
+					if (stopMonitorFirst) {
+						stopBackgroundMonitor()
+					}
+
 					// 1. 先检查 Redis 流式状态
 					const status = await getStreamingStatus(this.conversationId)
 					console.log('[QuickChat] Redis status:', status.is_streaming, 'content length:', status.partial_content?.length)
 
-					if (status.is_streaming || status.partial_content) {
+					if (status.is_streaming || status.is_stopped || status.partial_content) {
 						// AI 仍在生成或有缓存内容，从 Redis 恢复
 						this.resumeStreamingFromRedis(status)
 						return
 					}
 
 					// 2. Redis 缓存已过期，从数据库加载完整对话
-					const result = await getConversation(this.conversationId)
-					this.messages = result.messages.map((m, i) => ({
-						id: i + 1,
-						role: m.role === 'user' ? 'user' : 'ai',
-						content: m.content,
-						attachments: m.attachments || [],
-						created_at: m.created_at
-					}))
-					this.nextId = this.messages.length + 1
+					if (!historyAlreadyLoaded) {
+						const result = await getConversation(this.conversationId)
+						this.messages = []
+						this.nextId = 1
+						result.messages.forEach(msg => {
+							this.messages.push(this.buildHistoryMessage(msg))
+						})
+					}
 					clearPendingMessages(this.conversationId)
 					this.$nextTick(() => this.scrollToLatestMessage())
 				} catch (err) {
@@ -1277,13 +1377,30 @@
 				// 找到正在流式的 AI 消息
 				let aiMsg = this.messages.find(m => m.role === 'ai' && m.isStreaming)
 
-				if (!aiMsg && status.partial_content) {
+				if (!aiMsg) {
+					const lastAiMsg = [...this.messages].reverse().find(m => m.role === 'ai')
+					const partialContent = status.partial_content || ''
+					const lastContent = lastAiMsg?.content || ''
+					if (
+						lastAiMsg &&
+						(
+							(partialContent && lastContent === partialContent) ||
+							(partialContent && lastContent && partialContent.startsWith(lastContent)) ||
+							(partialContent && lastContent && lastContent.startsWith(partialContent))
+						)
+					) {
+						aiMsg = lastAiMsg
+					}
+				}
+
+				if (!aiMsg && (status.partial_content || status.partial_thinking || (status.tool_calls && status.tool_calls.length > 0))) {
 					// 页面状态可能丢失，根据 Redis 数据创建 AI 消息
 					aiMsg = {
 						id: this.nextId++,
 						role: 'ai',
 						content: '',
 						isStreaming: true,
+						responseStatus: status.is_stopped ? 'stopped' : 'completed'
 					}
 					this.messages.push(aiMsg)
 				}
@@ -1295,15 +1412,32 @@
 				if (status.partial_thinking) {
 					aiMsg.thinkingContent = status.partial_thinking
 				}
+				if (Array.isArray(status.tool_calls) && status.tool_calls.length > 0) {
+					aiMsg.toolCalls = status.tool_calls.map(tc => ({ ...tc }))
+					aiMsg.streamSegments = status.tool_calls.map(tc => ({
+						type: 'tool',
+						toolCall: { ...tc }
+					}))
+				}
+				if (status.is_stopped) {
+					aiMsg.responseStatus = 'stopped'
+				} else if (!status.is_streaming) {
+					aiMsg.responseStatus = 'completed'
+				}
 
 				console.log('[QuickChat] Restored content from Redis, length:', aiMsg.content.length)
 
 				// 如果 AI 仍在生成，重连 SSE
-				if (status.is_streaming) {
+				if (status.is_streaming && !status.is_stopped) {
+					if (aiMsg.segments) {
+						delete aiMsg.segments
+					}
+					aiMsg.isStreaming = true
 					this.reconnectToResumeStream(aiMsg, aiMsg.content.length)
 				} else {
 					// 已完成，标记结束
 					aiMsg.isStreaming = false
+					aiMsg.isWaitingOutput = false
 					this.cancelSSE = null
 				}
 
@@ -1326,10 +1460,12 @@
 							aiMsg.thinkingContent = (aiMsg.thinkingContent || '') + (data.content || '')
 						} else if (eventType === 'done') {
 							aiMsg.isStreaming = false
+							aiMsg.isWaitingOutput = false
 							// done 事件的 content 是完整内容，如果有且不是续传就用它
 							if (data.content && !data.resumed) {
 								aiMsg.content = data.content
 							}
+							aiMsg.responseStatus = data.response_status || 'completed'
 						}
 					},
 					onComplete: () => {
@@ -1656,17 +1792,74 @@
 				}
 			},
 
-			stopAiReply() {
+			async stopAiReply() {
+				if (this.isStoppingReply || !this.conversationId) return
+
+				const streamingMsg = this.messages.find(msg => msg.role === 'ai' && msg.isStreaming)
+				if (!streamingMsg) return
+
+				this.isStoppingReply = true
+				this.flushThinkingBuffer()
+				stopBackgroundMonitor()
+
 				if (this.cancelSSE) {
 					this.cancelSSE()
 					this.cancelSSE = null
 				}
-				const streamingMsg = this.messages.find(msg => msg.role === 'ai' && msg.isStreaming)
-				if (streamingMsg) {
-					streamingMsg.isStreaming = false
-					streamingMsg.isWaitingOutput = false
-				}
+
+				streamingMsg.isStreaming = false
+				streamingMsg.isWaitingOutput = false
 				this.stopHeightMonitor()
+
+				try {
+					const result = await stopStreamingReply(this.conversationId)
+					if (result.stopped || result.is_stopped) {
+						this.applyStoppedStatusToMessage(streamingMsg, result)
+						this.markLatestPendingUserMessageSynced()
+						return
+					}
+
+					const status = await getStreamingStatus(this.conversationId)
+					if (status.is_stopped) {
+						this.applyStoppedStatusToMessage(streamingMsg, status)
+						this.markLatestPendingUserMessageSynced()
+						return
+					}
+					if (status.is_streaming) {
+						uni.showToast({ title: '终止失败，请重试', icon: 'none' })
+						this.resumeStreamingFromRedis(status)
+						return
+					}
+					if (status.partial_content) {
+						this.resumeStreamingFromRedis(status)
+						this.markLatestPendingUserMessageSynced()
+					}
+				} catch (err) {
+					console.warn('[QuickChat] stopAiReply failed:', err)
+					try {
+						const status = await getStreamingStatus(this.conversationId)
+						if (status.is_stopped) {
+							this.applyStoppedStatusToMessage(streamingMsg, status)
+							this.markLatestPendingUserMessageSynced()
+							return
+						}
+						if (status.is_streaming) {
+							uni.showToast({ title: '终止失败，请重试', icon: 'none' })
+							this.resumeStreamingFromRedis(status)
+							return
+						}
+						if (status.partial_content) {
+							this.resumeStreamingFromRedis(status)
+							this.markLatestPendingUserMessageSynced()
+							return
+						}
+					} catch (statusErr) {
+						console.warn('[QuickChat] stopAiReply status check failed:', statusErr)
+					}
+					uni.showToast({ title: '终止失败，请重试', icon: 'none' })
+				} finally {
+					this.isStoppingReply = false
+				}
 			},
 
 			// ========== 消息片段处理 ==========
@@ -2956,24 +3149,11 @@
 				try {
 					const result = await getConversation(convId)
 					const historyMessages = result.messages || []
+					this.messages = []
+					this.nextId = 1
 
 					historyMessages.forEach(msg => {
-						const m = {
-							id: this.nextId++,
-							role: msg.role === 'user' ? 'user' : 'ai',
-							content: msg.content || '',
-							attachments: msg.attachments || [],
-							isStreaming: false
-						}
-						if (m.role === 'ai' && msg.tool_calls && msg.tool_calls.length > 0) {
-							const segments = msg.tool_calls.map(tc => ({ type: 'tool', toolCall: { ...tc } }))
-							if (msg.content && msg.content.trim()) {
-								segments.push({ type: 'text', content: msg.content })
-							}
-							m.segments = segments
-							m.toolCalls = msg.tool_calls
-						}
-						this.messages.push(m)
+						this.messages.push(this.buildHistoryMessage(msg))
 					})
 
 					// 后台监控 active 时，服务器数据已包含完整回复，清空缓存避免重复
@@ -2983,6 +3163,10 @@
 					} else {
 						this.mergePendingMessages()
 					}
+					await this.recoverFromBackground({
+						historyAlreadyLoaded: true,
+						stopMonitorFirst: !!(monitor && monitor.conversationId === this.conversationId)
+					})
 					this.$nextTick(() => {
 						this.scrollToLatestMessage()
 					})
@@ -3070,7 +3254,8 @@
 					thinkingStartTime: 0,
 					thinkingDuration: 0,
 					isStreaming: true,
-					isWaitingOutput: true
+					isWaitingOutput: true,
+					responseStatus: 'completed'
 				})
 				this.scrollToLatestMessage()
 				this.startHeightMonitor(aiMsgId)
@@ -3115,7 +3300,7 @@
 							this.handleClientToolRequest(aiMsgId, data)
 						},
 
-						onDone: (fullContent) => {
+						onDone: (fullContent, citations, doneData) => {
 							this.flushThinkingBuffer()
 							const msg = this.messages.find(m => m.id === aiMsgId)
 							if (msg) {
@@ -3149,6 +3334,7 @@
 								}
 								msg.isWaitingOutput = false
 								msg.isStreaming = false
+								msg.responseStatus = doneData?.response_status || 'completed'
 							}
 							this.stopHeightMonitor()
 							this.activeToolCalls = []
@@ -3247,7 +3433,8 @@
 						}
 					},
 					attachmentIds,
-					this.selectedModelId
+					this.selectedModelId,
+					{ thinking: this.thinkingEnabled }
 				)
 			},
 
@@ -4066,6 +4253,22 @@
 		margin-top: 12rpx;
 	}
 
+	.ai-status-badge {
+		display: inline-flex;
+		align-items: center;
+		margin-top: 16rpx;
+		padding: 8rpx 18rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.08);
+		border: 1rpx solid rgba(255, 255, 255, 0.1);
+	}
+
+	.ai-status-badge-text {
+		font-size: 22rpx;
+		line-height: 1;
+		color: rgba(255, 255, 255, 0.62);
+	}
+
 	.ai-msg-action-btn {
 		display: flex;
 		align-items: center;
@@ -4197,6 +4400,14 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 0 12rpx 8rpx 12rpx;
+	}
+
+	.input-bottom-left {
+		display: flex;
+		align-items: center;
+		gap: 8rpx;
+		flex: 1;
+		min-width: 0;
 	}
 
 	.input-bottom-row-spacer {
@@ -4762,6 +4973,7 @@
 		align-items: center;
 		gap: 8rpx;
 		padding: 8rpx 16rpx 8rpx 12rpx;
+		min-height: 44rpx;
 		background: rgb(46, 46, 48);
 		border: 1.5rpx solid rgba(255, 255, 255, 0.08);
 		border-radius: 999rpx;
@@ -4800,6 +5012,80 @@
 		filter: brightness(0) invert(0.62);
 		opacity: 1;
 		flex-shrink: 0;
+	}
+
+	/* 深度思考切换按钮 */
+	.thinking-toggle-btn {
+		display: flex;
+		align-items: center;
+		gap: 10rpx;
+		padding: 8rpx 16rpx 8rpx 12rpx;
+		min-height: 44rpx;
+		background: rgb(46, 46, 48);
+		border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 999rpx;
+		transition: background 0.15s ease;
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+			0 2rpx 8rpx rgba(0, 0, 0, 0.12);
+		flex-shrink: 0;
+	}
+
+	.thinking-toggle-btn:active {
+		background: rgb(56, 56, 59);
+	}
+
+	.thinking-toggle-icon {
+		width: 28rpx;
+		height: 28rpx;
+		filter: brightness(0) invert(0.62);
+		flex-shrink: 0;
+	}
+
+	.thinking-toggle-label {
+		font-size: 24rpx;
+		color: #C7CBD4;
+		-webkit-text-fill-color: #C7CBD4;
+		white-space: nowrap;
+	}
+
+	.thinking-toggle-indicator {
+		width: 56rpx;
+		height: 32rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.1);
+		border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+		padding: 0 6rpx;
+		display: flex;
+		align-items: center;
+		transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+		flex-shrink: 0;
+		box-sizing: border-box;
+		box-shadow: inset 0 1rpx 2rpx rgba(0, 0, 0, 0.16);
+	}
+
+	.thinking-toggle-indicator-active {
+		background: rgba(74, 108, 247, 0.32);
+		border-color: rgba(74, 108, 247, 0.42);
+		box-shadow:
+			inset 0 1rpx 2rpx rgba(255, 255, 255, 0.06),
+			0 0 0 4rpx rgba(74, 108, 247, 0.08);
+	}
+
+	.thinking-toggle-indicator-core {
+		width: 20rpx;
+		height: 20rpx;
+		border-radius: 50%;
+		background: #F8FAFC;
+		box-shadow:
+			0 2rpx 8rpx rgba(0, 0, 0, 0.26),
+			inset 0 1rpx 1rpx rgba(255, 255, 255, 0.5);
+		transform: translateX(0);
+		transition: transform 0.18s ease, background 0.18s ease;
+	}
+
+	.thinking-toggle-indicator-core-active {
+		transform: translateX(24rpx);
 	}
 
 	/* 模型菜单弹窗 */

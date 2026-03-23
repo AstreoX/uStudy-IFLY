@@ -88,7 +88,7 @@ function parseQuotaError(errMessage) {
  *   - onTextDelta(content): 增量文本
  *   - onThinking(content): 思考过程增量内容（reasoning 模型）
  *   - onToolCall(toolData): 工具调用事件
- *   - onDone(fullContent): 完成事件
+ *   - onDone(fullContent, citations, rawData): 完成事件
  *   - onError(message): 错误事件
  *   - onQuotaError(info): 配额超限错误事件
  *   - onComplete(): 连接关闭
@@ -101,7 +101,7 @@ function parseQuotaError(errMessage) {
  * @returns {Function} 取消函数
  */
 export function sendMessage(conversationId, content, callbacks, attachmentIds = null, modelId = null, options = {}) {
-  const { enableResume = true } = options
+  const { enableResume = true, thinking = null } = options
 
   const requestData = { content }
   if (attachmentIds && attachmentIds.length > 0) {
@@ -109,6 +109,9 @@ export function sendMessage(conversationId, content, callbacks, attachmentIds = 
   }
   if (modelId) {
     requestData.model_id = modelId
+  }
+  if (thinking !== null) {
+    requestData.thinking = thinking
   }
 
   const onEvent = (eventType, data) => {
@@ -129,7 +132,7 @@ export function sendMessage(conversationId, content, callbacks, attachmentIds = 
         callbacks.onTitle?.(data.title)
         break
       case 'done':
-        callbacks.onDone?.(data.content, data.citations)
+        callbacks.onDone?.(data.content, data.citations, data)
         break
       case 'error':
         callbacks.onError?.(data.message)
@@ -285,7 +288,7 @@ export function updateConversation(conversationId, data) {
  *   - onTextDelta(content): 增量文本
  *   - onThinking(content): 思考过程增量内容（reasoning 模型）
  *   - onToolCall(toolData): 工具调用事件
- *   - onDone(fullContent): 完成事件
+ *   - onDone(fullContent, citations, rawData): 完成事件
  *   - onError(message): 错误事件
  *   - onComplete(): 连接关闭
  *   - onReconnecting(attempt): 正在重连（仅 enableResume=true 时）
@@ -297,7 +300,7 @@ export function updateConversation(conversationId, data) {
  * @returns {Function} 取消函数
  */
 export function sendQuickChatMessage(conversationId, content, callbacks, attachmentIds = null, modelId = null, options = {}) {
-  const { enableResume = true } = options
+  const { enableResume = true, thinking = null } = options
 
   const requestData = { content }
   if (attachmentIds && attachmentIds.length > 0) {
@@ -305,6 +308,9 @@ export function sendQuickChatMessage(conversationId, content, callbacks, attachm
   }
   if (modelId) {
     requestData.model_id = modelId
+  }
+  if (thinking !== null) {
+    requestData.thinking = thinking
   }
 
   const onEvent = (eventType, data) => {
@@ -325,7 +331,7 @@ export function sendQuickChatMessage(conversationId, content, callbacks, attachm
         callbacks.onTitle?.(data.title)
         break
       case 'done':
-        callbacks.onDone?.(data.content, data.citations)
+        callbacks.onDone?.(data.content, data.citations, data)
         break
       case 'error':
         callbacks.onError?.(data.message)
@@ -466,6 +472,26 @@ export function getStreamingStatus(conversationId) {
   return request({
     url: `/api/conversations/${conversationId}/streaming-status`,
     method: 'GET'
+  })
+}
+
+/**
+ * 主动终止当前会话的 AI 流式回复
+ *
+ * @param {string} conversationId - 对话 ID
+ * @returns {Promise<Object>}
+ *   - stopped: boolean
+ *   - is_streaming: boolean
+ *   - is_stopped: boolean
+ *   - partial_content: string|null
+ *   - partial_thinking: string|null
+ *   - tool_calls: Array
+ *   - updated_at: number|null
+ */
+export function stopStreamingReply(conversationId) {
+  return request({
+    url: `/api/conversations/${conversationId}/stop-stream`,
+    method: 'POST'
   })
 }
 

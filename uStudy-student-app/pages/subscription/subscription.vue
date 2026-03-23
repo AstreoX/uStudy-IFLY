@@ -192,7 +192,7 @@ export default {
             '每日 AI 对话上限 20 次',
             '模型：Seed 1.6',
             '每个学习空间知识库上限 30MB',
-            '单文件上传上限 10MB'
+            '单文件上传上限 50MB'
           ],
           limitations: [
             '不支持高级模型',
@@ -214,8 +214,8 @@ export default {
             '最多创建 5 个学习空间',
             '每日 AI 对话上限 150 次',
             '模型：Seed 1.6 + Kimi K2.5',
-            '每个学习空间知识库上限 200MB',
-            '单文件上传上限 50MB',
+            '每个学习空间知识库上限 300MB',
+            '单文件上传上限 200MB',
             '优先客服响应'
           ]
         },
@@ -233,8 +233,8 @@ export default {
             '学习空间数量不限',
             '每日 AI 对话不限',
             '全部模型：Seed 1.6 / Kimi K2.5 / Gemini-3.1-pro',
-            '每个学习空间知识库上限 500MB',
-            '单文件上传上限 100MB',
+            '每个学习空间知识库上限 2GB',
+            '单文件上传上限 500MB',
             '优先客服 + 新功能抢先体验'
           ]
         }
@@ -243,8 +243,8 @@ export default {
         { metric: '学习空间数量', free: '1', plus: '5', ultra: '不限' },
         { metric: '每日 AI 对话', free: '20 次', plus: '150 次', ultra: '不限' },
         { metric: '模型能力', free: 'Seed 1.6', plus: 'Seed 1.6 + Kimi', ultra: 'Seed 1.6 / Kimi / Gemini' },
-        { metric: '单空间知识库', free: '30MB', plus: '200MB', ultra: '500MB' },
-        { metric: '单文件上传', free: '10MB', plus: '50MB', ultra: '100MB' },
+        { metric: '单空间知识库', free: '30MB', plus: '300MB', ultra: '2GB' },
+        { metric: '单文件上传', free: '50MB', plus: '200MB', ultra: '500MB' },
         { metric: '优先客服', free: '—', plus: '✓', ultra: '✓' },
         { metric: '新功能抢先体验', free: '—', plus: '—', ultra: '✓' }
       ]

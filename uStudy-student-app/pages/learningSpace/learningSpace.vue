@@ -436,6 +436,23 @@
 								>{{ selectedModelName }}</text>
 								<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
 							</view>
+							<view
+								v-if="currentModelSupportsThinking"
+								class="thinking-toggle-btn"
+								@click="toggleThinking"
+							>
+								<image class="thinking-toggle-icon" src="/static/icons/phosphor-icons/SVGs/regular/brain.svg" mode="aspectFit"></image>
+								<text class="thinking-toggle-label">深度思考</text>
+								<view
+									class="thinking-toggle-indicator"
+									:class="{ 'thinking-toggle-indicator-active': thinkingEnabled }"
+								>
+									<view
+										class="thinking-toggle-indicator-core"
+										:class="{ 'thinking-toggle-indicator-core-active': thinkingEnabled }"
+									></view>
+								</view>
+							</view>
 						</view>
 
 						<!-- 右侧：操作按钮 -->
@@ -495,7 +512,7 @@
 </template>
 
 <script>
-	import { getSelectedModelId, setSelectedModelId } from '@/utils/storage'
+	import { getSelectedModelId, setSelectedModelId, getThinkingMode, setThinkingMode } from '@/utils/storage'
 	import { getSpace, getSpaceGraph, getSpaceMembers, getTaskStatus, generateKnowledgeGraph, addSpaceLink, uploadSpaceDocument, expandNode } from '@/api/space'
 	import { getSpaceNotes, getNoteDetail } from '@/api/note'
 	import { getModels } from '@/api/chat'
@@ -504,7 +521,7 @@
 	import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
 	import { ensureCameraPermission, isPermissionDenied, guideToSettings } from '@/utils/permission'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
-import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
+	import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
 	// 掌握度颜色渐变端点 (0-100 分段插值，避免中间棕色)
 	const MASTERY_COLOR_START = { r: 255, g: 50, b: 66 }   // #FF3242 (mastery=0, 珊瑚红)
@@ -884,6 +901,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				// 模型选择
 				availableModels: [],
 				selectedModelId: null,
+				thinkingEnabled: true,
 				showModelMenu: false,
 
 				// 静默刷新标志，防止并发刷新
@@ -950,6 +968,11 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 			selectedModelName() {
 				const model = this.availableModels.find(m => m.id === this.selectedModelId)
 				return model ? model.display_name : ''
+			},
+
+			currentModelSupportsThinking() {
+				const model = this.availableModels.find(m => m.id === this.selectedModelId)
+				return model?.supports_thinking || false
 			},
 
 			filterableMembers() {
@@ -2029,6 +2052,15 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				this.selectedModelId = id
 				this.showModelMenu = false
 				setSelectedModelId(id)
+				if (!model?.supports_thinking) {
+					this.thinkingEnabled = false
+					setThinkingMode(false)
+				}
+			},
+			toggleThinking() {
+				if (!this.currentModelSupportsThinking) return
+				this.thinkingEnabled = !this.thinkingEnabled
+				setThinkingMode(this.thinkingEnabled)
 			},
 			async loadModels() {
 				try {
@@ -2042,6 +2074,11 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 					} else {
 						const defaultModel = models.find(m => m.is_default && !m.locked)
 						this.selectedModelId = defaultModel ? defaultModel.id : (models.find(m => !m.locked)?.id || null)
+					}
+					const currentModel = models.find(m => m.id === this.selectedModelId)
+					this.thinkingEnabled = !!currentModel?.supports_thinking && getThinkingMode()
+					if (!currentModel?.supports_thinking) {
+						setThinkingMode(false)
 					}
 				} catch (err) {
 					console.error('[LearningSpace] Failed to load models:', err)
@@ -2639,9 +2676,32 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 				}, 250)
 			},
 
+			getKnowledgeBaseUploadLimit() {
+				const userStore = useUserStore()
+				const user = userStore.user || {}
+				const rawTier = String(user.subscription_tier || 'FREE').toUpperCase()
+				const expiresAt = user.subscription_expires_at ? new Date(user.subscription_expires_at) : null
+				const isExpiredPaidTier = rawTier !== 'FREE' && expiresAt && expiresAt < new Date()
+				if (isExpiredPaidTier) {
+					return 50 * 1024 * 1024
+				}
+
+				const tierMap = { BASIC: 'PLUS', PREMIUM: 'ULTRA' }
+				const normalizedTier = tierMap[rawTier] || rawTier
+				const limits = {
+					FREE: 50 * 1024 * 1024,
+					PLUS: 200 * 1024 * 1024,
+					ULTRA: 500 * 1024 * 1024,
+					ALPHA: 500 * 1024 * 1024
+				}
+				return limits[normalizedTier] || limits.FREE
+			},
+
 			async handleAddDocument() {
 				this.closeAddFilePopup()
 				const allowedExtensions = ['pdf', 'doc', 'docx', 'txt']
+				const uploadLimitBytes = this.getKnowledgeBaseUploadLimit()
+				const uploadLimitMB = Math.round(uploadLimitBytes / (1024 * 1024))
 
 				// #ifdef H5
 				// H5 平台使用 HTML input 选择文件
@@ -2659,9 +2719,8 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						return
 					}
 
-					// 检查文件大小 (10MB)
-					if (file.size > 10 * 1024 * 1024) {
-						uni.showToast({ title: '文件大小不能超过10MB', icon: 'none' })
+					if (file.size > uploadLimitBytes) {
+						uni.showToast({ title: `文件大小不能超过${uploadLimitMB}MB`, icon: 'none' })
 						return
 					}
 
@@ -2698,9 +2757,8 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 						return
 					}
 
-					// 检查文件大小 (10MB)
-					if ((file.size || 0) > 10 * 1024 * 1024) {
-						uni.showToast({ title: '文件大小不能超过10MB', icon: 'none' })
+					if ((file.size || 0) > uploadLimitBytes) {
+						uni.showToast({ title: `文件大小不能超过${uploadLimitMB}MB`, icon: 'none' })
 						return
 					}
 
@@ -5321,6 +5379,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		align-items: center;
 		gap: 8rpx;
 		padding: 8rpx 16rpx 8rpx 12rpx;
+		min-height: 44rpx;
 		background: rgb(46, 46, 48);
 		border: 1.5rpx solid rgba(255, 255, 255, 0.08);
 		border-radius: 999rpx;
@@ -5359,6 +5418,79 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 		filter: brightness(0) invert(0.62);
 		opacity: 1;
 		flex-shrink: 0;
+	}
+
+	.thinking-toggle-btn {
+		display: flex;
+		align-items: center;
+		gap: 10rpx;
+		padding: 8rpx 16rpx 8rpx 12rpx;
+		min-height: 44rpx;
+		background: rgb(46, 46, 48);
+		border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+		border-radius: 999rpx;
+		transition: background 0.15s ease;
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+			0 2rpx 8rpx rgba(0, 0, 0, 0.12);
+		flex-shrink: 0;
+	}
+
+	.thinking-toggle-btn:active {
+		background: rgb(56, 56, 59);
+	}
+
+	.thinking-toggle-icon {
+		width: 28rpx;
+		height: 28rpx;
+		filter: brightness(0) invert(0.62);
+		flex-shrink: 0;
+	}
+
+	.thinking-toggle-label {
+		font-size: 24rpx;
+		color: #C7CBD4;
+		-webkit-text-fill-color: #C7CBD4;
+		white-space: nowrap;
+	}
+
+	.thinking-toggle-indicator {
+		width: 56rpx;
+		height: 32rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.1);
+		border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+		padding: 0 6rpx;
+		display: flex;
+		align-items: center;
+		transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+		flex-shrink: 0;
+		box-sizing: border-box;
+		box-shadow: inset 0 1rpx 2rpx rgba(0, 0, 0, 0.16);
+	}
+
+	.thinking-toggle-indicator-active {
+		background: rgba(74, 108, 247, 0.32);
+		border-color: rgba(74, 108, 247, 0.42);
+		box-shadow:
+			inset 0 1rpx 2rpx rgba(255, 255, 255, 0.06),
+			0 0 0 4rpx rgba(74, 108, 247, 0.08);
+	}
+
+	.thinking-toggle-indicator-core {
+		width: 20rpx;
+		height: 20rpx;
+		border-radius: 50%;
+		background: #F8FAFC;
+		box-shadow:
+			0 2rpx 8rpx rgba(0, 0, 0, 0.26),
+			inset 0 1rpx 1rpx rgba(255, 255, 255, 0.5);
+		transform: translateX(0);
+		transition: transform 0.18s ease, background 0.18s ease;
+	}
+
+	.thinking-toggle-indicator-core-active {
+		transform: translateX(24rpx);
 	}
 
 	/* 模型菜单弹窗 */

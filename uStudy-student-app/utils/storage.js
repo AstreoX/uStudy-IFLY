@@ -128,6 +128,20 @@ export function setSelectedModelId(id) {
   }
 }
 
+// ========== Thinking Mode ==========
+const THINKING_MODE_KEY = config.THINKING_MODE_KEY
+
+export function getThinkingMode() {
+  const val = uni.getStorageSync(THINKING_MODE_KEY)
+  // 未设置过 → 默认开启
+  if (val === '') return true
+  return val === 'true'
+}
+
+export function setThinkingMode(enabled) {
+  uni.setStorageSync(THINKING_MODE_KEY, enabled ? 'true' : 'false')
+}
+
 // ========== Quiz Evaluation Result ==========
 const QUIZ_EVAL_KEY = config.QUIZ_EVALUATION_KEY
 

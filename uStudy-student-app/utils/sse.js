@@ -779,7 +779,12 @@ export function connectSSEWithResume(options) {
             const remaining = status.partial_content.slice(alreadyReceived)
             onEvent?.('text_delta', { content: remaining })
           }
-          onEvent?.('done', { content: status.partial_content, resumed: true })
+          onEvent?.('done', {
+            content: status.partial_content,
+            resumed: true,
+            response_status: status.is_stopped ? 'stopped' : 'completed',
+            stopped: !!status.is_stopped
+          })
         } else {
           onEvent?.('done', { content: '', resumed: true, cache_expired: true })
         }
