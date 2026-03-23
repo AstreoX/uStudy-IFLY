@@ -73,6 +73,7 @@
 					<view
 						v-if="getAction(item)"
 						class="notif-action"
+						:class="iconClass(item)"
 						@click.stop="handleAction(item)"
 					>
 						<text class="notif-action-text">{{ getAction(item).label }}</text>
@@ -280,9 +281,33 @@
 
 <style scoped>
 	.notifications-page {
+		--notif-bg-base: rgb(29, 30, 32);
+		--notif-surface: rgba(255, 255, 255, 0.055);
+		--notif-surface-strong: rgba(255, 255, 255, 0.08);
+		--notif-border: rgba(255, 255, 255, 0.1);
+		--notif-border-strong: rgba(255, 255, 255, 0.16);
+		--notif-text-primary: #f5f5f5;
+		--notif-text-secondary: #dddddf;
+		--notif-text-muted: #b0b2b8;
+		--notif-text-faint: rgba(255, 255, 255, 0.42);
+		--notif-text-error: #fca5a5;
+		--notif-dot: #ff8a3d;
+		--notif-accent-quiz: #9ab0ff;
+		--notif-accent-quiz-bg: rgba(122, 147, 255, 0.15);
+		--notif-accent-quiz-border: rgba(122, 147, 255, 0.24);
+		--notif-accent-reminder: #ff9a4d;
+		--notif-accent-reminder-bg: rgba(255, 138, 61, 0.16);
+		--notif-accent-reminder-border: rgba(255, 138, 61, 0.28);
+		--notif-accent-care: #ff6f61;
+		--notif-accent-care-bg: rgba(255, 111, 97, 0.15);
+		--notif-accent-care-border: rgba(255, 111, 97, 0.27);
+		--notif-accent-system: #7dc2b1;
+		--notif-accent-system-bg: rgba(125, 194, 177, 0.13);
+		--notif-accent-system-border: rgba(125, 194, 177, 0.22);
 		min-height: 100vh;
-		background: #0A0A12;
+		background: var(--notif-bg-base);
 		position: relative;
+		overflow: hidden;
 	}
 
 	/* ── Background ── */
@@ -300,29 +325,30 @@
 		position: absolute;
 		inset: 0;
 		background:
-			radial-gradient(circle at 20% 30%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
-			radial-gradient(circle at 80% 70%, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
+			radial-gradient(circle at 18% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 40%),
+			radial-gradient(circle at 82% 72%, rgba(255, 255, 255, 0.045) 0%, transparent 36%),
+			linear-gradient(180deg, rgba(255, 255, 255, 0.024) 0%, rgba(255, 255, 255, 0) 34%);
 	}
 
 	.bg-glow {
 		position: absolute;
-		width: 300rpx;
-		height: 300rpx;
+		width: 360rpx;
+		height: 360rpx;
 		border-radius: 50%;
-		filter: blur(100px);
-		opacity: 0.15;
+		filter: blur(120px);
+		opacity: 0.16;
 	}
 
 	.bg-glow-blue {
-		background: #6366f1;
-		top: -100rpx;
-		right: -50rpx;
+		background: #455064;
+		top: -120rpx;
+		right: -90rpx;
 	}
 
 	.bg-glow-violet {
-		background: #a855f7;
-		bottom: 200rpx;
-		left: -80rpx;
+		background: #60392e;
+		bottom: 160rpx;
+		left: -100rpx;
 	}
 
 	/* ── Nav Bar ── */
@@ -335,23 +361,35 @@
 		display: flex;
 		align-items: center;
 		padding: calc(var(--status-bar-height, 44px) + 8rpx) 24rpx 16rpx;
-		background: rgba(10, 10, 18, 0.85);
+		background: rgba(29, 30, 32, 0.84);
 		backdrop-filter: blur(20px);
 		-webkit-backdrop-filter: blur(20px);
+		border-bottom: 1rpx solid rgba(255, 255, 255, 0.08);
+		box-shadow: 0 14rpx 34rpx rgba(0, 0, 0, 0.24);
 	}
 
 	.nav-back {
-		width: 64rpx;
-		height: 64rpx;
+		width: 72rpx;
+		height: 72rpx;
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.06);
+		border: 1rpx solid rgba(255, 255, 255, 0.1);
+		outline: 1rpx solid rgba(255, 255, 255, 0.04);
+		outline-offset: 1rpx;
+		box-shadow:
+			inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
+			0 2rpx 12rpx rgba(0, 0, 0, 0.25);
+		backdrop-filter: blur(40px) saturate(180%);
+		-webkit-backdrop-filter: blur(40px) saturate(180%);
 	}
 
 	.nav-icon {
-		width: 40rpx;
-		height: 40rpx;
-		opacity: 0.7;
+		width: 44rpx;
+		height: 44rpx;
+		opacity: 0.9;
 		filter: brightness(0) invert(1);
 	}
 
@@ -363,9 +401,9 @@
 	}
 
 	.nav-title {
-		font-size: 32rpx;
+		font-size: 34rpx;
 		font-weight: 600;
-		color: #ffffff;
+		color: var(--notif-text-primary);
 	}
 
 	.nav-spacer {
@@ -373,14 +411,24 @@
 	}
 
 	.nav-action {
-		padding: 8rpx 20rpx;
-		border-radius: 20rpx;
-		background: rgba(99, 102, 241, 0.15);
+		padding: 12rpx 22rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 255, 255, 0.06);
+		border: 1rpx solid rgba(255, 255, 255, 0.1);
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.05),
+			0 2rpx 8rpx rgba(0, 0, 0, 0.12);
+		transition: background 0.15s ease, border-color 0.15s ease;
+	}
+
+	.nav-action:active {
+		background: rgba(255, 255, 255, 0.1);
+		border-color: rgba(255, 255, 255, 0.14);
 	}
 
 	.nav-action-text {
 		font-size: 24rpx;
-		color: #818cf8;
+		color: var(--notif-text-secondary);
 		font-weight: 500;
 	}
 
@@ -391,35 +439,43 @@
 		align-items: center;
 		justify-content: center;
 		padding-top: 400rpx;
+		padding-left: 48rpx;
+		padding-right: 48rpx;
 	}
 
 	.state-icon {
 		width: 96rpx;
 		height: 96rpx;
-		opacity: 0.3;
+		opacity: 0.42;
 		filter: brightness(0) invert(1);
 		margin-bottom: 24rpx;
 	}
 
 	.state-text {
 		font-size: 28rpx;
-		color: rgba(255, 255, 255, 0.4);
+		color: var(--notif-text-muted);
+		text-align: center;
+		line-height: 1.6;
 	}
 
 	.state-text-error {
-		color: rgba(255, 100, 100, 0.6);
+		color: var(--notif-text-error);
 	}
 
 	.retry-btn {
 		margin-top: 24rpx;
-		padding: 12rpx 40rpx;
-		border-radius: 20rpx;
-		background: rgba(99, 102, 241, 0.15);
+		padding: 14rpx 40rpx;
+		border-radius: 999rpx;
+		background: rgba(255, 111, 97, 0.14);
+		border: 1rpx solid rgba(255, 111, 97, 0.28);
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+			0 4rpx 14rpx rgba(0, 0, 0, 0.16);
 	}
 
 	.retry-btn-text {
 		font-size: 26rpx;
-		color: #818cf8;
+		color: #ffb1a8;
 	}
 
 	/* ── Content ── */
@@ -433,35 +489,44 @@
 	}
 
 	.content-body {
-		padding: 16rpx 24rpx 60rpx;
+		padding: 20rpx 24rpx 72rpx;
 	}
 
 	/* ── Notification Item ── */
 	.notif-item {
 		display: flex;
 		align-items: flex-start;
-		padding: 24rpx;
-		margin-bottom: 16rpx;
-		border-radius: 20rpx;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1rpx solid rgba(255, 255, 255, 0.06);
+		padding: 26rpx 24rpx 26rpx 30rpx;
+		margin-bottom: 18rpx;
+		border-radius: 24rpx;
+		background: var(--notif-surface);
+		border: 1rpx solid var(--notif-border);
 		position: relative;
-		transition: background 0.2s;
+		box-shadow: 0 12rpx 30rpx rgba(0, 0, 0, 0.16);
+		backdrop-filter: blur(24px) saturate(120%);
+		-webkit-backdrop-filter: blur(24px) saturate(120%);
+		transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+	}
+
+	.notif-item:active {
+		background: var(--notif-surface-strong);
+		transform: scale(0.995);
 	}
 
 	.notif-unread {
-		background: rgba(99, 102, 241, 0.06);
-		border-color: rgba(99, 102, 241, 0.12);
+		background: var(--notif-surface-strong);
+		border-color: var(--notif-border-strong);
 	}
 
 	.unread-dot {
 		position: absolute;
-		top: 28rpx;
+		top: 34rpx;
 		left: 12rpx;
-		width: 12rpx;
-		height: 12rpx;
+		width: 10rpx;
+		height: 10rpx;
 		border-radius: 50%;
-		background: #6366f1;
+		background: var(--notif-dot);
+		box-shadow: 0 0 12rpx rgba(255, 138, 61, 0.34);
 	}
 
 	/* ── Icon ── */
@@ -474,28 +539,34 @@
 		justify-content: center;
 		flex-shrink: 0;
 		margin-right: 20rpx;
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.04);
 	}
 
 	.icon-quiz {
-		background: rgba(99, 102, 241, 0.12);
+		background: var(--notif-accent-quiz-bg);
+		border-color: var(--notif-accent-quiz-border);
 	}
 
 	.icon-reminder {
-		background: rgba(234, 179, 8, 0.12);
+		background: var(--notif-accent-reminder-bg);
+		border-color: var(--notif-accent-reminder-border);
 	}
 
 	.icon-care {
-		background: rgba(236, 72, 153, 0.12);
+		background: var(--notif-accent-care-bg);
+		border-color: var(--notif-accent-care-border);
 	}
 
 	.icon-system {
-		background: rgba(148, 163, 184, 0.12);
+		background: var(--notif-accent-system-bg);
+		border-color: var(--notif-accent-system-border);
 	}
 
 	.notif-icon {
 		width: 36rpx;
 		height: 36rpx;
-		opacity: 0.7;
+		opacity: 0.88;
 		filter: brightness(0) invert(1);
 	}
 
@@ -508,15 +579,15 @@
 	.notif-title {
 		font-size: 28rpx;
 		font-weight: 600;
-		color: #ffffff;
+		color: var(--notif-text-primary);
 		line-height: 1.4;
 	}
 
 	.notif-body {
 		font-size: 24rpx;
-		color: rgba(255, 255, 255, 0.5);
+		color: var(--notif-text-secondary);
 		line-height: 1.5;
-		margin-top: 6rpx;
+		margin-top: 8rpx;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		display: -webkit-box;
@@ -526,25 +597,71 @@
 
 	.notif-time {
 		font-size: 22rpx;
-		color: rgba(255, 255, 255, 0.25);
-		margin-top: 8rpx;
+		color: var(--notif-text-muted);
+		margin-top: 10rpx;
 	}
 
 	/* ── Action Button ── */
 	.notif-action {
 		flex-shrink: 0;
 		margin-left: 16rpx;
-		padding: 10rpx 20rpx;
+		padding: 12rpx 20rpx;
 		border-radius: 16rpx;
-		background: rgba(99, 102, 241, 0.15);
+		background: rgba(255, 255, 255, 0.06);
+		border: 1rpx solid rgba(255, 255, 255, 0.08);
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+			0 4rpx 12rpx rgba(0, 0, 0, 0.12);
 		align-self: center;
+		transition: background 0.15s ease, border-color 0.15s ease;
+	}
+
+	.notif-action:active {
+		background: rgba(255, 255, 255, 0.1);
+		border-color: rgba(255, 255, 255, 0.12);
 	}
 
 	.notif-action-text {
 		font-size: 24rpx;
-		color: #818cf8;
+		color: var(--notif-text-primary);
 		font-weight: 500;
 		white-space: nowrap;
+	}
+
+	.notif-action.icon-quiz {
+		background: var(--notif-accent-quiz-bg);
+		border-color: var(--notif-accent-quiz-border);
+	}
+
+	.notif-action.icon-reminder {
+		background: var(--notif-accent-reminder-bg);
+		border-color: var(--notif-accent-reminder-border);
+	}
+
+	.notif-action.icon-care {
+		background: var(--notif-accent-care-bg);
+		border-color: var(--notif-accent-care-border);
+	}
+
+	.notif-action.icon-system {
+		background: var(--notif-accent-system-bg);
+		border-color: var(--notif-accent-system-border);
+	}
+
+	.notif-action.icon-quiz .notif-action-text {
+		color: var(--notif-accent-quiz);
+	}
+
+	.notif-action.icon-reminder .notif-action-text {
+		color: var(--notif-accent-reminder);
+	}
+
+	.notif-action.icon-care .notif-action-text {
+		color: var(--notif-accent-care);
+	}
+
+	.notif-action.icon-system .notif-action-text {
+		color: var(--notif-accent-system);
 	}
 
 	/* ── Loading More ── */
@@ -556,6 +673,6 @@
 
 	.loading-more-text {
 		font-size: 24rpx;
-		color: rgba(255, 255, 255, 0.25);
+		color: var(--notif-text-faint);
 	}
 </style>

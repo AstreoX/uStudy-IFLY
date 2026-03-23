@@ -1,5 +1,5 @@
 <template>
-	<view class="page-container">
+	<view class="page-container" :class="pageThemeClass">
 		<!-- Aurora Background Layer -->
 		<view class="aurora-bg">
 			<view class="aurora-blob aurora-blob-1"></view>
@@ -40,13 +40,52 @@
 
 		<!-- 标题区域 -->
 		<view class="header" :class="{ 'header-hidden': isSelectionMode }">
-			<!-- 通知铃铛（暂时屏蔽） -->
-			<!-- <view class="notification-bell" @click="goToNotifications">
-				<image class="bell-icon" src="/static/icons/phosphor-icons/SVGs/regular/bell.svg" mode="aspectFit"></image>
-				<view v-if="notificationUnreadCount > 0" class="bell-badge">
-					<text class="bell-badge-text">{{ notificationUnreadCount > 99 ? '99+' : notificationUnreadCount }}</text>
+			<view class="header-actions">
+				<view class="header-action" @click="goToNotifications">
+					<image class="header-action-icon bell-icon" src="/static/icons/phosphor-icons/SVGs/regular/bell.svg" mode="aspectFit"></image>
+					<view v-if="notificationUnreadCount > 0" class="header-action-badge">
+						<text class="header-action-badge-text">{{ notificationUnreadCount > 99 ? '99+' : notificationUnreadCount }}</text>
+					</view>
 				</view>
-			</view> -->
+				<view class="header-action theme-action" @click="toggleThemeMode">
+					<view class="theme-action-icon">
+						<svg
+							v-if="isLightTheme"
+							class="theme-action-svg"
+							xmlns="http://www.w3.org/2000/svg"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" />
+						</svg>
+						<svg
+							v-else
+							class="theme-action-svg"
+							xmlns="http://www.w3.org/2000/svg"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<circle cx="12" cy="12" r="4" />
+							<path d="M12 2v2" />
+							<path d="M12 20v2" />
+							<path d="m4.93 4.93 1.41 1.41" />
+							<path d="m17.66 17.66 1.41 1.41" />
+							<path d="M2 12h2" />
+							<path d="M20 12h2" />
+							<path d="m6.34 17.66-1.41 1.41" />
+							<path d="m19.07 4.93-1.41 1.41" />
+						</svg>
+					</view>
+				</view>
+			</view>
 
 			<!-- 正常状态：显示 AI 学习建议 -->
 			<template v-if="!isEmptyState">
@@ -298,6 +337,8 @@ function _cleanOldSuggestionCache(currentKey) {
   } catch (_) {}
 }
 
+const HOME_THEME_STORAGE_KEY = 'home_theme_mode'
+
 	export default {
 		components: {
 			KnowledgeTreeMini,
@@ -372,12 +413,19 @@ function _cleanOldSuggestionCache(currentKey) {
 				// AI 学习建议
 				aiSuggestion: null,
 				suggestionLoading: false,
+				// 首页主题
+				homeThemeMode: 'dark',
 				// 通知 SSE 断开函数
 				_notifAbort: null
 			}
 		},
 
+		created() {
+			this.restoreThemeMode()
+		},
+
 		async onShow() {
+			this.restoreThemeMode()
 			await this.initializePage()
 		},
 
@@ -404,6 +452,14 @@ function _cleanOldSuggestionCache(currentKey) {
 
 			notificationUnreadCount() {
 				return this.notificationStore.unreadCount
+			},
+
+			isLightTheme() {
+				return this.homeThemeMode === 'light'
+			},
+
+			pageThemeClass() {
+				return this.isLightTheme ? 'theme-light' : 'theme-dark'
 			},
 
 			// 真实学习空间数量
@@ -550,6 +606,48 @@ function _cleanOldSuggestionCache(currentKey) {
 
 			handleBootRetry() {
 				this.initializePage()
+			},
+
+			restoreThemeMode() {
+				let savedMode = 'dark'
+				try {
+					const raw = uni.getStorageSync(HOME_THEME_STORAGE_KEY)
+					if (raw === 'light' || raw === 'dark') {
+						savedMode = raw
+					}
+				} catch (_) {}
+				this.applyThemeMode(savedMode, { persist: false })
+			},
+
+			toggleThemeMode() {
+				const nextMode = this.isLightTheme ? 'dark' : 'light'
+				this.applyThemeMode(nextMode)
+				this.showToast(nextMode === 'light' ? '已切换到浅色首页主题' : '已切换到深色首页主题', 'success')
+			},
+
+			applyThemeMode(mode, options = {}) {
+				const normalizedMode = mode === 'light' ? 'light' : 'dark'
+				const { persist = true } = options
+				this.homeThemeMode = normalizedMode
+				if (persist) {
+					try {
+						uni.setStorageSync(HOME_THEME_STORAGE_KEY, normalizedMode)
+					} catch (_) {}
+				}
+				this.syncThemeSystemUi(normalizedMode)
+			},
+
+			syncThemeSystemUi(mode) {
+				// #ifdef APP-PLUS
+				try {
+					if (typeof plus !== 'undefined' && plus.navigator) {
+						plus.navigator.setStatusBarStyle(mode === 'light' ? 'dark' : 'light')
+						if (typeof plus.navigator.setStatusBarBackground === 'function') {
+							plus.navigator.setStatusBarBackground(mode === 'light' ? '#F3EDE3' : '#0A0A12')
+						}
+					}
+				} catch (_) {}
+				// #endif
 			},
 
 			// 计算各种位置的像素值
@@ -1481,12 +1579,83 @@ function _cleanOldSuggestionCache(currentKey) {
 	}
 
 	.page-container {
+		--home-bg: #0a0a12;
+		--home-boot-overlay: rgba(10, 10, 18, 0.92);
+		--home-boot-panel-bg: rgba(255, 255, 255, 0.08);
+		--home-boot-panel-border: rgba(255, 255, 255, 0.16);
+		--home-boot-title: #ffffff;
+		--home-boot-subtitle: rgba(255, 255, 255, 0.72);
+		--home-boot-retry-bg: rgba(0, 136, 255, 0.85);
+		--home-boot-retry-text: #ffffff;
+		--home-aurora-blue-core: #1a6aff;
+		--home-aurora-blue-mid: rgba(26, 106, 255, 0.3);
+		--home-aurora-orange-core: #ff6a1a;
+		--home-aurora-orange-mid: rgba(255, 106, 26, 0.3);
+		--home-aurora-blend-core: #ff9f45;
+		--home-aurora-blend-mid: rgba(255, 159, 69, 0.15);
+		--home-header-text: #ffffff;
+		--home-header-gradient: linear-gradient(135deg, #ffffff 0%, #e0e7ff 50%, #ffffff 100%);
+		--home-header-action-bg: rgba(18, 22, 34, 0.72);
+		--home-header-action-border: rgba(255, 255, 255, 0.12);
+		--home-header-action-shadow: rgba(0, 0, 0, 0.24);
+		--home-header-action-icon-filter: brightness(0) invert(1);
+		--home-header-action-icon: #ffe2a8;
+		--home-header-badge-bg: #ff6b7d;
+		--home-header-badge-text: #ffffff;
+		--home-nav-bg: rgba(48, 48, 58, 0.55);
+		--home-nav-fallback-bg: rgba(48, 48, 58, 0.92);
+		--home-nav-top-border: rgba(255, 255, 255, 0.15);
+		--home-nav-side-border: rgba(255, 255, 255, 0.08);
+		--home-nav-shadow: rgba(0, 0, 0, 0.3);
+		--home-nav-inner-highlight: rgba(255, 255, 255, 0.1);
+		--home-nav-icon-filter: brightness(0) invert(1);
+		--home-nav-active-bg: #0088ff;
+		--home-nav-active-border: rgba(255, 255, 255, 0.2);
+		--home-nav-active-glow: rgba(0, 136, 255, 0.35);
+		--home-nav-active-inner-highlight: rgba(255, 255, 255, 0.15);
 		position: relative;
 		display: flex;
 		flex-direction: column;
 		min-height: 100vh;
-		background-color: #0A0A12;
+		background-color: var(--home-bg);
 		overflow-x: hidden;
+	}
+
+	.page-container.theme-light {
+		--home-bg: #f3ede3;
+		--home-boot-overlay: rgba(243, 237, 227, 0.92);
+		--home-boot-panel-bg: rgba(255, 255, 255, 0.78);
+		--home-boot-panel-border: rgba(63, 53, 42, 0.12);
+		--home-boot-title: #1f1a16;
+		--home-boot-subtitle: rgba(31, 26, 22, 0.64);
+		--home-boot-retry-bg: #2f6eea;
+		--home-boot-retry-text: #ffffff;
+		--home-aurora-blue-core: #9ab9ff;
+		--home-aurora-blue-mid: rgba(154, 185, 255, 0.24);
+		--home-aurora-orange-core: #f5bb73;
+		--home-aurora-orange-mid: rgba(245, 187, 115, 0.22);
+		--home-aurora-blend-core: #ffd08c;
+		--home-aurora-blend-mid: rgba(255, 208, 140, 0.16);
+		--home-header-text: #1f1a16;
+		--home-header-gradient: linear-gradient(135deg, #1a1512 0%, #6d7f9f 55%, #2b231c 100%);
+		--home-header-action-bg: rgba(255, 255, 255, 0.82);
+		--home-header-action-border: rgba(35, 30, 24, 0.08);
+		--home-header-action-shadow: rgba(76, 61, 42, 0.12);
+		--home-header-action-icon-filter: brightness(0) saturate(100%);
+		--home-header-action-icon: #24334e;
+		--home-header-badge-bg: #ef5d6c;
+		--home-header-badge-text: #ffffff;
+		--home-nav-bg: rgba(255, 255, 255, 0.74);
+		--home-nav-fallback-bg: rgba(255, 255, 255, 0.94);
+		--home-nav-top-border: rgba(57, 47, 35, 0.1);
+		--home-nav-side-border: rgba(57, 47, 35, 0.06);
+		--home-nav-shadow: rgba(118, 101, 80, 0.18);
+		--home-nav-inner-highlight: rgba(255, 255, 255, 0.78);
+		--home-nav-icon-filter: brightness(0) saturate(100%);
+		--home-nav-active-bg: #286ef1;
+		--home-nav-active-border: rgba(255, 255, 255, 0.22);
+		--home-nav-active-glow: rgba(40, 110, 241, 0.26);
+		--home-nav-active-inner-highlight: rgba(255, 255, 255, 0.16);
 	}
 
 	.boot-overlay {
@@ -1499,7 +1668,7 @@ function _cleanOldSuggestionCache(currentKey) {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: rgba(10, 10, 18, 0.92);
+		background: var(--home-boot-overlay);
 	}
 
 	.boot-panel {
@@ -1507,8 +1676,8 @@ function _cleanOldSuggestionCache(currentKey) {
 		max-width: 560rpx;
 		padding: 40rpx 36rpx;
 		border-radius: 24rpx;
-		background: rgba(255, 255, 255, 0.08);
-		border: 1rpx solid rgba(255, 255, 255, 0.16);
+		background: var(--home-boot-panel-bg);
+		border: 1rpx solid var(--home-boot-panel-border);
 		-webkit-backdrop-filter: blur(16px);
 		backdrop-filter: blur(16px);
 		display: flex;
@@ -1520,26 +1689,26 @@ function _cleanOldSuggestionCache(currentKey) {
 	.boot-title {
 		font-size: 30rpx;
 		font-weight: 600;
-		color: #ffffff;
+		color: var(--home-boot-title);
 		text-align: center;
 	}
 
 	.boot-subtitle {
 		font-size: 24rpx;
-		color: rgba(255, 255, 255, 0.72);
+		color: var(--home-boot-subtitle);
 	}
 
 	.boot-retry {
 		margin-top: 8rpx;
 		padding: 12rpx 34rpx;
 		border-radius: 999rpx;
-		background: rgba(0, 136, 255, 0.85);
+		background: var(--home-boot-retry-bg);
 	}
 
 	.boot-retry-text {
 		font-size: 26rpx;
 		font-weight: 600;
-		color: #ffffff;
+		color: var(--home-boot-retry-text);
 	}
 
 	/* ========== Aurora Background (Blue-Orange) ========== */
@@ -1565,7 +1734,7 @@ function _cleanOldSuggestionCache(currentKey) {
 	.aurora-blob-1 {
 		width: 900rpx;
 		height: 900rpx;
-		background: radial-gradient(circle, #1A6AFF 0%, rgba(26, 106, 255, 0.3) 40%, transparent 70%);
+		background: radial-gradient(circle, var(--home-aurora-blue-core) 0%, var(--home-aurora-blue-mid) 40%, transparent 70%);
 		top: -250rpx;
 		left: -200rpx;
 		animation: aurora-blue 14s ease-in-out infinite;
@@ -1575,7 +1744,7 @@ function _cleanOldSuggestionCache(currentKey) {
 	.aurora-blob-2 {
 		width: 850rpx;
 		height: 850rpx;
-		background: radial-gradient(circle, #FF6A1A 0%, rgba(255, 106, 26, 0.3) 40%, transparent 70%);
+		background: radial-gradient(circle, var(--home-aurora-orange-core) 0%, var(--home-aurora-orange-mid) 40%, transparent 70%);
 		bottom: -200rpx;
 		right: -200rpx;
 		animation: aurora-orange 16s ease-in-out infinite;
@@ -1585,7 +1754,7 @@ function _cleanOldSuggestionCache(currentKey) {
 	.aurora-blob-3 {
 		width: 600rpx;
 		height: 600rpx;
-		background: radial-gradient(circle, #FF9F45 0%, rgba(255, 159, 69, 0.15) 40%, transparent 70%);
+		background: radial-gradient(circle, var(--home-aurora-blend-core) 0%, var(--home-aurora-blend-mid) 40%, transparent 70%);
 		top: 40%;
 		left: 25%;
 		animation: aurora-blend 18s ease-in-out infinite;
@@ -1645,7 +1814,7 @@ function _cleanOldSuggestionCache(currentKey) {
 		transition: all 0.35s ease;
 		opacity: 1;
 		transform: translateY(0);
-		z-index: 40;
+		z-index: 56;
 	}
 
 	.header.header-hidden {
@@ -1658,16 +1827,18 @@ function _cleanOldSuggestionCache(currentKey) {
 		position: absolute;
 		top: calc(100vh / 26 * 6);
 		left: 40rpx;
+		right: 220rpx;
 		transform: translateY(-50%);
 		font-size: 48rpx;
 		font-weight: 700;
-		color: #ffffff;
+		color: var(--home-header-text);
+		line-height: 1.08;
 	}
 
 	.header-text-light {
 		font-size: 44rpx;
 		font-weight: 600;
-		background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 50%, #ffffff 100%);
+		background: var(--home-header-gradient);
 		-webkit-background-clip: text;
 		-webkit-text-fill-color: transparent;
 		background-clip: text;
@@ -1676,7 +1847,7 @@ function _cleanOldSuggestionCache(currentKey) {
 	.header-text-highlight {
 		font-size: 54rpx;
 		font-weight: 600;
-		background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 50%, #ffffff 100%);
+		background: var(--home-header-gradient);
 		-webkit-background-clip: text;
 		-webkit-text-fill-color: transparent;
 		background-clip: text;
@@ -1686,11 +1857,11 @@ function _cleanOldSuggestionCache(currentKey) {
 		position: absolute;
 		top: calc(100vh / 26 * 8);
 		left: calc(100% / 12 * 3);
-		right: 40rpx;
+		right: 220rpx;
 		font-size: 48rpx;
 		font-weight: 700;
-		color: #ffffff;
-		line-height: 1.3;
+		color: var(--home-header-text);
+		line-height: 1.2;
 	}
 
 	@keyframes suggestion-pulse {
@@ -1701,46 +1872,80 @@ function _cleanOldSuggestionCache(currentKey) {
 		animation: suggestion-pulse 1.5s ease-in-out infinite;
 	}
 
-	/* ========== 通知铃铛 ========== */
-	.notification-bell {
-		position: fixed;
-		top: calc(var(--status-bar-height, 44px) + 20rpx);
-		right: 32rpx;
-		width: 64rpx;
-		height: 64rpx;
+	.header-actions {
+		position: absolute;
+		top: calc(var(--status-bar-height, 44px) + 72rpx);
+		right: 40rpx;
 		display: flex;
-		justify-content: center;
 		align-items: center;
-		border-radius: 50%;
-		background-color: rgba(255, 255, 255, 0.08);
-		border: 1rpx solid rgba(255, 255, 255, 0.12);
+		gap: 12rpx;
 		z-index: 56;
 	}
 
-	.bell-icon {
-		width: 40rpx;
-		height: 40rpx;
-		opacity: 0.7;
-		filter: brightness(0) invert(1);
+	.header-action {
+		position: relative;
+		width: 84rpx;
+		height: 84rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 42rpx;
+		background: var(--home-header-action-bg);
+		border: 1rpx solid var(--home-header-action-border);
+		box-shadow: 0 14rpx 34rpx var(--home-header-action-shadow);
+		-webkit-backdrop-filter: blur(26rpx) saturate(140%);
+		backdrop-filter: blur(26rpx) saturate(140%);
+		transition: transform 0.18s ease, background-color 0.2s ease, border-color 0.2s ease;
 	}
 
-	.bell-badge {
+	.header-action:active {
+		transform: scale(0.96);
+	}
+
+	.header-action-icon {
+		width: 36rpx;
+		height: 36rpx;
+	}
+
+	.bell-icon {
+		filter: var(--home-header-action-icon-filter);
+		opacity: 0.92;
+	}
+
+	.theme-action-icon {
+		width: 36rpx;
+		height: 36rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--home-header-action-icon);
+	}
+
+	.theme-action-svg {
+		width: 34rpx;
+		height: 34rpx;
+		display: block;
+		flex-shrink: 0;
+	}
+
+	.header-action-badge {
 		position: absolute;
-		top: -6rpx;
-		right: -6rpx;
+		top: -4rpx;
+		right: -4rpx;
 		min-width: 30rpx;
 		height: 30rpx;
 		border-radius: 15rpx;
-		background: #ff4757;
+		background: var(--home-header-badge-bg);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		padding: 0 6rpx;
+		border: 3rpx solid var(--home-bg);
 	}
 
-	.bell-badge-text {
+	.header-action-badge-text {
 		font-size: 18rpx;
-		color: #ffffff;
+		color: var(--home-header-badge-text);
 		font-weight: 600;
 		line-height: 1;
 	}
@@ -1973,7 +2178,7 @@ function _cleanOldSuggestionCache(currentKey) {
 		position: absolute;
 		top: calc(100vh / 26 * 5);
 		left: 40rpx;
-		right: 40rpx;
+		right: 220rpx;
 		display: flex;
 		flex-direction: column;
 		gap: 20rpx;
@@ -1982,7 +2187,7 @@ function _cleanOldSuggestionCache(currentKey) {
 	.header-text-line1 {
 		font-size: 44rpx;
 		font-weight: 600;
-		background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 50%, #ffffff 100%);
+		background: var(--home-header-gradient);
 		-webkit-background-clip: text;
 		-webkit-text-fill-color: transparent;
 		background-clip: text;
@@ -1993,7 +2198,7 @@ function _cleanOldSuggestionCache(currentKey) {
 		font-weight: 600;
 		text-align: right;
 		padding-left: 30%;
-		background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 50%, #ffffff 100%);
+		background: var(--home-header-gradient);
 		-webkit-background-clip: text;
 		-webkit-text-fill-color: transparent;
 		background-clip: text;
@@ -2047,21 +2252,21 @@ function _cleanOldSuggestionCache(currentKey) {
 		border-radius: 36rpx 36rpx 0 0;
 
 		/* 毛玻璃：半透明背景 */
-		background-color: rgba(48, 48, 58, 0.55);
+		background-color: var(--home-nav-bg);
 
 		/* 毛玻璃模糊效果 */
 		-webkit-backdrop-filter: blur(40px) saturate(180%);
 		backdrop-filter: blur(40px) saturate(180%);
 
 		/* 玻璃质感边缘：微光边框 */
-		border-top: 1rpx solid rgba(255, 255, 255, 0.15);
-		border-left: 1rpx solid rgba(255, 255, 255, 0.08);
-		border-right: 1rpx solid rgba(255, 255, 255, 0.08);
+		border-top: 1rpx solid var(--home-nav-top-border);
+		border-left: 1rpx solid var(--home-nav-side-border);
+		border-right: 1rpx solid var(--home-nav-side-border);
 
 		/* 上方阴影 + 内侧高光 */
 		box-shadow:
-			0 -4rpx 30rpx rgba(0, 0, 0, 0.3),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.1);
+			0 -4rpx 30rpx var(--home-nav-shadow),
+			inset 0 1rpx 0 var(--home-nav-inner-highlight);
 
 		display: flex;
 		justify-content: space-around;
@@ -2080,7 +2285,7 @@ function _cleanOldSuggestionCache(currentKey) {
 	/* 不支持 backdrop-filter 时的降级方案 */
 	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
 		.bottom-nav {
-			background-color: rgba(48, 48, 58, 0.92);
+			background-color: var(--home-nav-fallback-bg);
 		}
 	}
 
@@ -2130,7 +2335,7 @@ function _cleanOldSuggestionCache(currentKey) {
 	.icon-img {
 		width: 75rpx;
 		height: 75rpx;
-		filter: brightness(0) invert(1);
+		filter: var(--home-nav-icon-filter);
 	}
 
 	.nav-item-active .nav-icon-wrapper {
@@ -2140,15 +2345,15 @@ function _cleanOldSuggestionCache(currentKey) {
 		min-height: 140rpx;
 
 		/* 原始蓝色背景 */
-		background-color: #0088FF;
+		background-color: var(--home-nav-active-bg);
 
 		/* 玻璃边缘光泽 */
-		border: 1rpx solid rgba(255, 255, 255, 0.2);
+		border: 1rpx solid var(--home-nav-active-border);
 
 		/* 外发光 + 内侧高光 */
 		box-shadow:
-			0 4rpx 24rpx rgba(0, 136, 255, 0.35),
-			inset 0 1rpx 0 rgba(255, 255, 255, 0.15);
+			0 4rpx 24rpx var(--home-nav-active-glow),
+			inset 0 1rpx 0 var(--home-nav-active-inner-highlight);
 
 		border-radius: 50%;
 		aspect-ratio: 1 / 1;

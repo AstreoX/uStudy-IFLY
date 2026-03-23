@@ -650,6 +650,11 @@
 					/>
 				</view>
 
+				<view class="input-limit-row" :class="{ 'input-limit-row-warning': isInputTooLong }">
+					<text class="input-limit-text">{{ inputLimitTip }}</text>
+					<text class="input-limit-counter">{{ messageCharCount }}/{{ maxMessageLength }}</text>
+				</view>
+
 				<view class="input-bottom-row">
 					<view class="input-bottom-left">
 						<!-- 左侧：模型选择 pill -->
@@ -777,6 +782,8 @@
 	// #ifdef APP-PLUS
 	import SseRenderjs from '@/components/sse-renderjs/sse-renderjs.vue'
 	// #endif
+
+	const MAX_MESSAGE_LENGTH = 10000
 
 	// 工具名称映射
 	const TOOL_DISPLAY_NAMES = {
@@ -1133,8 +1140,23 @@
 			isAiStreaming() {
 				return this.messages.some(msg => msg.role === 'ai' && msg.isStreaming)
 			},
+			maxMessageLength() {
+				return MAX_MESSAGE_LENGTH
+			},
+			messageCharCount() {
+				return this.getMessageCharCount(this.inputText)
+			},
+			isInputTooLong() {
+				return this.messageCharCount > MAX_MESSAGE_LENGTH
+			},
+			inputLimitTip() {
+				if (this.isInputTooLong) {
+					return `已超出 ${this.messageCharCount - MAX_MESSAGE_LENGTH} 字，请删减后再发送`
+				}
+				return '单次最多发送 10000 字符'
+			},
 			canSend() {
-				return this.inputText.trim().length > 0
+				return this.inputText.trim().length > 0 && !this.isInputTooLong
 			},
 			selectedModelName() {
 				const model = this.availableModels.find(m => m.id === this.selectedModelId)
@@ -1186,6 +1208,18 @@
 
 		methods: {
 			// ==================== 模型选择 ====================
+			getMessageCharCount(text) {
+				return Array.from((text || '').trim()).length
+			},
+			isMessageWithinLimit(text) {
+				return this.getMessageCharCount(text) <= MAX_MESSAGE_LENGTH
+			},
+			showMessageLengthExceededToast() {
+				uni.showToast({
+					title: '内容过长，请删减到10000字以内',
+					icon: 'none'
+				})
+			},
 			toggleModelMenu() {
 				this.showModelMenu = !this.showModelMenu
 			},
@@ -1787,6 +1821,8 @@
 			handleRightButtonClick() {
 				if (this.isAiStreaming) {
 					this.stopAiReply()
+				} else if (this.isInputTooLong) {
+					this.showMessageLengthExceededToast()
 				} else if (this.canSend) {
 					this.sendMessage()
 				}
@@ -3096,6 +3132,10 @@
 			sendMessage() {
 				const text = this.inputText.trim()
 				if (!text && this.pendingAttachments.length === 0) return
+				if (!this.isMessageWithinLimit(text)) {
+					this.showMessageLengthExceededToast()
+					return
+				}
 
 				this.isAutoScrollEnabled = true
 
@@ -3219,6 +3259,17 @@
 			},
 
 			async sendRealMessage(userMessage, attachmentIds = null, pendingId = null) {
+				if (!this.isMessageWithinLimit(userMessage)) {
+					this.showMessageLengthExceededToast()
+					if (pendingId) {
+						const userMsg = this.messages.find(m => m.pendingId === pendingId)
+						if (userMsg) {
+							userMsg.isFailed = true
+						}
+					}
+					return
+				}
+
 				this.lastUserMessageTimestamp = Date.now()
 
 				// 记录是否是新对话（创建对话前 conversationId 为空）
@@ -3440,6 +3491,10 @@
 
 			resendMessage(msg) {
 				if (this.isAiStreaming) return
+				if (!this.isMessageWithinLimit(msg.content)) {
+					this.showMessageLengthExceededToast()
+					return
+				}
 				this.isAutoScrollEnabled = true
 
 				msg.isFailed = false
@@ -4496,6 +4551,48 @@
 
 	.textarea-wrapper {
 		position: relative;
+	}
+
+	.input-limit-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16rpx;
+		margin: 8rpx 20rpx 10rpx;
+		padding: 10rpx 14rpx;
+		border-radius: 16rpx;
+		border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+		background: rgba(255, 255, 255, 0.04);
+	}
+
+	.input-limit-row-warning {
+		border-color: rgba(248, 113, 113, 0.42);
+		background: rgba(127, 29, 29, 0.22);
+	}
+
+	.input-limit-text {
+		flex: 1;
+		min-width: 0;
+		font-size: 22rpx;
+		color: #9CA3AF;
+		-webkit-text-fill-color: #9CA3AF;
+	}
+
+	.input-limit-row-warning .input-limit-text {
+		color: #FCA5A5;
+		-webkit-text-fill-color: #FCA5A5;
+	}
+
+	.input-limit-counter {
+		flex-shrink: 0;
+		font-size: 22rpx;
+		color: #D4D4D8;
+		-webkit-text-fill-color: #D4D4D8;
+	}
+
+	.input-limit-row-warning .input-limit-counter {
+		color: #FCA5A5;
+		-webkit-text-fill-color: #FCA5A5;
 	}
 
 	.custom-placeholder-row {
