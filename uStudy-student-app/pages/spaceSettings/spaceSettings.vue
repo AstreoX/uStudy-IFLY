@@ -1,5 +1,5 @@
 <template>
-  <view class="settings-page">
+  <view class="settings-page" :class="pageThemeClass">
     <view class="settings-bg">
       <view class="bg-mesh"></view>
       <view class="bg-glow bg-glow-blue"></view>
@@ -289,6 +289,7 @@ import UModal from '@/components/u-modal/u-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
 import { useUserStore } from '@/store/user'
 import { goBack } from '@/utils/navigation'
+import { getStoredThemeMode } from '@/utils/themeMode'
 
 // Temporary icon paths. Replace these with Lucide SVGs later.
 const ICON_SRC = {
@@ -316,6 +317,7 @@ export default {
     return {
       spaceId: '',
       spaceName: '',
+      homeThemeMode: 'dark',
       spaceDescription: '',
       showDeleteModal: false,
       isDeleting: false,
@@ -494,10 +496,19 @@ export default {
         return `确定要退出「${this.spaceName}」吗？退出后你将失去该协作空间的学习记录、资料和对话访问权限。`
       }
       return `确定要删除「${this.spaceName}」吗？此操作不可恢复，所有学习记录、知识图谱和对话记录将被永久删除。`
+    },
+
+    isLightTheme() {
+      return this.homeThemeMode === 'light'
+    },
+
+    pageThemeClass() {
+      return this.isLightTheme ? 'theme-light' : 'theme-dark'
     }
   },
 
   onLoad(options) {
+    this.restoreThemeMode()
     this.spaceId = options.id || ''
     this.spaceName = options.name ? decodeURIComponent(options.name) : '该学习空间'
     this.currentColor = options.color ? decodeURIComponent(options.color) : ''
@@ -507,12 +518,26 @@ export default {
   },
 
   onShow() {
+    this.restoreThemeMode()
     if (this.spaceId) {
       this.loadSpaceSettings()
     }
   },
 
   methods: {
+    restoreThemeMode() {
+      this.homeThemeMode = getStoredThemeMode('dark')
+      this.syncThemeSystemUi(this.homeThemeMode)
+    },
+
+    syncThemeSystemUi(mode) {
+      const isLight = mode === 'light'
+      // #ifdef APP-PLUS
+      plus.navigator.setStatusBarStyle(isLight ? 'dark' : 'light')
+      plus.navigator.setStatusBarBackground(isLight ? '#F3EDE3' : '#1D1E20')
+      // #endif
+    },
+
     getIconSrc(key) {
       return ICON_SRC[key] || ''
     },
@@ -1587,5 +1612,159 @@ export default {
   to {
     transform: rotate(360deg);
   }
+}
+
+.settings-page.theme-light {
+  background-color: #F3EDE3;
+}
+
+.settings-page.theme-light .bg-mesh {
+  background:
+    radial-gradient(circle at 82% 14%, rgba(47, 110, 234, 0.1) 0%, rgba(47, 110, 234, 0) 32%),
+    radial-gradient(circle at 12% 100%, rgba(199, 119, 22, 0.08) 0%, rgba(199, 119, 22, 0) 36%);
+}
+
+.settings-page.theme-light .bg-glow-blue {
+  background: rgba(47, 110, 234, 0.14);
+}
+
+.settings-page.theme-light .bg-glow-violet {
+  background: rgba(199, 119, 22, 0.1);
+}
+
+.settings-page.theme-light .settings-nav::before {
+  background: linear-gradient(
+    to bottom,
+    rgba(243, 237, 227, 0.92) 0%,
+    rgba(243, 237, 227, 0.64) 50%,
+    rgba(243, 237, 227, 0) 100%
+  );
+}
+
+.settings-page.theme-light .nav-back,
+.settings-page.theme-light .overview-card,
+.settings-page.theme-light .settings-card,
+.settings-page.theme-light .danger-card,
+.settings-page.theme-light .share-popup-card,
+.settings-page.theme-light .share-mode-options,
+.settings-page.theme-light .share-popup-code-box,
+.settings-page.theme-light .review-mode-option,
+.settings-page.theme-light .overview-action,
+.settings-page.theme-light .overview-stats-panel {
+  background: rgba(255, 250, 244, 0.86);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 14rpx 36rpx rgba(118, 101, 80, 0.14);
+}
+
+.settings-page.theme-light .nav-back {
+  outline-color: rgba(255, 255, 255, 0.72);
+}
+
+.settings-page.theme-light .nav-icon,
+.settings-page.theme-light .item-icon,
+.settings-page.theme-light .item-arrow,
+.settings-page.theme-light .overview-action-icon,
+.settings-page.theme-light .danger-icon,
+.settings-page.theme-light .check-icon,
+.settings-page.theme-light .share-mode-icon {
+  filter: brightness(0) saturate(100%);
+}
+
+.settings-page.theme-light .nav-title,
+.settings-page.theme-light .overview-title,
+.settings-page.theme-light .hero-stat-value,
+.settings-page.theme-light .row-title,
+.settings-page.theme-light .palette-title,
+.settings-page.theme-light .danger-label,
+.settings-page.theme-light .share-popup-title,
+.settings-page.theme-light .share-mode-label,
+.settings-page.theme-light .share-popup-code,
+.settings-page.theme-light .review-option-label {
+  color: #1F1A16;
+}
+
+.settings-page.theme-light .nav-subtitle,
+.settings-page.theme-light .section-caption,
+.settings-page.theme-light .overview-progress-label,
+.settings-page.theme-light .hero-stat-label,
+.settings-page.theme-light .row-desc,
+.settings-page.theme-light .row-value,
+.settings-page.theme-light .palette-desc,
+.settings-page.theme-light .share-popup-hint,
+.settings-page.theme-light .share-mode-desc,
+.settings-page.theme-light .review-option-desc {
+  color: rgba(31, 26, 22, 0.58);
+}
+
+.settings-page.theme-light .overview-progress-track {
+  background: rgba(63, 53, 42, 0.1);
+}
+
+.settings-page.theme-light .overview-progress-value,
+.settings-page.theme-light .review-option-tag {
+  color: #2F6EEA;
+}
+
+.settings-page.theme-light .review-option-tag {
+  background: rgba(47, 110, 234, 0.1);
+  border-color: rgba(47, 110, 234, 0.18);
+}
+
+.settings-page.theme-light .settings-row-pressable:active,
+.settings-page.theme-light .share-mode-option:active,
+.settings-page.theme-light .review-mode-option:active {
+  background: rgba(63, 53, 42, 0.05);
+}
+
+.settings-page.theme-light .settings-divider,
+.settings-page.theme-light .settings-divider-popup {
+  background: rgba(63, 53, 42, 0.1);
+}
+
+.settings-page.theme-light .row-icon-wrap-blue,
+.settings-page.theme-light .share-mode-icon-wrap.row-icon-wrap-blue {
+  background: rgba(47, 110, 234, 0.1);
+}
+
+.settings-page.theme-light .row-icon-wrap-green {
+  background: rgba(47, 143, 102, 0.1);
+}
+
+.settings-page.theme-light .row-icon-wrap-violet {
+  background: rgba(122, 83, 201, 0.1);
+}
+
+.settings-page.theme-light .row-icon-wrap-amber {
+  background: rgba(199, 119, 22, 0.1);
+}
+
+.settings-page.theme-light .danger-icon-wrap {
+  background: rgba(209, 79, 79, 0.1);
+}
+
+.settings-page.theme-light .share-popup-overlay.overlay-show {
+  background: rgba(61, 46, 30, 0.22);
+}
+
+.settings-page.theme-light .review-mode-selected {
+  border-color: rgba(47, 110, 234, 0.28);
+  background: rgba(47, 110, 234, 0.08);
+}
+
+.settings-page.theme-light .review-radio {
+  border-color: rgba(63, 53, 42, 0.2);
+}
+
+.settings-page.theme-light .review-mode-selected .review-radio {
+  border-color: #2F6EEA;
+}
+
+.settings-page.theme-light .review-radio-dot {
+  background: #2F6EEA;
+}
+
+.settings-page.theme-light .review-radio-spinner {
+  border-color: rgba(47, 110, 234, 0.2);
+  border-top-color: #2F6EEA;
 }
 </style>

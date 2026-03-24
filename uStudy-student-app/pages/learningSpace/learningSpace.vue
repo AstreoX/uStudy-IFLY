@@ -1,5 +1,5 @@
 <template>
-	<view class="learning-space-page">
+	<view class="learning-space-page" :class="pageThemeClass">
 		<!-- 开发网格 -->
 		<view class="dev-grid" v-if="showDevGrid">
 			<view class="grid-row" v-for="row in 26" :key="'row-'+row">
@@ -177,7 +177,11 @@
 							<text class="note-detail-loading-text">加载中...</text>
 						</view>
 						<view v-else-if="selectedNoteDetail" class="note-detail-body">
-							<markdown-render v-if="selectedNoteDetail.content" :content="selectedNoteDetail.content" />
+							<markdown-render
+								v-if="selectedNoteDetail.content"
+								:content="selectedNoteDetail.content"
+								:theme-mode="homeThemeMode"
+							/>
 							<text v-else class="note-detail-empty">（无内容）</text>
 							<view v-if="selectedNoteDetail.attachments && selectedNoteDetail.attachments.length" class="note-detail-attachments">
 								<text class="note-detail-attach-label">附件</text>
@@ -324,29 +328,27 @@
 				<!-- 模型选择下拉菜单（向上弹出） -->
 				<view v-if="showModelMenu" class="model-menu-backdrop" @click="showModelMenu = false"></view>
 				<view v-if="showModelMenu" class="model-menu">
-					<view
-						v-for="m in availableModels"
-						:key="m.id"
+						<view
+							v-for="m in availableModels"
+							:key="m.id"
 						class="model-menu-item"
 						:class="{
 							'model-menu-item-active': m.id === selectedModelId,
 							'model-menu-item-locked': m.locked
 						}"
 						@click="selectModel(m.id)"
-					>
-						<view class="model-menu-accent"></view>
-						<view class="model-menu-item-info">
-							<text
-								class="model-menu-item-name"
-								:style="{ color: m.locked ? '#9CA3AF' : '#C7CBD4', '-webkit-text-fill-color': m.locked ? '#9CA3AF' : '#C7CBD4' }"
-							>{{ m.display_name }}</text>
-							<text
-								class="model-menu-item-desc"
-								:style="{ color: '#A1A1AA', '-webkit-text-fill-color': '#A1A1AA' }"
-							>{{ m.locked ? '升级订阅解锁' : m.description }}</text>
+						>
+							<view class="model-menu-accent"></view>
+							<view class="model-menu-item-info">
+								<text
+									class="model-menu-item-name"
+								>{{ m.display_name }}</text>
+								<text
+									class="model-menu-item-desc"
+								>{{ m.locked ? '升级订阅解锁' : m.description }}</text>
+							</view>
+							<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
 						</view>
-						<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
-					</view>
 				</view>
 
 				<!-- 操作按钮 -->
@@ -403,7 +405,6 @@
 							<text
 								v-if="!inputText"
 								class="placeholder-text"
-								:style="{ color: '#A1A1AA', '-webkit-text-fill-color': '#A1A1AA' }"
 							>有问题，尽管问</text>
 						</view>
 
@@ -432,7 +433,6 @@
 								<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
 								<text
 									class="model-selector-label"
-									:style="{ color: '#C7CBD4', '-webkit-text-fill-color': '#C7CBD4' }"
 								>{{ selectedModelName }}</text>
 								<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
 							</view>
@@ -520,6 +520,7 @@
 	import { useUserStore } from '@/store/user'
 	import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
 	import { ensureCameraPermission, isPermissionDenied, guideToSettings } from '@/utils/permission'
+	import { getStoredThemeMode } from '@/utils/themeMode'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
 	import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
@@ -734,6 +735,7 @@
 			return {
 				showDevGrid: false,
 				spaceId: null,
+				homeThemeMode: 'dark',
 				// 首次加载标志，避免 onShow 与 mounted 重复加载
 				isFirstLoad: true,
 				// +号弹窗状态
@@ -956,9 +958,18 @@
 				if (!this.selectedNode) return ''
 				const mastery = this.selectedNode.mastery || 0
 				const color = getMasteryColor(mastery)
+				const trackColor = this.isLightTheme ? 'rgba(63, 53, 42, 0.1)' : 'rgba(255, 255, 255, 0.1)'
 				// conic-gradient 实现圆环进度
 				const angle = (mastery / 100) * 360
-				return `conic-gradient(${color} 0deg, ${color} ${angle}deg, rgba(255, 255, 255, 0.1) ${angle}deg, rgba(255, 255, 255, 0.1) 360deg)`
+				return `conic-gradient(${color} 0deg, ${color} ${angle}deg, ${trackColor} ${angle}deg, ${trackColor} 360deg)`
+			},
+
+			isLightTheme() {
+				return this.homeThemeMode === 'light'
+			},
+
+			pageThemeClass() {
+				return this.isLightTheme ? 'theme-light' : 'theme-dark'
 			},
 
 			canSend() {
@@ -1044,6 +1055,7 @@
 		},
 
 		async onLoad(options) {
+			this.restoreThemeMode()
 			if (options.id) {
 				this.spaceId = options.id
 			}
@@ -1152,6 +1164,7 @@
 		},
 
 		onShow() {
+			this.restoreThemeMode()
 			// 首次加载由 mounted 处理，跳过
 			if (this.isFirstLoad) return
 
@@ -1259,6 +1272,55 @@
 		},
 
 		methods: {
+			restoreThemeMode() {
+				this.homeThemeMode = getStoredThemeMode('dark')
+				this.syncThemeSystemUi(this.homeThemeMode)
+			},
+
+			syncThemeSystemUi(mode) {
+				const isLight = mode === 'light'
+				// #ifdef APP-PLUS
+				plus.navigator.setStatusBarStyle(isLight ? 'dark' : 'light')
+				plus.navigator.setStatusBarBackground(isLight ? '#F3EDE3' : '#1D1E20')
+				// #endif
+			},
+
+			getCanvasThemeTokens() {
+				if (this.isLightTheme) {
+					return {
+						unmasteredNodeColor: '#D7D0C6',
+						unmasteredGlow: 'rgba(163, 142, 118, 0.24)',
+						unmasteredOutline: 'rgba(255, 255, 255, 0.58)',
+						edgeColor: 'rgba(118, 101, 80, 0.28)',
+						labelConnector: 'rgba(94, 83, 72, 0.22)',
+						labelBackground: 'rgba(255, 250, 244, 0.92)',
+						labelBorder: 'rgba(63, 53, 42, 0.14)',
+						labelText: '#1F1A16',
+						selectedStroke: '#1F1A16',
+						minimapEdge: 'rgba(118, 101, 80, 0.18)',
+						minimapRootDot: '#7A6F62',
+						minimapNodeDot: '#A89A88',
+						minimapViewport: '#2F6EEA'
+					}
+				}
+
+				return {
+					unmasteredNodeColor: UNMASTERED_NODE_COLOR,
+					unmasteredGlow: UNMASTERED_NODE_GLOW,
+					unmasteredOutline: UNMASTERED_NODE_OUTLINE,
+					edgeColor: KNOWLEDGE_EDGE_COLOR,
+					labelConnector: LABEL_LAYOUT_CONFIG.connectorColor,
+					labelBackground: LABEL_LAYOUT_CONFIG.background,
+					labelBorder: LABEL_LAYOUT_CONFIG.borderColor,
+					labelText: '#E2E8F0',
+					selectedStroke: '#FFFFFF',
+					minimapEdge: 'rgba(255, 255, 255, 0.2)',
+					minimapRootDot: '#9CA3AF',
+					minimapNodeDot: '#6B7280',
+					minimapViewport: '#FFFFFF'
+				}
+			},
+
 			formatPerfValue(value) {
 				const n = Number(value)
 				if (!Number.isFinite(n)) return '0.00'
@@ -3590,7 +3652,8 @@
 				},
 
 				getAnimatedNodeFillColor(node) {
-					return node.mastery == null ? UNMASTERED_NODE_COLOR : getMasteryColor(node.mastery)
+					const tokens = this.getCanvasThemeTokens()
+					return node.mastery == null ? tokens.unmasteredNodeColor : getMasteryColor(node.mastery)
 				},
 
 				drawAnimatedTreeEdges(ctx, visibleNodes, edgeOpacity = 1) {
@@ -3616,7 +3679,7 @@
 						ctx.beginPath()
 						ctx.moveTo(startX, startY)
 						ctx.lineTo(endX, endY)
-						ctx.setStrokeStyle(KNOWLEDGE_EDGE_COLOR)
+						ctx.setStrokeStyle(this.getCanvasThemeTokens().edgeColor)
 						ctx.setLineWidth(KNOWLEDGE_EDGE_WIDTH)
 						ctx.setLineDash([])
 						ctx.stroke()
@@ -3950,9 +4013,10 @@
 				if (!node) return
 				node.baseRadius = this.getNodeBaseRadius(node)
 				if (node.mastery == null) {
-					node.fillColor = UNMASTERED_NODE_COLOR
-					node.glowColor = UNMASTERED_NODE_GLOW
-					node.outlineColor = UNMASTERED_NODE_OUTLINE
+					const themeTokens = this.getCanvasThemeTokens()
+					node.fillColor = themeTokens.unmasteredNodeColor
+					node.glowColor = themeTokens.unmasteredGlow
+					node.outlineColor = themeTokens.unmasteredOutline
 					return
 				}
 				node.fillColor = getMasteryColor(node.mastery)
@@ -4080,7 +4144,7 @@
 					ctx.beginPath()
 					ctx.moveTo(fromNode.x, fromNode.y)
 					ctx.lineTo(toNode.x, toNode.y)
-					ctx.setStrokeStyle(KNOWLEDGE_EDGE_COLOR)
+					ctx.setStrokeStyle(this.getCanvasThemeTokens().edgeColor)
 					ctx.setLineWidth(KNOWLEDGE_EDGE_WIDTH)
 					ctx.setLineDash([])
 					ctx.stroke()
@@ -4247,7 +4311,7 @@
 					ctx.beginPath()
 					ctx.moveTo(nodeX + ux * (nodeRadius + 2), nodeY + uy * (nodeRadius + 2))
 					ctx.lineTo(connectorEndX - ux * Math.max(2, mapSize(3)), connectorEndY - uy * Math.max(2, mapSize(3)))
-					ctx.setStrokeStyle(LABEL_LAYOUT_CONFIG.connectorColor)
+					ctx.setStrokeStyle(this.getCanvasThemeTokens().labelConnector)
 					ctx.setLineWidth(Math.max(1, mapSize(1)))
 					ctx.stroke()
 				}
@@ -4260,13 +4324,13 @@
 					box.height,
 					mapSize(LABEL_LAYOUT_CONFIG.cornerRadius)
 				)
-				ctx.setFillStyle(LABEL_LAYOUT_CONFIG.background)
+				ctx.setFillStyle(this.getCanvasThemeTokens().labelBackground)
 				ctx.fill()
-				ctx.setStrokeStyle(LABEL_LAYOUT_CONFIG.borderColor)
+				ctx.setStrokeStyle(this.getCanvasThemeTokens().labelBorder)
 				ctx.setLineWidth(Math.max(1, mapSize(1)))
 				ctx.stroke()
 
-				ctx.setFillStyle('#E2E8F0')
+				ctx.setFillStyle(this.getCanvasThemeTokens().labelText)
 				ctx.setFontSize(fontSize)
 				ctx.setTextAlign('center')
 				ctx.setTextBaseline('top')
@@ -4295,7 +4359,8 @@
 				const pathRingAlpha = this.isForeignGraphView ? FOREIGN_GRAPH_PATH_EDGE_ALPHA : 1
 				ctx.setGlobalAlpha(nodeAlpha)
 
-				const fillColor = node.fillColor || (node.mastery == null ? UNMASTERED_NODE_COLOR : getMasteryColor(node.mastery))
+				const themeTokens = this.getCanvasThemeTokens()
+				const fillColor = node.fillColor || (node.mastery == null ? themeTokens.unmasteredNodeColor : getMasteryColor(node.mastery))
 
 				if (skipHeavyVisual) {
 					// 交互期优先流畅：仅主圆 + 选中描边
@@ -4312,8 +4377,8 @@
 					ctx.setFillStyle(fillColor)
 					ctx.fill()
 				} else {
-					const glowColor = node.glowColor || (node.mastery == null ? UNMASTERED_NODE_GLOW : getMasteryGlowColor(node.mastery, 0.5))
-					const outlineColor = node.outlineColor || (node.mastery == null ? UNMASTERED_NODE_OUTLINE : getMasteryGlowColor(node.mastery, 0.2))
+					const glowColor = node.glowColor || (node.mastery == null ? themeTokens.unmasteredGlow : getMasteryGlowColor(node.mastery, 0.5))
+					const outlineColor = node.outlineColor || (node.mastery == null ? themeTokens.unmasteredOutline : getMasteryGlowColor(node.mastery, 0.2))
 
 					// 绘制发光效果 (阴影)
 					ctx.setShadow(0, 0, 18, glowColor)
@@ -4339,7 +4404,7 @@
 					ctx.setGlobalAlpha(1.0)
 					ctx.beginPath()
 					ctx.arc(node.x, node.y, radius + 6, 0, Math.PI * 2)
-					ctx.setStrokeStyle('#FFFFFF')
+					ctx.setStrokeStyle(themeTokens.selectedStroke)
 					ctx.setLineWidth(3)
 					ctx.stroke()
 				}
@@ -4389,7 +4454,7 @@
 				ctx.fill()
 
 				// 绘制数字
-				ctx.setFillStyle('rgb(248, 248, 248)')
+					ctx.setFillStyle(this.isLightTheme ? '#FFFFFF' : 'rgb(248, 248, 248)')
 				ctx.setFontSize(9)
 				ctx.setTextAlign('center')
 				ctx.setTextBaseline('middle')
@@ -4442,7 +4507,7 @@
 					ctx.beginPath()
 					ctx.moveTo(x1, y1)
 					ctx.lineTo(x2, y2)
-					ctx.setStrokeStyle('rgba(255, 255, 255, 0.2)')
+					ctx.setStrokeStyle(this.getCanvasThemeTokens().minimapEdge)
 					ctx.setLineWidth(0.5)
 					ctx.stroke()
 				})
@@ -4478,7 +4543,10 @@
 						ctx.setGlobalAlpha(0.25)
 					}
 
-					const dotColor = isOnPath ? this.pathHighlightColor : (node.level === 0 ? '#9CA3AF' : '#6B7280')
+					const tokens = this.getCanvasThemeTokens()
+					const dotColor = isOnPath
+						? this.pathHighlightColor
+						: (node.level === 0 ? tokens.minimapRootDot : tokens.minimapNodeDot)
 					const dotRadius = node.level === 0 ? 3 : (node.level === 1 ? 2.5 : 2)
 
 					ctx.beginPath()
@@ -4533,7 +4601,7 @@
 				ctx.arcTo(vx, vy, vx + vr, vy, vr)
 				ctx.closePath()
 
-				ctx.setStrokeStyle('#FFFFFF')
+				ctx.setStrokeStyle(this.getCanvasThemeTokens().minimapViewport)
 				ctx.setLineWidth(1.5)
 				ctx.stroke()
 				ctx.draw()
@@ -6530,5 +6598,321 @@
 		border-left: 16rpx solid transparent;
 		border-right: 16rpx solid transparent;
 		border-top: 16rpx solid rgb(41, 41, 41);
+	}
+
+	.learning-space-page.theme-light {
+		background-color: #F3EDE3;
+	}
+
+	.learning-space-page.theme-light .space-nav-bar::before {
+		background: linear-gradient(
+			to bottom,
+			rgba(243, 237, 227, 0.92) 0%,
+			rgba(243, 237, 227, 0.64) 50%,
+			rgba(243, 237, 227, 0) 100%
+		);
+	}
+
+	.learning-space-page.theme-light .nav-left,
+	.learning-space-page.theme-light .nav-right,
+	.learning-space-page.theme-light .collab-filter-trigger,
+	.learning-space-page.theme-light .collab-dropdown-menu,
+	.learning-space-page.theme-light .node-popup,
+	.learning-space-page.theme-light .note-detail-card,
+	.learning-space-page.theme-light .loading-content,
+	.learning-space-page.theme-light .failed-content,
+	.learning-space-page.theme-light .add-file-popup,
+	.learning-space-page.theme-light .link-dialog,
+	.learning-space-page.theme-light .input-card,
+	.learning-space-page.theme-light .plus-popup {
+		background: rgba(255, 250, 244, 0.86);
+		border-color: rgba(63, 53, 42, 0.1);
+		box-shadow: 0 14rpx 36rpx rgba(118, 101, 80, 0.14);
+	}
+
+	.learning-space-page.theme-light .nav-left,
+	.learning-space-page.theme-light .nav-right {
+		outline-color: rgba(255, 255, 255, 0.72);
+	}
+
+	.learning-space-page.theme-light .nav-icon,
+	.learning-space-page.theme-light .note-detail-back-icon,
+	.learning-space-page.theme-light .note-detail-attach-icon,
+	.learning-space-page.theme-light .popup-option-icon,
+	.learning-space-page.theme-light .input-action-icon,
+	.learning-space-page.theme-light .attachment-file-preview .file-icon,
+	.learning-space-page.theme-light .uploading-content .file-icon,
+	.learning-space-page.theme-light .remove-icon,
+	.learning-space-page.theme-light .failed-icon {
+		filter: brightness(0) saturate(100%);
+	}
+
+	.learning-space-page.theme-light .nav-title,
+	.learning-space-page.theme-light .collab-filter-label,
+	.learning-space-page.theme-light .collab-member-name,
+	.learning-space-page.theme-light .node-popup-name,
+	.learning-space-page.theme-light .note-detail-title,
+	.learning-space-page.theme-light .failed-title,
+	.learning-space-page.theme-light .link-dialog-title,
+	.learning-space-page.theme-light .popup-option-text,
+	.learning-space-page.theme-light .quick-learn-btn-text,
+	.learning-space-page.theme-light .loading-text {
+		color: #1F1A16;
+	}
+
+	.learning-space-page.theme-light .collab-filter-arrow,
+	.learning-space-page.theme-light .node-notes-hint,
+	.learning-space-page.theme-light .node-notes-item-preview,
+	.learning-space-page.theme-light .note-detail-loading-text,
+	.learning-space-page.theme-light .note-detail-empty,
+	.learning-space-page.theme-light .note-detail-attach-label,
+	.learning-space-page.theme-light .note-detail-time,
+	.learning-space-page.theme-light .failed-message,
+	.learning-space-page.theme-light .link-input-label,
+	.learning-space-page.theme-light .upload-text,
+	.learning-space-page.theme-light .placeholder-text {
+		color: rgba(31, 26, 22, 0.58);
+	}
+
+	.learning-space-page.theme-light .node-notes-item,
+	.learning-space-page.theme-light .note-detail-attach-item,
+	.learning-space-page.theme-light .attachment-image-preview,
+	.learning-space-page.theme-light .attachment-file-preview,
+	.learning-space-page.theme-light .attachment-uploading-item,
+	.learning-space-page.theme-light .link-input {
+		background: rgba(255, 255, 255, 0.72);
+		border-color: rgba(63, 53, 42, 0.1);
+	}
+
+	.learning-space-page.theme-light .node-notes-item-title,
+	.learning-space-page.theme-light .note-detail-attach-name,
+	.learning-space-page.theme-light .attachment-file-meta .file-name,
+	.learning-space-page.theme-light .uploading-info .file-name,
+	.learning-space-page.theme-light .link-input,
+	.learning-space-page.theme-light .input-field {
+		color: #1F1A16;
+		-webkit-text-fill-color: #1F1A16;
+	}
+
+	.learning-space-page.theme-light .attachment-file-meta .file-size,
+	.learning-space-page.theme-light .link-input-placeholder,
+	.learning-space-page.theme-light .input-placeholder {
+		color: rgba(31, 26, 22, 0.42);
+		-webkit-text-fill-color: rgba(31, 26, 22, 0.42);
+	}
+
+	.learning-space-page.theme-light .path-pill,
+	.learning-space-page.theme-light .model-selector-btn,
+	.learning-space-page.theme-light .thinking-toggle-btn {
+		background: rgba(255, 255, 255, 0.72);
+		border-color: rgba(63, 53, 42, 0.1);
+		box-shadow: 0 8rpx 24rpx rgba(118, 101, 80, 0.12);
+	}
+
+	.learning-space-page.theme-light .path-pill:active,
+	.learning-space-page.theme-light .model-selector-btn:active,
+	.learning-space-page.theme-light .thinking-toggle-btn:active,
+	.learning-space-page.theme-light .model-menu-item:active {
+		background: rgba(63, 53, 42, 0.05);
+	}
+
+	.learning-space-page.theme-light .path-pill-active {
+		background: #2F6EEA;
+		border-color: rgba(47, 110, 234, 0.2);
+	}
+
+	.learning-space-page.theme-light .path-pill-active:active {
+		background: #285fc9;
+	}
+
+	.learning-space-page.theme-light .path-pill-icon,
+	.learning-space-page.theme-light .model-selector-icon,
+	.learning-space-page.theme-light .model-selector-chevron,
+	.learning-space-page.theme-light .thinking-toggle-icon,
+	.learning-space-page.theme-light .model-menu-lock {
+		filter: brightness(0) saturate(100%);
+	}
+
+	.learning-space-page.theme-light .path-pill-label,
+	.learning-space-page.theme-light .model-selector-label,
+	.learning-space-page.theme-light .thinking-toggle-label,
+	.learning-space-page.theme-light .model-menu-item-name {
+		color: #1F1A16;
+		-webkit-text-fill-color: #1F1A16;
+	}
+
+	.learning-space-page.theme-light .path-pill-active .path-pill-label {
+		color: #FFFFFF;
+		-webkit-text-fill-color: #FFFFFF;
+	}
+
+	.learning-space-page.theme-light .path-pill-active .path-pill-icon {
+		filter: brightness(0) invert(1);
+	}
+
+	.learning-space-page.theme-light .model-menu {
+		background: rgba(255, 250, 244, 0.94);
+		border-color: rgba(63, 53, 42, 0.1);
+		box-shadow: 0 -6rpx 24rpx rgba(118, 101, 80, 0.14);
+	}
+
+	.learning-space-page.theme-light .model-menu-item-active {
+		background: rgba(47, 110, 234, 0.1);
+		border-color: rgba(47, 110, 234, 0.22);
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.58),
+			0 4rpx 12rpx rgba(47, 110, 234, 0.12);
+	}
+
+	.learning-space-page.theme-light .model-menu-accent {
+		background: rgba(63, 53, 42, 0.08);
+	}
+
+	.learning-space-page.theme-light .model-menu-item-active .model-menu-accent {
+		background: linear-gradient(180deg, #6F94F5 0%, #2F6EEA 100%);
+		box-shadow: 0 0 12rpx rgba(47, 110, 234, 0.24);
+	}
+
+	.learning-space-page.theme-light .model-menu-item-desc {
+		color: rgba(31, 26, 22, 0.58);
+		-webkit-text-fill-color: rgba(31, 26, 22, 0.58);
+	}
+
+	.learning-space-page.theme-light .model-menu-item-locked .model-menu-item-name {
+		color: rgba(31, 26, 22, 0.36);
+		-webkit-text-fill-color: rgba(31, 26, 22, 0.36);
+	}
+
+	.learning-space-page.theme-light .thinking-toggle-indicator {
+		background: rgba(63, 53, 42, 0.08);
+		border-color: rgba(63, 53, 42, 0.1);
+	}
+
+	.learning-space-page.theme-light .thinking-toggle-indicator-active {
+		background: rgba(47, 110, 234, 0.24);
+		border-color: rgba(47, 110, 234, 0.28);
+		box-shadow: 0 0 0 4rpx rgba(47, 110, 234, 0.08);
+	}
+
+	.learning-space-page.theme-light .collab-member-item-active {
+		background: rgba(47, 110, 234, 0.12);
+	}
+
+	.learning-space-page.theme-light .collab-member-item:active {
+		background: rgba(63, 53, 42, 0.05);
+	}
+
+	.learning-space-page.theme-light .mastery-lock-icon {
+		filter: brightness(0) saturate(100%);
+	}
+
+	.learning-space-page.theme-light .expand-node-btn {
+		background: rgba(47, 110, 234, 0.1);
+		border-color: rgba(47, 110, 234, 0.22);
+	}
+
+	.learning-space-page.theme-light .expand-node-btn-text,
+	.learning-space-page.theme-light .expand-node-dot {
+		color: #2F6EEA;
+		background-color: #2F6EEA;
+	}
+
+	.learning-space-page.theme-light .quick-learn-btn,
+	.learning-space-page.theme-light .send-btn-wrapper {
+		background: #2F6EEA;
+	}
+
+	.learning-space-page.theme-light .quick-learn-btn,
+	.learning-space-page.theme-light .send-btn-wrapper {
+		box-shadow: 0 10rpx 24rpx rgba(47, 110, 234, 0.18);
+	}
+
+	.learning-space-page.theme-light .quick-learn-btn-text,
+	.learning-space-page.theme-light .send-btn-wrapper .send-action-icon {
+		color: #FFFFFF;
+	}
+
+	.learning-space-page.theme-light .mastery-ring-inner {
+		background: rgba(255, 250, 244, 0.92);
+	}
+
+	.learning-space-page.theme-light .mastery-ring-text {
+		color: #1F1A16;
+	}
+
+	.learning-space-page.theme-light .minimap-container {
+		background: rgba(255, 250, 244, 0.78);
+		border-color: rgba(63, 53, 42, 0.1);
+		box-shadow: 0 10rpx 24rpx rgba(118, 101, 80, 0.12);
+	}
+
+	.learning-space-page.theme-light .note-detail-overlay,
+	.learning-space-page.theme-light .link-dialog-overlay.overlay-show,
+	.learning-space-page.theme-light .upload-overlay,
+	.learning-space-page.theme-light .loading-overlay,
+	.learning-space-page.theme-light .graph-failed-overlay {
+		background: rgba(61, 46, 30, 0.22);
+	}
+
+	.learning-space-page.theme-light .popup-option:active,
+	.learning-space-page.theme-light .link-btn:active,
+	.learning-space-page.theme-light .plus-popup .popup-option:active {
+		background: rgba(63, 53, 42, 0.05);
+	}
+
+	.learning-space-page.theme-light .popup-divider {
+		background: rgba(63, 53, 42, 0.1);
+	}
+
+	.learning-space-page.theme-light .popup-arrow {
+		border-top-color: rgba(255, 250, 244, 0.95);
+	}
+
+	.learning-space-page.theme-light .link-dialog-actions {
+		border-top-color: rgba(63, 53, 42, 0.1);
+	}
+
+	.learning-space-page.theme-light .link-btn-cancel {
+		border-right-color: rgba(63, 53, 42, 0.1);
+	}
+
+	.learning-space-page.theme-light .link-btn-cancel .link-btn-text {
+		color: rgba(31, 26, 22, 0.62);
+	}
+
+	.learning-space-page.theme-light .link-btn-confirm .link-btn-text {
+		color: #2F6EEA;
+	}
+
+	.learning-space-page.theme-light .attachment-remove-btn {
+		background: rgba(255, 250, 244, 0.9);
+	}
+
+	.learning-space-page.theme-light .upload-spinner,
+	.learning-space-page.theme-light .loading-spinner-simple {
+		border-color: rgba(63, 53, 42, 0.12);
+		border-top-color: #2F6EEA;
+	}
+
+	.learning-space-page.theme-light .loading-progress-bar {
+		background: rgba(63, 53, 42, 0.1);
+	}
+
+	.learning-space-page.theme-light .loading-progress-fill-determinate {
+		background: linear-gradient(90deg, #2F6EEA 0%, #5C87F0 100%);
+	}
+
+	.learning-space-page.theme-light .loading-progress-text {
+		color: rgba(31, 26, 22, 0.56);
+	}
+
+	.learning-space-page.theme-light .input-card {
+		background: rgba(255, 250, 244, 0.94);
+	}
+
+	.learning-space-page.theme-light .input-action {
+		background: rgba(255, 255, 255, 0.72);
+		border-color: rgba(63, 53, 42, 0.1);
+		box-shadow: 0 8rpx 24rpx rgba(118, 101, 80, 0.12);
 	}
 </style>

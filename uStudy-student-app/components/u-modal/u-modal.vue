@@ -1,5 +1,5 @@
 <template>
-  <view v-if="visible" class="u-modal-wrapper" @touchmove.stop.prevent>
+  <view v-if="visible" class="u-modal-wrapper" :class="themeClass" @touchmove.stop.prevent>
     <!-- Overlay -->
     <view
       class="u-modal-overlay"
@@ -41,6 +41,8 @@
 </template>
 
 <script>
+import { getStoredThemeMode, normalizeThemeMode } from '@/utils/themeMode'
+
 export default {
   name: 'UModal',
   props: {
@@ -73,6 +75,10 @@ export default {
       default: 'primary',
       validator: (value) => ['primary', 'danger'].includes(value)
     },
+    themeMode: {
+      type: String,
+      default: ''
+    },
     closeOnClickOverlay: {
       type: Boolean,
       default: true
@@ -81,7 +87,8 @@ export default {
 
   data() {
     return {
-      animationVisible: false
+      animationVisible: false,
+      localThemeMode: 'dark'
     }
   },
 
@@ -91,6 +98,9 @@ export default {
     },
     confirmButtonClass() {
       return this.confirmType === 'danger' ? 'btn-danger' : 'btn-primary'
+    },
+    themeClass() {
+      return `theme-${normalizeThemeMode(this.themeMode || this.localThemeMode)}`
     }
   },
 
@@ -99,6 +109,7 @@ export default {
       immediate: true,
       handler(newVal) {
         if (newVal) {
+          this.refreshThemeMode()
           this.$nextTick(() => {
             setTimeout(() => {
               this.animationVisible = true
@@ -111,7 +122,15 @@ export default {
     }
   },
 
+  created() {
+    this.refreshThemeMode()
+  },
+
   methods: {
+    refreshThemeMode() {
+      this.localThemeMode = getStoredThemeMode('dark')
+    },
+
     handleOverlayClick() {
       if (this.closeOnClickOverlay) {
         this.close()
@@ -140,6 +159,19 @@ export default {
 
 <style scoped>
 .u-modal-wrapper {
+  --u-modal-overlay: rgba(0, 0, 0, 0.6);
+  --u-modal-surface: rgba(20, 20, 30, 0.92);
+  --u-modal-surface-fallback: rgba(30, 30, 45, 0.98);
+  --u-modal-border: rgba(255, 255, 255, 0.15);
+  --u-modal-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.5);
+  --u-modal-highlight: rgba(255, 255, 255, 0.05);
+  --u-modal-title: #ffffff;
+  --u-modal-text: rgba(255, 255, 255, 0.75);
+  --u-modal-divider: rgba(255, 255, 255, 0.1);
+  --u-modal-btn-active: rgba(255, 255, 255, 0.08);
+  --u-modal-cancel: rgba(255, 255, 255, 0.7);
+  --u-modal-primary: #00AAFF;
+  --u-modal-danger: #EF4444;
   position: fixed;
   top: 0;
   left: 0;
@@ -149,6 +181,22 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.u-modal-wrapper.theme-light {
+  --u-modal-overlay: rgba(61, 46, 30, 0.22);
+  --u-modal-surface: rgba(255, 249, 241, 0.96);
+  --u-modal-surface-fallback: rgba(255, 249, 241, 0.99);
+  --u-modal-border: rgba(63, 53, 42, 0.12);
+  --u-modal-shadow: 0 16rpx 48rpx rgba(118, 101, 80, 0.18);
+  --u-modal-highlight: rgba(255, 255, 255, 0.78);
+  --u-modal-title: #1F1A16;
+  --u-modal-text: rgba(31, 26, 22, 0.72);
+  --u-modal-divider: rgba(63, 53, 42, 0.1);
+  --u-modal-btn-active: rgba(63, 53, 42, 0.06);
+  --u-modal-cancel: rgba(31, 26, 22, 0.62);
+  --u-modal-primary: #2F6EEA;
+  --u-modal-danger: #D14F4F;
 }
 
 .u-modal-overlay {
@@ -162,20 +210,20 @@ export default {
 }
 
 .u-modal-overlay.overlay-show {
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--u-modal-overlay);
 }
 
 .u-modal-container {
   position: relative;
   width: 560rpx;
-  background: rgba(20, 20, 30, 0.92);
+  background: var(--u-modal-surface);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
+  border: 1rpx solid var(--u-modal-border);
   border-radius: 24rpx;
   box-shadow:
-    0 16rpx 48rpx rgba(0, 0, 0, 0.5),
-    0 0 0 1rpx rgba(255, 255, 255, 0.05) inset;
+    var(--u-modal-shadow),
+    0 0 0 1rpx var(--u-modal-highlight) inset;
   overflow: hidden;
   transform: translateY(40rpx) scale(0.95);
   opacity: 0;
@@ -189,7 +237,7 @@ export default {
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .u-modal-container {
-    background: rgba(30, 30, 45, 0.98);
+    background: var(--u-modal-surface-fallback);
   }
 }
 
@@ -201,7 +249,7 @@ export default {
 .u-modal-title text {
   font-size: 36rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--u-modal-title);
 }
 
 .u-modal-content {
@@ -211,14 +259,14 @@ export default {
 
 .u-modal-content-text {
   font-size: 30rpx;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--u-modal-text);
   line-height: 1.6;
   white-space: pre-wrap;
 }
 
 .u-modal-buttons {
   display: flex;
-  border-top: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-top: 1rpx solid var(--u-modal-divider);
 }
 
 .u-modal-buttons.single-button {
@@ -244,19 +292,19 @@ export default {
 }
 
 .u-modal-btn:active {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--u-modal-btn-active);
 }
 
 .btn-cancel {
-  color: rgba(255, 255, 255, 0.7);
-  border-right: 1rpx solid rgba(255, 255, 255, 0.1);
+  color: var(--u-modal-cancel);
+  border-right: 1rpx solid var(--u-modal-divider);
 }
 
 .btn-confirm.btn-primary {
-  color: #00AAFF;
+  color: var(--u-modal-primary);
 }
 
 .btn-confirm.btn-danger {
-  color: #EF4444;
+  color: var(--u-modal-danger);
 }
 </style>

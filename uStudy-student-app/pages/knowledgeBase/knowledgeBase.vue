@@ -1,5 +1,5 @@
 <template>
-  <view class="knowledge-base-page">
+  <view class="knowledge-base-page" :class="pageThemeClass">
     <view class="knowledge-base-bg">
       <view class="bg-mesh"></view>
       <view class="bg-glow bg-glow-blue"></view>
@@ -276,6 +276,7 @@ import config from '@/config'
 import { getTokens } from '@/utils/storage'
 import { useUserStore } from '@/store/user'
 import { chooseLocalFiles, isPickerCancel, getPickerErrorMessage } from '@/utils/filePicker'
+import { getStoredThemeMode } from '@/utils/themeMode'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
 
@@ -287,6 +288,7 @@ export default {
 
   data() {
     return {
+      homeThemeMode: 'dark',
       spaceId: '',
       spaceName: '',
       loading: true,
@@ -342,6 +344,14 @@ export default {
   },
 
   computed: {
+    isLightTheme() {
+      return this.homeThemeMode === 'light'
+    },
+
+    pageThemeClass() {
+      return this.isLightTheme ? 'theme-light' : 'theme-dark'
+    },
+
     deleteModalContent() {
       if (!this.docToDelete) return ''
       const typeLabel = this.docToDelete.doc_type === 'link' ? '链接' : '文档'
@@ -478,6 +488,7 @@ export default {
   },
 
   onLoad(options) {
+    this.restoreThemeMode()
     this.spaceId = options.spaceId || ''
     this.spaceName = options.spaceName ? decodeURIComponent(options.spaceName) : ''
     this.currentUserId = useUserStore().user?.id || ''
@@ -500,6 +511,7 @@ export default {
   },
 
   onShow() {
+    this.restoreThemeMode()
     this.loadUserTier()
     this.loadCollaborationContext()
     if (this.spaceId && !this.loading) {
@@ -522,6 +534,24 @@ export default {
   },
 
   methods: {
+    restoreThemeMode() {
+      this.homeThemeMode = getStoredThemeMode('dark')
+      this.syncThemeSystemUi(this.homeThemeMode)
+    },
+
+    syncThemeSystemUi(mode) {
+      // #ifdef APP-PLUS
+      try {
+        if (typeof plus !== 'undefined' && plus.navigator) {
+          plus.navigator.setStatusBarStyle(mode === 'light' ? 'dark' : 'light')
+          if (typeof plus.navigator.setStatusBarBackground === 'function') {
+            plus.navigator.setStatusBarBackground(mode === 'light' ? '#F3EDE3' : '#1D1E20')
+          }
+        }
+      } catch (_) {}
+      // #endif
+    },
+
     formatFileSize,
     onLinkInputFocus(field) {
       const sysInfo = uni.getSystemInfoSync()
@@ -1221,11 +1251,104 @@ export default {
 
 <style>
 .knowledge-base-page {
+  --kb-page-bg: rgb(29, 30, 32);
+  --kb-mesh-a: rgba(74, 108, 247, 0.08);
+  --kb-mesh-b: rgba(99, 102, 241, 0.05);
+  --kb-glow-a: rgba(74, 108, 247, 0.12);
+  --kb-glow-b: rgba(123, 97, 255, 0.08);
+  --kb-nav-overlay-top: rgba(29, 30, 32, 0.56);
+  --kb-nav-overlay-mid: rgba(29, 30, 32, 0.4);
+  --kb-nav-overlay-fallback-top: rgba(29, 30, 32, 0.82);
+  --kb-nav-overlay-fallback-mid: rgba(29, 30, 32, 0.66);
+  --kb-surface: rgba(255, 255, 255, 0.06);
+  --kb-surface-solid: rgb(36, 36, 36);
+  --kb-surface-strong: rgb(41, 41, 41);
+  --kb-surface-hover: rgba(255, 255, 255, 0.04);
+  --kb-border: rgba(255, 255, 255, 0.08);
+  --kb-border-strong: rgba(255, 255, 255, 0.1);
+  --kb-outline: rgba(255, 255, 255, 0.04);
+  --kb-shadow-soft: 0 2rpx 12rpx rgba(0, 0, 0, 0.25);
+  --kb-shadow-card: 0 8rpx 24rpx rgba(0, 0, 0, 0.14);
+  --kb-shadow-float: 0 12rpx 32rpx rgba(0, 0, 0, 0.28);
+  --kb-shadow-dialog: 0 16rpx 48rpx rgba(0, 0, 0, 0.34);
+  --kb-highlight: rgba(255, 255, 255, 0.04);
+  --kb-text-primary: rgb(248, 248, 248);
+  --kb-text-secondary: rgba(248, 248, 248, 0.56);
+  --kb-text-tertiary: rgba(248, 248, 248, 0.46);
+  --kb-text-quaternary: rgba(248, 248, 248, 0.38);
+  --kb-text-faint: rgba(248, 248, 248, 0.3);
+  --kb-icon-filter: brightness(0) invert(1);
+  --kb-icon-filter-muted: brightness(0) invert(1);
+  --kb-accent: #6B8AFF;
+  --kb-accent-strong: #4A6CF7;
+  --kb-accent-soft: rgba(74, 108, 247, 0.12);
+  --kb-warning: #E6A235;
+  --kb-warning-soft: rgba(245, 158, 11, 0.16);
+  --kb-success: #34C38F;
+  --kb-success-soft: rgba(16, 185, 129, 0.16);
+  --kb-danger: #EF4444;
+  --kb-danger-soft: rgba(239, 68, 68, 0.16);
+  --kb-overlay: rgba(11, 13, 18, 0.58);
+  --kb-upload-overlay: rgba(11, 13, 18, 0.72);
+  --kb-footer-gradient-top: rgba(29, 30, 32, 0.96);
+  --kb-footer-gradient-mid: rgba(29, 30, 32, 0.84);
+  --kb-input-bg: rgb(41, 41, 41);
+  --kb-spinner-track: rgba(255, 255, 255, 0.1);
+  --kb-delete-icon: brightness(0) invert(1);
+  --kb-delete-icon-opacity: 0.28;
   width: 100%;
   min-height: 100vh;
-  background-color: rgb(29, 30, 32);
+  background-color: var(--kb-page-bg);
   position: relative;
   overflow: hidden;
+}
+
+.knowledge-base-page.theme-light {
+  --kb-page-bg: #F3EDE3;
+  --kb-mesh-a: rgba(47, 110, 234, 0.1);
+  --kb-mesh-b: rgba(205, 121, 30, 0.08);
+  --kb-glow-a: rgba(47, 110, 234, 0.14);
+  --kb-glow-b: rgba(226, 148, 53, 0.1);
+  --kb-nav-overlay-top: rgba(243, 237, 227, 0.92);
+  --kb-nav-overlay-mid: rgba(243, 237, 227, 0.62);
+  --kb-nav-overlay-fallback-top: rgba(243, 237, 227, 0.98);
+  --kb-nav-overlay-fallback-mid: rgba(243, 237, 227, 0.8);
+  --kb-surface: rgba(255, 250, 244, 0.82);
+  --kb-surface-solid: rgba(255, 250, 244, 0.92);
+  --kb-surface-strong: rgba(255, 255, 255, 0.76);
+  --kb-surface-hover: rgba(63, 53, 42, 0.05);
+  --kb-border: rgba(63, 53, 42, 0.1);
+  --kb-border-strong: rgba(63, 53, 42, 0.14);
+  --kb-outline: rgba(255, 255, 255, 0.68);
+  --kb-shadow-soft: 0 8rpx 24rpx rgba(118, 101, 80, 0.16);
+  --kb-shadow-card: 0 14rpx 36rpx rgba(118, 101, 80, 0.14);
+  --kb-shadow-float: 0 18rpx 44rpx rgba(118, 101, 80, 0.18);
+  --kb-shadow-dialog: 0 22rpx 52rpx rgba(118, 101, 80, 0.2);
+  --kb-highlight: rgba(255, 255, 255, 0.72);
+  --kb-text-primary: #1F1A16;
+  --kb-text-secondary: rgba(31, 26, 22, 0.74);
+  --kb-text-tertiary: rgba(31, 26, 22, 0.56);
+  --kb-text-quaternary: rgba(31, 26, 22, 0.44);
+  --kb-text-faint: rgba(31, 26, 22, 0.3);
+  --kb-icon-filter: brightness(0) saturate(100%);
+  --kb-icon-filter-muted: brightness(0) saturate(100%) opacity(0.82);
+  --kb-accent: #2F6EEA;
+  --kb-accent-strong: #2459C8;
+  --kb-accent-soft: rgba(47, 110, 234, 0.1);
+  --kb-warning: #C77716;
+  --kb-warning-soft: rgba(199, 119, 22, 0.13);
+  --kb-success: #2F8F66;
+  --kb-success-soft: rgba(47, 143, 102, 0.12);
+  --kb-danger: #D14F4F;
+  --kb-danger-soft: rgba(209, 79, 79, 0.1);
+  --kb-overlay: rgba(61, 46, 30, 0.22);
+  --kb-upload-overlay: rgba(61, 46, 30, 0.24);
+  --kb-footer-gradient-top: rgba(243, 237, 227, 0.97);
+  --kb-footer-gradient-mid: rgba(243, 237, 227, 0.82);
+  --kb-input-bg: rgba(255, 255, 255, 0.72);
+  --kb-spinner-track: rgba(63, 53, 42, 0.12);
+  --kb-delete-icon: brightness(0) saturate(100%);
+  --kb-delete-icon-opacity: 0.36;
 }
 
 .knowledge-base-bg {
@@ -1244,8 +1367,8 @@ export default {
   bottom: 0;
   left: 0;
   background:
-    radial-gradient(circle at 82% 14%, rgba(74, 108, 247, 0.08) 0%, rgba(74, 108, 247, 0) 32%),
-    radial-gradient(circle at 12% 100%, rgba(99, 102, 241, 0.05) 0%, rgba(99, 102, 241, 0) 36%);
+    radial-gradient(circle at 82% 14%, var(--kb-mesh-a) 0%, rgba(74, 108, 247, 0) 32%),
+    radial-gradient(circle at 12% 100%, var(--kb-mesh-b) 0%, rgba(99, 102, 241, 0) 36%);
 }
 
 .bg-glow {
@@ -1260,7 +1383,7 @@ export default {
   right: -90rpx;
   width: 320rpx;
   height: 320rpx;
-  background: rgba(74, 108, 247, 0.12);
+  background: var(--kb-glow-a);
 }
 
 .bg-glow-violet {
@@ -1268,7 +1391,7 @@ export default {
   left: -90rpx;
   width: 280rpx;
   height: 280rpx;
-  background: rgba(123, 97, 255, 0.08);
+  background: var(--kb-glow-b);
 }
 
 .nav-bar {
@@ -1296,8 +1419,8 @@ export default {
   z-index: -1;
   background: linear-gradient(
     to bottom,
-    rgba(29, 30, 32, 0.56) 0%,
-    rgba(29, 30, 32, 0.4) 50%,
+    var(--kb-nav-overlay-top) 0%,
+    var(--kb-nav-overlay-mid) 50%,
     rgba(29, 30, 32, 0) 100%
   );
   -webkit-backdrop-filter: blur(24px) saturate(150%);
@@ -1310,8 +1433,8 @@ export default {
   .nav-bar::before {
     background: linear-gradient(
       to bottom,
-      rgba(29, 30, 32, 0.82) 0%,
-      rgba(29, 30, 32, 0.66) 50%,
+      var(--kb-nav-overlay-fallback-top) 0%,
+      var(--kb-nav-overlay-fallback-mid) 50%,
       rgba(29, 30, 32, 0) 100%
     );
   }
@@ -1333,32 +1456,32 @@ export default {
   justify-content: center;
   align-items: center;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--kb-surface);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
-  border: 1rpx solid rgba(255, 255, 255, 0.1);
-  outline: 1rpx solid rgba(255, 255, 255, 0.04);
+  border: 1rpx solid var(--kb-border-strong);
+  outline: 1rpx solid var(--kb-outline);
   outline-offset: 1rpx;
   box-shadow:
-    inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08),
-    0 2rpx 12rpx rgba(0, 0, 0, 0.25);
+    inset 0 1rpx 2rpx var(--kb-highlight),
+    var(--kb-shadow-soft);
   flex-shrink: 0;
 }
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .nav-left,
   .nav-right {
-    background: rgba(80, 80, 95, 0.65);
+    background: var(--kb-surface-solid);
   }
 }
 
 .add-btn {
-  background: linear-gradient(180deg, rgba(96, 131, 255, 1) 0%, rgba(74, 108, 247, 1) 100%);
+  background: linear-gradient(180deg, #7B97FF 0%, var(--kb-accent-strong) 100%);
   border: none;
   outline: none;
   box-shadow:
     inset 0 1rpx 0 rgba(255, 255, 255, 0.18),
-    0 10rpx 24rpx rgba(74, 108, 247, 0.3);
+    0 10rpx 24rpx rgba(47, 110, 234, 0.24);
 }
 
 .add-btn:active {
@@ -1377,13 +1500,13 @@ export default {
 .nav-icon {
   width: 48rpx;
   height: 48rpx;
-  filter: brightness(0) invert(1);
+  filter: var(--kb-icon-filter);
 }
 
 .nav-title-main {
   font-size: 34rpx;
   font-weight: 600;
-  color: rgb(248, 248, 248);
+  color: var(--kb-text-primary);
   line-height: 1.2;
 }
 
@@ -1391,7 +1514,7 @@ export default {
   max-width: 100%;
   font-size: 22rpx;
   line-height: 1.25;
-  color: rgba(248, 248, 248, 0.52);
+  color: var(--kb-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1411,7 +1534,7 @@ export default {
 
 .loading-text {
   font-size: 30rpx;
-  color: rgba(248, 248, 248, 0.56);
+  color: var(--kb-text-secondary);
 }
 
 .error-icon {
@@ -1423,7 +1546,7 @@ export default {
 
 .error-text {
   font-size: 28rpx;
-  color: rgba(239, 68, 68, 0.9);
+  color: var(--kb-danger);
   margin-bottom: 32rpx;
   text-align: center;
   max-width: 500rpx;
@@ -1431,40 +1554,40 @@ export default {
 
 .retry-btn {
   padding: 20rpx 48rpx;
-  background: rgb(46, 46, 48);
-  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  background: var(--kb-surface-solid);
+  border: 1.5rpx solid var(--kb-border);
   border-radius: 40rpx;
   box-shadow:
-    inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+    inset 0 1rpx 0 var(--kb-highlight),
     0 2rpx 8rpx rgba(0, 0, 0, 0.12);
 }
 
 .retry-btn:active {
-  background: rgb(56, 56, 59);
+  background: var(--kb-surface-strong);
 }
 
 .retry-btn-text {
   font-size: 28rpx;
-  color: rgb(248, 248, 248);
+  color: var(--kb-text-primary);
 }
 
 .empty-icon {
   width: 120rpx;
   height: 120rpx;
-  filter: brightness(0) invert(1);
+  filter: var(--kb-icon-filter);
   opacity: 0.3;
   margin-bottom: 32rpx;
 }
 
 .empty-text {
   font-size: 32rpx;
-  color: rgb(248, 248, 248);
+  color: var(--kb-text-primary);
   margin-bottom: 16rpx;
 }
 
 .empty-hint {
   font-size: 26rpx;
-  color: rgba(248, 248, 248, 0.46);
+  color: var(--kb-text-tertiary);
   text-align: center;
   max-width: 400rpx;
 }
@@ -1485,12 +1608,12 @@ export default {
 .document-section-title {
   font-size: 28rpx;
   font-weight: 600;
-  color: rgb(248, 248, 248);
+  color: var(--kb-text-primary);
 }
 
 .document-section-count {
   font-size: 22rpx;
-  color: rgba(248, 248, 248, 0.38);
+  color: var(--kb-text-quaternary);
 }
 
 .document-list {
@@ -1503,12 +1626,12 @@ export default {
   display: flex;
   align-items: flex-start;
   padding: 22rpx 0;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1rpx solid var(--kb-border);
   transition: background-color 0.15s ease;
 }
 
 .document-item:active {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--kb-surface-hover);
 }
 
 .document-item:last-child {
@@ -1529,7 +1652,7 @@ export default {
 .document-icon {
   width: 34rpx;
   height: 34rpx;
-  filter: brightness(0) invert(1);
+  filter: var(--kb-icon-filter);
   opacity: 0.85;
 }
 
@@ -1561,7 +1684,7 @@ export default {
 .document-title {
   font-size: 28rpx;
   font-weight: 500;
-  color: rgb(248, 248, 248);
+  color: var(--kb-text-primary);
   margin-bottom: 6rpx;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1577,7 +1700,7 @@ export default {
 
 .document-separator {
   font-size: 20rpx;
-  color: rgba(248, 248, 248, 0.24);
+  color: var(--kb-text-faint);
   flex-shrink: 0;
 }
 
@@ -1597,19 +1720,19 @@ export default {
 
 .document-creator-name {
   font-size: 20rpx;
-  color: rgba(248, 248, 248, 0.36);
+  color: var(--kb-text-quaternary);
 }
 
 .document-type {
   font-size: 22rpx;
-  color: rgba(248, 248, 248, 0.56);
+  color: var(--kb-text-secondary);
   flex-shrink: 0;
 }
 
 .document-size,
 .document-url {
   font-size: 20rpx;
-  color: rgba(248, 248, 248, 0.34);
+  color: var(--kb-text-quaternary);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1633,14 +1756,14 @@ export default {
 }
 
 .delete-btn:active {
-  background: rgba(239, 68, 68, 0.12);
+  background: var(--kb-danger-soft);
 }
 
 .delete-icon {
   width: 28rpx;
   height: 28rpx;
-  filter: brightness(0) invert(1);
-  opacity: 0.28;
+  filter: var(--kb-delete-icon);
+  opacity: var(--kb-delete-icon-opacity);
 }
 
 .delete-btn:active .delete-icon {
@@ -1662,16 +1785,16 @@ export default {
   gap: 6rpx;
   padding: 5rpx 10rpx;
   border-radius: 999rpx;
-  background: rgb(41, 41, 41);
-  border: 1rpx solid rgba(255, 255, 255, 0.05);
+  background: var(--kb-surface-strong);
+  border: 1rpx solid var(--kb-border);
 }
 
 .status-not_started { background: rgba(107, 114, 128, 0.14); }
-.status-pending { background: rgba(245, 158, 11, 0.16); }
-.status-processing { background: rgba(74, 108, 247, 0.16); }
-.status-completed { background: rgba(16, 185, 129, 0.16); }
-.status-failed { background: rgba(239, 68, 68, 0.16); }
-.status-loading { background: rgb(41, 41, 41); }
+.status-pending { background: var(--kb-warning-soft); }
+.status-processing { background: var(--kb-accent-soft); }
+.status-completed { background: var(--kb-success-soft); }
+.status-failed { background: var(--kb-danger-soft); }
+.status-loading { background: var(--kb-surface-strong); }
 
 .status-dot {
   width: 8rpx;
@@ -1700,13 +1823,13 @@ export default {
   align-items: center;
   padding: 5rpx 10rpx;
   border-radius: 999rpx;
-  background: rgba(16, 185, 129, 0.12);
-  border: 1rpx solid rgba(16, 185, 129, 0.2);
+  background: var(--kb-success-soft);
+  border: 1rpx solid rgba(47, 143, 102, 0.24);
 }
 
 .chunk-text {
   font-size: 20rpx;
-  color: #10B981;
+  color: var(--kb-success);
   font-weight: 500;
 }
 
@@ -1716,13 +1839,13 @@ export default {
   gap: 4rpx;
   padding: 5rpx 10rpx;
   border-radius: 999rpx;
-  background: rgba(239, 68, 68, 0.12);
-  border: 1rpx solid rgba(239, 68, 68, 0.25);
+  background: var(--kb-danger-soft);
+  border: 1rpx solid rgba(209, 79, 79, 0.25);
   transition: background 150ms ease;
 }
 
 .error-badge:active {
-  background: rgba(239, 68, 68, 0.2);
+  background: rgba(209, 79, 79, 0.18);
 }
 
 .error-badge .error-icon {
@@ -1734,7 +1857,7 @@ export default {
 
 .error-badge .error-text {
   font-size: 20rpx;
-  color: #EF4444;
+  color: var(--kb-danger);
   font-weight: 500;
   margin-bottom: 0;
   max-width: none;
@@ -1745,19 +1868,19 @@ export default {
   align-items: center;
   padding: 5rpx 14rpx;
   border-radius: 999rpx;
-  background: rgba(59, 130, 246, 0.12);
-  border: 1rpx solid rgba(59, 130, 246, 0.25);
+  background: var(--kb-accent-soft);
+  border: 1rpx solid rgba(47, 110, 234, 0.2);
   transition: background 150ms ease;
 }
 .retry-badge:active {
-  background: rgba(59, 130, 246, 0.22);
+  background: rgba(47, 110, 234, 0.16);
 }
 .retry-badge-disabled {
   opacity: 0.5;
 }
 .retry-text {
   font-size: 20rpx;
-  color: #60a5fa;
+  color: var(--kb-accent);
   font-weight: 500;
 }
 
@@ -1770,21 +1893,21 @@ export default {
   padding-bottom: calc(20rpx + env(safe-area-inset-bottom));
   background: linear-gradient(
     to top,
-    rgba(29, 30, 32, 0.96) 0%,
-    rgba(29, 30, 32, 0.84) 58%,
+    var(--kb-footer-gradient-top) 0%,
+    var(--kb-footer-gradient-mid) 58%,
     rgba(29, 30, 32, 0) 100%
   );
   pointer-events: none;
 }
 
 .storage-card {
-  background: rgb(36, 36, 36);
-  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  background: var(--kb-surface-solid);
+  border: 1.5rpx solid var(--kb-border);
   border-radius: 24rpx;
   padding: 24rpx;
   box-shadow:
-    inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
-    0 8rpx 24rpx rgba(0, 0, 0, 0.14);
+    inset 0 1rpx 0 var(--kb-highlight),
+    var(--kb-shadow-card);
   pointer-events: auto;
 }
 
@@ -1804,32 +1927,32 @@ export default {
 .storage-icon {
   width: 32rpx;
   height: 32rpx;
-  filter: brightness(0) invert(1);
+  filter: var(--kb-icon-filter);
   opacity: 0.56;
 }
 
 .storage-title {
   font-size: 26rpx;
   font-weight: 500;
-  color: rgb(248, 248, 248);
+  color: var(--kb-text-primary);
 }
 
 .tier-badge {
   padding: 6rpx 14rpx;
   border-radius: 12rpx;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--kb-surface);
 }
 
 .tier-free {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--kb-surface);
 }
 
 .tier-plus {
-  background: rgba(74, 108, 247, 0.16);
+  background: var(--kb-accent-soft);
 }
 
 .tier-ultra {
-  background: rgba(245, 158, 11, 0.15);
+  background: var(--kb-warning-soft);
 }
 
 .tier-alpha {
@@ -1839,15 +1962,15 @@ export default {
 .tier-text {
   font-size: 22rpx;
   font-weight: 500;
-  color: rgba(248, 248, 248, 0.6);
+  color: var(--kb-text-secondary);
 }
 
 .tier-plus .tier-text {
-  color: #6B8AFF;
+  color: var(--kb-accent);
 }
 
 .tier-ultra .tier-text {
-  color: #F5B94C;
+  color: var(--kb-warning);
 }
 
 .tier-alpha .tier-text {
@@ -1857,7 +1980,7 @@ export default {
 .storage-progress-track {
   width: 100%;
   height: 8rpx;
-  background: rgb(41, 41, 41);
+  background: var(--kb-surface-strong);
   border-radius: 4rpx;
   overflow: hidden;
   margin-bottom: 12rpx;
@@ -1877,7 +2000,7 @@ export default {
 
 .storage-used {
   font-size: 24rpx;
-  color: rgba(248, 248, 248, 0.48);
+  color: var(--kb-text-tertiary);
 }
 
 .storage-percent {
@@ -1901,14 +2024,14 @@ export default {
   bottom: auto;
   height: auto;
   min-width: 280rpx;
-  background: rgba(36, 36, 36, 0.96);
+  background: var(--kb-surface-solid);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
-  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  border: 1.5rpx solid var(--kb-border);
   border-radius: 18rpx;
   box-shadow:
-    0 12rpx 32rpx rgba(0, 0, 0, 0.28),
-    inset 0 1rpx 0 rgba(255, 255, 255, 0.04);
+    var(--kb-shadow-float),
+    inset 0 1rpx 0 var(--kb-highlight);
   overflow: visible;
   transform: translateY(-20rpx) scale(0.9);
   opacity: 0;
@@ -1928,7 +2051,7 @@ export default {
   height: 0;
   border-left: 16rpx solid transparent;
   border-right: 16rpx solid transparent;
-  border-bottom: 16rpx solid rgba(36, 36, 36, 0.96);
+  border-bottom: 16rpx solid var(--kb-surface-solid);
 }
 
 .popup-option {
@@ -1939,26 +2062,26 @@ export default {
 }
 
 .popup-option:active {
-  background: rgb(44, 44, 44);
+  background: var(--kb-surface-hover);
 }
 
 .popup-option-icon {
   width: 44rpx;
   height: 44rpx;
   margin-right: 24rpx;
-  filter: brightness(0) invert(1);
+  filter: var(--kb-icon-filter);
   opacity: 0.88;
 }
 
 .popup-option-text {
   font-size: 30rpx;
-  color: rgb(248, 248, 248);
+  color: var(--kb-text-primary);
   font-weight: 500;
 }
 
 .popup-divider {
   height: 1rpx;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--kb-border);
   margin: 0 24rpx;
 }
 
@@ -1977,19 +2100,19 @@ export default {
 }
 
 .link-dialog-overlay.overlay-show {
-  background: rgba(11, 13, 18, 0.58);
+  background: var(--kb-overlay);
 }
 
 .link-dialog {
   width: 560rpx;
-  background: rgba(36, 36, 36, 0.96);
+  background: var(--kb-surface-solid);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
-  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  border: 1.5rpx solid var(--kb-border);
   border-radius: 24rpx;
   box-shadow:
-    0 16rpx 48rpx rgba(0, 0, 0, 0.34),
-    inset 0 1rpx 0 rgba(255, 255, 255, 0.04);
+    var(--kb-shadow-dialog),
+    inset 0 1rpx 0 var(--kb-highlight);
   overflow: hidden;
   transform: translateY(40rpx) scale(0.95);
   opacity: 0;
@@ -2005,7 +2128,7 @@ export default {
   display: block;
   font-size: 34rpx;
   font-weight: 600;
-  color: rgb(248, 248, 248);
+  color: var(--kb-text-primary);
   text-align: center;
   padding: 32rpx 32rpx 24rpx;
 }
@@ -2025,24 +2148,24 @@ export default {
 .link-input-label {
   display: block;
   font-size: 26rpx;
-  color: rgba(248, 248, 248, 0.56);
+  color: var(--kb-text-secondary);
   margin-bottom: 12rpx;
 }
 
 .link-input {
   width: 100%;
   height: 80rpx;
-  background: rgb(41, 41, 41);
-  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  background: var(--kb-input-bg);
+  border: 1.5rpx solid var(--kb-border);
   border-radius: 12rpx;
   padding: 0 24rpx;
   font-size: 28rpx;
-  color: rgb(248, 248, 248);
+  color: var(--kb-text-primary);
   box-sizing: border-box;
 }
 
 .link-input-placeholder {
-  color: rgba(248, 248, 248, 0.3);
+  color: var(--kb-text-faint);
 }
 
 .link-dialog-actions {
@@ -2058,26 +2181,26 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(46, 46, 48);
-  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  background: var(--kb-surface-solid);
+  border: 1.5rpx solid var(--kb-border);
   border-radius: 16rpx;
   transition: background 150ms ease;
 }
 
 .link-btn:active {
-  background: rgb(56, 56, 59);
+  background: var(--kb-surface-strong);
 }
 
 .link-btn-cancel {
-  background: rgb(41, 41, 41);
+  background: var(--kb-input-bg);
 }
 
 .link-btn-cancel .link-btn-text {
-  color: rgba(248, 248, 248, 0.68);
+  color: var(--kb-text-secondary);
 }
 
 .link-btn-confirm .link-btn-text {
-  color: #6B8AFF;
+  color: var(--kb-accent);
   font-weight: 600;
 }
 
@@ -2097,7 +2220,7 @@ export default {
   right: 0;
   bottom: 0;
   z-index: 1000;
-  background-color: rgba(11, 13, 18, 0.72);
+  background-color: var(--kb-upload-overlay);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -2110,20 +2233,20 @@ export default {
   gap: 24rpx;
   width: 560rpx;
   padding: 36rpx 32rpx;
-  background: rgba(36, 36, 36, 0.96);
-  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  background: var(--kb-surface-solid);
+  border: 1.5rpx solid var(--kb-border);
   border-radius: 24rpx;
   box-shadow:
-    0 16rpx 48rpx rgba(0, 0, 0, 0.34),
-    inset 0 1rpx 0 rgba(255, 255, 255, 0.04);
+    var(--kb-shadow-dialog),
+    inset 0 1rpx 0 var(--kb-highlight);
   box-sizing: border-box;
 }
 
 .upload-spinner {
   width: 80rpx;
   height: 80rpx;
-  border: 4rpx solid rgba(255, 255, 255, 0.1);
-  border-top-color: #6B8AFF;
+  border: 4rpx solid var(--kb-spinner-track);
+  border-top-color: var(--kb-accent);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -2134,7 +2257,7 @@ export default {
 
 .upload-filename {
   font-size: 26rpx;
-  color: rgba(248, 248, 248, 0.56);
+  color: var(--kb-text-secondary);
   max-width: 400rpx;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2144,20 +2267,20 @@ export default {
 .upload-progress-track {
   width: 400rpx;
   height: 8rpx;
-  background: rgb(41, 41, 41);
+  background: var(--kb-surface-strong);
   border-radius: 4rpx;
   overflow: hidden;
 }
 
 .upload-progress-bar {
   height: 100%;
-  background: #6B8AFF;
+  background: var(--kb-accent);
   border-radius: 4rpx;
   transition: width 0.3s ease;
 }
 
 .upload-text {
   font-size: 28rpx;
-  color: rgba(248, 248, 248, 0.72);
+  color: var(--kb-text-secondary);
 }
 </style>

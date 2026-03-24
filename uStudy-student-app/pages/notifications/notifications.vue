@@ -1,5 +1,5 @@
 <template>
-	<view class="notifications-page">
+	<view class="notifications-page" :class="pageThemeClass">
 		<view class="page-bg">
 			<view class="bg-mesh"></view>
 			<view class="bg-glow bg-glow-blue"></view>
@@ -101,10 +101,12 @@
 		markAllNotificationsRead,
 	} from '@/api/notificationCenter'
 	import { useNotificationStore } from '@/store/notification'
+	import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 	const PAGE_SIZE = 20
 
 	export default {
+		mixins: [homeThemePageMixin],
 		data() {
 			return {
 				notifications: [],
@@ -118,6 +120,7 @@
 		},
 
 		onShow() {
+			this.restoreThemeMode({ darkStatusBarBackground: '#1D1E20' })
 			this.loadNotifications(true)
 		},
 

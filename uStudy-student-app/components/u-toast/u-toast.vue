@@ -1,6 +1,6 @@
 <template>
   <view v-if="visible" class="u-toast-wrapper">
-    <view class="u-toast-container" :class="[typeClass, { 'toast-show': animationVisible }]">
+    <view class="u-toast-container" :class="[themeClass, typeClass, { 'toast-show': animationVisible }]">
       <!-- Icon -->
       <view v-if="showIcon" class="u-toast-icon">
         <image v-if="type === 'success'" class="icon-image" src="/static/icons/phosphor-icons/SVGs/regular/check-circle.svg" mode="aspectFit"></image>
@@ -14,6 +14,8 @@
 </template>
 
 <script>
+import { getStoredThemeMode, normalizeThemeMode } from '@/utils/themeMode'
+
 export default {
   name: 'UToast',
   props: {
@@ -37,17 +39,28 @@ export default {
     showIcon: {
       type: Boolean,
       default: true
+    },
+    themeMode: {
+      type: String,
+      default: ''
     }
   },
 
   data() {
     return {
+      internalThemeMode: 'dark',
       animationVisible: false,
       timer: null
     }
   },
 
   computed: {
+    resolvedThemeMode() {
+      return this.themeMode ? normalizeThemeMode(this.themeMode) : this.internalThemeMode
+    },
+    themeClass() {
+      return this.resolvedThemeMode === 'light' ? 'theme-light' : 'theme-dark'
+    },
     typeClass() {
       return `toast-${this.type}`
     }
@@ -58,12 +71,17 @@ export default {
       immediate: true,
       handler(newVal) {
         if (newVal) {
+          this.refreshThemeMode()
           this.show()
         } else {
           this.animationVisible = false
         }
       }
     }
+  },
+
+  created() {
+    this.refreshThemeMode()
   },
 
   beforeDestroy() {
@@ -73,6 +91,10 @@ export default {
   },
 
   methods: {
+    refreshThemeMode() {
+      this.internalThemeMode = getStoredThemeMode('dark')
+    },
+
     show() {
       if (this.timer) {
         clearTimeout(this.timer)
@@ -136,6 +158,14 @@ export default {
   transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+.u-toast-container.theme-light {
+  background: rgba(255, 250, 244, 0.94);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow:
+    0 14rpx 40rpx rgba(118, 101, 80, 0.18),
+    0 0 0 1rpx rgba(255, 255, 255, 0.78) inset;
+}
+
 .u-toast-container.toast-show {
   transform: scale(1);
   opacity: 1;
@@ -188,11 +218,27 @@ export default {
   color: #93C5FD;
 }
 
+.theme-light.toast-success .u-toast-message {
+  color: #1d7a43;
+}
+
+.theme-light.toast-error .u-toast-message {
+  color: #c2410c;
+}
+
+.theme-light.toast-info .u-toast-message {
+  color: #2F6EEA;
+}
+
 .u-toast-message {
   font-size: 30rpx;
   font-weight: 500;
   text-align: center;
   line-height: 1.4;
   word-break: break-word;
+}
+
+.theme-light .u-toast-message {
+  color: #1F1A16;
 }
 </style>

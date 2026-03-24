@@ -1,5 +1,5 @@
 <template>
-  <view class="login-container">
+  <view class="login-container" :class="pageThemeClass">
     <!-- Aurora Background Layer -->
     <view class="aurora-bg">
       <view class="aurora-blob aurora-blob-1"></view>
@@ -85,8 +85,10 @@
 import { getMe, login } from '@/api/auth'
 import { setTokens } from '@/utils/storage'
 import { useUserStore } from '@/store/user'
+import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 export default {
+  mixins: [homeThemePageMixin],
   data() {
     return {
       form: {
@@ -100,6 +102,12 @@ export default {
       showPassword: false,
       isSubmitting: false
     }
+  },
+  created() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
+  },
+  onShow() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
   },
   methods: {
     handleBack() {

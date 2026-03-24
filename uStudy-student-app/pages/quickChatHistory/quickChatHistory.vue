@@ -1,5 +1,5 @@
 <template>
-  <view class="chat-history-page">
+  <view class="chat-history-page" :class="pageThemeClass">
     <view class="history-bg">
       <view class="bg-mesh"></view>
       <view class="bg-glow bg-glow-blue"></view>
@@ -149,6 +149,7 @@
 import { getQuickChatConversations, deleteConversation, searchQuickChatConversations } from '@/api/chat'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
+import { getStoredThemeMode } from '@/utils/themeMode'
 
 export default {
   components: {
@@ -159,6 +160,7 @@ export default {
   data() {
     return {
       conversations: [],
+      homeThemeMode: 'dark',
       isLoading: true,
       showDeleteModal: false,
       selectedConvId: null,
@@ -179,16 +181,40 @@ export default {
   },
 
   onLoad() {
+    this.restoreThemeMode()
     this.loadConversations()
   },
 
   onShow() {
+    this.restoreThemeMode()
     if (!this.isLoading) {
       this.loadConversations()
     }
   },
 
+  computed: {
+    isLightTheme() {
+      return this.homeThemeMode === 'light'
+    },
+    pageThemeClass() {
+      return this.isLightTheme ? 'theme-light' : 'theme-dark'
+    }
+  },
+
   methods: {
+    restoreThemeMode() {
+      this.homeThemeMode = getStoredThemeMode('dark')
+      this.syncThemeSystemUi(this.homeThemeMode)
+    },
+
+    syncThemeSystemUi(mode) {
+      const isLight = mode === 'light'
+      // #ifdef APP-PLUS
+      plus.navigator.setStatusBarStyle(isLight ? 'dark' : 'light')
+      plus.navigator.setStatusBarBackground(isLight ? '#F3EDE3' : '#1D1E20')
+      // #endif
+    },
+
     showCustomToast(message, type = 'info') {
       this.toast = { visible: true, message, type }
     },
@@ -801,5 +827,89 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+}
+
+.chat-history-page.theme-light {
+  background-color: #F3EDE3;
+}
+
+.chat-history-page.theme-light .bg-mesh {
+  background:
+    radial-gradient(circle at 82% 14%, rgba(47, 110, 234, 0.1) 0%, rgba(47, 110, 234, 0) 32%),
+    radial-gradient(circle at 12% 100%, rgba(199, 119, 22, 0.08) 0%, rgba(199, 119, 22, 0) 36%);
+}
+
+.chat-history-page.theme-light .bg-glow-blue {
+  background: rgba(47, 110, 234, 0.14);
+}
+
+.chat-history-page.theme-light .bg-glow-violet {
+  background: rgba(199, 119, 22, 0.1);
+}
+
+.chat-history-page.theme-light .nav-bar::before {
+  background: linear-gradient(
+    to bottom,
+    rgba(243, 237, 227, 0.92) 0%,
+    rgba(243, 237, 227, 0.64) 50%,
+    rgba(243, 237, 227, 0) 100%
+  );
+}
+
+.chat-history-page.theme-light .nav-left,
+.chat-history-page.theme-light .nav-right,
+.chat-history-page.theme-light .search-bar,
+.chat-history-page.theme-light .empty-action {
+  background: rgba(255, 250, 244, 0.82);
+  border-color: rgba(63, 53, 42, 0.1);
+  outline-color: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 14rpx 36rpx rgba(118, 101, 80, 0.14);
+}
+
+.chat-history-page.theme-light .nav-icon,
+.chat-history-page.theme-light .nav-icon-search,
+.chat-history-page.theme-light .search-bar-icon,
+.chat-history-page.theme-light .search-clear-icon,
+.chat-history-page.theme-light .conv-delete-icon,
+.chat-history-page.theme-light .empty-icon {
+  filter: brightness(0) saturate(100%);
+}
+
+.chat-history-page.theme-light .nav-title-main,
+.chat-history-page.theme-light .empty-text,
+.chat-history-page.theme-light .empty-action-text,
+.chat-history-page.theme-light .conv-title {
+  color: #1F1A16;
+}
+
+.chat-history-page.theme-light .nav-title-sub,
+.chat-history-page.theme-light .loading-text,
+.chat-history-page.theme-light .empty-hint,
+.chat-history-page.theme-light .conv-time,
+.chat-history-page.theme-light .search-cancel-text,
+.chat-history-page.theme-light .snippet-role {
+  color: rgba(31, 26, 22, 0.58);
+}
+
+.chat-history-page.theme-light .search-input {
+  color: #1F1A16;
+}
+
+.chat-history-page.theme-light .search-placeholder,
+.chat-history-page.theme-light .snippet-text {
+  color: rgba(31, 26, 22, 0.42);
+}
+
+.chat-history-page.theme-light .loading-spinner {
+  border-color: rgba(63, 53, 42, 0.12);
+  border-top-color: #2F6EEA;
+}
+
+.chat-history-page.theme-light .conversation-item {
+  border-bottom-color: rgba(63, 53, 42, 0.1);
+}
+
+.chat-history-page.theme-light .conversation-item:active {
+  background: rgba(63, 53, 42, 0.05);
 }
 </style>

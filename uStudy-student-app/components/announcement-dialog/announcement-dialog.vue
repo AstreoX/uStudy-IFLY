@@ -1,5 +1,5 @@
 <template>
-  <view v-if="visible" class="ann-dialog-wrapper" @touchmove.stop.prevent>
+  <view v-if="visible" class="ann-dialog-wrapper" :class="themeClass" @touchmove.stop.prevent>
     <!-- Overlay -->
     <view
       class="ann-overlay"
@@ -21,7 +21,7 @@
       <!-- Body -->
       <view class="ann-body">
         <scroll-view scroll-y class="ann-scroll">
-          <markdown-render v-if="body" :content="body" />
+          <markdown-render v-if="body" :content="body" :theme-mode="themeMode || localThemeMode" />
           <text v-else class="ann-empty">暂无内容</text>
         </scroll-view>
       </view>
@@ -44,6 +44,7 @@
 
 <script>
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
+import { getStoredThemeMode, normalizeThemeMode } from '@/utils/themeMode'
 
 const TYPE_LABELS = {
   maintenance: '维护通知',
@@ -59,20 +60,25 @@ export default {
     title: { type: String, default: '' },
     date: { type: String, default: '' },
     type: { type: String, default: 'notice' },
-    body: { type: String, default: '' }
+    body: { type: String, default: '' },
+    themeMode: { type: String, default: '' }
   },
   emits: ['close'],
 
   data() {
     return {
       animationVisible: false,
-      dontShowAgain: false
+      dontShowAgain: false,
+      localThemeMode: 'dark'
     }
   },
 
   computed: {
     typeLabel() {
       return TYPE_LABELS[this.type] || '公告'
+    },
+    themeClass() {
+      return `theme-${normalizeThemeMode(this.themeMode || this.localThemeMode)}`
     }
   },
 
@@ -81,6 +87,7 @@ export default {
       immediate: true,
       handler(val) {
         if (val) {
+          this.refreshThemeMode()
           this.dontShowAgain = false
           this.$nextTick(() => {
             setTimeout(() => { this.animationVisible = true }, 10)
@@ -92,7 +99,15 @@ export default {
     }
   },
 
+  created() {
+    this.refreshThemeMode()
+  },
+
   methods: {
+    refreshThemeMode() {
+      this.localThemeMode = getStoredThemeMode('dark')
+    },
+
     toggleDontShow() {
       this.dontShowAgain = !this.dontShowAgain
     },
@@ -109,6 +124,29 @@ export default {
 
 <style scoped>
 .ann-dialog-wrapper {
+  --ann-overlay: rgba(0, 0, 0, 0.75);
+  --ann-surface: rgba(18, 18, 28, 0.88);
+  --ann-surface-fallback: rgba(18, 18, 28, 0.98);
+  --ann-border: rgba(255, 255, 255, 0.08);
+  --ann-title: #ffffff;
+  --ann-date: rgba(255, 255, 255, 0.4);
+  --ann-body-bg: rgba(0, 0, 0, 0.25);
+  --ann-empty: rgba(255, 255, 255, 0.35);
+  --ann-checkbox-border: rgba(255, 255, 255, 0.25);
+  --ann-checkbox-bg: rgba(0, 136, 255, 0.8);
+  --ann-checkbox-label: rgba(255, 255, 255, 0.5);
+  --ann-confirm-bg: linear-gradient(135deg, #0088FF 0%, #0066DD 100%);
+  --ann-confirm-shadow: 0 4rpx 16rpx rgba(0, 136, 255, 0.25);
+  --ann-confirm-text: #ffffff;
+  --ann-maintenance-bg: rgba(251, 146, 60, 0.15);
+  --ann-maintenance-border: rgba(251, 146, 60, 0.4);
+  --ann-maintenance-text: #FB923C;
+  --ann-feature-bg: rgba(34, 197, 94, 0.15);
+  --ann-feature-border: rgba(34, 197, 94, 0.4);
+  --ann-feature-text: #22C55E;
+  --ann-notice-bg: rgba(0, 136, 255, 0.15);
+  --ann-notice-border: rgba(0, 136, 255, 0.4);
+  --ann-notice-text: #0088FF;
   position: fixed;
   top: 0;
   left: 0;
@@ -118,6 +156,32 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.ann-dialog-wrapper.theme-light {
+  --ann-overlay: rgba(61, 46, 30, 0.22);
+  --ann-surface: rgba(255, 249, 241, 0.96);
+  --ann-surface-fallback: rgba(255, 249, 241, 0.99);
+  --ann-border: rgba(63, 53, 42, 0.1);
+  --ann-title: #1F1A16;
+  --ann-date: rgba(31, 26, 22, 0.44);
+  --ann-body-bg: rgba(63, 53, 42, 0.06);
+  --ann-empty: rgba(31, 26, 22, 0.4);
+  --ann-checkbox-border: rgba(63, 53, 42, 0.22);
+  --ann-checkbox-bg: #2F6EEA;
+  --ann-checkbox-label: rgba(31, 26, 22, 0.56);
+  --ann-confirm-bg: linear-gradient(135deg, #2F6EEA 0%, #1F56C6 100%);
+  --ann-confirm-shadow: 0 4rpx 16rpx rgba(47, 110, 234, 0.2);
+  --ann-confirm-text: #ffffff;
+  --ann-maintenance-bg: rgba(192, 122, 24, 0.14);
+  --ann-maintenance-border: rgba(192, 122, 24, 0.22);
+  --ann-maintenance-text: #A86412;
+  --ann-feature-bg: rgba(47, 143, 98, 0.14);
+  --ann-feature-border: rgba(47, 143, 98, 0.22);
+  --ann-feature-text: #2F8F62;
+  --ann-notice-bg: rgba(47, 110, 234, 0.12);
+  --ann-notice-border: rgba(47, 110, 234, 0.18);
+  --ann-notice-text: #2F6EEA;
 }
 
 .ann-overlay {
@@ -131,17 +195,17 @@ export default {
 }
 
 .ann-overlay.overlay-show {
-  background: rgba(0, 0, 0, 0.75);
+  background: var(--ann-overlay);
 }
 
 .ann-container {
   position: relative;
   width: 620rpx;
   max-height: 75vh;
-  background: rgba(18, 18, 28, 0.88);
+  background: var(--ann-surface);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
-  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  border: 1rpx solid var(--ann-border);
   border-radius: 32rpx;
   overflow: hidden;
   transform: translateY(60rpx) scale(0.9);
@@ -158,7 +222,7 @@ export default {
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .ann-container {
-    background: rgba(18, 18, 28, 0.98);
+    background: var(--ann-surface-fallback);
   }
 }
 
@@ -177,30 +241,30 @@ export default {
 }
 
 .badge-maintenance {
-  background: rgba(251, 146, 60, 0.15);
-  border: 1rpx solid rgba(251, 146, 60, 0.4);
+  background: var(--ann-maintenance-bg);
+  border: 1rpx solid var(--ann-maintenance-border);
 }
 
 .badge-maintenance .type-badge-text {
-  color: #FB923C;
+  color: var(--ann-maintenance-text);
 }
 
 .badge-feature {
-  background: rgba(34, 197, 94, 0.15);
-  border: 1rpx solid rgba(34, 197, 94, 0.4);
+  background: var(--ann-feature-bg);
+  border: 1rpx solid var(--ann-feature-border);
 }
 
 .badge-feature .type-badge-text {
-  color: #22C55E;
+  color: var(--ann-feature-text);
 }
 
 .badge-notice {
-  background: rgba(0, 136, 255, 0.15);
-  border: 1rpx solid rgba(0, 136, 255, 0.4);
+  background: var(--ann-notice-bg);
+  border: 1rpx solid var(--ann-notice-border);
 }
 
 .badge-notice .type-badge-text {
-  color: #0088FF;
+  color: var(--ann-notice-text);
 }
 
 .type-badge-text {
@@ -211,19 +275,19 @@ export default {
 .ann-title {
   font-size: 38rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--ann-title);
 }
 
 .ann-date {
   font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--ann-date);
 }
 
 /* Body */
 .ann-body {
   margin: 0 40rpx;
   height: 400rpx;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--ann-body-bg);
   border-radius: 16rpx;
   overflow: hidden;
 }
@@ -240,7 +304,7 @@ export default {
 
 .ann-empty {
   font-size: 28rpx;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--ann-empty);
 }
 
 /* Footer */
@@ -260,7 +324,7 @@ export default {
 .checkbox {
   width: 36rpx;
   height: 36rpx;
-  border: 2rpx solid rgba(255, 255, 255, 0.25);
+  border: 2rpx solid var(--ann-checkbox-border);
   border-radius: 8rpx;
   display: flex;
   align-items: center;
@@ -269,8 +333,8 @@ export default {
 }
 
 .checkbox-checked {
-  background: rgba(0, 136, 255, 0.8);
-  border-color: rgba(0, 136, 255, 0.8);
+  background: var(--ann-checkbox-bg);
+  border-color: var(--ann-checkbox-bg);
 }
 
 .checkbox-icon {
@@ -281,14 +345,14 @@ export default {
 
 .checkbox-label {
   font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--ann-checkbox-label);
 }
 
 .btn-confirm {
   padding: 16rpx 40rpx;
-  background: linear-gradient(135deg, #0088FF 0%, #0066DD 100%);
+  background: var(--ann-confirm-bg);
   border-radius: 16rpx;
-  box-shadow: 0 4rpx 16rpx rgba(0, 136, 255, 0.25);
+  box-shadow: var(--ann-confirm-shadow);
   transition: all 150ms ease;
 }
 
@@ -299,6 +363,6 @@ export default {
 .btn-confirm-text {
   font-size: 28rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--ann-confirm-text);
 }
 </style>

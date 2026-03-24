@@ -1,5 +1,5 @@
 <template>
-  <view class="notes-list-page">
+  <view class="notes-list-page" :class="pageThemeClass">
     <!-- Background -->
     <view class="page-bg">
       <view class="bg-mesh"></view>
@@ -197,7 +197,7 @@
               </view>
               <!-- Markdown Content -->
               <view class="detail-markdown-wrap">
-                <markdown-render v-if="selectedNote.content" :content="selectedNote.content" />
+                <markdown-render v-if="selectedNote.content" :content="selectedNote.content" :theme-mode="homeThemeMode" />
                 <text v-else class="detail-empty-text">（无内容）</text>
               </view>
               <!-- Attachments -->
@@ -317,7 +317,7 @@
                   auto-height
                 />
                 <view v-else class="edit-preview-wrap">
-                  <markdown-render v-if="editContent" :content="editContent" />
+                  <markdown-render v-if="editContent" :content="editContent" :theme-mode="homeThemeMode" />
                   <text v-else class="detail-empty-text">（暂无内容）</text>
                 </view>
               </view>
@@ -494,8 +494,10 @@ import UToast from '@/components/u-toast/u-toast.vue'
 import UModal from '@/components/u-modal/u-modal.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 import config from '@/config'
+import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 export default {
+  mixins: [homeThemePageMixin],
   components: {
     UToast,
     UModal,
@@ -589,6 +591,7 @@ export default {
   },
 
   onLoad(options) {
+    this.restoreThemeMode({ darkStatusBarBackground: '#1D1E20' })
     this.spaceId = options.spaceId || ''
     this.spaceName = options.spaceName ? decodeURIComponent(options.spaceName) : ''
     this.pendingOpenNoteId = options.openNoteId || ''
@@ -601,6 +604,7 @@ export default {
   },
 
   onShow() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#1D1E20' })
     this.loadCollaborationContext()
     if (this.spaceId && !this.loading) {
       this.loadNotes()

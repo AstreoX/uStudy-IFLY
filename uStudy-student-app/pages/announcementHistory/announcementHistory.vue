@@ -1,5 +1,5 @@
 <template>
-  <view class="history-page">
+  <view class="history-page" :class="pageThemeClass">
     <!-- Aurora Background Layer -->
     <view class="aurora-bg">
       <view class="aurora-blob aurora-blob-1"></view>
@@ -87,7 +87,7 @@
           </view>
         </view>
         <scroll-view scroll-y class="detail-body">
-          <markdown-render v-if="detailContent" :content="detailContent" />
+          <markdown-render v-if="detailContent" :content="detailContent" :theme-mode="homeThemeMode" />
           <text v-else class="detail-loading">加载中...</text>
         </scroll-view>
       </view>
@@ -100,6 +100,7 @@ import { useUpdateStore } from '@/store/update'
 import { fetchReleaseManifest, fetchMarkdownContent } from '@/api/release'
 import { goBack } from '@/utils/navigation'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
+import { getStoredThemeMode } from '@/utils/themeMode'
 
 const TYPE_LABELS = {
   maintenance: '维护通知',
@@ -115,6 +116,7 @@ export default {
       loading: true,
       versionHistory: [],
       announcements: [],
+      homeThemeMode: 'dark',
       showDetail: false,
       detailAnimated: false,
       detailTitle: '',
@@ -122,11 +124,35 @@ export default {
     }
   },
 
+  computed: {
+    isLightTheme() {
+      return this.homeThemeMode === 'light'
+    },
+
+    pageThemeClass() {
+      return this.isLightTheme ? 'theme-light' : 'theme-dark'
+    }
+  },
+
   async onShow() {
+    this.restoreThemeMode()
     await this.loadData()
   },
 
   methods: {
+    restoreThemeMode() {
+      this.homeThemeMode = getStoredThemeMode('dark')
+      this.syncThemeSystemUi(this.homeThemeMode)
+    },
+
+    syncThemeSystemUi(mode) {
+      const isLight = mode === 'light'
+      // #ifdef APP-PLUS
+      plus.navigator.setStatusBarStyle(isLight ? 'dark' : 'light')
+      plus.navigator.setStatusBarBackground(isLight ? '#F3EDE3' : '#1D1E20')
+      // #endif
+    },
+
     goBack() {
       goBack()
     },
@@ -544,5 +570,66 @@ export default {
 .detail-loading {
   font-size: 28rpx;
   color: rgba(255, 255, 255, 0.4);
+}
+
+.history-page.theme-light {
+  background-color: #F3EDE3;
+}
+
+.history-page.theme-light .aurora-blob-1 {
+  background: radial-gradient(circle, rgba(47, 110, 234, 0.2) 0%, transparent 72%);
+  opacity: 0.9;
+}
+
+.history-page.theme-light .aurora-blob-2 {
+  background: radial-gradient(circle, rgba(199, 119, 22, 0.18) 0%, transparent 72%);
+  opacity: 0.82;
+}
+
+.history-page.theme-light .aurora-blob-3 {
+  background: radial-gradient(circle, rgba(111, 150, 236, 0.12) 0%, transparent 70%);
+  opacity: 0.72;
+}
+
+.history-page.theme-light .nav-left,
+.history-page.theme-light .card-list,
+.history-page.theme-light .detail-card,
+.history-page.theme-light .detail-close {
+  background: rgba(255, 250, 244, 0.88);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 16rpx 40rpx rgba(118, 101, 80, 0.14);
+}
+
+.history-page.theme-light .nav-icon,
+.history-page.theme-light .card-arrow {
+  filter: brightness(0) saturate(100%);
+}
+
+.history-page.theme-light .nav-title,
+.history-page.theme-light .card-version,
+.history-page.theme-light .card-title,
+.history-page.theme-light .detail-title {
+  color: #1F1A16;
+}
+
+.history-page.theme-light .loading-text,
+.history-page.theme-light .section-title,
+.history-page.theme-light .card-date,
+.history-page.theme-light .empty-text,
+.history-page.theme-light .detail-loading,
+.history-page.theme-light .detail-close-icon {
+  color: rgba(31, 26, 22, 0.58);
+}
+
+.history-page.theme-light .history-card {
+  border-bottom-color: rgba(63, 53, 42, 0.08);
+}
+
+.history-page.theme-light .history-card:active {
+  background: rgba(63, 53, 42, 0.04);
+}
+
+.history-page.theme-light .detail-backdrop.backdrop-show {
+  background: rgba(61, 46, 30, 0.22);
 }
 </style>

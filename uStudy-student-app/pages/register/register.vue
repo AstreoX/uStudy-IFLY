@@ -1,5 +1,5 @@
 <template>
-  <view class="register-container">
+  <view class="register-container" :class="pageThemeClass">
     <!-- Aurora Background Layer -->
     <view class="aurora-bg">
       <view class="aurora-blob aurora-blob-1"></view>
@@ -143,8 +143,10 @@ import { getMe, registerWithCode, sendCode, verifyCode } from '@/api/auth'
 import { setTokens } from '@/utils/storage'
 import { useUserStore } from '@/store/user'
 import { goBack } from '@/utils/navigation'
+import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 export default {
+  mixins: [homeThemePageMixin],
   data() {
     return {
       step: 1,
@@ -180,6 +182,12 @@ export default {
       }
       return this.isSubmitting ? '注册中...' : '注册'
     }
+  },
+  created() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
+  },
+  onShow() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
   },
   methods: {
     handleBack() {

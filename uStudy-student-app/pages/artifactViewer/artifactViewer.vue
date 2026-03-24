@@ -1,5 +1,5 @@
 <template>
-  <view class="artifact-viewer-page">
+  <view class="artifact-viewer-page" :class="pageThemeClass">
     <!-- Navigation Bar (H5 only; APP-PLUS web-view takes full screen) -->
     <!-- #ifndef APP-PLUS -->
     <view class="nav-bar">
@@ -56,8 +56,10 @@
 <script>
 import { getNoteDetail } from '@/api/note'
 import { connectNotificationStream } from '@/api/notification'
+import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 export default {
+  mixins: [homeThemePageMixin],
   data() {
     return {
       spaceId: '',
@@ -85,6 +87,7 @@ export default {
   },
 
   onLoad(options) {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
     this.spaceId = options.spaceId || ''
     this.noteId = options.noteId || ''
     this.setupNotificationStream()
@@ -93,6 +96,10 @@ export default {
 
   onUnload() {
     this.cleanupStreamingResources()
+  },
+
+  onShow() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
   },
 
   methods: {

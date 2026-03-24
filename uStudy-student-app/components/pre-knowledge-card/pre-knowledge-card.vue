@@ -1,5 +1,5 @@
 <template>
-  <view v-if="visible" class="preknowledge-card-wrapper">
+  <view v-if="visible" class="preknowledge-card-wrapper" :class="themeClass">
     <view
       class="preknowledge-card"
       :class="{ 'card-show': animationVisible }"
@@ -37,6 +37,8 @@
 </template>
 
 <script>
+import { getStoredThemeMode, normalizeThemeMode } from '@/utils/themeMode'
+
 // 掌握度颜色渐变端点 (0-100 分段插值)
 const MASTERY_COLOR_START = { r: 255, g: 50, b: 66 }   // #FF3242 (mastery=0, 珊瑚红)
 const MASTERY_COLOR_MID = { r: 255, g: 217, b: 61 }    // #FFD93D (mastery=50, 浅黄色)
@@ -102,6 +104,10 @@ export default {
     highlightedLabels: {
       type: Array,
       default: () => []
+    },
+    themeMode: {
+      type: String,
+      default: ''
     }
   },
 
@@ -115,7 +121,8 @@ export default {
       canvasHeight: 150,
       isDestroyed: false,
       highlightAnimationTimer: null,
-      highlightPhase: 0
+      highlightPhase: 0,
+      localThemeMode: 'dark'
     }
   },
 
@@ -126,6 +133,10 @@ export default {
 
     hasData() {
       return this.mainNode != null
+    },
+
+    themeClass() {
+      return `theme-${normalizeThemeMode(this.themeMode || this.localThemeMode)}`
     }
   },
 
@@ -134,6 +145,7 @@ export default {
       immediate: true,
       handler(newVal) {
         if (newVal) {
+          this.refreshThemeMode()
           this.$nextTick(() => {
             setTimeout(() => {
               this.animationVisible = true
@@ -183,6 +195,7 @@ export default {
   },
 
   mounted() {
+    this.refreshThemeMode()
     this.calculateCanvasSize()
   },
 
@@ -193,6 +206,10 @@ export default {
   },
 
   methods: {
+    refreshThemeMode() {
+      this.localThemeMode = getStoredThemeMode('dark')
+    },
+
     handleClose() {
       this.animationVisible = false
       setTimeout(() => {
@@ -394,6 +411,16 @@ export default {
 
 <style scoped>
 .preknowledge-card-wrapper {
+  --pre-card-surface: rgba(20, 20, 30, 0.92);
+  --pre-card-surface-fallback: rgba(30, 30, 45, 0.98);
+  --pre-card-border: rgba(255, 255, 255, 0.15);
+  --pre-card-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.5);
+  --pre-card-highlight: rgba(255, 255, 255, 0.05);
+  --pre-card-divider: rgba(255, 255, 255, 0.08);
+  --pre-card-title: rgba(255, 255, 255, 0.9);
+  --pre-card-close-bg: rgba(255, 255, 255, 0.1);
+  --pre-card-close-opacity: 0.6;
+  --pre-card-dot: rgba(255, 255, 255, 0.4);
   position: fixed;
   top: 0;
   left: 0;
@@ -405,15 +432,28 @@ export default {
   pointer-events: none;
 }
 
+.preknowledge-card-wrapper.theme-light {
+  --pre-card-surface: rgba(255, 249, 241, 0.96);
+  --pre-card-surface-fallback: rgba(255, 249, 241, 0.99);
+  --pre-card-border: rgba(63, 53, 42, 0.12);
+  --pre-card-shadow: 0 16rpx 48rpx rgba(118, 101, 80, 0.18);
+  --pre-card-highlight: rgba(255, 255, 255, 0.82);
+  --pre-card-divider: rgba(63, 53, 42, 0.08);
+  --pre-card-title: #1F1A16;
+  --pre-card-close-bg: rgba(63, 53, 42, 0.08);
+  --pre-card-close-opacity: 0.72;
+  --pre-card-dot: rgba(63, 53, 42, 0.32);
+}
+
 .preknowledge-card {
-  background: rgba(20, 20, 30, 0.92);
+  background: var(--pre-card-surface);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
+  border: 1rpx solid var(--pre-card-border);
   border-radius: 24rpx;
   box-shadow:
-    0 16rpx 48rpx rgba(0, 0, 0, 0.5),
-    0 0 0 1rpx rgba(255, 255, 255, 0.05) inset;
+    var(--pre-card-shadow),
+    0 0 0 1rpx var(--pre-card-highlight) inset;
   overflow: hidden;
   pointer-events: auto;
 
@@ -430,7 +470,7 @@ export default {
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .preknowledge-card {
-    background: rgba(30, 30, 45, 0.98);
+    background: var(--pre-card-surface-fallback);
   }
 }
 
@@ -439,13 +479,13 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 24rpx 28rpx 16rpx;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1rpx solid var(--pre-card-divider);
 }
 
 .card-title {
   font-size: 28rpx;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--pre-card-title);
 }
 
 .card-close {
@@ -459,13 +499,13 @@ export default {
 }
 
 .card-close:active {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--pre-card-close-bg);
 }
 
 .card-close-icon {
   width: 32rpx;
   height: 32rpx;
-  opacity: 0.6;
+  opacity: var(--pre-card-close-opacity);
 }
 
 .card-content {
@@ -495,7 +535,7 @@ export default {
   width: 12rpx;
   height: 12rpx;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--pre-card-dot);
   animation: loading-bounce 1.4s ease-in-out infinite;
 }
 

@@ -1,5 +1,5 @@
 <template>
-  <view class="ndc-wrap" :class="{ 'ndc-expanded': showDetail || isCollapsing }">
+  <view class="ndc-wrap" :class="[themeClass, { 'ndc-expanded': showDetail || isCollapsing }]">
     <!-- ======== Pill 指示器（始终可见） ======== -->
     <view class="ndc-pill"
       :class="{
@@ -67,7 +67,7 @@
         </view>
         <view class="ndc-divider"></view>
         <view class="ndc-content-preview">
-          <MarkdownRender :content="displayContent" />
+          <MarkdownRender :content="displayContent" :theme-mode="resolvedThemeMode" />
         </view>
         <view v-if="attachments.length" class="ndc-attachments-section">
           <text class="ndc-attachments-label">附件 ({{ attachments.length }})</text>
@@ -96,7 +96,7 @@
         </view>
         <view class="ndc-divider"></view>
         <view class="ndc-content-preview">
-          <MarkdownRender :content="updateDisplayContent" />
+          <MarkdownRender :content="updateDisplayContent" :theme-mode="resolvedThemeMode" />
         </view>
       </view>
     </view>
@@ -105,6 +105,7 @@
 
 <script>
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
+import { getStoredThemeMode, normalizeThemeMode } from '@/utils/themeMode'
 
 const PILL_ICONS = {
   list_notes: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
@@ -120,6 +121,10 @@ export default {
     toolCall: {
       type: Object,
       required: true
+    },
+    themeMode: {
+      type: String,
+      default: ''
     }
   },
   data() {
@@ -143,6 +148,12 @@ export default {
     },
     isDeleteNote() {
       return this.toolName === 'delete_note'
+    },
+    resolvedThemeMode() {
+      return normalizeThemeMode(this.themeMode || getStoredThemeMode('dark'))
+    },
+    themeClass() {
+      return `theme-${this.resolvedThemeMode}`
     },
     hasExpandableDetail() {
       return !this.isDeleteNote
@@ -598,5 +609,65 @@ export default {
   font-size: 20rpx;
   font-weight: 500;
   color: rgba(74, 222, 128, 0.9);
+}
+
+.ndc-wrap.theme-light.ndc-expanded {
+  background: rgba(255, 250, 244, 0.94);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 14rpx 36rpx rgba(118, 101, 80, 0.14);
+}
+
+.ndc-wrap.theme-light .ndc-pill,
+.ndc-wrap.theme-light .ndc-note-item,
+.ndc-wrap.theme-light .ndc-attachment-pill {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(63, 53, 42, 0.1);
+}
+
+.ndc-wrap.theme-light .ndc-pill-running {
+  background: rgba(47, 110, 234, 0.08);
+  border-color: rgba(47, 110, 234, 0.18);
+}
+
+.ndc-wrap.theme-light .ndc-pill-failed {
+  background: rgba(209, 79, 79, 0.06);
+  border-color: rgba(209, 79, 79, 0.18);
+}
+
+.ndc-wrap.theme-light .ndc-icon-wrap {
+  background: rgba(47, 110, 234, 0.1);
+}
+
+.ndc-wrap.theme-light .ndc-file-icon,
+.ndc-wrap.theme-light .ndc-attachment-icon,
+.ndc-wrap.theme-light .ndc-pill-chevron {
+  filter: brightness(0) saturate(100%);
+  opacity: 0.56;
+}
+
+.ndc-wrap.theme-light .ndc-pill-icon {
+  filter: brightness(0) saturate(100%) invert(34%) sepia(61%) saturate(1869%) hue-rotate(211deg) brightness(96%) contrast(91%);
+}
+
+.ndc-wrap.theme-light .ndc-title,
+.ndc-wrap.theme-light .ndc-note-item-title,
+.ndc-wrap.theme-light .ndc-attachment-name,
+.ndc-wrap.theme-light .ndc-content-preview {
+  color: #1F1A16;
+  -webkit-text-fill-color: #1F1A16;
+}
+
+.ndc-wrap.theme-light .ndc-pill-text,
+.ndc-wrap.theme-light .ndc-meta,
+.ndc-wrap.theme-light .ndc-note-item-meta,
+.ndc-wrap.theme-light .ndc-note-item-preview,
+.ndc-wrap.theme-light .ndc-empty-text,
+.ndc-wrap.theme-light .ndc-attachments-label {
+  color: rgba(31, 26, 22, 0.58);
+  -webkit-text-fill-color: rgba(31, 26, 22, 0.58);
+}
+
+.ndc-wrap.theme-light .ndc-divider {
+  background: rgba(63, 53, 42, 0.08);
 }
 </style>

@@ -1,6 +1,6 @@
 <template>
   <view v-if="visible" class="pm-overlay" @tap.self="handleClose">
-    <view class="pm-container" :class="{ 'pm-submitted': showSubmitted }">
+    <view class="pm-container" :class="[themeClass, { 'pm-submitted': showSubmitted }]">
       <!-- Close button -->
       <view class="pm-close" @tap="handleClose">
         <text class="pm-close-icon">×</text>
@@ -114,6 +114,7 @@
 import { createOrder, notifyPaid } from '@/api/payment'
 import { ensureAlbumWritePermission, isPermissionDenied, guideToSettings } from '@/utils/permission'
 import config from '@/config'
+import { getStoredThemeMode, normalizeThemeMode } from '@/utils/themeMode'
 
 const API_BASE_URL = config.API_BASE_URL
 
@@ -132,11 +133,13 @@ export default {
   props: {
     visible: { type: Boolean, default: false },
     plan: { type: Object, default: null },
-    billingCycle: { type: String, default: 'semester' }
+    billingCycle: { type: String, default: 'semester' },
+    themeMode: { type: String, default: '' }
   },
   emits: ['close', 'success'],
   data() {
     return {
+      internalThemeMode: 'dark',
       loading: false,
       showSubmitted: false,
       showQrCode: false,
@@ -175,16 +178,31 @@ export default {
       const path = urls?.save || urls?.display
       if (!path) return ''
       return path.startsWith('http') ? path : `${API_BASE_URL}${path}`
+    },
+    resolvedThemeMode() {
+      return this.themeMode ? normalizeThemeMode(this.themeMode) : this.internalThemeMode
+    },
+    themeClass() {
+      return this.resolvedThemeMode === 'light' ? 'theme-light' : 'theme-dark'
     }
   },
   watch: {
     visible(val) {
       if (!val) {
         this.reset()
+      } else {
+        this.refreshThemeMode()
       }
     }
   },
+  created() {
+    this.refreshThemeMode()
+  },
   methods: {
+    refreshThemeMode() {
+      this.internalThemeMode = getStoredThemeMode('dark')
+    },
+
     reset() {
       this.loading = false
       this.showSubmitted = false
@@ -297,6 +315,12 @@ export default {
   box-shadow: 0 48rpx 128rpx rgba(0, 0, 0, 0.4);
 }
 
+.pm-container.theme-light {
+  background: rgba(255, 250, 244, 0.96);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 28rpx 80rpx rgba(118, 101, 80, 0.18);
+}
+
 .pm-close {
   position: absolute;
   top: 24rpx;
@@ -321,6 +345,18 @@ export default {
   line-height: 1;
 }
 
+.theme-light .pm-close {
+  background: rgba(63, 53, 42, 0.06);
+}
+
+.theme-light .pm-close:active {
+  background: rgba(63, 53, 42, 0.1);
+}
+
+.theme-light .pm-close-icon {
+  color: rgba(31, 26, 22, 0.56);
+}
+
 .pm-header {
   margin-bottom: 32rpx;
 }
@@ -331,12 +367,21 @@ export default {
   color: #fff;
 }
 
+.theme-light .pm-title {
+  color: #1F1A16;
+}
+
 .pm-plan-info {
   background: rgba(255, 255, 255, 0.04);
   border: 1rpx solid rgba(255, 255, 255, 0.06);
   border-radius: 24rpx;
   padding: 28rpx;
   margin-bottom: 32rpx;
+}
+
+.theme-light .pm-plan-info {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(63, 53, 42, 0.08);
 }
 
 .pm-plan-row {
@@ -351,16 +396,28 @@ export default {
   color: rgba(255, 255, 255, 0.5);
 }
 
+.theme-light .pm-plan-label {
+  color: rgba(31, 26, 22, 0.52);
+}
+
 .pm-plan-value {
   font-size: 26rpx;
   color: rgba(255, 255, 255, 0.88);
   font-weight: 500;
 }
 
+.theme-light .pm-plan-value {
+  color: rgba(31, 26, 22, 0.84);
+}
+
 .pm-divider {
   height: 1rpx;
   background: rgba(255, 255, 255, 0.06);
   margin: 14rpx 0;
+}
+
+.theme-light .pm-divider {
+  background: rgba(63, 53, 42, 0.08);
 }
 
 .pm-plan-row-total {
@@ -426,6 +483,11 @@ export default {
   border: 1rpx solid rgba(255, 255, 255, 0.06);
 }
 
+.theme-light .pm-tab {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(63, 53, 42, 0.08);
+}
+
 .pm-tab:active {
   opacity: 0.8;
 }
@@ -439,6 +501,10 @@ export default {
   font-size: 26rpx;
   color: rgba(255, 255, 255, 0.7);
   font-weight: 500;
+}
+
+.theme-light .pm-tab-text {
+  color: rgba(31, 26, 22, 0.62);
 }
 
 .pm-tab-active .pm-tab-text {
@@ -473,6 +539,10 @@ export default {
   color: rgba(255, 255, 255, 0.5);
 }
 
+.theme-light .pm-amount-label {
+  color: rgba(31, 26, 22, 0.52);
+}
+
 .pm-amount-value {
   font-size: 52rpx;
   font-weight: 800;
@@ -488,6 +558,10 @@ export default {
   color: rgba(255, 255, 255, 0.35);
 }
 
+.theme-light .pm-hint {
+  color: rgba(31, 26, 22, 0.48);
+}
+
 .pm-save-btn {
   width: 100%;
   height: 72rpx;
@@ -498,6 +572,11 @@ export default {
   align-items: center;
   justify-content: center;
   margin-bottom: 16rpx;
+}
+
+.theme-light .pm-save-btn {
+  border-color: rgba(63, 53, 42, 0.1);
+  background: rgba(255, 255, 255, 0.76);
 }
 
 .pm-save-btn::after {
@@ -512,6 +591,10 @@ export default {
   font-size: 26rpx;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.6);
+}
+
+.theme-light .pm-save-text {
+  color: rgba(31, 26, 22, 0.62);
 }
 
 .pm-confirm-btn {
@@ -547,6 +630,10 @@ export default {
   color: #f87171;
 }
 
+.theme-light .pm-submitted-icon-wrap {
+  background: rgba(47, 110, 234, 0.12);
+}
+
 /* Submitted State */
 .pm-submitted-content {
   display: flex;
@@ -577,11 +664,19 @@ export default {
   color: #fff;
 }
 
+.theme-light .pm-submitted-title {
+  color: #1F1A16;
+}
+
 .pm-submitted-desc {
   font-size: 26rpx;
   color: rgba(255, 255, 255, 0.55);
   text-align: center;
   line-height: 1.6;
+}
+
+.theme-light .pm-submitted-desc {
+  color: rgba(31, 26, 22, 0.54);
 }
 
 .pm-done-btn {

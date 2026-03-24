@@ -1,5 +1,5 @@
 <template>
-  <view class="quiz-list-page">
+  <view class="quiz-list-page" :class="pageThemeClass">
     <view class="page-bg">
       <view class="bg-mesh"></view>
       <view class="bg-glow bg-glow-blue"></view>
@@ -255,8 +255,10 @@ import { getQuizzesBySpace, deleteQuiz } from '@/api/space'
 import { getFolders, createFolder, updateFolder, deleteFolder as deleteFolderApi, moveQuizzes } from '@/api/folder'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
+import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 export default {
+  mixins: [homeThemePageMixin],
   components: {
     UModal,
     UToast
@@ -319,6 +321,7 @@ export default {
   },
 
   onLoad(options) {
+    this.restoreThemeMode({ darkStatusBarBackground: '#1D1E20' })
     this.spaceId = options.spaceId || ''
     this.spaceName = options.spaceName ? decodeURIComponent(options.spaceName) : ''
     const sysInfo = uni.getSystemInfoSync()
@@ -328,6 +331,7 @@ export default {
   },
 
   onShow() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#1D1E20' })
     if (this.spaceId && !this.loading) {
       this.loadQuizzes()
     }

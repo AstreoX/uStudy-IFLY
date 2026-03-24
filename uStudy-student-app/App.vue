@@ -111,6 +111,8 @@
 </script>
 
 <style>
+	@import './styles/light-theme-pages.css';
+
 	/* 全局样式 */
 	page {
 		background-color: #0a0a12;

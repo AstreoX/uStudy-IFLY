@@ -1,5 +1,5 @@
 <template>
-	<view class="chat-page">
+	<view class="chat-page" :class="pageThemeClass">
 		<!-- 掌握分胶囊通知 -->
 		<u-capsule-toast
 			v-for="(item, idx) in masteryNotifications"
@@ -24,6 +24,7 @@
 
 		<!-- 前置知识卡片 -->
 		<pre-knowledge-card
+			:theme-mode="homeThemeMode"
 			:visible="showPreKnowledgeCard"
 			:main-node="preKnowledgeMainNode"
 			:child-nodes="preKnowledgeChildNodes"
@@ -139,6 +140,7 @@
 							v-if="seg.type === 'text' && seg.content && seg.content.trim()"
 							:key="'text-' + segIdx"
 							:content="seg.content"
+							:theme-mode="homeThemeMode"
 						/>
 
 						<!-- 记忆类工具：行内波浪文字 -->
@@ -474,6 +476,7 @@
 							:tool-call="seg.toolCall"
 							:space-id="spaceId"
 							:conversation-id="conversationId"
+							:theme-mode="homeThemeMode"
 						/>
 
 						<!-- 笔记读写工具（自包含 pill + 详情卡片） -->
@@ -481,12 +484,14 @@
 							v-else-if="seg.type === 'tool' && isNoteReadWriteTool(seg.toolCall.tool)"
 							:key="'note-rw-' + segIdx"
 							:tool-call="seg.toolCall"
+							:theme-mode="homeThemeMode"
 						/>
 
 						<ArtifactGenerationCard
 							v-else-if="seg.type === 'tool' && (seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact')"
 							:key="'artifact-tool-' + segIdx"
 							:tool-call="seg.toolCall"
+							:theme-mode="homeThemeMode"
 							@view="handleViewArtifact(seg.toolCall)"
 						/>
 
@@ -551,7 +556,7 @@
 							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'run_python_code'"
 							:key="'code-tool-' + segIdx"
 						>
-							<PythonExecutionCard :tool-call="seg.toolCall" />
+							<PythonExecutionCard :tool-call="seg.toolCall" :theme-mode="homeThemeMode" />
 						</view>
 
 						<!-- 测试题生成工具：指示器 + 进入卡片 -->
@@ -1730,6 +1735,7 @@
 	import { consumeAllPending } from '@/utils/quizEvaluationBus'
 	import { createNote } from '@/api/note'
 	import { ensureAlbumWritePermission, ensureCameraPermission, isPermissionDenied, guideToSettings } from '@/utils/permission'
+	import { getStoredThemeMode } from '@/utils/themeMode'
 	// #ifdef APP-PLUS
 	import SseRenderjs from '@/components/sse-renderjs/sse-renderjs.vue'
 	// #endif
@@ -2025,6 +2031,7 @@
 
 		data() {
 			return {
+				homeThemeMode: 'dark',
 				spaceId: null,
 				spaceTitle: '学习空间',
 				messages: [],
@@ -2175,6 +2182,12 @@
 		},
 
 		computed: {
+			isLightTheme() {
+				return this.homeThemeMode === 'light'
+			},
+			pageThemeClass() {
+				return this.isLightTheme ? 'theme-light' : 'theme-dark'
+			},
 			planningToolText() {
 				return PLANNING_TOOL_TEXT
 			},
@@ -2258,6 +2271,7 @@
 		},
 
 		async onLoad(options) {
+			this.restoreThemeMode()
 			if (options.id) {
 				this.spaceId = options.id
 			}
@@ -2349,6 +2363,7 @@
 		},
 
 		onShow() {
+			this.restoreThemeMode()
 			// 同步已保存的模型选择
 			const storedId = getSelectedModelId()
 			if (storedId && this.availableModels.some(m => m.id === storedId)) {
@@ -2530,6 +2545,23 @@
 		},
 
 		methods: {
+			restoreThemeMode() {
+				this.homeThemeMode = getStoredThemeMode('dark')
+				this.syncThemeSystemUi(this.homeThemeMode)
+			},
+			syncThemeSystemUi(mode) {
+				// #ifdef APP-PLUS
+				try {
+					if (typeof plus !== 'undefined' && plus.navigator) {
+						plus.navigator.setStatusBarStyle(mode === 'light' ? 'dark' : 'light')
+						if (typeof plus.navigator.setStatusBarBackground === 'function') {
+							plus.navigator.setStatusBarBackground(mode === 'light' ? '#F3EDE3' : '#1D1E20')
+						}
+					}
+				} catch (_) {}
+				// #endif
+			},
+
 			getMessageCharCount(text) {
 				return Array.from((text || '').trim()).length
 			},
@@ -9746,5 +9778,497 @@
 		color: rgba(255, 255, 255, 0.75);
 		line-height: 1.7;
 		word-break: break-all;
+	}
+
+	.chat-page.theme-light {
+		--chat-page-bg: #F3EDE3;
+		--chat-surface: rgba(255, 250, 244, 0.82);
+		--chat-surface-strong: rgba(255, 255, 255, 0.78);
+		--chat-surface-soft: rgba(63, 53, 42, 0.05);
+		--chat-surface-deep: rgba(246, 239, 230, 0.96);
+		--chat-border: rgba(63, 53, 42, 0.1);
+		--chat-border-strong: rgba(63, 53, 42, 0.14);
+		--chat-outline: rgba(255, 255, 255, 0.72);
+		--chat-shadow: 0 14rpx 36rpx rgba(118, 101, 80, 0.14);
+		--chat-shadow-soft: 0 8rpx 24rpx rgba(118, 101, 80, 0.12);
+		--chat-text-primary: #1F1A16;
+		--chat-text-secondary: rgba(31, 26, 22, 0.76);
+		--chat-text-muted: rgba(31, 26, 22, 0.58);
+		--chat-text-faint: rgba(31, 26, 22, 0.42);
+		--chat-accent: #2F6EEA;
+		--chat-accent-strong: #2459C8;
+		--chat-accent-soft: rgba(47, 110, 234, 0.1);
+		--chat-accent-soft-strong: rgba(47, 110, 234, 0.16);
+		--chat-danger: #D14F4F;
+		--chat-danger-soft: rgba(209, 79, 79, 0.1);
+		--chat-success: #2F8F66;
+		--chat-success-soft: rgba(47, 143, 102, 0.12);
+		--chat-warning: #C77716;
+		--chat-warning-soft: rgba(199, 119, 22, 0.12);
+		background-color: var(--chat-page-bg);
+	}
+
+	.chat-page.theme-light .nav-left,
+	.chat-page.theme-light .input-card,
+	.chat-page.theme-light .model-menu,
+	.chat-page.theme-light .schedule-expanded-container,
+	.chat-page.theme-light .graph-overview-card,
+	.chat-page.theme-light .gm-card,
+	.chat-page.theme-light .graph-quick-view-panel {
+		background: var(--chat-surface);
+		border-color: var(--chat-border);
+		box-shadow: var(--chat-shadow);
+	}
+
+	.chat-page.theme-light .nav-left {
+		outline-color: var(--chat-outline);
+	}
+
+	.chat-page.theme-light .nav-icon,
+	.chat-page.theme-light .citation-arrow,
+	.chat-page.theme-light .thinking-chevron,
+	.chat-page.theme-light .graph-tool-chevron,
+	.chat-page.theme-light .graph-quick-view-close-icon,
+	.chat-page.theme-light .graph-overview-hint-icon,
+	.chat-page.theme-light .model-selector-chevron,
+	.chat-page.theme-light .model-menu-lock,
+	.chat-page.theme-light .graph-quick-view-title-icon {
+		filter: brightness(0) saturate(100%);
+	}
+
+	.chat-page.theme-light .nav-title,
+	.chat-page.theme-light .message-text,
+	.chat-page.theme-light .thinking-label,
+	.chat-page.theme-light .thinking-text,
+	.chat-page.theme-light .graph-tool-running .graph-tool-pill-text,
+	.chat-page.theme-light .schedule-event-time-start,
+	.chat-page.theme-light .schedule-event-title,
+	.chat-page.theme-light .graph-overview-title,
+	.chat-page.theme-light .gm-card-title,
+	.chat-page.theme-light .cite-drawer-title,
+	.chat-page.theme-light .graph-quick-view-title,
+	.chat-page.theme-light .citation-title {
+		color: var(--chat-text-primary);
+	}
+
+	.chat-page.theme-light .bubble-user {
+		background-color: var(--chat-accent);
+		box-shadow: 0 10rpx 24rpx rgba(47, 110, 234, 0.2);
+	}
+
+	.chat-page.theme-light .bubble-user .message-text {
+		color: #FFFFFF;
+	}
+
+	.chat-page.theme-light .message-image {
+		background-color: rgba(63, 53, 42, 0.08);
+	}
+
+	.chat-page.theme-light .msg-retry-btn {
+		background-color: var(--chat-danger);
+	}
+
+	.chat-page.theme-light .citation-footer {
+		border-top-color: var(--chat-border);
+	}
+
+	.chat-page.theme-light .citation-footer-label,
+	.chat-page.theme-light .citation-meta,
+	.chat-page.theme-light .ai-status-badge-text,
+	.chat-page.theme-light .graph-tool-pill-text,
+	.chat-page.theme-light .schedule-date-text,
+	.chat-page.theme-light .schedule-event-desc,
+	.chat-page.theme-light .schedule-card-count,
+	.chat-page.theme-light .schedule-empty-text,
+	.chat-page.theme-light .graph-overview-meta,
+	.chat-page.theme-light .graph-overview-hint-text,
+	.chat-page.theme-light .gm-card-meta,
+	.chat-page.theme-light .cite-drawer-meta,
+	.chat-page.theme-light .graph-quick-view-meta,
+	.chat-page.theme-light .model-menu-item-desc {
+		color: var(--chat-text-muted);
+	}
+
+	.chat-page.theme-light .citation-item,
+	.chat-page.theme-light .graph-tool-pill,
+	.chat-page.theme-light .schedule-card,
+	.chat-page.theme-light .schedule-event-row,
+	.chat-page.theme-light .graph-overview-preview,
+	.chat-page.theme-light .graph-overview-hint,
+	.chat-page.theme-light .graph-quick-view-canvas,
+	.chat-page.theme-light .cite-drawer-open-btn {
+		background: var(--chat-surface);
+		border-color: var(--chat-border);
+	}
+
+	.chat-page.theme-light .graph-tool-running,
+	.chat-page.theme-light .graph-tool-expanded,
+	.chat-page.theme-light .graph-tool-pending,
+	.chat-page.theme-light .graph-overview-icon-wrap,
+	.chat-page.theme-light .gm-icon-add,
+	.chat-page.theme-light .gm-icon-query,
+	.chat-page.theme-light .gm-icon-postorder,
+	.chat-page.theme-light .gm-icon-path-generate {
+		background: var(--chat-accent-soft);
+		border-color: rgba(47, 110, 234, 0.22);
+	}
+
+	.chat-page.theme-light .graph-tool-failed,
+	.chat-page.theme-light .gm-icon-delete {
+		background: var(--chat-danger-soft);
+		border-color: rgba(209, 79, 79, 0.18);
+	}
+
+	.chat-page.theme-light .gm-icon-update {
+		background: var(--chat-success-soft);
+	}
+
+	.chat-page.theme-light .gm-icon-path-modify {
+		background: var(--chat-warning-soft);
+	}
+
+	.chat-page.theme-light .graph-tool-pill-icon,
+	.chat-page.theme-light .graph-overview-icon-img,
+	.chat-page.theme-light .gm-card-icon-img,
+	.chat-page.theme-light .citation-footer-icon {
+		filter: brightness(0) saturate(100%) invert(34%) sepia(61%) saturate(1869%) hue-rotate(211deg) brightness(96%) contrast(91%);
+	}
+
+	.chat-page.theme-light .gm-icon-delete .gm-card-icon-img,
+	.chat-page.theme-light .graph-tool-status-failed {
+		filter: brightness(0) saturate(100%) invert(39%) sepia(31%) saturate(2143%) hue-rotate(329deg) brightness(96%) contrast(86%);
+	}
+
+	.chat-page.theme-light .gm-icon-update .gm-card-icon-img,
+	.chat-page.theme-light .graph-tool-status-icon {
+		filter: brightness(0) saturate(100%) invert(37%) sepia(26%) saturate(1030%) hue-rotate(105deg) brightness(92%) contrast(88%);
+	}
+
+	.chat-page.theme-light .gm-icon-path-modify .gm-card-icon-img,
+	.chat-page.theme-light .graph-tool-status-pending {
+		filter: brightness(0) saturate(100%) invert(52%) sepia(61%) saturate(1177%) hue-rotate(359deg) brightness(95%) contrast(89%);
+	}
+
+	.chat-page.theme-light .graph-tool-spinner {
+		border-color: rgba(47, 110, 234, 0.22);
+		border-top-color: var(--chat-accent);
+	}
+
+	.chat-page.theme-light .schedule-date-dot {
+		background: rgba(63, 53, 42, 0.18);
+	}
+
+	.chat-page.theme-light .schedule-date-dot-today {
+		background: var(--chat-accent);
+	}
+
+	.chat-page.theme-light .schedule-date-text-today,
+	.chat-page.theme-light .search-source-title {
+		color: var(--chat-text-secondary);
+	}
+
+	.chat-page.theme-light .schedule-event-time-end {
+		color: var(--chat-text-faint);
+	}
+
+	.chat-page.theme-light .search-indicator,
+	.chat-page.theme-light .search-source-card,
+	.chat-page.theme-light .review-card,
+	.chat-page.theme-light .review-event-item,
+	.chat-page.theme-light .quiz-tool-pill,
+	.chat-page.theme-light .quiz-expanded-container,
+	.chat-page.theme-light .quiz-tool-empty,
+	.chat-page.theme-light .quiz-tool-results-card,
+	.chat-page.theme-light .quiz-tool-detail-card,
+	.chat-page.theme-light .quiz-result-item,
+	.chat-page.theme-light .quiz-detail-q-row,
+	.chat-page.theme-light .search-tool-empty,
+	.chat-page.theme-light .search-tool-error {
+		background: var(--chat-surface);
+		border-color: var(--chat-border);
+	}
+
+	.chat-page.theme-light .search-indicator-running,
+	.chat-page.theme-light .search-indicator-expanded,
+	.chat-page.theme-light .quiz-tool-running {
+		background: var(--chat-accent-soft);
+		border-color: rgba(47, 110, 234, 0.22);
+	}
+
+	.chat-page.theme-light .quiz-tool-done {
+		background: rgba(47, 110, 234, 0.06);
+		border-color: rgba(47, 110, 234, 0.14);
+	}
+
+	.chat-page.theme-light .quiz-tool-failed {
+		background: var(--chat-danger-soft);
+		border-color: rgba(209, 79, 79, 0.18);
+	}
+
+	.chat-page.theme-light .search-indicator-collapsed {
+		background: rgba(63, 53, 42, 0.03);
+		border-color: rgba(63, 53, 42, 0.08);
+	}
+
+	.chat-page.theme-light .search-indicator-collapsed .search-indicator-text,
+	.chat-page.theme-light .search-source-site,
+	.chat-page.theme-light .search-tool-empty-text,
+	.chat-page.theme-light .review-empty-text,
+	.chat-page.theme-light .review-card-count,
+	.chat-page.theme-light .review-event-round,
+	.chat-page.theme-light .quiz-tool-pill-text,
+	.chat-page.theme-light .quiz-tool-empty-text,
+	.chat-page.theme-light .quiz-result-no-attempt,
+	.chat-page.theme-light .quiz-result-date,
+	.chat-page.theme-light .quiz-detail-score-label,
+	.chat-page.theme-light .quiz-detail-score-percent,
+	.chat-page.theme-light .quiz-detail-section-title,
+	.chat-page.theme-light .quiz-detail-subsection-title,
+	.chat-page.theme-light .quiz-detail-questions-count,
+	.chat-page.theme-light .quiz-detail-q-order,
+	.chat-page.theme-light .quiz-detail-q-score,
+	.chat-page.theme-light .search-indicator-text {
+		color: var(--chat-text-muted);
+	}
+
+	.chat-page.theme-light .search-tool-error-text {
+		color: var(--chat-danger);
+	}
+
+	.chat-page.theme-light .review-event-label,
+	.chat-page.theme-light .quiz-result-title,
+	.chat-page.theme-light .quiz-detail-tag-text,
+	.chat-page.theme-light .quiz-detail-q-title {
+		color: var(--chat-text-primary);
+	}
+
+	.chat-page.theme-light .review-event-depth {
+		color: var(--chat-accent);
+		background: var(--chat-accent-soft);
+	}
+
+	.chat-page.theme-light .review-event-urgency-badge {
+		background: var(--chat-success-soft);
+	}
+
+	.chat-page.theme-light .review-event-urgency-badge.urgency-overdue {
+		background: var(--chat-warning-soft);
+	}
+
+	.chat-page.theme-light .review-event-urgency-text {
+		color: var(--chat-success);
+	}
+
+	.chat-page.theme-light .review-event-urgency-text.urgency-overdue-text {
+		color: var(--chat-warning);
+	}
+
+	.chat-page.theme-light .quiz-result-score,
+	.chat-page.theme-light .quiz-detail-score-value,
+	.chat-page.theme-light .quiz-detail-footer-text {
+		color: var(--chat-accent);
+	}
+
+	.chat-page.theme-light .quiz-result-evaluating-text {
+		color: var(--chat-warning);
+	}
+
+	.chat-page.theme-light .search-indicator-globe,
+	.chat-page.theme-light .quiz-tool-pill-icon {
+		filter: brightness(0) saturate(100%) invert(34%) sepia(61%) saturate(1869%) hue-rotate(211deg) brightness(96%) contrast(91%);
+	}
+
+	.chat-page.theme-light .search-indicator-chevron,
+	.chat-page.theme-light .quiz-tool-chevron,
+	.chat-page.theme-light .quiz-result-arrow {
+		filter: brightness(0) saturate(100%);
+	}
+
+	.chat-page.theme-light .quiz-tool-spinner,
+	.chat-page.theme-light .search-indicator-spinner {
+		border-color: rgba(47, 110, 234, 0.22);
+		border-top-color: var(--chat-accent);
+	}
+
+	.chat-page.theme-light .quiz-detail-score-bar-bg {
+		background: rgba(63, 53, 42, 0.08);
+	}
+
+	.chat-page.theme-light .quiz-detail-analysis-section,
+	.chat-page.theme-light .quiz-detail-questions-section,
+	.chat-page.theme-light .quiz-detail-footer {
+		border-top-color: var(--chat-border);
+	}
+
+	.chat-page.theme-light .quiz-result-clickable:active,
+	.chat-page.theme-light .quiz-tool-detail-clickable:active {
+		background: rgba(63, 53, 42, 0.06);
+	}
+
+	.chat-page.theme-light .graph-overview-divider {
+		background: var(--chat-border);
+	}
+
+	.chat-page.theme-light .cite-drawer-footer {
+		border-top-color: var(--chat-border);
+	}
+
+	.chat-page.theme-light .graph-quick-view-overlay,
+	.chat-page.theme-light .cite-drawer-overlay.overlay-show {
+		background: rgba(61, 46, 30, 0.22);
+	}
+
+	.chat-page.theme-light .cite-drawer-container,
+	.chat-page.theme-light .graph-quick-view-panel {
+		background: var(--chat-surface-deep);
+		border-color: var(--chat-border);
+		box-shadow: var(--chat-shadow);
+	}
+
+	.chat-page.theme-light .cite-drawer-open-btn {
+		background: var(--chat-accent-soft);
+	}
+
+	.chat-page.theme-light .cite-drawer-open-text,
+	.chat-page.theme-light .citation-index,
+	.chat-page.theme-light .graph-quick-view-meta {
+		color: var(--chat-accent);
+	}
+
+	.chat-page.theme-light .graph-quick-view-close {
+		background: rgba(63, 53, 42, 0.06);
+	}
+
+	.chat-page.theme-light .graph-quick-view-close:active {
+		background: rgba(63, 53, 42, 0.1);
+	}
+
+	.chat-page.theme-light .ai-status-badge {
+		background: rgba(63, 53, 42, 0.06);
+		border-color: var(--chat-border);
+	}
+
+	.chat-page.theme-light .ai-msg-action-icon,
+	.chat-page.theme-light .copy-icon-default,
+	.chat-page.theme-light .user-msg-action-icon {
+		filter: brightness(0) saturate(100%);
+		opacity: 0.5;
+	}
+
+	.chat-page.theme-light .copy-icon-check.copy-icon-show {
+		filter: brightness(0) saturate(100%) invert(31%) sepia(64%) saturate(1481%) hue-rotate(210deg) brightness(97%) contrast(93%);
+	}
+
+	.chat-page.theme-light .ai-msg-action-btn:active,
+	.chat-page.theme-light .user-msg-action-btn:active {
+		background-color: rgba(63, 53, 42, 0.08);
+	}
+
+	.chat-page.theme-light .input-card {
+		background-color: rgba(255, 250, 244, 0.94);
+		border-color: var(--chat-border);
+		box-shadow: var(--chat-shadow);
+	}
+
+	.chat-page.theme-light .input-field {
+		color: var(--chat-text-primary);
+		-webkit-text-fill-color: var(--chat-text-primary);
+	}
+
+	.chat-page.theme-light .input-placeholder,
+	.chat-page.theme-light .placeholder-text {
+		color: var(--chat-text-muted);
+		-webkit-text-fill-color: var(--chat-text-muted);
+	}
+
+	.chat-page.theme-light .input-limit-row {
+		background: rgba(63, 53, 42, 0.04);
+		border-color: var(--chat-border);
+	}
+
+	.chat-page.theme-light .input-limit-text {
+		color: var(--chat-text-muted);
+		-webkit-text-fill-color: var(--chat-text-muted);
+	}
+
+	.chat-page.theme-light .input-limit-counter {
+		color: var(--chat-text-secondary);
+		-webkit-text-fill-color: var(--chat-text-secondary);
+	}
+
+	.chat-page.theme-light .input-action,
+	.chat-page.theme-light .model-selector-btn,
+	.chat-page.theme-light .thinking-toggle-btn {
+		background: var(--chat-surface-strong);
+		border-color: var(--chat-border);
+		box-shadow: var(--chat-shadow-soft);
+	}
+
+	.chat-page.theme-light .input-action-icon,
+	.chat-page.theme-light .model-selector-icon,
+	.chat-page.theme-light .thinking-toggle-icon {
+		filter: brightness(0) saturate(100%);
+	}
+
+	.chat-page.theme-light .model-selector-label,
+	.chat-page.theme-light .thinking-toggle-label,
+	.chat-page.theme-light .model-menu-item-name {
+		color: var(--chat-text-primary);
+		-webkit-text-fill-color: var(--chat-text-primary);
+	}
+
+	.chat-page.theme-light .model-menu {
+		background: var(--chat-surface-deep);
+		border-color: var(--chat-border);
+	}
+
+	.chat-page.theme-light .model-menu-item:active {
+		background: var(--chat-surface-soft);
+	}
+
+	.chat-page.theme-light .model-menu-item-active {
+		background: var(--chat-accent-soft);
+		border-color: rgba(47, 110, 234, 0.22);
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.58),
+			0 4rpx 12rpx rgba(47, 110, 234, 0.12);
+	}
+
+	.chat-page.theme-light .model-menu-accent {
+		background: rgba(63, 53, 42, 0.08);
+	}
+
+	.chat-page.theme-light .model-menu-item-active .model-menu-accent {
+		background: linear-gradient(180deg, #6F94F5 0%, var(--chat-accent) 100%);
+		box-shadow: 0 0 12rpx rgba(47, 110, 234, 0.24);
+	}
+
+	.chat-page.theme-light .thinking-toggle-indicator {
+		background: rgba(63, 53, 42, 0.08);
+		border-color: var(--chat-border);
+	}
+
+	.chat-page.theme-light .thinking-toggle-indicator-active {
+		background: rgba(47, 110, 234, 0.24);
+		border-color: rgba(47, 110, 234, 0.28);
+		box-shadow: 0 0 0 4rpx rgba(47, 110, 234, 0.08);
+	}
+
+	.chat-page.theme-light .thinking-body {
+		border-left-color: rgba(63, 53, 42, 0.18);
+	}
+
+	.chat-page.theme-light .wave-loading-text,
+	.chat-page.theme-light .memory-tool-text,
+	.chat-page.theme-light .planning-tool-text {
+		background: linear-gradient(
+			90deg,
+			rgba(122, 111, 98, 0.42) 0%,
+			rgba(122, 111, 98, 0.72) 22%,
+			rgba(31, 26, 22, 0.92) 44%,
+			rgba(122, 111, 98, 0.72) 66%,
+			rgba(122, 111, 98, 0.42) 100%
+		);
+		background-size: 300% 100%;
 	}
 </style>

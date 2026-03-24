@@ -1,5 +1,5 @@
 <template>
-  <view class="login-container">
+  <view class="login-container" :class="pageThemeClass">
     <view class="aurora-bg">
       <view class="aurora-blob aurora-blob-1"></view>
       <view class="aurora-blob aurora-blob-2"></view>
@@ -71,8 +71,10 @@
 <script>
 import { resetPassword } from '@/api/auth'
 import { useUserStore } from '@/store/user'
+import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 export default {
+  mixins: [homeThemePageMixin],
   data() {
     return {
       email: '',
@@ -91,8 +93,12 @@ export default {
     }
   },
   onLoad(options) {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
     this.email = decodeURIComponent(options.email || '')
     this.token = decodeURIComponent(options.token || '')
+  },
+  onShow() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
   },
   methods: {
     handleBack() {

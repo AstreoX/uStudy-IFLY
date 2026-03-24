@@ -1,5 +1,5 @@
 <template>
-  <view class="test-result-page">
+  <view class="test-result-page" :class="pageThemeClass">
     <!-- Background -->
     <view class="page-bg">
       <view class="bg-mesh"></view>
@@ -43,7 +43,7 @@
               <circle
                 cx="60" cy="60" r="52"
                 fill="none"
-                stroke="rgba(255, 255, 255, 0.08)"
+                :stroke="trackColor"
                 stroke-width="8"
               />
               <circle
@@ -226,8 +226,10 @@
 <script>
 import { getQuizAttempt } from '@/api/space'
 import { getQuizEvaluationResult, removeQuizEvaluationResult } from '@/utils/storage'
+import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 export default {
+  mixins: [homeThemePageMixin],
   data() {
     return {
       quizId: null,
@@ -270,6 +272,9 @@ export default {
       if (pct >= 40) return '#f59e0b'
       return '#ef4444'
     },
+    trackColor() {
+      return this.isLightTheme ? 'rgba(63, 53, 42, 0.12)' : 'rgba(255, 255, 255, 0.08)'
+    },
     correctCount() {
       return this.questionResults.filter(q => q.status === 'correct').length
     },
@@ -301,6 +306,7 @@ export default {
   },
 
   onLoad(options) {
+    this.restoreThemeMode({ darkStatusBarBackground: '#1D1E20' })
     if (options.quizId) {
       this.quizId = options.quizId
     }
@@ -318,6 +324,7 @@ export default {
   },
 
   onShow() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#1D1E20' })
     if (!this.loading) {
       this.scheduleDrawScoreRing()
     }
@@ -511,9 +518,9 @@ export default {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-        .replace(/\*\*(.*?)\*\*/g, '<strong style="color:rgba(139,92,246,1);font-weight:600;">$1</strong>')
+        .replace(/\*\*(.*?)\*\*/g, `<strong style="color:${this.isLightTheme ? '#2F6EEA' : 'rgba(139,92,246,1)'};font-weight:600;">$1</strong>`)
         .replace(/\*([^*]+)\*/g, '<em style="font-style:italic;">$1</em>')
-        .replace(/`([^`]+)`/g, '<code style="background:rgba(139,92,246,0.2);padding:2px 6px;border-radius:4px;">$1</code>')
+        .replace(/`([^`]+)`/g, `<code style="background:${this.isLightTheme ? 'rgba(47,110,234,0.12)' : 'rgba(139,92,246,0.2)'};padding:2px 6px;border-radius:4px;color:${this.isLightTheme ? '#1F1A16' : '#FFFFFF'};">$1</code>`)
         .replace(/\n/g, '<br/>')
     },
 
@@ -545,7 +552,7 @@ export default {
       ctx.clearRect(0, 0, size, size)
 
       // Background track
-      ctx.setStrokeStyle('rgba(255, 255, 255, 0.08)')
+      ctx.setStrokeStyle(this.trackColor)
       ctx.setLineWidth(lineWidth)
       ctx.setLineCap('round')
       ctx.beginPath()

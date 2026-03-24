@@ -1,5 +1,5 @@
 <template>
-  <view class="test-page">
+  <view class="test-page" :class="pageThemeClass">
     <!-- 顶部导航栏 -->
     <view class="nav-bar">
       <view class="nav-left" @click="goBack">
@@ -38,8 +38,8 @@
       <scroll-view
       class="question-container"
       scroll-y
-      @touchstart="handleTouchStart"
-      @touchend="handleTouchEnd"
+      @touchstart="handleQuestionTouchStart"
+      @touchend="handleQuestionTouchEnd"
     >
       <!-- 动画包装器 -->
       <view
@@ -130,13 +130,17 @@
           <text class="question-number">第 {{ currentIndex + 1 }} 题</text>
         </view>
         <text class="question-title">{{ currentQuestion.title }}</text>
-        <view class="answer-textarea-wrapper">
+        <view class="answer-textarea-wrapper" @click.stop @touchstart.stop @touchend.stop @mousedown.stop>
           <textarea
             class="answer-textarea"
             v-model="userAnswers[currentQuestion.id]"
             placeholder="请输入你的答案..."
             placeholder-class="textarea-placeholder"
             :maxlength="1000"
+            @click.stop
+            @touchstart.stop
+            @touchend.stop
+            @mousedown.stop
           ></textarea>
           <text class="textarea-counter">{{ (userAnswers[currentQuestion.id] || '').length }}/1000</text>
         </view>
@@ -209,8 +213,10 @@
 import { getQuizDetail, submitQuiz } from '@/api/space'
 import { setPendingEvaluation } from '@/utils/quizEvaluationBus'
 import { setQuizEvaluationResult } from '@/utils/storage'
+import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 export default {
+  mixins: [homeThemePageMixin],
   data() {
     return {
       msgId: null,
@@ -284,6 +290,7 @@ export default {
   },
 
   onLoad(options) {
+    this.restoreThemeMode({ darkStatusBarBackground: '#1D1E20' })
     if (options.quizId) {
       this.quizId = options.quizId
       this.loadQuizData(options.quizId)
@@ -296,7 +303,21 @@ export default {
     }
   },
 
+  onShow() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#1D1E20' })
+  },
+
   methods: {
+    handleQuestionTouchStart(e) {
+      if (this.currentQuestion && this.currentQuestion.type === 'shortanswer') return
+      this.handleTouchStart(e)
+    },
+
+    handleQuestionTouchEnd(e) {
+      if (this.currentQuestion && this.currentQuestion.type === 'shortanswer') return
+      this.handleTouchEnd(e)
+    },
+
     /**
      * 从后端加载测试数据
      * @param {string} quizId - 测试 ID
@@ -627,7 +648,7 @@ export default {
 }
 </script>
 
-<style>
+<style scoped>
 .test-page {
   position: relative;
   display: flex;
@@ -915,6 +936,7 @@ export default {
 /* ========== 简答题 ========== */
 .answer-textarea-wrapper {
   position: relative;
+  z-index: 2;
 }
 
 .answer-textarea {
@@ -928,6 +950,9 @@ export default {
   color: #ffffff;
   line-height: 1.6;
   box-sizing: border-box;
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
 }
 
 .textarea-placeholder {
@@ -940,6 +965,7 @@ export default {
   bottom: 16rpx;
   font-size: 22rpx;
   color: rgba(255, 255, 255, 0.3);
+  pointer-events: none;
 }
 
 /* ========== 底部导航 ========== */
@@ -1188,5 +1214,163 @@ export default {
   font-size: 32rpx;
   font-weight: 500;
   color: rgba(74, 108, 247, 1);
+}
+
+/* ========== 浅色主题覆盖：仅调整颜色，不改布局 ========== */
+.test-page.theme-light {
+  background-color: #F3EDE3;
+}
+
+.test-page.theme-light .nav-bar {
+  background: linear-gradient(
+    to bottom,
+    rgba(243, 237, 227, 0.95) 0%,
+    rgba(243, 237, 227, 0.72) 44%,
+    rgba(243, 237, 227, 0) 100%
+  );
+}
+
+.test-page.theme-light .progress-section {
+  background: linear-gradient(
+    to bottom,
+    rgba(243, 237, 227, 0.92) 0%,
+    rgba(243, 237, 227, 0.58) 48%,
+    rgba(243, 237, 227, 0) 100%
+  );
+}
+
+.test-page.theme-light .question-container {
+  background: linear-gradient(
+    180deg,
+    rgba(243, 237, 227, 0.98) 0%,
+    rgba(243, 237, 227, 0.98) 100%
+  );
+}
+
+.test-page.theme-light .bottom-nav {
+  background: linear-gradient(
+    to top,
+    rgba(243, 237, 227, 0.98) 0%,
+    rgba(243, 237, 227, 0.94) 74%,
+    rgba(243, 237, 227, 0) 100%
+  );
+}
+
+.test-page.theme-light .nav-left,
+.test-page.theme-light .nav-right,
+.test-page.theme-light .nav-btn {
+  background-color: rgba(255, 255, 255, 0.84);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 12rpx 28rpx rgba(118, 101, 80, 0.1);
+}
+
+.test-page.theme-light .question-card,
+.test-page.theme-light .option-item {
+  background: #FFFAF4;
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 14rpx 32rpx rgba(118, 101, 80, 0.08);
+}
+
+.test-page.theme-light .answer-textarea {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(63, 53, 42, 0.12);
+}
+
+.test-page.theme-light .progress-bar {
+  background: rgba(63, 53, 42, 0.08);
+}
+
+.test-page.theme-light .progress-fill {
+  background: #2F9D70;
+}
+
+.test-page.theme-light .nav-title,
+.test-page.theme-light .question-title,
+.test-page.theme-light .option-text,
+.test-page.theme-light .nav-btn-text,
+.test-page.theme-light .submit-success-title {
+  color: #1F1A16;
+}
+
+.test-page.theme-light .loading-text,
+.test-page.theme-light .progress-text,
+.test-page.theme-light .question-number,
+.test-page.theme-light .textarea-counter,
+.test-page.theme-light .submit-success-desc {
+  color: rgba(31, 26, 22, 0.62);
+}
+
+.test-page.theme-light .textarea-placeholder {
+  color: rgba(31, 26, 22, 0.42);
+}
+
+.test-page.theme-light .nav-icon,
+.test-page.theme-light .nav-btn-icon {
+  filter: brightness(0) saturate(100%);
+}
+
+.test-page.theme-light .nav-right-active,
+.test-page.theme-light .option-radio-selected,
+.test-page.theme-light .option-checkbox-checked,
+.test-page.theme-light .dot-current,
+.test-page.theme-light .submit-success-btn {
+  background: #2F6EEA;
+  border-color: #2F6EEA;
+}
+
+.test-page.theme-light .radio-inner {
+  background: #FFFFFF;
+}
+
+.test-page.theme-light .option-item-selected {
+  background: rgba(47, 110, 234, 0.12);
+  border-color: rgba(47, 110, 234, 0.22);
+}
+
+.test-page.theme-light .option-radio,
+.test-page.theme-light .option-checkbox {
+  border-color: rgba(63, 53, 42, 0.18);
+}
+
+.test-page.theme-light .question-type-single {
+  background: rgba(47, 110, 234, 0.12);
+  color: #2F6EEA;
+}
+
+.test-page.theme-light .question-type-multiple {
+  background: rgba(126, 94, 219, 0.12);
+  color: #6D57BF;
+}
+
+.test-page.theme-light .question-type-truefalse {
+  background: rgba(47, 157, 112, 0.12);
+  color: #2F9D70;
+}
+
+.test-page.theme-light .question-type-shortanswer {
+  background: rgba(214, 147, 46, 0.12);
+  color: #BA7F1F;
+}
+
+.test-page.theme-light .dot {
+  background: rgba(63, 53, 42, 0.18);
+}
+
+.test-page.theme-light .dot-answered {
+  background: rgba(47, 110, 234, 0.48);
+}
+
+.test-page.theme-light .submit-overlay-bg.overlay-bg-show {
+  background: rgba(74, 59, 45, 0.18);
+}
+
+.test-page.theme-light .submit-overlay-card {
+  background: #FFFAF4;
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 20rpx 54rpx rgba(118, 101, 80, 0.14);
+}
+
+.test-page.theme-light .submit-success-btn-text {
+  color: #FFFFFF;
 }
 </style>

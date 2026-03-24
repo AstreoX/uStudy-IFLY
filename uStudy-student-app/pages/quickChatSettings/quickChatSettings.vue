@@ -1,5 +1,5 @@
 <template>
-  <view class="settings-page">
+  <view class="settings-page" :class="pageThemeClass">
     <view class="settings-bg">
       <view class="bg-mesh"></view>
       <view class="bg-glow bg-glow-blue"></view>
@@ -81,6 +81,7 @@ import UToast from '@/components/u-toast/u-toast.vue'
 import { getSpaces } from '@/api/space'
 import { updateConversation, deleteConversation } from '@/api/chat'
 import { goBack } from '@/utils/navigation'
+import { getStoredThemeMode } from '@/utils/themeMode'
 
 export default {
   components: {
@@ -93,6 +94,7 @@ export default {
     return {
       chatId: '',
       conversationId: '',
+      homeThemeMode: 'dark',
       showDeleteModal: false,
       showSpaceSelector: false,
       availableSpaces: [],
@@ -107,13 +109,41 @@ export default {
     }
   },
 
+  computed: {
+    isLightTheme() {
+      return this.homeThemeMode === 'light'
+    },
+
+    pageThemeClass() {
+      return this.isLightTheme ? 'theme-light' : 'theme-dark'
+    }
+  },
+
   async onLoad(options) {
+    this.restoreThemeMode()
     this.chatId = options.chatId || ''
     this.conversationId = options.conversationId || ''
     await this.loadSpaces()
   },
 
+  onShow() {
+    this.restoreThemeMode()
+  },
+
   methods: {
+    restoreThemeMode() {
+      this.homeThemeMode = getStoredThemeMode('dark')
+      this.syncThemeSystemUi(this.homeThemeMode)
+    },
+
+    syncThemeSystemUi(mode) {
+      const isLight = mode === 'light'
+      // #ifdef APP-PLUS
+      plus.navigator.setStatusBarStyle(isLight ? 'dark' : 'light')
+      plus.navigator.setStatusBarBackground(isLight ? '#F3EDE3' : '#1D1E20')
+      // #endif
+    },
+
     showCustomToast(message, type = 'info') {
       this.toast = { visible: true, message, type }
     },
@@ -428,5 +458,62 @@ export default {
   font-size: 32rpx;
   color: #EF4444;
   font-weight: 500;
+}
+
+.settings-page.theme-light {
+  background-color: #F3EDE3;
+}
+
+.settings-page.theme-light .bg-mesh {
+  background:
+    radial-gradient(circle at 82% 14%, rgba(47, 110, 234, 0.08) 0%, rgba(47, 110, 234, 0) 32%),
+    radial-gradient(circle at 12% 100%, rgba(199, 119, 22, 0.06) 0%, rgba(199, 119, 22, 0) 36%);
+}
+
+.settings-page.theme-light .bg-glow-blue {
+  background: rgba(47, 110, 234, 0.14);
+}
+
+.settings-page.theme-light .bg-glow-violet {
+  background: rgba(199, 119, 22, 0.08);
+}
+
+.settings-page.theme-light .nav-left,
+.settings-page.theme-light .settings-card {
+  background: rgba(255, 250, 244, 0.88);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 16rpx 40rpx rgba(118, 101, 80, 0.14);
+}
+
+.settings-page.theme-light .nav-left {
+  outline-color: rgba(255, 255, 255, 0.72);
+}
+
+.settings-page.theme-light .nav-icon,
+.settings-page.theme-light .item-icon,
+.settings-page.theme-light .item-arrow {
+  filter: brightness(0) saturate(100%);
+}
+
+.settings-page.theme-light .nav-title,
+.settings-page.theme-light .item-label {
+  color: #1F1A16;
+}
+
+.settings-page.theme-light .settings-divider {
+  background: rgba(63, 53, 42, 0.1);
+}
+
+.settings-page.theme-light .settings-item:active {
+  background: rgba(63, 53, 42, 0.05);
+}
+
+.settings-page.theme-light .danger-card {
+  background: rgba(209, 79, 79, 0.12);
+  border-color: rgba(209, 79, 79, 0.24);
+}
+
+.settings-page.theme-light .danger-card:active {
+  background: rgba(209, 79, 79, 0.18);
 }
 </style>

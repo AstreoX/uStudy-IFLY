@@ -1,5 +1,5 @@
 <template>
-  <view class="subscription-page">
+  <view class="subscription-page" :class="pageThemeClass">
     <!-- Aurora Background Layer -->
     <view class="aurora-bg">
       <view class="aurora-blob aurora-blob-1"></view>
@@ -148,6 +148,7 @@
       :visible="showPaymentModal"
       :plan="selectedPlan"
       :billing-cycle="billingCycle"
+      :theme-mode="homeThemeMode"
       @close="showPaymentModal = false"
       @success="handlePaymentSuccess"
     />
@@ -160,8 +161,10 @@ import { getMe } from '@/api/auth'
 import { useUserStore } from '@/store/user'
 import { getTokens } from '@/utils/storage'
 import { goBack } from '@/utils/navigation'
+import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 export default {
+  mixins: [homeThemePageMixin],
   components: {
     PaymentModal
   },
@@ -268,7 +271,11 @@ export default {
       return labels[this.normalizedTier] || 'Free'
     }
   },
+  created() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
+  },
   onShow() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
     this.loadUser()
   },
   methods: {

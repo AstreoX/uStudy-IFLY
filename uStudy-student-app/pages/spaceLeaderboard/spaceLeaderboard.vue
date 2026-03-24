@@ -1,5 +1,5 @@
 <template>
-  <view class="leaderboard-page">
+  <view class="leaderboard-page" :class="pageThemeClass">
     <view class="nav-bar">
       <view class="nav-left" @click="goBack">
         <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
@@ -140,8 +140,10 @@
 import { getSpaceLeaderboard } from '@/api/space'
 import { useUserStore } from '@/store/user'
 import { goBack } from '@/utils/navigation'
+import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 export default {
+  mixins: [homeThemePageMixin],
   data() {
     return {
       spaceId: '',
@@ -160,6 +162,7 @@ export default {
   },
 
   onLoad(options) {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
     this.spaceId = options.spaceId || ''
     this.spaceName = options.spaceName ? decodeURIComponent(options.spaceName) : ''
     const userStore = useUserStore()
@@ -168,6 +171,7 @@ export default {
   },
 
   onShow() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
     if (this.spaceId && !this.loading) {
       this.loadLeaderboard()
     }
@@ -738,5 +742,69 @@ export default {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ========== 浅色主题覆盖：仅调整颜色，不改布局 ========== */
+.leaderboard-page.theme-light {
+  background:
+    radial-gradient(circle at top left, rgba(47, 110, 234, 0.14), transparent 40%),
+    radial-gradient(circle at top right, rgba(245, 187, 115, 0.12), transparent 34%),
+    linear-gradient(180deg, #F7F1E8 0%, #F3EDE3 48%, #EFE6DA 100%);
+  color: #1F1A16;
+}
+
+.leaderboard-page.theme-light .nav-bar::before {
+  background: linear-gradient(
+    to bottom,
+    rgba(243, 237, 227, 0.94) 0%,
+    rgba(243, 237, 227, 0.72) 52%,
+    rgba(243, 237, 227, 0) 100%
+  );
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .leaderboard-page.theme-light .nav-bar::before {
+    background: linear-gradient(
+      to bottom,
+      rgba(243, 237, 227, 0.96) 0%,
+      rgba(243, 237, 227, 0.82) 52%,
+      rgba(243, 237, 227, 0) 100%
+    );
+  }
+}
+
+.leaderboard-page.theme-light .nav-left {
+  background-color: rgba(255, 255, 255, 0.82);
+  border-color: rgba(63, 53, 42, 0.1);
+  outline-color: rgba(255, 255, 255, 0.72);
+  box-shadow:
+    inset 0 1rpx 2rpx rgba(255, 255, 255, 0.68),
+    0 10rpx 24rpx rgba(118, 101, 80, 0.12);
+}
+
+.leaderboard-page.theme-light .nav-icon,
+.leaderboard-page.theme-light .state-icon {
+  filter: brightness(0) saturate(100%);
+}
+
+.leaderboard-page.theme-light .nav-title,
+.leaderboard-page.theme-light .state-title {
+  color: #1F1A16;
+}
+
+.leaderboard-page.theme-light .state-sub,
+.leaderboard-page.theme-light .hero-desc,
+.leaderboard-page.theme-light .section-sub {
+  color: rgba(31, 26, 22, 0.58);
+}
+
+.leaderboard-page.theme-light .loading-spinner {
+  border-color: rgba(63, 53, 42, 0.14);
+  border-top-color: #2F6EEA;
+}
+
+.leaderboard-page.theme-light .state-btn {
+  background: linear-gradient(135deg, #2F6EEA 0%, #5B95FF 100%);
+  box-shadow: 0 10rpx 28rpx rgba(47, 110, 234, 0.18);
 }
 </style>

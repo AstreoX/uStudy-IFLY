@@ -1,5 +1,5 @@
 <template>
-  <view v-if="visible" class="u-input-modal-wrapper" @touchmove.stop.prevent>
+  <view v-if="visible" class="u-input-modal-wrapper" :class="themeClass" @touchmove.stop.prevent>
     <!-- Overlay -->
     <view
       class="u-input-modal-overlay"
@@ -67,6 +67,8 @@
 </template>
 
 <script>
+import { getStoredThemeMode, normalizeThemeMode } from '@/utils/themeMode'
+
 export default {
   name: 'UInputModal',
   props: {
@@ -97,6 +99,10 @@ export default {
     multiline: {
       type: Boolean,
       default: true
+    },
+    themeMode: {
+      type: String,
+      default: ''
     }
   },
 
@@ -104,7 +110,8 @@ export default {
     return {
       animationVisible: false,
       inputValue: '',
-      errorMessage: ''
+      errorMessage: '',
+      localThemeMode: 'dark'
     }
   },
 
@@ -118,6 +125,9 @@ export default {
         return false
       }
       return len > 0
+    },
+    themeClass() {
+      return `theme-${normalizeThemeMode(this.themeMode || this.localThemeMode)}`
     }
   },
 
@@ -126,6 +136,7 @@ export default {
       immediate: true,
       handler(newVal) {
         if (newVal) {
+          this.refreshThemeMode()
           this.inputValue = this.value
           this.errorMessage = ''
           this.$nextTick(() => {
@@ -146,7 +157,15 @@ export default {
     }
   },
 
+  created() {
+    this.refreshThemeMode()
+  },
+
   methods: {
+    refreshThemeMode() {
+      this.localThemeMode = getStoredThemeMode('dark')
+    },
+
     onInput(e) {
       this.inputValue = e.detail.value
       this.errorMessage = ''
@@ -189,6 +208,26 @@ export default {
 
 <style scoped>
 .u-input-modal-wrapper {
+  --u-input-overlay: rgba(0, 0, 0, 0.6);
+  --u-input-surface: rgba(20, 20, 30, 0.92);
+  --u-input-surface-fallback: rgba(30, 30, 45, 0.98);
+  --u-input-border: rgba(255, 255, 255, 0.15);
+  --u-input-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.5);
+  --u-input-highlight: rgba(255, 255, 255, 0.05);
+  --u-input-title: #ffffff;
+  --u-input-field-bg: rgba(255, 255, 255, 0.08);
+  --u-input-field-border: rgba(255, 255, 255, 0.2);
+  --u-input-field-text: #ffffff;
+  --u-input-focus-border: rgba(0, 170, 255, 0.6);
+  --u-input-focus-shadow: rgba(0, 170, 255, 0.15);
+  --u-input-placeholder: rgba(255, 255, 255, 0.4);
+  --u-input-counter: rgba(255, 255, 255, 0.4);
+  --u-input-error: #EF4444;
+  --u-input-divider: rgba(255, 255, 255, 0.1);
+  --u-input-btn-active: rgba(255, 255, 255, 0.08);
+  --u-input-cancel: rgba(255, 255, 255, 0.7);
+  --u-input-confirm: #00AAFF;
+  --u-input-confirm-disabled: rgba(0, 170, 255, 0.4);
   position: fixed;
   top: 0;
   left: 0;
@@ -198,6 +237,29 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.u-input-modal-wrapper.theme-light {
+  --u-input-overlay: rgba(61, 46, 30, 0.22);
+  --u-input-surface: rgba(255, 249, 241, 0.96);
+  --u-input-surface-fallback: rgba(255, 249, 241, 0.99);
+  --u-input-border: rgba(63, 53, 42, 0.12);
+  --u-input-shadow: 0 16rpx 48rpx rgba(118, 101, 80, 0.18);
+  --u-input-highlight: rgba(255, 255, 255, 0.78);
+  --u-input-title: #1F1A16;
+  --u-input-field-bg: rgba(255, 255, 255, 0.88);
+  --u-input-field-border: rgba(63, 53, 42, 0.12);
+  --u-input-field-text: #1F1A16;
+  --u-input-focus-border: rgba(47, 110, 234, 0.46);
+  --u-input-focus-shadow: rgba(47, 110, 234, 0.14);
+  --u-input-placeholder: rgba(31, 26, 22, 0.36);
+  --u-input-counter: rgba(31, 26, 22, 0.42);
+  --u-input-error: #D14F4F;
+  --u-input-divider: rgba(63, 53, 42, 0.1);
+  --u-input-btn-active: rgba(63, 53, 42, 0.06);
+  --u-input-cancel: rgba(31, 26, 22, 0.62);
+  --u-input-confirm: #2F6EEA;
+  --u-input-confirm-disabled: rgba(47, 110, 234, 0.38);
 }
 
 .u-input-modal-overlay {
@@ -211,20 +273,20 @@ export default {
 }
 
 .u-input-modal-overlay.overlay-show {
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--u-input-overlay);
 }
 
 .u-input-modal-container {
   position: relative;
   width: 600rpx;
-  background: rgba(20, 20, 30, 0.92);
+  background: var(--u-input-surface);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
-  border: 1rpx solid rgba(255, 255, 255, 0.15);
+  border: 1rpx solid var(--u-input-border);
   border-radius: 24rpx;
   box-shadow:
-    0 16rpx 48rpx rgba(0, 0, 0, 0.5),
-    0 0 0 1rpx rgba(255, 255, 255, 0.05) inset;
+    var(--u-input-shadow),
+    0 0 0 1rpx var(--u-input-highlight) inset;
   overflow: hidden;
   transform: translateY(40rpx) scale(0.95);
   opacity: 0;
@@ -238,7 +300,7 @@ export default {
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .u-input-modal-container {
-    background: rgba(30, 30, 45, 0.98);
+    background: var(--u-input-surface-fallback);
   }
 }
 
@@ -250,7 +312,7 @@ export default {
 .u-input-modal-title text {
   font-size: 36rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--u-input-title);
 }
 
 .u-input-modal-input-wrapper {
@@ -260,11 +322,11 @@ export default {
 
 .u-input-modal-input {
   width: 100%;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1rpx solid rgba(255, 255, 255, 0.2);
+  background: var(--u-input-field-bg);
+  border: 1rpx solid var(--u-input-field-border);
   border-radius: 16rpx;
   font-size: 32rpx;
-  color: #ffffff;
+  color: var(--u-input-field-text);
   box-sizing: border-box;
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
@@ -286,12 +348,12 @@ textarea.u-input-modal-input {
 }
 
 .u-input-modal-input:focus {
-  border-color: rgba(0, 170, 255, 0.6);
-  box-shadow: 0 0 0 4rpx rgba(0, 170, 255, 0.15);
+  border-color: var(--u-input-focus-border);
+  box-shadow: 0 0 0 4rpx var(--u-input-focus-shadow);
 }
 
 .input-placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--u-input-placeholder);
 }
 
 .input-counter {
@@ -302,7 +364,7 @@ textarea.u-input-modal-input {
 
 .input-counter text {
   font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--u-input-counter);
 }
 
 .u-input-modal-error {
@@ -311,13 +373,13 @@ textarea.u-input-modal-input {
 
 .u-input-modal-error text {
   font-size: 26rpx;
-  color: #EF4444;
+  color: var(--u-input-error);
 }
 
 .u-input-modal-buttons {
   display: flex;
   margin-top: 24rpx;
-  border-top: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-top: 1rpx solid var(--u-input-divider);
 }
 
 .u-input-modal-btn {
@@ -339,19 +401,19 @@ textarea.u-input-modal-input {
 }
 
 .u-input-modal-btn:active {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--u-input-btn-active);
 }
 
 .btn-cancel {
-  color: rgba(255, 255, 255, 0.7);
-  border-right: 1rpx solid rgba(255, 255, 255, 0.1);
+  color: var(--u-input-cancel);
+  border-right: 1rpx solid var(--u-input-divider);
 }
 
 .btn-confirm {
-  color: #00AAFF;
+  color: var(--u-input-confirm);
 }
 
 .btn-confirm.btn-disabled {
-  color: rgba(0, 170, 255, 0.4);
+  color: var(--u-input-confirm-disabled);
 }
 </style>

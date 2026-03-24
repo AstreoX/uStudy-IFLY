@@ -1,6 +1,6 @@
 <template>
 	<page-meta :page-style="createSpacePageStyle"></page-meta>
-	<view class="page-container">
+	<view class="page-container create-space-page" :class="pageThemeClass">
 		<!-- Aurora Background Layer -->
 		<view class="aurora-bg">
 			<view class="aurora-blob aurora-blob-1"></view>
@@ -133,6 +133,7 @@
 
 <script>
 	import { createSpace, generateKnowledgeGraph, importSpaceByCode } from '@/api/space'
+	import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 	const ENABLE_AUTO_SCROLL = true
 	const DEBUG_LOOP_SCROLL = false
@@ -141,6 +142,7 @@
 	const RESUME_DELAY_MS = 1200
 
 	export default {
+		mixins: [homeThemePageMixin],
 		data() {
 			return {
 				topicName: '',
@@ -182,10 +184,10 @@
 				return this.topicName.trim().length > 0 && !this.isCreating
 			},
 			createSpacePageStyle() {
-				return 'height: 100vh; overflow: hidden; overscroll-behavior: none; background-color: #0A0A12;'
+				return `height: 100vh; overflow: hidden; overscroll-behavior: none; background-color: ${this.isLightTheme ? '#F3EDE3' : '#0A0A12'};`
 			},
 			placeholderStyle() {
-				return 'color: rgba(255, 255, 255, 0.45);'
+				return this.isLightTheme ? 'color: rgba(31, 26, 22, 0.38);' : 'color: rgba(255, 255, 255, 0.45);'
 			},
 			// 复制一份标签列表实现无缝循环
 			displayPreferenceOptions() {
@@ -206,11 +208,16 @@
 			}
 		},
 
+		created() {
+			this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
+		},
+
 		onReady() {
 			this.inputFocused = true
 		},
 
 		onShow() {
+			this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
 			if (!this.showPreferenceTags) return
 			if (this.loopUnitWidth > 0) {
 				this.startAutoScroll()

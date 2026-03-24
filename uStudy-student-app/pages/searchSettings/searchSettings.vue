@@ -1,5 +1,5 @@
 <template>
-  <view class="search-settings-page">
+  <view class="search-settings-page" :class="pageThemeClass">
     <!-- Aurora Background -->
     <view class="aurora-bg">
       <view class="aurora-blob aurora-blob-1"></view>
@@ -97,10 +97,13 @@
 
 <script>
 import { getSearchSettings, updateSearchSettings } from '@/api/searchSettings'
+import { getStoredThemeMode } from '@/utils/themeMode'
+import { goBack } from '@/utils/navigation'
 
 export default {
   data() {
     return {
+      homeThemeMode: 'dark',
       settings: {
         web_search_enabled: true,
         academic_search_enabled: true,
@@ -111,13 +114,41 @@ export default {
     }
   },
 
+  computed: {
+    isLightTheme() {
+      return this.homeThemeMode === 'light'
+    },
+
+    pageThemeClass() {
+      return this.isLightTheme ? 'theme-light' : 'theme-dark'
+    }
+  },
+
   onLoad() {
+    this.restoreThemeMode()
     this.loadSettings()
   },
 
+  onShow() {
+    this.restoreThemeMode()
+  },
+
   methods: {
+    restoreThemeMode() {
+      this.homeThemeMode = getStoredThemeMode('dark')
+      this.syncThemeSystemUi(this.homeThemeMode)
+    },
+
+    syncThemeSystemUi(mode) {
+      const isLight = mode === 'light'
+      // #ifdef APP-PLUS
+      plus.navigator.setStatusBarStyle(isLight ? 'dark' : 'light')
+      plus.navigator.setStatusBarBackground(isLight ? '#F3EDE3' : '#1D1E20')
+      // #endif
+    },
+
     goBack() {
-      uni.navigateBack()
+      goBack()
     },
 
     async loadSettings() {
@@ -349,5 +380,57 @@ export default {
   font-size: 22rpx;
   color: rgba(255, 255, 255, 0.3);
   line-height: 1.5;
+}
+
+.search-settings-page.theme-light {
+  background: #F3EDE3;
+}
+
+.search-settings-page.theme-light .aurora-blob-1 {
+  background: rgba(47, 110, 234, 0.18);
+}
+
+.search-settings-page.theme-light .aurora-blob-2 {
+  background: rgba(199, 119, 22, 0.14);
+}
+
+.search-settings-page.theme-light .nav-icon,
+.search-settings-page.theme-light .item-icon {
+  filter: brightness(0) saturate(100%);
+}
+
+.search-settings-page.theme-light .nav-title,
+.search-settings-page.theme-light .section-title,
+.search-settings-page.theme-light .item-label {
+  color: #1F1A16;
+}
+
+.search-settings-page.theme-light .section-desc,
+.search-settings-page.theme-light .item-desc,
+.search-settings-page.theme-light .note-text {
+  color: rgba(31, 26, 22, 0.58);
+}
+
+.search-settings-page.theme-light .settings-card {
+  background: rgba(255, 250, 244, 0.88);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 16rpx 40rpx rgba(118, 101, 80, 0.14);
+}
+
+.search-settings-page.theme-light .settings-divider {
+  background: rgba(63, 53, 42, 0.08);
+}
+
+.search-settings-page.theme-light .toggle-switch {
+  background: rgba(63, 53, 42, 0.12);
+}
+
+.search-settings-page.theme-light .toggle-switch.toggle-on {
+  background: #2F6EEA;
+}
+
+.search-settings-page.theme-light .toggle-thumb {
+  background: #FFFFFF;
+  box-shadow: 0 8rpx 18rpx rgba(118, 101, 80, 0.12);
 }
 </style>

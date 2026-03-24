@@ -1,5 +1,5 @@
 <template>
-  <view class="agc-wrap" :class="{ 'agc-expanded': detailVisible || isCollapsing }">
+  <view class="agc-wrap" :class="[themeClass, { 'agc-expanded': detailVisible || isCollapsing }]">
     <view
       class="agc-pill"
       :class="{
@@ -95,12 +95,18 @@
 </template>
 
 <script>
+import { getStoredThemeMode, normalizeThemeMode } from '@/utils/themeMode'
+
 export default {
   name: 'ArtifactGenerationCard',
   props: {
     toolCall: {
       type: Object,
       required: true
+    },
+    themeMode: {
+      type: String,
+      default: ''
     }
   },
   data() {
@@ -176,6 +182,12 @@ export default {
     },
     hasViewer() {
       return !!this.result.note_id
+    },
+    resolvedThemeMode() {
+      return normalizeThemeMode(this.themeMode || getStoredThemeMode('dark'))
+    },
+    themeClass() {
+      return `theme-${this.resolvedThemeMode}`
     }
   },
   watch: {
@@ -544,6 +556,72 @@ export default {
   width: 36rpx;
   height: 36rpx;
   filter: brightness(0) invert(1);
+}
+
+.agc-wrap.theme-light.agc-expanded {
+  background: rgba(255, 250, 244, 0.94);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 14rpx 36rpx rgba(118, 101, 80, 0.14);
+}
+
+.agc-wrap.theme-light .agc-pill,
+.agc-wrap.theme-light .agc-card {
+  background: rgba(255, 250, 244, 0.86);
+  border-color: rgba(63, 53, 42, 0.1);
+}
+
+.agc-wrap.theme-light .agc-pill-generating {
+  background: rgba(47, 110, 234, 0.08);
+  border-color: rgba(47, 110, 234, 0.18);
+}
+
+.agc-wrap.theme-light .agc-pill-failed {
+  background: rgba(209, 79, 79, 0.06);
+  border-color: rgba(209, 79, 79, 0.18);
+}
+
+.agc-wrap.theme-light .agc-icon-wrap {
+  background: rgba(47, 110, 234, 0.1);
+}
+
+.agc-wrap.theme-light .agc-card-icon,
+.agc-wrap.theme-light .agc-pill-icon {
+  filter: brightness(0) saturate(100%) invert(34%) sepia(61%) saturate(1869%) hue-rotate(211deg) brightness(96%) contrast(91%);
+}
+
+.agc-wrap.theme-light .agc-pill-chevron,
+.agc-wrap.theme-light .agc-code-nav-icon {
+  filter: brightness(0) saturate(100%);
+  opacity: 0.56;
+}
+
+.agc-wrap.theme-light .agc-title,
+.agc-wrap.theme-light .agc-code-text {
+  color: #1F1A16;
+}
+
+.agc-wrap.theme-light .agc-pill-text,
+.agc-wrap.theme-light .agc-meta,
+.agc-wrap.theme-light .agc-section-label,
+.agc-wrap.theme-light .agc-empty-state-text {
+  color: rgba(31, 26, 22, 0.58);
+}
+
+.agc-wrap.theme-light .agc-section-meta {
+  color: #2F6EEA;
+}
+
+.agc-wrap.theme-light .agc-divider {
+  background: rgba(63, 53, 42, 0.08);
+}
+
+.agc-wrap.theme-light .agc-code-block {
+  background: rgba(63, 53, 42, 0.08);
+}
+
+.agc-wrap.theme-light .agc-empty-state {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(63, 53, 42, 0.08);
 }
 
 @keyframes agc-spin {

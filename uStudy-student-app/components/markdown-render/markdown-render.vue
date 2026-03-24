@@ -1,8 +1,8 @@
 <template>
-	<view class="markdown-container">
+	<view class="markdown-container" :class="themeClass">
 		<!-- #ifdef APP-PLUS -->
 		<view
-			class="markdown-content app-rich-content"
+			:class="['markdown-content', 'app-rich-content', themeClass]"
 			:prop="parsedHtml"
 			:change:prop="mdRender.onContentChange"
 		></view>
@@ -11,7 +11,7 @@
 		<!-- #ifndef APP-PLUS -->
 		<rich-text
 			:nodes="parsedHtml"
-			class="markdown-content"
+			:class="['markdown-content', themeClass]"
 			selectable="true"
 			@itemclick="onRichTextItemClick"
 		></rich-text>
@@ -21,6 +21,7 @@
 
 <script>
 import katex from 'katex'
+import { getStoredThemeMode, normalizeThemeMode } from '@/utils/themeMode'
 
 function escapeHtml(text) {
 	return String(text)
@@ -171,6 +172,39 @@ const TABLE_WRAPPER_STYLE = 'overflow-x:auto; margin:24rpx 0;'
 const TABLE_STYLE = 'border-collapse:collapse; width:100%;'
 const TABLE_TH_STYLE = `border:1px solid ${MARKDOWN_BORDER_COLOR}; padding:16rpx 24rpx; background:${MARKDOWN_SURFACE_ELEVATED_COLOR}; font-weight:600; color:${MARKDOWN_TEXT_COLOR}; text-align:left;`
 const TABLE_TD_STYLE = `border:1px solid ${MARKDOWN_BORDER_COLOR}; padding:16rpx 24rpx; color:${MARKDOWN_TEXT_COLOR};`
+
+const LIGHT_THEME_HTML_REPLACEMENTS = [
+	['color: rgb(92, 144, 247); text-decoration: underline;', 'color: #2F6EEA; text-decoration: underline;'],
+	['box-shadow:0 10px 24px rgba(0,0,0,0.22);', 'box-shadow:0 10px 24px rgba(118, 101, 80, 0.14);'],
+	['#282C34', '#F7F4EE'],
+	['#21252B', '#EFE8DE'],
+	['#3E4451', '#D4C8B8'],
+	['#ABB2BF', '#2C2824'],
+	['#7F848E', '#7A6F62'],
+	['#61AFEF', '#2F6EEA'],
+	['#56B6C2', '#0F8B8D'],
+	['#98C379', '#2F8F66'],
+	['#D19A66', '#A86412'],
+	['#C678DD', '#7A53C9'],
+	['#E06C75', '#C94B5F'],
+	['#E5C07B', '#A86A10'],
+	['#E5E5E5', '#1F1A16'],
+	['#A3A3A3', '#7A6F62'],
+	['#333333', '#D4C8B8'],
+	['#1A1A1A', '#FFFFFF'],
+	['#111111', '#FFF9F1'],
+	['#3b82f6', '#2F6EEA'],
+	['#22c55e', '#2F8F62'],
+	['#f97316', '#C77716'],
+	['#ef4444', '#D14F4F'],
+	['#a855f7', '#7A53C9'],
+	['rgba(59,130,246,0.10)', 'rgba(47, 110, 234, 0.10)'],
+	['rgba(34,197,94,0.10)', 'rgba(47, 143, 98, 0.10)'],
+	['rgba(249,115,22,0.10)', 'rgba(199, 119, 22, 0.10)'],
+	['rgba(239,68,68,0.10)', 'rgba(209, 79, 79, 0.10)'],
+	['rgba(168,85,247,0.10)', 'rgba(122, 83, 201, 0.10)'],
+	['color:#fff;font-size:10px;', 'color:#fff;font-size:10px;']
+]
 
 const LANGUAGE_SPECS = {
 	python: {
@@ -832,16 +866,34 @@ export default {
 		content: {
 			type: String,
 			default: ''
+		},
+		themeMode: {
+			type: String,
+			default: ''
 		}
 	},
 	data() {
 		return {
 			codeContents: [],
 			cachedHtml: '',
-			_lastContent: ''
+			_lastContent: '',
+			localThemeMode: 'dark'
 		}
 	},
+	created() {
+		this.refreshThemeMode()
+	},
 	methods: {
+		refreshThemeMode() {
+			this.localThemeMode = getStoredThemeMode('dark')
+		},
+		applyThemeToHtml(html) {
+			if (this.resolvedThemeMode !== 'light' || !html) return html
+			return LIGHT_THEME_HTML_REPLACEMENTS.reduce((output, entry) => {
+				const [from, to] = entry
+				return output.split(from).join(to)
+			}, html)
+		},
 		onLinkClick(data) {
 			const href = data && data.href
 			if (!href) return
@@ -894,9 +946,10 @@ export default {
 				const latexResult = processLatex(text)
 				const markdownResult = parseSimpleMarkdown(latexResult.text)
 				this.codeContents = markdownResult.codeContents
-				this.cachedHtml = restorePlaceholders(markdownResult.html, latexResult.placeholders)
+				const baseHtml = restorePlaceholders(markdownResult.html, latexResult.placeholders)
+				this.cachedHtml = this.applyThemeToHtml(baseHtml)
 			} catch (e) {
-				this.cachedHtml = escapeHtml(text)
+				this.cachedHtml = this.applyThemeToHtml(escapeHtml(text))
 			}
 		},
 		openExternalLink(url) {
@@ -919,6 +972,12 @@ export default {
 		}
 	},
 	watch: {
+		resolvedThemeMode() {
+			this.refreshThemeMode()
+			if (this.content) {
+				this._doParse(this.content)
+			}
+		},
 		content: {
 			handler(val) {
 				if (!val) {
@@ -943,6 +1002,12 @@ export default {
 		}
 	},
 	computed: {
+		resolvedThemeMode() {
+			return normalizeThemeMode(this.themeMode || this.localThemeMode)
+		},
+		themeClass() {
+			return `theme-${this.resolvedThemeMode}`
+		},
 		parsedHtml() {
 			return this.cachedHtml
 		}
@@ -1009,6 +1074,10 @@ export default {
 	color: #E5E5E5;
 	word-break: break-word;
 }
+
+.markdown-container.theme-light .markdown-content {
+	color: #1F1A16;
+}
 </style>
 
 <style>
@@ -1028,6 +1097,10 @@ export default {
 	color: #E5E5E5;
 }
 
+.markdown-content.theme-light strong {
+	color: #1F1A16;
+}
+
 .markdown-content em {
 	font-style: italic;
 }
@@ -1039,6 +1112,12 @@ export default {
 	font-weight: 600;
 	margin: 24rpx 0 16rpx 0;
 	color: #E5E5E5;
+}
+
+.markdown-content.theme-light h1,
+.markdown-content.theme-light h2,
+.markdown-content.theme-light h3 {
+	color: #1F1A16;
 }
 
 .markdown-content h1 { font-size: 40rpx; }
@@ -1067,6 +1146,12 @@ export default {
 	overflow-x: auto;
 }
 
+.markdown-content.theme-light pre,
+.markdown-content.theme-light .hljs-code-block {
+	background: #F7F4EE;
+	border-color: #D4C8B8;
+}
+
 .markdown-content code {
 	font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 	font-size: 26rpx;
@@ -1085,6 +1170,14 @@ export default {
 	-webkit-text-fill-color: #ABB2BF;
 }
 
+.markdown-content.theme-light pre code,
+.markdown-content.theme-light .hljs-code-block,
+.app-rich-content.theme-light pre code,
+.app-rich-content.theme-light .hljs-code-block {
+	color: #2C2824;
+	-webkit-text-fill-color: #2C2824;
+}
+
 /* 行内代码 */
 .markdown-content p code,
 .markdown-content li code {
@@ -1096,10 +1189,21 @@ export default {
 	-webkit-text-fill-color: #E5C07B;
 }
 
+.markdown-content.theme-light p code,
+.markdown-content.theme-light li code {
+	background: rgba(47, 110, 234, 0.1);
+	color: #A86412;
+	-webkit-text-fill-color: #A86412;
+}
+
 /* 链接 */
 .markdown-content a {
 	color: rgb(92, 144, 247);
 	text-decoration: none;
+}
+
+.markdown-content.theme-light a {
+	color: #2F6EEA;
 }
 
 /* 引用 */
@@ -1110,11 +1214,20 @@ export default {
 	color: #A3A3A3;
 }
 
+.markdown-content.theme-light blockquote {
+	border-left-color: #D4C8B8;
+	color: #7A6F62;
+}
+
 /* 分隔线 */
 .markdown-content hr {
 	border: none;
 	border-top: 1px solid #333333;
 	margin: 24rpx 0;
+}
+
+.markdown-content.theme-light hr {
+	border-top-color: #D4C8B8;
 }
 
 /* 表格 */
@@ -1131,6 +1244,16 @@ export default {
 .markdown-content th {
 	background: #1A1A1A;
 	font-weight: 600;
+}
+
+.markdown-content.theme-light th,
+.markdown-content.theme-light td {
+	border-color: #D4C8B8;
+	color: #1F1A16;
+}
+
+.markdown-content.theme-light th {
+	background: #FFFFFF;
 }
 
 /* ===== Highlight.js 代码高亮主题（深色） ===== */
@@ -1188,6 +1311,11 @@ export default {
 	color: #E5E5E5;
 }
 
+.markdown-content.theme-light .katex,
+.markdown-content.theme-light .katex .katex-html {
+	color: #1F1A16;
+}
+
 /* 分数线颜色 */
 .katex .frac-line {
 	background: #E5E5E5;
@@ -1196,6 +1324,11 @@ export default {
 /* 根号线颜色 */
 .katex .sqrt-line {
 	background: #E5E5E5;
+}
+
+.markdown-content.theme-light .katex .frac-line,
+.markdown-content.theme-light .katex .sqrt-line {
+	background: #1F1A16;
 }
 
 /* 矩阵括号颜色 */

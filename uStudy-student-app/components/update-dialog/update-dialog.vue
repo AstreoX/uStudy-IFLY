@@ -1,5 +1,5 @@
 <template>
-  <view v-if="visible" class="update-dialog-wrapper" @touchmove.stop.prevent>
+  <view v-if="visible" class="update-dialog-wrapper" :class="themeClass" @touchmove.stop.prevent>
     <!-- Overlay -->
     <view
       class="update-overlay"
@@ -79,6 +79,7 @@
 
 <script>
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
+import { getStoredThemeMode, normalizeThemeMode } from '@/utils/themeMode'
 
 export default {
   name: 'UpdateDialog',
@@ -93,13 +94,21 @@ export default {
     downloadProgress: { type: Number, default: 0 },
     downloadComplete: { type: Boolean, default: false },
     downloadError: { type: String, default: '' },
-    isWgtUpdate: { type: Boolean, default: false }
+    isWgtUpdate: { type: Boolean, default: false },
+    themeMode: { type: String, default: '' }
   },
   emits: ['skip', 'later', 'update', 'install', 'browser'],
 
   data() {
     return {
-      animationVisible: false
+      animationVisible: false,
+      localThemeMode: 'dark'
+    }
+  },
+
+  computed: {
+    themeClass() {
+      return `theme-${normalizeThemeMode(this.themeMode || this.localThemeMode)}`
     }
   },
 
@@ -108,6 +117,7 @@ export default {
       immediate: true,
       handler(val) {
         if (val) {
+          this.refreshThemeMode()
           this.$nextTick(() => {
             setTimeout(() => { this.animationVisible = true }, 10)
           })
@@ -118,7 +128,15 @@ export default {
     }
   },
 
+  created() {
+    this.refreshThemeMode()
+  },
+
   methods: {
+    refreshThemeMode() {
+      this.localThemeMode = getStoredThemeMode('dark')
+    },
+
     handleOverlayClick() {
       if (!this.isForced && !this.isDownloading) {
         this.$emit('later')
@@ -130,6 +148,30 @@ export default {
 
 <style scoped>
 .update-dialog-wrapper {
+  --update-overlay: rgba(0, 0, 0, 0.8);
+  --update-surface: rgba(18, 18, 28, 0.88);
+  --update-surface-fallback: rgba(18, 18, 28, 0.98);
+  --update-border: rgba(255, 255, 255, 0.08);
+  --update-glow: radial-gradient(ellipse, rgba(0, 136, 255, 0.3) 0%, transparent 70%);
+  --update-badge-bg: linear-gradient(135deg, rgba(0, 136, 255, 0.3) 0%, rgba(0, 170, 255, 0.15) 100%);
+  --update-badge-border: rgba(0, 170, 255, 0.4);
+  --update-badge-text: #00AAFF;
+  --update-title: #ffffff;
+  --update-meta: rgba(255, 255, 255, 0.45);
+  --update-panel: rgba(0, 0, 0, 0.3);
+  --update-empty: rgba(255, 255, 255, 0.35);
+  --update-progress-bg: rgba(255, 255, 255, 0.1);
+  --update-progress-fill: linear-gradient(90deg, #0088FF, #00AAFF);
+  --update-progress-text: rgba(255, 255, 255, 0.7);
+  --update-error: #F87171;
+  --update-btn-secondary-bg: rgba(255, 255, 255, 0.08);
+  --update-btn-secondary-border: rgba(255, 255, 255, 0.12);
+  --update-btn-secondary-text: rgba(255, 255, 255, 0.7);
+  --update-btn-primary-bg: linear-gradient(135deg, #0088FF 0%, #0066DD 100%);
+  --update-btn-primary-shadow: 0 8rpx 24rpx rgba(0, 136, 255, 0.3);
+  --update-btn-primary-text: #ffffff;
+  --update-btn-disabled-bg: rgba(0, 136, 255, 0.25);
+  --update-btn-disabled-text: rgba(255, 255, 255, 0.5);
   position: fixed;
   top: 0;
   left: 0;
@@ -139,6 +181,33 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.update-dialog-wrapper.theme-light {
+  --update-overlay: rgba(61, 46, 30, 0.22);
+  --update-surface: rgba(255, 249, 241, 0.96);
+  --update-surface-fallback: rgba(255, 249, 241, 0.99);
+  --update-border: rgba(63, 53, 42, 0.1);
+  --update-glow: radial-gradient(ellipse, rgba(47, 110, 234, 0.18) 0%, transparent 70%);
+  --update-badge-bg: linear-gradient(135deg, rgba(47, 110, 234, 0.16) 0%, rgba(47, 110, 234, 0.08) 100%);
+  --update-badge-border: rgba(47, 110, 234, 0.18);
+  --update-badge-text: #2F6EEA;
+  --update-title: #1F1A16;
+  --update-meta: rgba(31, 26, 22, 0.5);
+  --update-panel: rgba(63, 53, 42, 0.06);
+  --update-empty: rgba(31, 26, 22, 0.4);
+  --update-progress-bg: rgba(63, 53, 42, 0.08);
+  --update-progress-fill: linear-gradient(90deg, #2F6EEA, #1F56C6);
+  --update-progress-text: rgba(31, 26, 22, 0.62);
+  --update-error: #D14F4F;
+  --update-btn-secondary-bg: rgba(255, 255, 255, 0.82);
+  --update-btn-secondary-border: rgba(63, 53, 42, 0.12);
+  --update-btn-secondary-text: rgba(31, 26, 22, 0.68);
+  --update-btn-primary-bg: linear-gradient(135deg, #2F6EEA 0%, #1F56C6 100%);
+  --update-btn-primary-shadow: 0 8rpx 24rpx rgba(47, 110, 234, 0.18);
+  --update-btn-primary-text: #ffffff;
+  --update-btn-disabled-bg: rgba(47, 110, 234, 0.18);
+  --update-btn-disabled-text: rgba(31, 26, 22, 0.42);
 }
 
 .update-overlay {
@@ -152,17 +221,17 @@ export default {
 }
 
 .update-overlay.overlay-show {
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--update-overlay);
 }
 
 .update-container {
   position: relative;
   width: 620rpx;
   max-height: 80vh;
-  background: rgba(18, 18, 28, 0.88);
+  background: var(--update-surface);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
-  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  border: 1rpx solid var(--update-border);
   border-radius: 32rpx;
   overflow: hidden;
   transform: translateY(60rpx) scale(0.9);
@@ -179,7 +248,7 @@ export default {
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .update-container {
-    background: rgba(18, 18, 28, 0.98);
+    background: var(--update-surface-fallback);
   }
 }
 
@@ -190,7 +259,7 @@ export default {
   transform: translateX(-50%);
   width: 400rpx;
   height: 200rpx;
-  background: radial-gradient(ellipse, rgba(0, 136, 255, 0.3) 0%, transparent 70%);
+  background: var(--update-glow);
   pointer-events: none;
 }
 
@@ -205,34 +274,34 @@ export default {
 
 .version-badge {
   padding: 6rpx 20rpx;
-  background: linear-gradient(135deg, rgba(0, 136, 255, 0.3) 0%, rgba(0, 170, 255, 0.15) 100%);
-  border: 1rpx solid rgba(0, 170, 255, 0.4);
+  background: var(--update-badge-bg);
+  border: 1rpx solid var(--update-badge-border);
   border-radius: 100rpx;
 }
 
 .version-badge-text {
   font-size: 22rpx;
   font-weight: 700;
-  color: #00AAFF;
+  color: var(--update-badge-text);
   letter-spacing: 2rpx;
 }
 
 .update-title {
   font-size: 34rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--update-title);
 }
 
 .update-size {
   font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--update-meta);
 }
 
 /* Changelog */
 .changelog-area {
   margin: 0 40rpx;
   max-height: 360rpx;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--update-panel);
   border-radius: 16rpx;
   overflow: hidden;
 }
@@ -246,7 +315,7 @@ export default {
 
 .changelog-empty {
   font-size: 28rpx;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--update-empty);
 }
 
 /* Progress */
@@ -260,21 +329,21 @@ export default {
 .progress-track {
   flex: 1;
   height: 12rpx;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--update-progress-bg);
   border-radius: 6rpx;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #0088FF, #00AAFF);
+  background: var(--update-progress-fill);
   border-radius: 6rpx;
   transition: width 0.3s ease;
 }
 
 .progress-text {
   font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--update-progress-text);
   min-width: 80rpx;
   text-align: right;
 }
@@ -286,7 +355,7 @@ export default {
 
 .error-text {
   font-size: 24rpx;
-  color: #F87171;
+  color: var(--update-error);
 }
 
 /* Buttons */
@@ -317,33 +386,33 @@ export default {
 
 .btn-secondary {
   flex: 1;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  background: var(--update-btn-secondary-bg);
+  border: 1rpx solid var(--update-btn-secondary-border);
 }
 
 .btn-text-secondary {
   font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--update-btn-secondary-text);
   font-weight: 500;
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #0088FF 0%, #0066DD 100%);
-  box-shadow: 0 8rpx 24rpx rgba(0, 136, 255, 0.3);
+  background: var(--update-btn-primary-bg);
+  box-shadow: var(--update-btn-primary-shadow);
 }
 
 .btn-text-primary {
   font-size: 28rpx;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--update-btn-primary-text);
 }
 
 .btn-disabled {
-  background: rgba(0, 136, 255, 0.25);
+  background: var(--update-btn-disabled-bg);
 }
 
 .btn-text-disabled {
   font-size: 28rpx;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--update-btn-disabled-text);
 }
 </style>

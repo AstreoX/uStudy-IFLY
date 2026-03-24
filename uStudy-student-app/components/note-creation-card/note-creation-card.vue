@@ -1,5 +1,5 @@
 <template>
-  <view class="ncc-wrap" :class="{ 'ncc-expanded': showDetail || isCollapsing }">
+  <view class="ncc-wrap" :class="[themeClass, { 'ncc-expanded': showDetail || isCollapsing }]">
     <!-- ======== Pill 指示器（始终可见） ======== -->
     <view class="ncc-pill"
       :class="{
@@ -45,7 +45,7 @@
         </view>
         <view class="ncc-divider"></view>
         <view class="ncc-content-preview">
-          <MarkdownRender :content="displayContent" />
+          <MarkdownRender :content="displayContent" :theme-mode="resolvedThemeMode" />
         </view>
         <view v-if="nodeLabel" class="ncc-nodes-section">
           <text class="ncc-nodes-label">关联知识节点</text>
@@ -86,7 +86,7 @@
             </view>
           </view>
           <textarea v-if="editMode === 'code'" class="ncc-textarea" v-model="editContent" placeholder="笔记内容 (Markdown)" :auto-height="false"></textarea>
-          <view v-else class="ncc-preview-wrap"><MarkdownRender :content="editContent" /></view>
+          <view v-else class="ncc-preview-wrap"><MarkdownRender :content="editContent" :theme-mode="resolvedThemeMode" /></view>
         </view>
         <view class="ncc-btns-row">
           <view class="ncc-reject-btn" @click="exitPendingEdit">
@@ -132,7 +132,7 @@
         </view>
         <view class="ncc-divider"></view>
         <view class="ncc-content-preview">
-          <MarkdownRender :content="displayContent" />
+          <MarkdownRender :content="displayContent" :theme-mode="resolvedThemeMode" />
         </view>
         <view v-if="nodeLabel" class="ncc-nodes-section">
           <text class="ncc-nodes-label">关联知识节点</text>
@@ -164,7 +164,7 @@
             </view>
           </view>
           <textarea v-if="editMode === 'code'" class="ncc-textarea" v-model="editContent" placeholder="笔记内容 (Markdown)" :auto-height="false"></textarea>
-          <view v-else class="ncc-preview-wrap"><MarkdownRender :content="editContent" /></view>
+          <view v-else class="ncc-preview-wrap"><MarkdownRender :content="editContent" :theme-mode="resolvedThemeMode" /></view>
         </view>
         <view class="ncc-btns-row">
           <view class="ncc-reject-btn" :class="{ 'ncc-btn-disabled': isSaving }" @click="cancelEdit">
@@ -185,6 +185,7 @@ import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 import { getNoteDetail, updateNote } from '@/api/note'
 import { getSpaceGraph } from '@/api/space'
 import { submitToolResult } from '@/api/chat'
+import { getStoredThemeMode, normalizeThemeMode } from '@/utils/themeMode'
 
 export default {
   name: 'NoteCreationCard',
@@ -193,6 +194,10 @@ export default {
     toolCall: {
       type: Object,
       required: true
+    },
+    themeMode: {
+      type: String,
+      default: ''
     },
     spaceId: {
       type: [String, Number],
@@ -285,6 +290,12 @@ export default {
     },
     canEdit() {
       return this.isDoneSuccess && this.noteId
+    },
+    resolvedThemeMode() {
+      return normalizeThemeMode(this.themeMode || getStoredThemeMode('dark'))
+    },
+    themeClass() {
+      return `theme-${this.resolvedThemeMode}`
     },
     confirmBtnText() {
       if (this.isSubmitting) return '提交中…'
@@ -924,5 +935,103 @@ export default {
   color: rgba(255, 255, 255, 0.85);
   line-height: 1.7;
   word-break: break-word;
+}
+
+.ncc-wrap.theme-light.ncc-expanded {
+  background: rgba(255, 250, 244, 0.94);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 14rpx 36rpx rgba(118, 101, 80, 0.14);
+}
+
+.ncc-wrap.theme-light .ncc-pill,
+.ncc-wrap.theme-light .ncc-reject-btn,
+.ncc-wrap.theme-light .ncc-edit-trigger,
+.ncc-wrap.theme-light .ncc-node-picker,
+.ncc-wrap.theme-light .ncc-title-input,
+.ncc-wrap.theme-light .ncc-edit-area {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(63, 53, 42, 0.1);
+}
+
+.ncc-wrap.theme-light .ncc-pill-running {
+  background: rgba(47, 110, 234, 0.08);
+  border-color: rgba(47, 110, 234, 0.18);
+}
+
+.ncc-wrap.theme-light .ncc-pill-failed {
+  background: rgba(209, 79, 79, 0.06);
+  border-color: rgba(209, 79, 79, 0.18);
+}
+
+.ncc-wrap.theme-light .ncc-pill-pending {
+  background: rgba(199, 119, 22, 0.08);
+  border-color: rgba(199, 119, 22, 0.18);
+}
+
+.ncc-wrap.theme-light .ncc-icon-wrap,
+.ncc-wrap.theme-light .ncc-node-pill,
+.ncc-wrap.theme-light .ncc-tab-active {
+  background: rgba(47, 110, 234, 0.1);
+}
+
+.ncc-wrap.theme-light .ncc-file-icon {
+  filter: brightness(0) saturate(100%) invert(34%) sepia(61%) saturate(1869%) hue-rotate(211deg) brightness(96%) contrast(91%);
+  opacity: 1;
+}
+
+.ncc-wrap.theme-light .ncc-edit-trigger-icon,
+.ncc-wrap.theme-light .ncc-node-picker-arrow {
+  filter: brightness(0) saturate(100%);
+  opacity: 0.56;
+}
+
+.ncc-wrap.theme-light .ncc-pill-text,
+.ncc-wrap.theme-light .ncc-note-title,
+.ncc-wrap.theme-light .ncc-content-preview,
+.ncc-wrap.theme-light .ncc-node-picker-text,
+.ncc-wrap.theme-light .ncc-title-input,
+.ncc-wrap.theme-light .ncc-textarea,
+.ncc-wrap.theme-light .ncc-preview-wrap {
+  color: #1F1A16;
+  -webkit-text-fill-color: #1F1A16;
+}
+
+.ncc-wrap.theme-light .ncc-note-meta,
+.ncc-wrap.theme-light .ncc-edit-trigger-text,
+.ncc-wrap.theme-light .ncc-nodes-label,
+.ncc-wrap.theme-light .ncc-reject-btn-text,
+.ncc-wrap.theme-light .ncc-field-label,
+.ncc-wrap.theme-light .ncc-tab,
+.ncc-wrap.theme-light .ncc-loading-text {
+  color: rgba(31, 26, 22, 0.58);
+  -webkit-text-fill-color: rgba(31, 26, 22, 0.58);
+}
+
+.ncc-wrap.theme-light .ncc-node-pill-text {
+  color: #2F6EEA;
+  -webkit-text-fill-color: #2F6EEA;
+}
+
+.ncc-wrap.theme-light .ncc-divider,
+.ncc-wrap.theme-light .ncc-edit-toolbar {
+  background: rgba(63, 53, 42, 0.04);
+  border-color: rgba(63, 53, 42, 0.08);
+}
+
+.ncc-wrap.theme-light .ncc-confirm-btn {
+  background: #2F6EEA;
+}
+
+.ncc-wrap.theme-light .ncc-confirm-btn-text {
+  color: #FFFFFF;
+}
+
+.ncc-wrap.theme-light .ncc-textarea {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.ncc-wrap.theme-light .ncc-title-input::placeholder,
+.ncc-wrap.theme-light .ncc-textarea::placeholder {
+  color: rgba(31, 26, 22, 0.38);
 }
 </style>

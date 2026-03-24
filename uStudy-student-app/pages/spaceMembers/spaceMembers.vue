@@ -1,5 +1,5 @@
 <template>
-  <view class="members-page">
+  <view class="members-page" :class="pageThemeClass">
     <view class="nav-bar">
       <view class="nav-left" @click="goBack">
         <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
@@ -138,8 +138,10 @@ import UModal from '@/components/u-modal/u-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
 import { useUserStore } from '@/store/user'
 import { goBack } from '@/utils/navigation'
+import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 export default {
+  mixins: [homeThemePageMixin],
   components: {
     UModal,
     UToast
@@ -196,6 +198,7 @@ export default {
   },
 
   onLoad(options) {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
     this.spaceId = options.spaceId || ''
     this.spaceName = options.spaceName ? decodeURIComponent(options.spaceName) : ''
     const userStore = useUserStore()
@@ -204,6 +207,7 @@ export default {
   },
 
   onShow() {
+    this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
     if (this.spaceId && !this.loading) {
       this.loadMembers()
     }

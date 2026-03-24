@@ -1,0 +1,914 @@
+/* Shared light-theme page migration for legacy dark-only screens */
+
+.notes-list-page.theme-light,
+.quiz-list-page.theme-light,
+.test-result-page.theme-light,
+.notifications-page.theme-light,
+.artifact-viewer-page.theme-light {
+  background-color: #F3EDE3;
+  color: #1F1A16;
+}
+
+.quiz-list-page.theme-light {
+  background:
+    linear-gradient(180deg, #F7F1E8 0%, #F3EDE3 48%, #EFE6DA 100%);
+}
+
+.quiz-list-page.theme-light .page-bg {
+  background:
+    linear-gradient(180deg, rgba(247, 241, 232, 0.98) 0%, rgba(243, 237, 227, 0.96) 52%, rgba(239, 230, 218, 0.98) 100%);
+}
+
+.notes-list-page.theme-light .bg-mesh,
+.quiz-list-page.theme-light .bg-mesh,
+.test-result-page.theme-light .bg-mesh,
+.notifications-page.theme-light .bg-mesh {
+  background:
+    radial-gradient(circle at 82% 14%, rgba(47, 110, 234, 0.1) 0%, rgba(47, 110, 234, 0) 32%),
+    radial-gradient(circle at 12% 100%, rgba(199, 119, 22, 0.08) 0%, rgba(199, 119, 22, 0) 36%);
+}
+
+.notes-list-page.theme-light .bg-glow-blue,
+.quiz-list-page.theme-light .bg-glow-blue,
+.test-result-page.theme-light .bg-glow-blue,
+.notifications-page.theme-light .bg-glow-blue {
+  background: rgba(47, 110, 234, 0.14);
+}
+
+.notes-list-page.theme-light .bg-glow-violet,
+.quiz-list-page.theme-light .bg-glow-violet,
+.test-result-page.theme-light .bg-glow-violet,
+.notifications-page.theme-light .bg-glow-violet {
+  background: rgba(199, 119, 22, 0.1);
+}
+
+.quiz-list-page.theme-light .bg-mesh {
+  background:
+    radial-gradient(circle at 82% 14%, rgba(47, 110, 234, 0.08) 0%, rgba(47, 110, 234, 0) 34%),
+    radial-gradient(circle at 12% 100%, rgba(199, 119, 22, 0.06) 0%, rgba(199, 119, 22, 0) 38%),
+    linear-gradient(180deg, rgba(255, 252, 247, 0.78) 0%, rgba(243, 237, 227, 0.22) 30%, rgba(243, 237, 227, 0) 100%);
+}
+
+.notes-list-page.theme-light .nav-bar::before,
+.quiz-list-page.theme-light .nav-bar::before,
+.test-result-page.theme-light .nav-bar::before,
+.artifact-viewer-page.theme-light .nav-bar {
+  background: linear-gradient(
+    to bottom,
+    rgba(243, 237, 227, 0.92) 0%,
+    rgba(243, 237, 227, 0.68) 52%,
+    rgba(243, 237, 227, 0) 100%
+  );
+}
+
+.notes-list-page.theme-light .nav-back,
+.notes-list-page.theme-light .nav-action,
+.notes-list-page.theme-light .search-bar,
+.notes-list-page.theme-light .note-item,
+.notes-list-page.theme-light .folder-card,
+.notes-list-page.theme-light .note-detail-card,
+.notes-list-page.theme-light .note-edit-card,
+.notes-list-page.theme-light .detail-circle-btn,
+.notes-list-page.theme-light .detail-note-card,
+.notes-list-page.theme-light .detail-node-tag,
+.notes-list-page.theme-light .detail-attach-file,
+.notes-list-page.theme-light .edit-node-selector,
+.notes-list-page.theme-light .edit-content-box,
+.notes-list-page.theme-light .folder-dialog,
+.notes-list-page.theme-light .folder-picker-popup,
+.notes-list-page.theme-light .folder-action-popup,
+.quiz-list-page.theme-light .nav-back,
+.quiz-list-page.theme-light .nav-action,
+.quiz-list-page.theme-light .quiz-item,
+.quiz-list-page.theme-light .folder-card,
+.quiz-list-page.theme-light .folder-dialog,
+.quiz-list-page.theme-light .folder-picker-popup,
+.quiz-list-page.theme-light .folder-action-popup,
+.test-result-page.theme-light .nav-back,
+.test-result-page.theme-light .analysis-card,
+.test-result-page.theme-light .suggestion-card,
+.test-result-page.theme-light .question-card,
+.test-result-page.theme-light .question-content-box,
+.test-result-page.theme-light .expand-section,
+.artifact-viewer-page.theme-light .nav-left,
+.notifications-page.theme-light .nav-back,
+.notifications-page.theme-light .nav-action,
+.notifications-page.theme-light .notif-item {
+  background: #FFFAF4;
+  border-color: rgba(63, 53, 42, 0.1);
+  outline-color: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 14rpx 36rpx rgba(118, 101, 80, 0.14);
+}
+
+.quiz-list-page.theme-light .content-scroll,
+.quiz-list-page.theme-light .content-body {
+  background: transparent;
+}
+
+.quiz-list-page.theme-light .swipe-quiz-wrapper {
+  background: #FFFAF4;
+}
+
+.quiz-list-page.theme-light .swipe-actions {
+  background: #FFFAF4;
+}
+
+.quiz-list-page.theme-light .swipe-action-move {
+  background: #CFDBFF;
+  box-shadow: inset 0 0 0 1rpx rgba(92, 117, 196, 0.12);
+}
+
+.quiz-list-page.theme-light .swipe-action-delete {
+  background: #FFD2C7;
+  box-shadow: inset 0 0 0 1rpx rgba(204, 106, 94, 0.12);
+}
+
+.quiz-list-page.theme-light .swipe-action-text {
+  color: #1F1A16;
+}
+
+.quiz-list-page.theme-light .swipe-action-icon {
+  filter: brightness(0) saturate(100%);
+  opacity: 0.72;
+}
+
+.quiz-list-page.theme-light .swipe-action-move .swipe-action-text {
+  color: #5066BF;
+}
+
+.quiz-list-page.theme-light .swipe-action-delete .swipe-action-text {
+  color: #BE6358;
+}
+
+.quiz-list-page.theme-light .quiz-item {
+  background: #FFFAF4;
+}
+
+.quiz-list-page.theme-light .quiz-item:active {
+  background: #FBF3E8;
+}
+
+.notes-list-page.theme-light .note-detail-overlay,
+.notes-list-page.theme-light .note-edit-overlay,
+.notes-list-page.theme-light .node-picker-mask,
+.notes-list-page.theme-light .folder-dialog-mask,
+.quiz-list-page.theme-light .folder-dialog-mask {
+  background: rgba(74, 59, 45, 0.16);
+}
+
+.notes-list-page.theme-light .nav-icon,
+.notes-list-page.theme-light .search-icon,
+.notes-list-page.theme-light .item-arrow,
+.notes-list-page.theme-light .detail-circle-icon,
+.notes-list-page.theme-light .detail-node-icon,
+.notes-list-page.theme-light .detail-attach-file-icon,
+.notes-list-page.theme-light .edit-delete-icon,
+.notes-list-page.theme-light .edit-save-icon,
+.notes-list-page.theme-light .edit-node-icon,
+.notes-list-page.theme-light .edit-node-chevron,
+.notes-list-page.theme-light .artifact-view-icon,
+.notes-list-page.theme-light .node-picker-close-icon,
+.notes-list-page.theme-light .folder-icon,
+.notes-list-page.theme-light .folder-arrow,
+.quiz-list-page.theme-light .nav-icon,
+.quiz-list-page.theme-light .item-arrow,
+.quiz-list-page.theme-light .folder-icon,
+.quiz-list-page.theme-light .folder-arrow,
+.quiz-list-page.theme-light .folder-picker-close-icon,
+.quiz-list-page.theme-light .folder-picker-item-icon,
+.quiz-list-page.theme-light .folder-action-icon,
+.test-result-page.theme-light .nav-icon,
+.test-result-page.theme-light .card-icon,
+.test-result-page.theme-light .expand-icon,
+.artifact-viewer-page.theme-light .nav-icon,
+.notifications-page.theme-light .nav-icon,
+.notifications-page.theme-light .state-icon,
+.notifications-page.theme-light .notif-icon {
+  filter: brightness(0) saturate(100%);
+}
+
+.notes-list-page.theme-light .nav-title,
+.notes-list-page.theme-light .detail-title-main,
+.notes-list-page.theme-light .detail-note-title,
+.notes-list-page.theme-light .note-title,
+.notes-list-page.theme-light .folder-name,
+.notes-list-page.theme-light .section-caption,
+.notes-list-page.theme-light .edit-label,
+.notes-list-page.theme-light .folder-dialog-title,
+.notes-list-page.theme-light .folder-picker-title,
+.notes-list-page.theme-light .folder-action-text,
+.notes-list-page.theme-light .detail-node-text,
+.notes-list-page.theme-light .detail-attach-file-name,
+.notes-list-page.theme-light .nav-action-text,
+.quiz-list-page.theme-light .nav-title,
+.quiz-list-page.theme-light .quiz-title,
+.quiz-list-page.theme-light .folder-name,
+.quiz-list-page.theme-light .section-caption,
+.quiz-list-page.theme-light .folder-dialog-title,
+.quiz-list-page.theme-light .folder-picker-title,
+.quiz-list-page.theme-light .folder-action-text,
+.test-result-page.theme-light .nav-title,
+.test-result-page.theme-light .score-number,
+.test-result-page.theme-light .card-label,
+.test-result-page.theme-light .item-text,
+.test-result-page.theme-light .section-caption,
+.test-result-page.theme-light .question-title,
+.test-result-page.theme-light .expand-label,
+.test-result-page.theme-light .expand-value,
+.test-result-page.theme-light .score-unit,
+.test-result-page.theme-light .score-detail,
+.artifact-viewer-page.theme-light .nav-title,
+.notifications-page.theme-light .nav-title {
+  color: #1F1A16;
+}
+
+.notes-list-page.theme-light .nav-subtitle,
+.notes-list-page.theme-light .state-text,
+.notes-list-page.theme-light .state-sub,
+.notes-list-page.theme-light .search-input,
+.notes-list-page.theme-light .note-preview,
+.notes-list-page.theme-light .note-date,
+.notes-list-page.theme-light .note-creator-name,
+.notes-list-page.theme-light .detail-title-sub,
+.notes-list-page.theme-light .detail-empty-text,
+.notes-list-page.theme-light .detail-time,
+.notes-list-page.theme-light .breadcrumb-text,
+.notes-list-page.theme-light .breadcrumb-sep,
+.notes-list-page.theme-light .folder-count,
+.notes-list-page.theme-light .folder-dialog-btn-text,
+.notes-list-page.theme-light .folder-picker-item-text,
+.notes-list-page.theme-light .node-picker-item-text,
+.notes-list-page.theme-light .node-picker-loading-text,
+.notes-list-page.theme-light .node-picker-empty-text,
+.notes-list-page.theme-light .edit-toggle-text,
+.notes-list-page.theme-light .edit-title-input,
+.notes-list-page.theme-light .edit-textarea,
+.notes-list-page.theme-light .folder-dialog-input,
+.quiz-list-page.theme-light .nav-subtitle,
+.quiz-list-page.theme-light .state-text,
+.quiz-list-page.theme-light .meta-item,
+.quiz-list-page.theme-light .meta-sep,
+.quiz-list-page.theme-light .folder-count,
+.quiz-list-page.theme-light .breadcrumb-text,
+.quiz-list-page.theme-light .breadcrumb-sep,
+.quiz-list-page.theme-light .folder-dialog-btn-text,
+.quiz-list-page.theme-light .folder-dialog-input,
+.quiz-list-page.theme-light .folder-picker-item-text,
+.test-result-page.theme-light .nav-subtitle,
+.test-result-page.theme-light .state-text,
+.test-result-page.theme-light .bullet,
+.test-result-page.theme-light .option-text,
+.test-result-page.theme-light .ai-text,
+.artifact-viewer-page.theme-light .loading-text,
+.notifications-page.theme-light .state-text,
+.notifications-page.theme-light .loading-more-text {
+  color: rgba(31, 26, 22, 0.58);
+}
+
+.notes-list-page.theme-light .search-input,
+.notes-list-page.theme-light .edit-title-input,
+.notes-list-page.theme-light .edit-textarea,
+.notes-list-page.theme-light .folder-dialog-input,
+.quiz-list-page.theme-light .folder-dialog-input {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(63, 53, 42, 0.1);
+  color: #1F1A16;
+}
+
+.notes-list-page.theme-light .search-bar,
+.quiz-list-page.theme-light .folder-dialog,
+.notes-list-page.theme-light .folder-dialog,
+.notes-list-page.theme-light .folder-picker-item,
+.quiz-list-page.theme-light .folder-picker-item {
+  border-color: rgba(63, 53, 42, 0.1);
+}
+
+.notes-list-page.theme-light .retry-btn,
+.quiz-list-page.theme-light .retry-btn,
+.artifact-viewer-page.theme-light .retry-btn {
+  background: rgba(47, 110, 234, 0.1);
+  border-color: rgba(47, 110, 234, 0.22);
+}
+
+.notes-list-page.theme-light .retry-btn-text,
+.quiz-list-page.theme-light .retry-btn-text,
+.artifact-viewer-page.theme-light .retry-btn-text {
+  color: #2F6EEA;
+}
+
+.notes-list-page.theme-light .note-meta,
+.test-result-page.theme-light .option-tag {
+  color: rgba(31, 26, 22, 0.52);
+}
+
+.notes-list-page.theme-light .note-node-tag,
+.notes-list-page.theme-light .note-attach-badge,
+.notes-list-page.theme-light .edit-toggle-active,
+.quiz-list-page.theme-light .difficulty-tag,
+.test-result-page.theme-light .option-correct,
+.test-result-page.theme-light .option-wrong {
+  border-color: rgba(47, 110, 234, 0.16);
+}
+
+.quiz-list-page.theme-light .difficulty-text,
+.test-result-page.theme-light .option-tag {
+  color: #2F6EEA;
+}
+
+.test-result-page.theme-light .question-card,
+.test-result-page.theme-light .analysis-card,
+.test-result-page.theme-light .suggestion-card {
+  border-color: rgba(63, 53, 42, 0.08);
+}
+
+.test-result-page.theme-light .option-item,
+.test-result-page.theme-light .answer-item {
+  background: rgba(255, 255, 255, 0.74);
+  border-color: rgba(63, 53, 42, 0.08);
+}
+
+.notifications-page.theme-light {
+  --notif-bg-base: #F3EDE3;
+  --notif-surface: rgba(255, 250, 244, 0.84);
+  --notif-surface-strong: rgba(255, 255, 255, 0.92);
+  --notif-border: rgba(63, 53, 42, 0.1);
+  --notif-border-strong: rgba(63, 53, 42, 0.16);
+  --notif-text-primary: #1F1A16;
+  --notif-text-secondary: #3F352A;
+  --notif-text-muted: rgba(31, 26, 22, 0.68);
+  --notif-text-faint: rgba(31, 26, 22, 0.42);
+  --notif-text-error: #B91C1C;
+  --notif-dot: #FF7A00;
+  --notif-accent-quiz: #2F6EEA;
+  --notif-accent-quiz-bg: rgba(47, 110, 234, 0.12);
+  --notif-accent-quiz-border: rgba(47, 110, 234, 0.22);
+  --notif-accent-reminder: #E67E22;
+  --notif-accent-reminder-bg: rgba(230, 126, 34, 0.12);
+  --notif-accent-reminder-border: rgba(230, 126, 34, 0.2);
+  --notif-accent-care: #D9485F;
+  --notif-accent-care-bg: rgba(217, 72, 95, 0.11);
+  --notif-accent-care-border: rgba(217, 72, 95, 0.18);
+  --notif-accent-system: #26877F;
+  --notif-accent-system-bg: rgba(38, 135, 127, 0.11);
+  --notif-accent-system-border: rgba(38, 135, 127, 0.18);
+}
+
+.notifications-page.theme-light .nav-bar {
+  background: rgba(243, 237, 227, 0.88);
+  border-bottom-color: rgba(63, 53, 42, 0.08);
+  box-shadow: 0 14rpx 34rpx rgba(118, 101, 80, 0.16);
+}
+
+.notifications-page.theme-light .nav-action {
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.notifications-page.theme-light .nav-action-text {
+  color: rgba(31, 26, 22, 0.72);
+}
+
+.members-page.theme-light,
+.leaderboard-page.theme-light {
+  background:
+    radial-gradient(circle at top left, rgba(47, 110, 234, 0.16), transparent 42%),
+    radial-gradient(circle at bottom right, rgba(199, 119, 22, 0.12), transparent 35%),
+    linear-gradient(180deg, #F6EFE5 0%, #EEE5D9 100%);
+  color: #1F1A16;
+}
+
+.leaderboard-page.theme-light .nav-bar::before {
+  background: linear-gradient(
+    to bottom,
+    rgba(246, 239, 229, 0.94) 0%,
+    rgba(246, 239, 229, 0.72) 52%,
+    rgba(246, 239, 229, 0) 100%
+  );
+}
+
+.members-page.theme-light .nav-left,
+.leaderboard-page.theme-light .nav-left,
+.members-page.theme-light .hero-card,
+.members-page.theme-light .members-card,
+.leaderboard-page.theme-light .hero-card,
+.leaderboard-page.theme-light .podium-card,
+.leaderboard-page.theme-light .leaderboard-card,
+.members-page.theme-light .hero-stat,
+.members-page.theme-light .permission-chip,
+.leaderboard-page.theme-light .metric-card,
+.leaderboard-page.theme-light .podium-rank-chip,
+.leaderboard-page.theme-light .rank-badge {
+  background: rgba(255, 250, 244, 0.84);
+  border-color: rgba(63, 53, 42, 0.1);
+  outline-color: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 18rpx 44rpx rgba(118, 101, 80, 0.14);
+}
+
+.members-page.theme-light .nav-icon,
+.members-page.theme-light .state-icon,
+.members-page.theme-light .hero-icon,
+.leaderboard-page.theme-light .nav-icon,
+.leaderboard-page.theme-light .state-icon {
+  filter: brightness(0) saturate(100%);
+}
+
+.members-page.theme-light .nav-title,
+.members-page.theme-light .state-title,
+.members-page.theme-light .hero-title,
+.members-page.theme-light .hero-stat-value,
+.members-page.theme-light .section-title,
+.members-page.theme-light .member-name,
+.members-page.theme-light .permission-chip-text,
+.leaderboard-page.theme-light .nav-title,
+.leaderboard-page.theme-light .state-title,
+.leaderboard-page.theme-light .hero-title,
+.leaderboard-page.theme-light .section-title,
+.leaderboard-page.theme-light .podium-name,
+.leaderboard-page.theme-light .podium-score,
+.leaderboard-page.theme-light .rank-name,
+.leaderboard-page.theme-light .metric-value,
+.leaderboard-page.theme-light .rank-badge-text {
+  color: #1F1A16;
+}
+
+.members-page.theme-light .state-sub,
+.members-page.theme-light .hero-sub,
+.members-page.theme-light .hero-stat-label,
+.members-page.theme-light .section-sub,
+.members-page.theme-light .member-meta,
+.members-page.theme-light .member-switch-label,
+.leaderboard-page.theme-light .state-sub,
+.leaderboard-page.theme-light .hero-kicker,
+.leaderboard-page.theme-light .hero-desc,
+.leaderboard-page.theme-light .section-sub,
+.leaderboard-page.theme-light .rank-score,
+.leaderboard-page.theme-light .metric-label,
+.leaderboard-page.theme-light .metric-foot {
+  color: rgba(31, 26, 22, 0.58);
+}
+
+.members-page.theme-light .loading-spinner,
+.leaderboard-page.theme-light .loading-spinner {
+  border-color: rgba(63, 53, 42, 0.12);
+  border-top-color: #2F6EEA;
+}
+
+.members-page.theme-light .state-btn,
+.leaderboard-page.theme-light .state-btn {
+  background: linear-gradient(135deg, #2F6EEA 0%, #4C86F0 100%);
+  box-shadow: 0 10rpx 32rpx rgba(47, 110, 234, 0.18);
+}
+
+.members-page.theme-light .member-row-self,
+.leaderboard-page.theme-light .rank-row-self {
+  background: rgba(47, 110, 234, 0.08);
+}
+
+.members-page.theme-light .member-avatar,
+.leaderboard-page.theme-light .podium-avatar,
+.leaderboard-page.theme-light .rank-avatar {
+  background: rgba(47, 110, 234, 0.12);
+}
+
+.members-page.theme-light .member-avatar-text,
+.leaderboard-page.theme-light .podium-avatar-text,
+.leaderboard-page.theme-light .rank-avatar-text,
+.leaderboard-page.theme-light .hero-badge-text {
+  color: #2F6EEA;
+}
+
+.members-page.theme-light .member-remove-btn {
+  background: rgba(217, 72, 95, 0.1);
+  border-color: rgba(217, 72, 95, 0.18);
+}
+
+.members-page.theme-light .member-remove-btn-text {
+  color: #C2410C;
+}
+
+.leaderboard-page.theme-light .hero-badge,
+.leaderboard-page.theme-light .metric-track {
+  background: rgba(47, 110, 234, 0.1);
+  border-color: rgba(47, 110, 234, 0.18);
+}
+
+.leaderboard-page.theme-light .metric-card {
+  border: 1rpx solid rgba(63, 53, 42, 0.08);
+}
+
+.login-container.theme-light,
+.register-container.theme-light,
+.create-space-page.theme-light,
+.subscription-page.theme-light {
+  background-color: #F3EDE3;
+  color: #1F1A16;
+}
+
+.login-container.theme-light .aurora-blob-1,
+.register-container.theme-light .aurora-blob-1,
+.create-space-page.theme-light .aurora-blob-1,
+.subscription-page.theme-light .aurora-blob-1 {
+  background: radial-gradient(circle, rgba(47, 110, 234, 0.62) 0%, rgba(47, 110, 234, 0.16) 42%, transparent 72%);
+}
+
+.login-container.theme-light .aurora-blob-2,
+.register-container.theme-light .aurora-blob-2,
+.create-space-page.theme-light .aurora-blob-2,
+.subscription-page.theme-light .aurora-blob-2 {
+  background: radial-gradient(circle, rgba(228, 123, 40, 0.48) 0%, rgba(228, 123, 40, 0.16) 42%, transparent 72%);
+}
+
+.login-container.theme-light .aurora-blob-3,
+.register-container.theme-light .aurora-blob-3,
+.create-space-page.theme-light .aurora-blob-3,
+.subscription-page.theme-light .aurora-blob-3 {
+  background: radial-gradient(circle, rgba(226, 167, 73, 0.22) 0%, rgba(226, 167, 73, 0.08) 42%, transparent 72%);
+}
+
+.login-container.theme-light .welcome-hi,
+.login-container.theme-light .welcome-text,
+.login-container.theme-light .logo-study,
+.login-container.theme-light .title-main,
+.register-container.theme-light .title-main,
+.create-space-page.theme-light .page-title,
+.subscription-page.theme-light .nav-title,
+.subscription-page.theme-light .hero-title,
+.subscription-page.theme-light .compare-title,
+.subscription-page.theme-light .plan-name {
+  color: #1F1A16;
+}
+
+.login-container.theme-light .back-btn,
+.register-container.theme-light .back-btn,
+.subscription-page.theme-light .nav-left {
+  background: rgba(255, 250, 244, 0.84);
+  border: 1rpx solid rgba(63, 53, 42, 0.1);
+  box-shadow: 0 14rpx 36rpx rgba(118, 101, 80, 0.14);
+}
+
+.login-container.theme-light .back-icon,
+.register-container.theme-light .back-icon,
+.subscription-page.theme-light .nav-icon {
+  color: #1F1A16;
+  filter: brightness(0) saturate(100%);
+}
+
+.login-container.theme-light .title-sub,
+.register-container.theme-light .title-sub,
+.login-container.theme-light .form-label,
+.register-container.theme-light .form-label,
+.login-container.theme-light .forgot-text,
+.login-container.theme-light .register-text,
+.register-container.theme-light .login-text,
+.register-container.theme-light .terms-text,
+.create-space-page.theme-light .import-divider-text,
+.create-space-page.theme-light .import-text-btn-label,
+.subscription-page.theme-light .hero-eyebrow,
+.subscription-page.theme-light .hero-current-label,
+.subscription-page.theme-light .hero-current-expiry,
+.subscription-page.theme-light .plan-desc,
+.subscription-page.theme-light .plan-price-label,
+.subscription-page.theme-light .plan-price-hint,
+.subscription-page.theme-light .feature-text,
+.subscription-page.theme-light .compare-cell {
+  color: rgba(31, 26, 22, 0.62);
+}
+
+.login-container.theme-light .form-input,
+.register-container.theme-light .form-input,
+.create-space-page.theme-light .input-wrapper,
+.create-space-page.theme-light .custom-preference-wrapper,
+.create-space-page.theme-light .preference-tag,
+.create-space-page.theme-light .import-modal-card,
+.subscription-page.theme-light .hero-section,
+.subscription-page.theme-light .billing-switch,
+.subscription-page.theme-light .plan-card,
+.subscription-page.theme-light .compare-card {
+  background: rgba(255, 250, 244, 0.86);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 18rpx 48rpx rgba(118, 101, 80, 0.12);
+}
+
+.login-container.theme-light .form-input,
+.register-container.theme-light .form-input {
+  color: #1F1A16;
+}
+
+.login-container.theme-light .form-input::placeholder,
+.register-container.theme-light .form-input::placeholder {
+  color: rgba(31, 26, 22, 0.36);
+}
+
+.login-container.theme-light .form-input:focus,
+.register-container.theme-light .form-input:focus {
+  border-color: rgba(47, 110, 234, 0.26);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.login-container.theme-light .toggle-icon,
+.register-container.theme-light .toggle-icon,
+.register-container.theme-light .terms-link,
+.login-container.theme-light .register-text-highlight,
+.register-container.theme-light .login-text-highlight,
+.create-space-page.theme-light .import-modal-btn-confirm .import-modal-btn-text,
+.subscription-page.theme-light .plan-price-main-plus,
+.subscription-page.theme-light .compare-head-plus,
+.subscription-page.theme-light .compare-val-plus {
+  color: #2F6EEA;
+}
+
+.login-container.theme-light .btn.login-btn,
+.register-container.theme-light .btn.register-btn,
+.create-space-page.theme-light .create-btn,
+.subscription-page.theme-light .plan-btn-plus,
+.subscription-page.theme-light .billing-item-active {
+  background: linear-gradient(135deg, #2F6EEA 0%, #4C86F0 100%);
+  border-color: transparent;
+  box-shadow: 0 14rpx 34rpx rgba(47, 110, 234, 0.18);
+}
+
+.login-container.theme-light .btn.register-btn,
+.create-space-page.theme-light .import-modal-btn-cancel,
+.subscription-page.theme-light .billing-item,
+.subscription-page.theme-light .plan-btn-free[disabled] {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(63, 53, 42, 0.1);
+}
+
+.login-container.theme-light .register-text,
+.register-container.theme-light .login-text,
+.create-space-page.theme-light .topic-input,
+.create-space-page.theme-light .custom-preference-input,
+.create-space-page.theme-light .tag-text,
+.create-space-page.theme-light .import-modal-title,
+.create-space-page.theme-light .import-modal-input,
+.create-space-page.theme-light .import-modal-btn-cancel .import-modal-btn-text,
+.subscription-page.theme-light .billing-label,
+.subscription-page.theme-light .plan-price-main,
+.subscription-page.theme-light .feature-text-limit,
+.subscription-page.theme-light .compare-metric {
+  color: #1F1A16;
+}
+
+.create-space-page.theme-light .page-title {
+  background: linear-gradient(135deg, #1F1A16 0%, #2F6EEA 52%, #1F1A16 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.create-space-page.theme-light .preference-tag-selected {
+  background: rgba(47, 110, 234, 0.14);
+  border-color: rgba(47, 110, 234, 0.22);
+  box-shadow: 0 0 16rpx rgba(47, 110, 234, 0.16);
+}
+
+.create-space-page.theme-light .preference-tag-selected .tag-text,
+.subscription-page.theme-light .billing-item-active .billing-label,
+.subscription-page.theme-light .billing-item-active .billing-tag {
+  color: #FFFFFF;
+}
+
+.create-space-page.theme-light .import-divider-line {
+  background: rgba(63, 53, 42, 0.12);
+}
+
+.create-space-page.theme-light .import-modal-overlay {
+  background: rgba(74, 59, 45, 0.18);
+}
+
+.create-space-page.theme-light .import-modal-input {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(63, 53, 42, 0.1);
+}
+
+.subscription-page.theme-light {
+  background:
+    radial-gradient(circle at top left, rgba(47, 110, 234, 0.16), transparent 40%),
+    radial-gradient(circle at bottom right, rgba(228, 123, 40, 0.12), transparent 34%),
+    linear-gradient(180deg, #F6EFE5 0%, #EFE5D9 100%);
+}
+
+.subscription-page.theme-light .sub-nav-bar::before {
+  background: linear-gradient(
+    to bottom,
+    rgba(246, 239, 229, 0.94) 0%,
+    rgba(246, 239, 229, 0.72) 52%,
+    rgba(246, 239, 229, 0) 100%
+  );
+}
+
+.subscription-page.theme-light .hero-section,
+.subscription-page.theme-light .compare-card,
+.subscription-page.theme-light .plan-card,
+.subscription-page.theme-light .billing-switch {
+  border-color: rgba(63, 53, 42, 0.1);
+}
+
+.subscription-page.theme-light .hero-current-strip,
+.subscription-page.theme-light .metric-track,
+.subscription-page.theme-light .plan-card-ultra,
+.subscription-page.theme-light .compare-head,
+.subscription-page.theme-light .compare-row-alt,
+.subscription-page.theme-light .compare-row:not(.compare-head) {
+  background: rgba(255, 255, 255, 0.66) !important;
+}
+
+.subscription-page.theme-light .plan-card-recommended {
+  border-color: rgba(47, 110, 234, 0.18);
+  box-shadow: 0 18rpx 48rpx rgba(47, 110, 234, 0.12);
+}
+
+.subscription-page.theme-light .plan-card-ultra {
+  background: linear-gradient(180deg, rgba(255, 240, 224, 0.92) 0%, rgba(255, 250, 244, 0.86) 100%) !important;
+}
+
+.subscription-page.theme-light .plan-divider,
+.subscription-page.theme-light .compare-row:not(.compare-head),
+.subscription-page.theme-light .feature-icon-limit {
+  border-color: rgba(63, 53, 42, 0.08);
+}
+
+.subscription-page.theme-light .plan-price-main-ultra,
+.subscription-page.theme-light .compare-head-ultra,
+.subscription-page.theme-light .compare-val-ultra {
+  color: #7C3AED;
+}
+
+.subscription-page.theme-light .compare-head-free,
+.subscription-page.theme-light .compare-val-free,
+.subscription-page.theme-light .plan-btn-free .plan-btn-text {
+  color: #1F1A16;
+}
+
+.artifact-viewer-page.theme-light .nav-bar {
+  background: rgba(243, 237, 227, 0.88);
+  border-bottom: 1rpx solid rgba(63, 53, 42, 0.08);
+}
+
+.artifact-viewer-page.theme-light .loading-text,
+.artifact-viewer-page.theme-light .error-text {
+  color: rgba(31, 26, 22, 0.62);
+}
+
+.artifact-viewer-page.theme-light .iframe-wrapper {
+  background: #F3EDE3;
+}
+
+/* Test page */
+.test-page.theme-light {
+  background-color: #F3EDE3;
+  color: #1F1A16;
+}
+
+.test-page.theme-light .nav-bar {
+  background: linear-gradient(
+    to bottom,
+    rgba(243, 237, 227, 0.95) 0%,
+    rgba(243, 237, 227, 0) 100%
+  );
+}
+
+.test-page.theme-light .progress-section {
+  background: linear-gradient(
+    to bottom,
+    rgba(243, 237, 227, 0.92) 0%,
+    rgba(243, 237, 227, 0) 100%
+  );
+}
+
+.test-page.theme-light .bottom-nav {
+  background: linear-gradient(
+    to top,
+    rgba(243, 237, 227, 0.98) 0%,
+    rgba(243, 237, 227, 0.92) 70%,
+    transparent 100%
+  );
+}
+
+.test-page.theme-light .nav-left,
+.test-page.theme-light .nav-right,
+.test-page.theme-light .nav-btn {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 14rpx 34rpx rgba(118, 101, 80, 0.12);
+}
+
+.test-page.theme-light .question-card,
+.test-page.theme-light .option-item,
+.test-page.theme-light .submit-overlay-card {
+  background: #FFFAF4;
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 16rpx 40rpx rgba(118, 101, 80, 0.12);
+}
+
+.test-page.theme-light .answer-textarea {
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(63, 53, 42, 0.12);
+}
+
+.test-page.theme-light .progress-bar {
+  background: rgba(63, 53, 42, 0.08);
+}
+
+.test-page.theme-light .nav-icon,
+.test-page.theme-light .nav-btn-icon {
+  filter: brightness(0) saturate(100%);
+}
+
+.test-page.theme-light .nav-title,
+.test-page.theme-light .question-title,
+.test-page.theme-light .option-text,
+.test-page.theme-light .nav-btn-text,
+.test-page.theme-light .submit-success-title {
+  color: #1F1A16;
+}
+
+.test-page.theme-light .loading-text,
+.test-page.theme-light .progress-text,
+.test-page.theme-light .question-number,
+.test-page.theme-light .textarea-counter,
+.test-page.theme-light .submit-success-desc {
+  color: rgba(31, 26, 22, 0.62);
+}
+
+.test-page.theme-light .textarea-placeholder {
+  color: rgba(31, 26, 22, 0.42);
+}
+
+.test-page.theme-light .retry-btn {
+  background: rgba(47, 110, 234, 0.1);
+  border-color: rgba(47, 110, 234, 0.22);
+}
+
+.test-page.theme-light .retry-btn-text {
+  color: #2F6EEA;
+}
+
+.test-page.theme-light .question-type-single {
+  background: rgba(47, 110, 234, 0.12);
+  color: #2F6EEA;
+}
+
+.test-page.theme-light .question-type-multiple {
+  background: rgba(126, 94, 219, 0.12);
+  color: #6D57BF;
+}
+
+.test-page.theme-light .question-type-truefalse {
+  background: rgba(47, 157, 112, 0.12);
+  color: #2F9D70;
+}
+
+.test-page.theme-light .question-type-shortanswer {
+  background: rgba(214, 147, 46, 0.12);
+  color: #BA7F1F;
+}
+
+.test-page.theme-light .option-item-selected {
+  background: rgba(47, 110, 234, 0.12);
+  border-color: rgba(47, 110, 234, 0.22);
+}
+
+.test-page.theme-light .option-radio,
+.test-page.theme-light .option-checkbox {
+  border-color: rgba(63, 53, 42, 0.18);
+}
+
+.test-page.theme-light .option-radio-selected,
+.test-page.theme-light .option-checkbox-checked,
+.test-page.theme-light .nav-right-active,
+.test-page.theme-light .progress-fill,
+.test-page.theme-light .dot-current,
+.test-page.theme-light .submit-success-btn {
+  background: #2F6EEA;
+  border-color: #2F6EEA;
+}
+
+.test-page.theme-light .radio-inner {
+  background: #FFFFFF;
+}
+
+.test-page.theme-light .option-checkbox-checked .checkbox-icon,
+.test-page.theme-light .nav-right-active .nav-icon {
+  filter: brightness(0) invert(1);
+}
+
+.test-page.theme-light .dot {
+  background: rgba(63, 53, 42, 0.18);
+}
+
+.test-page.theme-light .dot-answered {
+  background: rgba(47, 110, 234, 0.48);
+}
+
+.test-page.theme-light .submit-overlay-bg.overlay-bg-show {
+  background: rgba(74, 59, 45, 0.18);
+}
+
+.test-page.theme-light .submit-overlay-card {
+  box-shadow: 0 20rpx 54rpx rgba(118, 101, 80, 0.14);
+}
+
+.test-page.theme-light .submit-success-btn-text {
+  color: #FFFFFF;
+}
