@@ -712,6 +712,7 @@ export function connectSSEWithResume(options) {
   let aborted = false
   let currentCancel = null
   let doneReceived = false
+  let reconnectInFlight = false
 
   // 包装 onEvent，跟踪接收进度
   const wrappedOnEvent = (eventType, eventData) => {
@@ -726,98 +727,108 @@ export function connectSSEWithResume(options) {
 
   // 异常断连处理
   const handleDisconnect = async () => {
-    if (aborted || doneReceived) {
-      onComplete?.()
-      return
-    }
+    if (reconnectInFlight) return
 
-    // 检查是否需要重连
-    if (!reconnect.enabled || reconnectAttempts >= reconnect.maxAttempts) {
-      console.warn('[SSE-Resume] Max reconnect attempts reached or reconnect disabled')
-      onConnectionError?.(new Error('连接中断，请刷新重试'))
-      onComplete?.()
-      return
-    }
-
-    reconnectAttempts++
-    const delay = Math.min(
-      reconnect.initialDelay * Math.pow(reconnect.backoffMultiplier, reconnectAttempts - 1),
-      reconnect.maxDelay
-    )
-
-    console.log(`[SSE-Resume] Attempting reconnect ${reconnectAttempts}/${reconnect.maxAttempts} in ${delay}ms`)
-    onReconnecting?.(reconnectAttempts)
-
-    await sleep(delay)
-
-    if (aborted) {
-      return
-    }
-
-    // 查询流式状态
-    if (!getStreamingStatus) {
-      console.warn('[SSE-Resume] No getStreamingStatus function provided, cannot resume')
-      onConnectionError?.(new Error('无法恢复连接'))
-      onComplete?.()
-      return
-    }
-
+    reconnectInFlight = true
     try {
-      const status = await getStreamingStatus(conversationId)
-      console.log('[SSE-Resume] Streaming status:', status)
-
-      if (aborted) {
-        return
-      }
-
-      if (!status.is_streaming) {
-        // 流式已完成
-        if (status.partial_content) {
-          // 补发剩余内容
-          const alreadyReceived = receivedContentLength
-          if (status.partial_content.length > alreadyReceived) {
-            const remaining = status.partial_content.slice(alreadyReceived)
-            onEvent?.('text_delta', { content: remaining })
-          }
-          onEvent?.('done', {
-            content: status.partial_content,
-            resumed: true,
-            response_status: status.is_stopped ? 'stopped' : 'completed',
-            stopped: !!status.is_stopped
-          })
-        } else {
-          onEvent?.('done', { content: '', resumed: true, cache_expired: true })
+      while (!aborted && !doneReceived) {
+        // 检查是否需要重连
+        if (!reconnect.enabled || reconnectAttempts >= reconnect.maxAttempts) {
+          console.warn('[SSE-Resume] Max reconnect attempts reached or reconnect disabled')
+          onConnectionError?.(new Error('连接中断，请刷新重试'))
+          onComplete?.()
+          return
         }
-        onReconnected?.()
-        onComplete?.()
+
+        reconnectAttempts++
+        const delay = Math.min(
+          reconnect.initialDelay * Math.pow(reconnect.backoffMultiplier, reconnectAttempts - 1),
+          reconnect.maxDelay
+        )
+
+        console.log(`[SSE-Resume] Attempting reconnect ${reconnectAttempts}/${reconnect.maxAttempts} in ${delay}ms`)
+        onReconnecting?.(reconnectAttempts)
+
+        await sleep(delay)
+
+        if (aborted || doneReceived) {
+          onComplete?.()
+          return
+        }
+
+        if (!getStreamingStatus) {
+          console.warn('[SSE-Resume] No getStreamingStatus function provided, cannot resume')
+          onConnectionError?.(new Error('无法恢复连接'))
+          onComplete?.()
+          return
+        }
+
+        let status
+        try {
+          status = await getStreamingStatus(conversationId)
+        } catch (err) {
+          console.error('[SSE-Resume] Failed to get streaming status:', err)
+          continue
+        }
+
+        console.log('[SSE-Resume] Streaming status:', status)
+
+        if (aborted || doneReceived) {
+          onComplete?.()
+          return
+        }
+
+        if (!status.is_streaming) {
+          // 使用 wrappedOnEvent，确保补发内容也会更新本地 offset / done 状态
+          if (status.partial_content) {
+            const alreadyReceived = receivedContentLength
+            if (status.partial_content.length > alreadyReceived) {
+              const remaining = status.partial_content.slice(alreadyReceived)
+              wrappedOnEvent('text_delta', { content: remaining })
+            }
+            wrappedOnEvent('done', {
+              content: status.partial_content,
+              resumed: true,
+              response_status: status.is_stopped ? 'stopped' : 'completed',
+              stopped: !!status.is_stopped
+            })
+          } else {
+            wrappedOnEvent('done', { content: '', resumed: true, cache_expired: true })
+          }
+          reconnectAttempts = 0
+          onReconnected?.()
+          onComplete?.()
+          return
+        }
+
+        // 仍在流式传输，从断点继续
+        console.log(`[SSE-Resume] Resuming from offset ${receivedContentLength}`)
+        currentCancel = connectSSE({
+          url: url.replace(/\/messages$/, `/resume-stream?offset=${receivedContentLength}`),
+          method: 'GET',
+          data: null,
+          onEvent: wrappedOnEvent,
+          onComplete: () => {
+            if (!doneReceived && !aborted) {
+              // 断连了但没收到 done，继续尝试重连
+              handleDisconnect()
+            } else {
+              reconnectAttempts = 0
+              onReconnected?.()
+              onComplete?.()
+            }
+          },
+          onConnectionError: (err) => {
+            console.error('[SSE-Resume] Resume connection error:', err)
+            handleDisconnect()
+          },
+        })
         return
       }
 
-      // 仍在流式传输，从断点继续
-      console.log(`[SSE-Resume] Resuming from offset ${receivedContentLength}`)
-      currentCancel = connectSSE({
-        url: url.replace(/\/messages$/, `/resume-stream?offset=${receivedContentLength}`),
-        method: 'GET',
-        data: null,
-        onEvent: wrappedOnEvent,
-        onComplete: () => {
-          if (!doneReceived && !aborted) {
-            // 断连了但没收到 done，继续尝试重连
-            handleDisconnect()
-          } else {
-            reconnectAttempts = 0
-            onReconnected?.()
-            onComplete?.()
-          }
-        },
-        onConnectionError: (err) => {
-          console.error('[SSE-Resume] Resume connection error:', err)
-          handleDisconnect()
-        },
-      })
-    } catch (err) {
-      console.error('[SSE-Resume] Failed to get streaming status:', err)
-      handleDisconnect()
+      onComplete?.()
+    } finally {
+      reconnectInFlight = false
     }
   }
 

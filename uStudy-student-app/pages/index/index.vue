@@ -49,40 +49,18 @@
 				</view>
 				<view class="header-action theme-action" @click="toggleThemeMode">
 					<view class="theme-action-icon">
-						<svg
+						<image
 							v-if="isLightTheme"
-							class="theme-action-svg"
-							xmlns="http://www.w3.org/2000/svg"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-						>
-							<path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" />
-						</svg>
-						<svg
+							class="theme-action-image"
+							src="/static/icons/home-theme/moon-toggle.svg"
+							mode="aspectFit"
+						></image>
+						<image
 							v-else
-							class="theme-action-svg"
-							xmlns="http://www.w3.org/2000/svg"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-						>
-							<circle cx="12" cy="12" r="4" />
-							<path d="M12 2v2" />
-							<path d="M12 20v2" />
-							<path d="m4.93 4.93 1.41 1.41" />
-							<path d="m17.66 17.66 1.41 1.41" />
-							<path d="M2 12h2" />
-							<path d="M20 12h2" />
-							<path d="m6.34 17.66-1.41 1.41" />
-							<path d="m19.07 4.93-1.41 1.41" />
-						</svg>
+							class="theme-action-image"
+							src="/static/icons/home-theme/sun-toggle.svg"
+							mode="aspectFit"
+						></image>
 					</view>
 				</view>
 			</view>
@@ -618,7 +596,7 @@ function _cleanOldSuggestionCache(currentKey) {
 			toggleThemeMode() {
 				const nextMode = this.isLightTheme ? 'dark' : 'light'
 				this.applyThemeMode(nextMode)
-				this.showToast(nextMode === 'light' ? '已切换到浅色首页主题' : '已切换到深色首页主题', 'success')
+				this.showToast(nextMode === 'light' ? '已切换到浅色主题' : '已切换到深色主题', 'success')
 			},
 
 			applyThemeMode(mode, options = {}) {
@@ -1851,7 +1829,7 @@ function _cleanOldSuggestionCache(currentKey) {
 		position: absolute;
 		top: calc(100vh / 26 * 8);
 		left: calc(100% / 12 * 3);
-		right: 220rpx;
+		right: 40rpx;
 		font-size: 48rpx;
 		font-weight: 700;
 		color: var(--home-header-text);
@@ -1915,7 +1893,7 @@ function _cleanOldSuggestionCache(currentKey) {
 		color: var(--home-header-action-icon);
 	}
 
-	.theme-action-svg {
+	.theme-action-image {
 		width: 34rpx;
 		height: 34rpx;
 		display: block;
