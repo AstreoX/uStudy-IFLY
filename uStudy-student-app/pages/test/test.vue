@@ -213,6 +213,8 @@
 import { getQuizDetail, submitQuiz } from '@/api/space'
 import { setPendingEvaluation } from '@/utils/quizEvaluationBus'
 import { setQuizEvaluationResult } from '@/utils/storage'
+import { clearPendingNavigationIfMatches } from '@/utils/deepLink'
+import { goBack as safeGoBack } from '@/utils/navigation'
 import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 export default {
@@ -293,6 +295,7 @@ export default {
     this.restoreThemeMode({ darkStatusBarBackground: '#1D1E20' })
     if (options.quizId) {
       this.quizId = options.quizId
+      clearPendingNavigationIfMatches(`/pages/test/test?quizId=${encodeURIComponent(options.quizId)}`)
       this.loadQuizData(options.quizId)
     } else if (options.msgId) {
       // 兼容模拟模式
@@ -385,8 +388,8 @@ export default {
     },
 
     goBack() {
-      uni.navigateBack({
-        delta: 1
+      safeGoBack({
+        fallbackUrl: '/pages/index/index'
       })
     },
 
@@ -394,7 +397,9 @@ export default {
       this.submitOverlayAnimated = false
       setTimeout(() => {
         this.showSubmitSuccess = false
-        uni.navigateBack()
+        safeGoBack({
+          fallbackUrl: '/pages/index/index'
+        })
       }, 200)
     },
 

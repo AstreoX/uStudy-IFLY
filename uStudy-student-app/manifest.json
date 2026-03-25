@@ -2,8 +2,8 @@
     "name" : "uStudy",
     "appid" : "__UNI__87BF873",
     "description" : "",
-    "versionName" : "1.5.3",
-    "versionCode" : "163",
+    "versionName" : "1.5.4",
+    "versionCode" : "164",
     "transformPx" : false,
     /* 5+App特有相关 */
     "app-plus" : {
@@ -25,6 +25,7 @@
         "distribute" : {
             /* android打包配置 */
             "android" : {
+                "schemes" : [ "ustudy" ],
                 "permissions" : [
                     "<uses-permission android:name=\"android.permission.INTERNET\"/>",
                     "<uses-permission android:name=\"android.permission.VIBRATE\"/>",
@@ -45,7 +46,8 @@
             },
             /* ios打包配置 */
             "ios" : {
-                "dSYMs" : false
+                "dSYMs" : false,
+                "urltypes" : "ustudy"
             },
             "icons" : {
                 "android" : {

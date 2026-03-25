@@ -44,15 +44,19 @@ const API_BASE_URL = resolveBaseUrl()
 const TOKEN_KEY = 'ustudy_tokens'
 const USER_KEY = 'ustudy_user'
 const CARD_ORDER_KEY = 'ustudy_card_order'
-const APP_VERSION_NAME = '1.5.3'
-const APP_VERSION_CODE = 163
-const NATIVE_VERSION_CODE = 163  // 仅在发布新 APK 时更新，WGT 发布不变
+const APP_VERSION_NAME = '1.5.4'
+const APP_VERSION_CODE = 164
+const NATIVE_VERSION_CODE = 164  // 仅在发布新 APK 时更新，WGT 发布不变
 const GITEE_RAW_BASE = 'https://gitee.com/Gskyer/u-study-release/raw/master'
 const UPDATE_STORAGE_KEY = 'ustudy_update_prefs'
 const ANNOUNCEMENT_STORAGE_KEY = 'ustudy_announcement_prefs'
 const SELECTED_MODEL_KEY = 'uStudy_selectedModelId'
 const QUIZ_EVALUATION_KEY = 'quizEvaluationResult'
 const THINKING_MODE_KEY = 'uStudy_thinkingMode'
+const PENDING_NAVIGATION_KEY = 'ustudy_pending_navigation'
+const APP_SCHEME = 'ustudy'
+const APP_DOWNLOAD_URL = 'https://download.ustudy.top'
+const MOBILE_WEB_BASE_URL = 'https://app.ustudy.top'
 
 export default {
   API_BASE_URL,
@@ -67,5 +71,9 @@ export default {
   ANNOUNCEMENT_STORAGE_KEY,
   SELECTED_MODEL_KEY,
   QUIZ_EVALUATION_KEY,
-  THINKING_MODE_KEY
+  THINKING_MODE_KEY,
+  PENDING_NAVIGATION_KEY,
+  APP_SCHEME,
+  APP_DOWNLOAD_URL,
+  MOBILE_WEB_BASE_URL
 }

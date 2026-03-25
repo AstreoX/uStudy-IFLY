@@ -36,6 +36,7 @@
 <script>
 import { getMe } from '@/api/auth'
 import { getTokens, clearAuth } from '@/utils/storage'
+import { consumePendingNavigation, navigateToTarget } from '@/utils/deepLink'
 import { useUserStore } from '@/store/user'
 import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
@@ -55,9 +56,12 @@ export default {
         const user = await getMe()
         const userStore = useUserStore()
         userStore.setUser(user)
-        uni.reLaunch({
-          url: '/pages/index/index'
-        })
+        const target = consumePendingNavigation()
+        if (!target || !navigateToTarget(target, { replace: true })) {
+          uni.reLaunch({
+            url: '/pages/index/index'
+          })
+        }
       } catch (error) {
         console.error('Token validation failed on login page:', error)
         clearAuth()
@@ -81,7 +85,7 @@ export default {
 }
 </script>
 
-<style>
+<style scoped>
 .login-container {
   width: 100%;
   min-height: 100vh;
@@ -278,5 +282,50 @@ export default {
   font-weight: 500;
   color: #FFFFFF;
   letter-spacing: 1rpx;
+}
+
+.login-container.theme-light {
+  background:
+    radial-gradient(circle at top left, rgba(47, 110, 234, 0.12), transparent 36%),
+    radial-gradient(circle at bottom right, rgba(230, 126, 34, 0.1), transparent 32%),
+    linear-gradient(180deg, #F7F1E8 0%, #F3EDE3 48%, #EFE6DA 100%);
+}
+
+.login-container.theme-light .aurora-bg .aurora-blob-1 {
+  background: radial-gradient(circle, rgba(47, 110, 234, 0.46) 0%, rgba(47, 110, 234, 0.14) 42%, transparent 72%);
+}
+
+.login-container.theme-light .aurora-bg .aurora-blob-2 {
+  background: radial-gradient(circle, rgba(228, 123, 40, 0.34) 0%, rgba(228, 123, 40, 0.12) 42%, transparent 72%);
+}
+
+.login-container.theme-light .aurora-bg .aurora-blob-3 {
+  background: radial-gradient(circle, rgba(226, 167, 73, 0.18) 0%, rgba(226, 167, 73, 0.06) 42%, transparent 72%);
+}
+
+.login-container.theme-light .welcome-section .welcome-hi,
+.login-container.theme-light .welcome-section .welcome-text,
+.login-container.theme-light .logo .logo-study {
+  color: #1F1A16;
+}
+
+.login-container.theme-light .logo .logo-u {
+  color: #2F6EEA;
+}
+
+.login-container.theme-light .buttons-section .login-btn {
+  background: linear-gradient(135deg, #2F6EEA 0%, #4C86F0 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 14rpx 34rpx rgba(47, 110, 234, 0.18);
+}
+
+.login-container.theme-light .buttons-section .register-btn {
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 14rpx 34rpx rgba(118, 101, 80, 0.12);
+}
+
+.login-container.theme-light .buttons-section .register-text {
+  color: #1F1A16 !important;
 }
 </style>

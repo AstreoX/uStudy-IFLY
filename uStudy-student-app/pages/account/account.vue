@@ -766,7 +766,7 @@ export default {
   height: 72rpx;
 }
 
-.nav-icon {
+.account-page .nav-icon {
   width: 48rpx;
   height: 48rpx;
   filter: var(--account-icon-filter);

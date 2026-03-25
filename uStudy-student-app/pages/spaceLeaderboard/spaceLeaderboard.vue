@@ -236,7 +236,7 @@ export default {
 }
 </script>
 
-<style>
+<style scoped>
 .leaderboard-page {
   min-height: 100vh;
   background:
@@ -792,10 +792,100 @@ export default {
   color: #1F1A16;
 }
 
+.leaderboard-page.theme-light .hero-card,
+.leaderboard-page.theme-light .podium-card,
+.leaderboard-page.theme-light .leaderboard-card {
+  background: rgba(255, 251, 245, 0.92);
+  border-color: rgba(79, 66, 51, 0.12);
+  box-shadow: 0 20rpx 56rpx rgba(118, 101, 80, 0.12);
+}
+
+.leaderboard-page.theme-light .rank-row {
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.leaderboard-page.theme-light .rank-row-self {
+  background: linear-gradient(135deg, rgba(47, 110, 234, 0.12) 0%, rgba(47, 157, 112, 0.08) 100%);
+  border: 1rpx solid rgba(47, 110, 234, 0.16);
+}
+
+.leaderboard-page.theme-light .metric-card {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.leaderboard-page.theme-light .podium-item {
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.leaderboard-page.theme-light .podium-rank-1 {
+  background: linear-gradient(180deg, rgba(255, 215, 0, 0.18) 0%, rgba(255, 255, 255, 0.7) 100%);
+}
+
+.leaderboard-page.theme-light .podium-rank-2 {
+  background: linear-gradient(180deg, rgba(192, 192, 192, 0.2) 0%, rgba(255, 255, 255, 0.7) 100%);
+}
+
+.leaderboard-page.theme-light .podium-rank-3 {
+  background: linear-gradient(180deg, rgba(205, 127, 50, 0.22) 0%, rgba(255, 255, 255, 0.7) 100%);
+}
+
+.leaderboard-page.theme-light .hero-kicker,
+.leaderboard-page.theme-light .podium-rank-text,
+.leaderboard-page.theme-light .rank-badge-text,
+.leaderboard-page.theme-light .metric-label,
+.leaderboard-page.theme-light .metric-foot {
+  color: rgba(31, 26, 22, 0.52);
+}
+
+.leaderboard-page.theme-light .hero-title,
+.leaderboard-page.theme-light .podium-name,
+.leaderboard-page.theme-light .section-title,
+.leaderboard-page.theme-light .rank-name,
+.leaderboard-page.theme-light .metric-value,
+.leaderboard-page.theme-light .podium-avatar-text,
+.leaderboard-page.theme-light .rank-avatar-text {
+  color: #1F1A16;
+}
+
 .leaderboard-page.theme-light .state-sub,
 .leaderboard-page.theme-light .hero-desc,
-.leaderboard-page.theme-light .section-sub {
+.leaderboard-page.theme-light .section-sub,
+.leaderboard-page.theme-light .rank-score {
   color: rgba(31, 26, 22, 0.58);
+}
+
+.leaderboard-page.theme-light .hero-badge {
+  background: rgba(47, 110, 234, 0.1);
+  border-color: rgba(47, 110, 234, 0.18);
+}
+
+.leaderboard-page.theme-light .hero-badge-text,
+.leaderboard-page.theme-light .self-badge {
+  color: #2F6EEA;
+}
+
+.leaderboard-page.theme-light .role-badge {
+  color: #B78321;
+  background: rgba(255, 213, 106, 0.16);
+}
+
+.leaderboard-page.theme-light .self-badge {
+  background: rgba(47, 110, 234, 0.12);
+}
+
+.leaderboard-page.theme-light .podium-score {
+  color: #2F9D70;
+}
+
+.leaderboard-page.theme-light .podium-rank-chip,
+.leaderboard-page.theme-light .rank-badge,
+.leaderboard-page.theme-light .podium-avatar,
+.leaderboard-page.theme-light .rank-avatar {
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.leaderboard-page.theme-light .metric-track {
+  background: rgba(79, 66, 51, 0.08);
 }
 
 .leaderboard-page.theme-light .loading-spinner {

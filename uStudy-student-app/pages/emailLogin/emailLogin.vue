@@ -84,6 +84,7 @@
 <script>
 import { getMe, login } from '@/api/auth'
 import { setTokens } from '@/utils/storage'
+import { consumePendingNavigation, navigateToTarget } from '@/utils/deepLink'
 import { useUserStore } from '@/store/user'
 import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
@@ -186,9 +187,12 @@ export default {
         })
 
         setTimeout(() => {
-          uni.reLaunch({
-            url: '/pages/index/index'
-          })
+          const target = consumePendingNavigation()
+          if (!target || !navigateToTarget(target, { replace: true })) {
+            uni.reLaunch({
+              url: '/pages/index/index'
+            })
+          }
         }, 800)
       } catch (error) {
         console.error('Login failed:', error)
@@ -217,7 +221,7 @@ export default {
 }
 </script>
 
-<style>
+<style scoped>
 .login-container {
   width: 100%;
   min-height: 100vh;
@@ -493,5 +497,72 @@ export default {
   font-size: 28rpx;
   color: #007AFF;
   margin-left: 8rpx;
+}
+
+.login-container.theme-light {
+  background:
+    radial-gradient(circle at top left, rgba(47, 110, 234, 0.12), transparent 36%),
+    radial-gradient(circle at bottom right, rgba(230, 126, 34, 0.1), transparent 32%),
+    linear-gradient(180deg, #F7F1E8 0%, #F3EDE3 48%, #EFE6DA 100%);
+}
+
+.login-container.theme-light .aurora-bg .aurora-blob-1 {
+  background: radial-gradient(circle, rgba(47, 110, 234, 0.46) 0%, rgba(47, 110, 234, 0.14) 42%, transparent 72%);
+}
+
+.login-container.theme-light .aurora-bg .aurora-blob-2 {
+  background: radial-gradient(circle, rgba(228, 123, 40, 0.34) 0%, rgba(228, 123, 40, 0.12) 42%, transparent 72%);
+}
+
+.login-container.theme-light .aurora-bg .aurora-blob-3 {
+  background: radial-gradient(circle, rgba(226, 167, 73, 0.18) 0%, rgba(226, 167, 73, 0.06) 42%, transparent 72%);
+}
+
+.login-container.theme-light .back-btn {
+  background: rgba(255, 250, 244, 0.84);
+  border: 1rpx solid rgba(63, 53, 42, 0.1);
+  box-shadow: 0 14rpx 36rpx rgba(118, 101, 80, 0.14);
+}
+
+.login-container.theme-light .back-icon {
+  color: #1F1A16;
+}
+
+.login-container.theme-light .title-main {
+  color: #1F1A16;
+}
+
+.login-container.theme-light .title-sub,
+.login-container.theme-light .form-label,
+.login-container.theme-light .forgot-text,
+.login-container.theme-light .register-text {
+  color: rgba(31, 26, 22, 0.62);
+}
+
+.login-container.theme-light .form-input {
+  background: rgba(255, 250, 244, 0.86);
+  border-color: rgba(63, 53, 42, 0.1);
+  box-shadow: 0 18rpx 48rpx rgba(118, 101, 80, 0.12);
+  color: #1F1A16;
+}
+
+.login-container.theme-light .form-input::placeholder {
+  color: rgba(31, 26, 22, 0.36);
+}
+
+.login-container.theme-light .form-input:focus {
+  border-color: rgba(47, 110, 234, 0.26);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.login-container.theme-light .toggle-icon,
+.login-container.theme-light .register-text-highlight {
+  color: #2F6EEA;
+}
+
+.login-container.theme-light .btn.login-btn {
+  background: linear-gradient(135deg, #2F6EEA 0%, #4C86F0 100%);
+  border-color: transparent;
+  box-shadow: 0 14rpx 34rpx rgba(47, 110, 234, 0.18);
 }
 </style>

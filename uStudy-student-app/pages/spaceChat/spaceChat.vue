@@ -701,6 +701,10 @@
 										:edges="graphMutationSnapshots[seg.toolCall.id].edges"
 										:canvas-width="graphPreviewWidth"
 										:canvas-height="graphPreviewHeight"
+										:tree-edge-color="miniGraphTreeEdgeColor"
+										:tree-edge-width-scale="miniGraphTreeEdgeWidthScale"
+										:node-label-color="miniGraphNodeLabelColor"
+										:node-label-shadow-color="miniGraphNodeLabelShadowColor"
 										:force-tree-mode="true"
 										:canvas-id-suffix="graphMutationSnapshots[seg.toolCall.id].canvasSuffix"
 									/>
@@ -773,6 +777,10 @@
 										:edges="graphMutationSnapshots[seg.toolCall.id].edges"
 										:canvas-width="graphPreviewWidth"
 										:canvas-height="graphPreviewHeight"
+										:tree-edge-color="miniGraphTreeEdgeColor"
+										:tree-edge-width-scale="miniGraphTreeEdgeWidthScale"
+										:node-label-color="miniGraphNodeLabelColor"
+										:node-label-shadow-color="miniGraphNodeLabelShadowColor"
 										:force-tree-mode="true"
 										:canvas-id-suffix="graphMutationSnapshots[seg.toolCall.id].canvasSuffix"
 										:highlight-node-labels="graphMutationSnapshots[seg.toolCall.id].highlightNodeLabels"
@@ -834,6 +842,10 @@
 										:edges="graphMutationSnapshots[seg.toolCall.id].edges"
 										:canvas-width="graphPreviewWidth"
 										:canvas-height="graphPreviewHeight"
+										:tree-edge-color="miniGraphTreeEdgeColor"
+										:tree-edge-width-scale="miniGraphTreeEdgeWidthScale"
+										:node-label-color="miniGraphNodeLabelColor"
+										:node-label-shadow-color="miniGraphNodeLabelShadowColor"
 										:force-tree-mode="true"
 										:canvas-id-suffix="graphMutationSnapshots[seg.toolCall.id].canvasSuffix"
 										:highlight-node-labels="graphMutationSnapshots[seg.toolCall.id].highlightNodeLabels"
@@ -901,6 +913,10 @@
 										:edges="graphMutationSnapshots[seg.toolCall.id].edges"
 										:canvas-width="graphPreviewWidth"
 										:canvas-height="graphPreviewHeight"
+										:tree-edge-color="miniGraphTreeEdgeColor"
+										:tree-edge-width-scale="miniGraphTreeEdgeWidthScale"
+										:node-label-color="miniGraphNodeLabelColor"
+										:node-label-shadow-color="miniGraphNodeLabelShadowColor"
 										:force-tree-mode="false"
 										:canvas-id-suffix="graphMutationSnapshots[seg.toolCall.id].canvasSuffix"
 										:highlight-node-labels="graphMutationSnapshots[seg.toolCall.id].highlightNodeLabels"
@@ -964,6 +980,10 @@
 										:edges="graphMutationSnapshots[seg.toolCall.id].edges"
 										:canvas-width="graphPreviewWidth"
 										:canvas-height="graphPreviewHeight"
+										:tree-edge-color="miniGraphTreeEdgeColor"
+										:tree-edge-width-scale="miniGraphTreeEdgeWidthScale"
+										:node-label-color="miniGraphNodeLabelColor"
+										:node-label-shadow-color="miniGraphNodeLabelShadowColor"
 										:force-tree-mode="true"
 										:canvas-id-suffix="graphMutationSnapshots[seg.toolCall.id].canvasSuffix"
 										:highlight-node-labels="graphMutationSnapshots[seg.toolCall.id].highlightNodeLabels"
@@ -1412,14 +1432,8 @@
 				>
 					<view class="model-menu-accent"></view>
 					<view class="model-menu-item-info">
-						<text
-							class="model-menu-item-name"
-							:style="{ color: m.locked ? '#9CA3AF' : '#C7CBD4', '-webkit-text-fill-color': m.locked ? '#9CA3AF' : '#C7CBD4' }"
-						>{{ m.display_name }}</text>
-						<text
-							class="model-menu-item-desc"
-							:style="{ color: '#A1A1AA', '-webkit-text-fill-color': '#A1A1AA' }"
-						>{{ m.locked ? '升级订阅解锁' : m.description }}</text>
+						<text class="model-menu-item-name">{{ m.display_name }}</text>
+						<text class="model-menu-item-desc">{{ m.locked ? '升级订阅解锁' : m.description }}</text>
 					</view>
 					<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
 				</view>
@@ -1486,20 +1500,12 @@
 					/>
 				</view>
 
-				<view class="input-limit-row" :class="{ 'input-limit-row-warning': isInputTooLong }">
-					<text class="input-limit-text">{{ inputLimitTip }}</text>
-					<text class="input-limit-counter">{{ messageCharCount }}/{{ maxMessageLength }}</text>
-				</view>
-
 				<view class="input-bottom-row">
 					<!-- 左侧：模型选择 pill -->
 					<view class="input-bottom-left">
 						<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
 							<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
-							<text
-								class="model-selector-label"
-								:style="{ color: '#C7CBD4', '-webkit-text-fill-color': '#C7CBD4' }"
-							>{{ selectedModelName }}</text>
+							<text class="model-selector-label">{{ selectedModelName }}</text>
 							<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
 						</view>
 						<!-- 深度思考切换按钮 -->
@@ -1615,6 +1621,10 @@
 						:edges="graphOverviewData.edges"
 						:canvas-width="graphQuickViewWidth"
 						:canvas-height="graphQuickViewHeight"
+						:tree-edge-color="miniGraphTreeEdgeColor"
+						:tree-edge-width-scale="miniGraphTreeEdgeWidthScale"
+						:node-label-color="miniGraphNodeLabelColor"
+						:node-label-shadow-color="miniGraphNodeLabelShadowColor"
 						:force-tree-mode="true"
 						:interactive="true"
 						:show-all-labels="true"
@@ -1653,6 +1663,10 @@
 						:edges="graphMutationSnapshots[lpQuickViewToolCallId].edges"
 						:canvas-width="graphQuickViewWidth"
 						:canvas-height="graphQuickViewHeight"
+						:tree-edge-color="miniGraphTreeEdgeColor"
+						:tree-edge-width-scale="miniGraphTreeEdgeWidthScale"
+						:node-label-color="miniGraphNodeLabelColor"
+						:node-label-shadow-color="miniGraphNodeLabelShadowColor"
 						:force-tree-mode="true"
 						:interactive="true"
 						:show-only-highlight-labels="true"
@@ -2187,6 +2201,18 @@
 			},
 			pageThemeClass() {
 				return this.isLightTheme ? 'theme-light' : 'theme-dark'
+			},
+			miniGraphTreeEdgeColor() {
+				return this.isLightTheme ? 'rgba(122, 111, 98, 0.46)' : 'rgba(255, 255, 255, 0.25)'
+			},
+			miniGraphTreeEdgeWidthScale() {
+				return this.isLightTheme ? 1.5 : 1
+			},
+			miniGraphNodeLabelColor() {
+				return this.isLightTheme ? '#4A3F35' : '#FFFFFF'
+			},
+			miniGraphNodeLabelShadowColor() {
+				return this.isLightTheme ? 'rgba(255, 250, 244, 0.96)' : 'rgba(0, 0, 0, 0.45)'
 			},
 			planningToolText() {
 				return PLANNING_TOOL_TEXT
@@ -6533,7 +6559,7 @@
 		align-items: center;
 	}
 
-	.nav-icon {
+	.chat-page .nav-icon {
 		width: 48rpx;
 		height: 48rpx;
 		filter: brightness(0) invert(1);
@@ -8017,13 +8043,15 @@
 
 	/* 状态2：正在后台生成测试题（黄色） */
 	.quiz-gen-polling {
-		border-color: rgba(234, 179, 8, 0.3);
-		background: rgba(234, 179, 8, 0.06);
+		border-color: rgba(224, 177, 64, 0.9);
+		background: linear-gradient(180deg, rgba(255, 234, 179, 0.96) 0%, rgba(244, 214, 128, 0.92) 100%);
+		box-shadow: 0 8rpx 20rpx rgba(224, 177, 64, 0.16);
 	}
 
 	/* 状态3：已生成测试题（中性底色，参考 Pencil 设计） */
 	.quiz-gen-done {
-		/* 无额外色调，保持基础中性风格 */
+		border-color: rgba(255, 255, 255, 0.12);
+		background: rgba(255, 255, 255, 0.06);
 	}
 
 	.quiz-gen-failed {
@@ -8046,9 +8074,13 @@
 		color: rgba(255, 255, 255, 0.7);
 	}
 
-	.quiz-gen-running .quiz-gen-indicator-text,
-	.quiz-gen-polling .quiz-gen-indicator-text {
+	.quiz-gen-running .quiz-gen-indicator-text {
 		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.quiz-gen-polling .quiz-gen-indicator-text {
+		color: #1F1A16;
+		-webkit-text-fill-color: #1F1A16;
 	}
 
 	.quiz-gen-indicator-spinner {
@@ -8063,8 +8095,8 @@
 
 	/* 黄色 spinner */
 	.quiz-gen-spinner-amber {
-		border-color: rgba(234, 179, 8, 0.3);
-		border-top-color: #EAB308;
+		border-color: rgba(31, 26, 22, 0.14);
+		border-top-color: #1F1A16;
 	}
 
 	/* circle-check 图标：绿色 #3D8A5A */
@@ -8142,13 +8174,13 @@
 
 	/* ========== 测试题评估中卡片变体 ========== */
 	.quiz-entry-card--evaluating {
-		border-color: rgba(255, 183, 77, 0.2);
-		background: rgba(255, 183, 77, 0.06);
+		border-color: rgba(245, 158, 11, 0.36);
+		background: rgba(245, 158, 11, 0.08);
 		cursor: default;
 	}
 
 	.quiz-entry-icon-wrap--evaluating {
-		background: rgba(255, 183, 77, 0.12);
+		background: rgba(245, 158, 11, 0.12);
 	}
 
 	.quiz-evaluating-pulse {
@@ -8162,7 +8194,7 @@
 	}
 
 	.quiz-entry-meta--evaluating {
-		color: rgba(255, 183, 77, 0.7);
+		color: rgba(245, 189, 84, 0.9);
 	}
 
 	/* ========== 测试题评估完成卡片变体 ========== */
@@ -9864,6 +9896,10 @@
 		background-color: rgba(63, 53, 42, 0.08);
 	}
 
+	.chat-page.theme-light .typing-dot {
+		background-color: rgba(31, 26, 22, 0.72);
+	}
+
 	.chat-page.theme-light .msg-retry-btn {
 		background-color: var(--chat-danger);
 	}
@@ -9890,15 +9926,52 @@
 	}
 
 	.chat-page.theme-light .citation-item,
-	.chat-page.theme-light .graph-tool-pill,
 	.chat-page.theme-light .schedule-card,
 	.chat-page.theme-light .schedule-event-row,
 	.chat-page.theme-light .graph-overview-preview,
+	.chat-page.theme-light .gm-card-preview,
 	.chat-page.theme-light .graph-overview-hint,
 	.chat-page.theme-light .graph-quick-view-canvas,
 	.chat-page.theme-light .cite-drawer-open-btn {
+		background: var(--chat-surface-deep);
+		border-color: var(--chat-border);
+	}
+
+	.chat-page.theme-light .citation-item {
+		background: rgba(255, 255, 255, 0.94);
+		box-shadow:
+			inset 0 0 0 1px rgba(63, 53, 42, 0.08),
+			0 4rpx 12rpx rgba(118, 101, 80, 0.08);
+	}
+
+	.chat-page.theme-light .graph-tool-pill {
+		background: var(--chat-surface);
+		border-color: rgba(63, 53, 42, 0.12);
+		box-shadow:
+			inset 0 1rpx 0 rgba(255, 255, 255, 0.55),
+			0 8rpx 20rpx rgba(118, 101, 80, 0.08);
+	}
+
+	.chat-page.theme-light .gm-expanded-container,
+	.chat-page.theme-light .schedule-expanded-container {
 		background: var(--chat-surface);
 		border-color: var(--chat-border);
+		box-shadow: var(--chat-shadow);
+	}
+
+	.chat-page.theme-light .gm-expanded-container .graph-tool-pill,
+	.chat-page.theme-light .schedule-expanded-container .graph-tool-pill {
+		background: transparent;
+		border-color: transparent;
+		box-shadow: none;
+	}
+
+	.chat-page.theme-light .gm-expanded-container .graph-overview-card,
+	.chat-page.theme-light .gm-expanded-container .gm-card,
+	.chat-page.theme-light .schedule-expanded-container .schedule-card {
+		background: transparent;
+		border-color: transparent;
+		box-shadow: none;
 	}
 
 	.chat-page.theme-light .graph-tool-running,
@@ -9995,6 +10068,60 @@
 		border-color: rgba(47, 110, 234, 0.22);
 	}
 
+	.chat-page.theme-light .quiz-gen-indicator {
+		background: var(--chat-surface);
+		border-color: var(--chat-border);
+		box-shadow: var(--chat-shadow-soft);
+	}
+
+	.chat-page.theme-light .quiz-gen-done {
+		background: var(--chat-surface);
+		border-color: var(--chat-border);
+	}
+
+	.chat-page.theme-light .quiz-gen-indicator-text {
+		color: var(--chat-text-muted);
+		-webkit-text-fill-color: var(--chat-text-muted);
+	}
+
+	.chat-page.theme-light .quiz-gen-running .quiz-gen-indicator-text {
+		color: var(--chat-text-secondary);
+		-webkit-text-fill-color: var(--chat-text-secondary);
+	}
+
+	.chat-page.theme-light .quiz-gen-polling {
+		border-color: rgba(224, 177, 64, 0.88);
+		background: linear-gradient(180deg, rgba(255, 236, 186, 0.96) 0%, rgba(245, 216, 136, 0.94) 100%);
+		box-shadow: 0 10rpx 24rpx rgba(224, 177, 64, 0.18);
+	}
+
+	.chat-page.theme-light .quiz-gen-polling .quiz-gen-indicator-text {
+		color: var(--chat-text-primary);
+		-webkit-text-fill-color: var(--chat-text-primary);
+	}
+
+	.chat-page.theme-light .quiz-gen-indicator-icon {
+		filter: brightness(0) saturate(100%) invert(34%) sepia(61%) saturate(1869%) hue-rotate(211deg) brightness(96%) contrast(91%);
+	}
+
+	.chat-page.theme-light .quiz-gen-status-icon {
+		filter: brightness(0) saturate(100%) invert(37%) sepia(26%) saturate(1030%) hue-rotate(105deg) brightness(92%) contrast(88%);
+	}
+
+	.chat-page.theme-light .quiz-gen-status-failed {
+		filter: brightness(0) saturate(100%) invert(39%) sepia(31%) saturate(2143%) hue-rotate(329deg) brightness(96%) contrast(86%);
+	}
+
+	.chat-page.theme-light .quiz-gen-indicator-spinner {
+		border-color: rgba(47, 110, 234, 0.22);
+		border-top-color: var(--chat-accent);
+	}
+
+	.chat-page.theme-light .quiz-gen-spinner-amber {
+		border-color: rgba(31, 26, 22, 0.14);
+		border-top-color: var(--chat-text-primary);
+	}
+
 	.chat-page.theme-light .quiz-tool-done {
 		background: rgba(47, 110, 234, 0.06);
 		border-color: rgba(47, 110, 234, 0.14);
@@ -10040,6 +10167,62 @@
 	.chat-page.theme-light .quiz-detail-tag-text,
 	.chat-page.theme-light .quiz-detail-q-title {
 		color: var(--chat-text-primary);
+	}
+
+	.chat-page.theme-light .quiz-entry-card {
+		background: var(--chat-surface);
+		border-color: var(--chat-border);
+		box-shadow: var(--chat-shadow-soft);
+	}
+
+	.chat-page.theme-light .quiz-entry-icon-wrap {
+		background: var(--chat-accent-soft);
+		border: 1rpx solid rgba(47, 110, 234, 0.12);
+	}
+
+	.chat-page.theme-light .quiz-entry-icon {
+		filter: brightness(0) saturate(100%) invert(34%) sepia(61%) saturate(1869%) hue-rotate(211deg) brightness(96%) contrast(91%);
+	}
+
+	.chat-page.theme-light .quiz-entry-title {
+		color: var(--chat-text-primary);
+		-webkit-text-fill-color: var(--chat-text-primary);
+	}
+
+	.chat-page.theme-light .quiz-entry-meta,
+	.chat-page.theme-light .quiz-entry-chevron {
+		color: var(--chat-text-muted);
+		-webkit-text-fill-color: var(--chat-text-muted);
+	}
+
+	.chat-page.theme-light .quiz-entry-chevron {
+		filter: brightness(0) saturate(100%);
+		opacity: 0.42;
+	}
+
+	.chat-page.theme-light .quiz-entry-card--evaluating {
+		background: rgba(245, 158, 11, 0.08);
+		border-color: rgba(245, 158, 11, 0.45);
+		box-shadow: 0 10rpx 24rpx rgba(245, 158, 11, 0.1);
+	}
+
+	.chat-page.theme-light .quiz-entry-icon-wrap--evaluating {
+		background: rgba(245, 158, 11, 0.12);
+		border: 1rpx solid rgba(245, 158, 11, 0.2);
+	}
+
+	.chat-page.theme-light .quiz-entry-card--evaluating .quiz-entry-title {
+		color: var(--chat-text-primary);
+		-webkit-text-fill-color: var(--chat-text-primary);
+	}
+
+	.chat-page.theme-light .quiz-entry-meta--evaluating {
+		color: rgba(199, 119, 22, 0.92);
+		-webkit-text-fill-color: rgba(199, 119, 22, 0.92);
+	}
+
+	.chat-page.theme-light .quiz-evaluating-pulse {
+		filter: brightness(0) saturate(100%) invert(67%) sepia(70%) saturate(564%) hue-rotate(357deg) brightness(96%) contrast(92%);
 	}
 
 	.chat-page.theme-light .review-event-depth {
@@ -10109,6 +10292,11 @@
 		background: var(--chat-border);
 	}
 
+	.chat-page.theme-light .gm-expanded-container .graph-overview-divider,
+	.chat-page.theme-light .gm-expanded-container .gm-card-divider {
+		background: rgba(63, 53, 42, 0.08);
+	}
+
 	.chat-page.theme-light .cite-drawer-footer {
 		border-top-color: var(--chat-border);
 	}
@@ -10135,6 +10323,11 @@
 		color: var(--chat-accent);
 	}
 
+	.chat-page.theme-light .cite-drawer-content {
+		color: var(--chat-text-secondary);
+		-webkit-text-fill-color: var(--chat-text-secondary);
+	}
+
 	.chat-page.theme-light .graph-quick-view-close {
 		background: rgba(63, 53, 42, 0.06);
 	}
@@ -10148,14 +10341,32 @@
 		border-color: var(--chat-border);
 	}
 
-	.chat-page.theme-light .ai-msg-action-icon,
-	.chat-page.theme-light .copy-icon-default,
-	.chat-page.theme-light .user-msg-action-icon {
+	.chat-page.theme-light .ai-msg-action-icon:not(.copy-icon-default):not(.copy-icon-check),
+	.chat-page.theme-light .user-msg-action-icon:not(.copy-icon-default):not(.copy-icon-check) {
 		filter: brightness(0) saturate(100%);
 		opacity: 0.5;
 	}
 
+	.chat-page.theme-light .copy-icon-default {
+		opacity: 0.5;
+		transform: scale(1);
+		filter: brightness(0) saturate(100%);
+	}
+
+	.chat-page.theme-light .copy-icon-default.copy-icon-hide {
+		opacity: 0;
+		transform: scale(0.6);
+	}
+
+	.chat-page.theme-light .copy-icon-check {
+		opacity: 0;
+		transform: scale(0.6);
+		filter: brightness(0) saturate(100%);
+	}
+
 	.chat-page.theme-light .copy-icon-check.copy-icon-show {
+		opacity: 1;
+		transform: scale(1);
 		filter: brightness(0) saturate(100%) invert(31%) sepia(64%) saturate(1481%) hue-rotate(210deg) brightness(97%) contrast(93%);
 	}
 
@@ -10196,7 +10407,7 @@
 		-webkit-text-fill-color: var(--chat-text-secondary);
 	}
 
-	.chat-page.theme-light .input-action,
+	.chat-page.theme-light .input-action:not(.send-btn-wrapper),
 	.chat-page.theme-light .model-selector-btn,
 	.chat-page.theme-light .thinking-toggle-btn {
 		background: var(--chat-surface-strong);
@@ -10204,7 +10415,7 @@
 		box-shadow: var(--chat-shadow-soft);
 	}
 
-	.chat-page.theme-light .input-action-icon,
+	.chat-page.theme-light .input-action-icon:not(.send-action-icon),
 	.chat-page.theme-light .model-selector-icon,
 	.chat-page.theme-light .thinking-toggle-icon {
 		filter: brightness(0) saturate(100%);
@@ -10215,6 +10426,11 @@
 	.chat-page.theme-light .model-menu-item-name {
 		color: var(--chat-text-primary);
 		-webkit-text-fill-color: var(--chat-text-primary);
+	}
+
+	.chat-page.theme-light .model-menu-item-desc {
+		color: var(--chat-text-muted);
+		-webkit-text-fill-color: var(--chat-text-muted);
 	}
 
 	.chat-page.theme-light .model-menu {
@@ -10232,6 +10448,12 @@
 		box-shadow:
 			inset 0 1rpx 0 rgba(255, 255, 255, 0.58),
 			0 4rpx 12rpx rgba(47, 110, 234, 0.12);
+	}
+
+	.chat-page.theme-light .model-menu-item-locked .model-menu-item-name,
+	.chat-page.theme-light .model-menu-item-locked .model-menu-item-desc {
+		color: var(--chat-text-faint);
+		-webkit-text-fill-color: var(--chat-text-faint);
 	}
 
 	.chat-page.theme-light .model-menu-accent {
@@ -10270,5 +10492,13 @@
 			rgba(122, 111, 98, 0.42) 100%
 		);
 		background-size: 300% 100%;
+	}
+
+	.chat-page.theme-light .planning-tool-text {
+		background: none;
+		color: var(--chat-text-secondary);
+		-webkit-text-fill-color: var(--chat-text-secondary);
+		text-shadow: 0 1rpx 0 rgba(255, 250, 244, 0.78);
+		animation: none;
 	}
 </style>

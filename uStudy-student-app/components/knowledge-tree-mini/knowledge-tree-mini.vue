@@ -177,6 +177,22 @@ export default {
       type: String,
       default: '#FFD93D'
     },
+    treeEdgeColor: {
+      type: String,
+      default: 'rgba(255, 255, 255, 0.25)'
+    },
+    treeEdgeWidthScale: {
+      type: Number,
+      default: 1
+    },
+    nodeLabelColor: {
+      type: String,
+      default: '#FFFFFF'
+    },
+    nodeLabelShadowColor: {
+      type: String,
+      default: 'rgba(0, 0, 0, 0.45)'
+    },
     showAllLabels: {
       type: Boolean,
       default: false
@@ -245,6 +261,18 @@ export default {
         if (!this.ctx || this.layoutNodes.length === 0) return
         this.drawMiniGraph()
       }
+    },
+    treeEdgeColor() {
+      this.scheduleRedraw()
+    },
+    treeEdgeWidthScale() {
+      this.scheduleRedraw()
+    },
+    nodeLabelColor() {
+      this.scheduleRedraw()
+    },
+    nodeLabelShadowColor() {
+      this.scheduleRedraw()
     }
   },
 
@@ -993,7 +1021,7 @@ export default {
       const otherNodes = this.layoutNodes.filter(n => !n.isOnPath)
       const nodeById = new Map()
       this.layoutNodes.forEach(n => nodeById.set(n.id, n))
-      const edgeWidth = Math.max(1, 1 * (this.treeScale || 1))
+      const edgeWidth = Math.max(1, 1 * (this.treeScale || 1) * this.treeEdgeWidthScale)
 
       // Draw tree edges (dimmed, learningSpace style)
       const treeEdges = this.edges.filter(e => e.type === 'knowledge_tree' || !e.type)
@@ -1002,7 +1030,7 @@ export default {
         const fromNode = nodeById.get(edge.from)
         const toNode = nodeById.get(edge.to)
         if (fromNode && toNode) {
-          this.drawEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, 'rgba(255, 255, 255, 0.25)', edgeWidth)
+          this.drawEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, this.treeEdgeColor, edgeWidth)
         }
       })
       ctx.setGlobalAlpha(1.0)
@@ -1057,7 +1085,7 @@ export default {
       // Build node map for quick lookup
       const nodeById = new Map()
       this.layoutNodes.forEach(n => nodeById.set(n.id, n))
-      const edgeWidth = Math.max(1, 1 * (this.treeScale || 1))
+      const edgeWidth = Math.max(1, 1 * (this.treeScale || 1) * this.treeEdgeWidthScale)
       const hasHighlight = this.highlightLabelSet.size > 0
 
       // Draw all edges
@@ -1084,10 +1112,10 @@ export default {
                 this.drawEdge(ctx, clipped[0], clipped[1], clipped[2], clipped[3], this.highlightColor, edgeWidth * 2.5)
               }
             } else {
-              this.drawEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, 'rgba(255, 255, 255, 0.25)', edgeWidth)
+              this.drawEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, this.treeEdgeColor, edgeWidth)
             }
           } else {
-            this.drawEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, 'rgba(255, 255, 255, 0.25)', edgeWidth)
+            this.drawEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, this.treeEdgeColor, edgeWidth)
           }
         }
       })
@@ -1121,7 +1149,7 @@ export default {
 
       ctx.setGlobalAlpha(alpha)
       ctx.setFontSize(metrics.fontSize)
-      ctx.setFillStyle('#FFFFFF')
+      ctx.setFillStyle(this.nodeLabelColor)
       if (typeof ctx.setTextAlign === 'function') {
         ctx.setTextAlign('center')
       }
@@ -1129,7 +1157,7 @@ export default {
         ctx.setTextBaseline('top')
       }
       if (typeof ctx.setShadow === 'function') {
-        ctx.setShadow(0, 1, 2, 'rgba(0, 0, 0, 0.45)')
+        ctx.setShadow(0, 1, 2, this.nodeLabelShadowColor)
       }
 
       nodes.forEach(node => {

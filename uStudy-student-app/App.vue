@@ -3,15 +3,18 @@
 	import { useUpdateStore } from '@/store/update'
 	import { startTracking, stopTracking } from '@/utils/appUsageTracker'
 	import { stopBackgroundMonitor } from '@/utils/backgroundChatMonitor'
+	import { navigateToTarget, resolveAppLaunchTarget, resolveNotificationTarget, savePendingNavigation } from '@/utils/deepLink'
 	import config from '@/config'
 
 	export default {
-		onLaunch: function() {
+		onLaunch: function(options) {
 			// #ifdef APP-PLUS
 			this.clearCacheOnVersionChange()
 			this.setupSplashTimeout()
 			this.setupPushListener()
+			this.setupIntentListener()
 			this.requestNotificationPermission()
+			this.handleExternalLaunch(options, { replace: true, delayMs: 140 })
 			// #endif
 
 			useUserStore()
@@ -23,8 +26,11 @@
 			}, 2000)
 			// #endif
 		},
-		onShow: function() {
+		onShow: function(options) {
 			startTracking()
+			// #ifdef APP-PLUS
+			this.handleExternalLaunch(options, { replace: true, delayMs: 60 })
+			// #endif
 		},
 		onHide: function() {
 			stopTracking()
@@ -38,36 +44,57 @@
 							: msg.payload
 						if (!data) return
 
-						// 测试评估完成通知 → 跳转结果页
-						if (data.type === 'quiz_evaluation' && data.quizId) {
-							uni.navigateTo({
-								url: `/pages/testResult/testResult?quizId=${data.quizId}&fromList=true`
-							})
-							return
-						}
-
-						if (!data.conversationId) return
+						const target = resolveNotificationTarget(data)
+						if (!target) return
 
 						stopBackgroundMonitor()
-
-						if (data.chatMode === 'quick_chat') {
-							uni.navigateTo({
-								url: `/pages/quickChat/quickChat?conversationId=${data.conversationId}`
-							})
-						} else {
-							const query = [
-								`conversationId=${data.conversationId}`,
-								data.spaceId ? `spaceId=${data.spaceId}` : '',
-								data.spaceTitle ? `spaceTitle=${encodeURIComponent(data.spaceTitle)}` : '',
-							].filter(Boolean).join('&')
-							uni.navigateTo({
-								url: `/pages/spaceChat/spaceChat?${query}`
-							})
-						}
+						navigateToTarget(target)
 					} catch (e) {
 						// Push click handler error — ignore
 					}
 				}, false)
+			},
+			setupIntentListener() {
+				if (typeof document === 'undefined') return
+				document.addEventListener('newintent', () => {
+					this.handleExternalLaunch(null, { replace: true, force: true, delayMs: 60 })
+				}, false)
+			},
+			handleExternalLaunch(options, navOptions = {}) {
+				try {
+					const target = resolveAppLaunchTarget({
+						launchOptions: options || {},
+						launcher: this.getRuntimeLauncher(),
+						runtimeArguments: this.getRuntimeArguments(),
+						force: navOptions.force
+					})
+					if (!target) return
+					if (target.url.includes('/pages/test/test') || target.url.includes('/pages/testResult/testResult')) {
+						savePendingNavigation({ ...target, openType: 'reLaunch' })
+					}
+					navigateToTarget(target, {
+						replace: navOptions.replace,
+						delayMs: navOptions.delayMs
+					})
+				} catch (_) {}
+			},
+			getRuntimeLauncher() {
+				try {
+					return typeof plus !== 'undefined' && plus.runtime
+						? plus.runtime.launcher || ''
+						: ''
+				} catch (_) {
+					return ''
+				}
+			},
+			getRuntimeArguments() {
+				try {
+					return typeof plus !== 'undefined' && plus.runtime
+						? plus.runtime.arguments || ''
+						: ''
+				} catch (_) {
+					return ''
+				}
 			},
 			clearCacheOnVersionChange() {
 				try {

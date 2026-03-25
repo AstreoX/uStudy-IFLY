@@ -1497,7 +1497,7 @@ export default {
   gap: 4rpx;
 }
 
-.nav-icon {
+.knowledge-base-page .nav-icon {
   width: 48rpx;
   height: 48rpx;
   filter: var(--kb-icon-filter);

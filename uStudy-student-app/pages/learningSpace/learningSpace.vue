@@ -5088,10 +5088,15 @@
 		align-items: center;
 	}
 
-	.nav-icon {
+	.learning-space-page .nav-icon {
 		width: 48rpx;
 		height: 48rpx;
 		filter: brightness(0) invert(1);
+	}
+
+	.learning-space-page .nav-right .nav-icon {
+		width: 40rpx;
+		height: 40rpx;
 	}
 
 	.nav-title {
@@ -6619,7 +6624,6 @@
 	.learning-space-page.theme-light .collab-dropdown-menu,
 	.learning-space-page.theme-light .node-popup,
 	.learning-space-page.theme-light .note-detail-card,
-	.learning-space-page.theme-light .loading-content,
 	.learning-space-page.theme-light .failed-content,
 	.learning-space-page.theme-light .add-file-popup,
 	.learning-space-page.theme-light .link-dialog,
@@ -6630,9 +6634,19 @@
 		box-shadow: 0 14rpx 36rpx rgba(118, 101, 80, 0.14);
 	}
 
+	.learning-space-page.theme-light .loading-content {
+		background: transparent;
+		border-color: transparent;
+		box-shadow: none;
+	}
+
 	.learning-space-page.theme-light .nav-left,
 	.learning-space-page.theme-light .nav-right {
 		outline-color: rgba(255, 255, 255, 0.72);
+	}
+
+	.learning-space-page.theme-light .nav-right {
+		border-radius: 50%;
 	}
 
 	.learning-space-page.theme-light .nav-icon,
@@ -6910,9 +6924,15 @@
 		background: rgba(255, 250, 244, 0.94);
 	}
 
-	.learning-space-page.theme-light .input-action {
+	.learning-space-page.theme-light .input-action:not(.send-btn-wrapper) {
 		background: rgba(255, 255, 255, 0.72);
 		border-color: rgba(63, 53, 42, 0.1);
 		box-shadow: 0 8rpx 24rpx rgba(118, 101, 80, 0.12);
+	}
+
+	.learning-space-page.theme-light .input-action.send-btn-wrapper {
+		background: #2F6EEA;
+		border-color: transparent;
+		box-shadow: 0 10rpx 24rpx rgba(47, 110, 234, 0.18);
 	}
 </style>

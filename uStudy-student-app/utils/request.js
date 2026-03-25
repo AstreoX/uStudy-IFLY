@@ -1,5 +1,6 @@
 import config from '@/config'
 import { getTokens, setTokens, clearAuth } from './storage'
+import { redirectToLogin } from './deepLink'
 
 const { API_BASE_URL } = config
 
@@ -206,9 +207,7 @@ export function request(options) {
             isRefreshing = false
             refreshSubscribers = []
             clearAuth()
-            uni.reLaunch({
-              url: '/pages/login/login'
-            })
+            redirectToLogin({ saveCurrentPage: true })
             reject(refreshError)
             return
           }

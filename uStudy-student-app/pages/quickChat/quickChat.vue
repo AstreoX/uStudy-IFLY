@@ -577,14 +577,8 @@
 				>
 					<view class="model-menu-accent"></view>
 					<view class="model-menu-item-info">
-						<text
-							class="model-menu-item-name"
-							:style="{ color: m.locked ? '#9CA3AF' : '#C7CBD4', '-webkit-text-fill-color': m.locked ? '#9CA3AF' : '#C7CBD4' }"
-						>{{ m.display_name }}</text>
-						<text
-							class="model-menu-item-desc"
-							:style="{ color: '#A1A1AA', '-webkit-text-fill-color': '#A1A1AA' }"
-						>{{ m.locked ? '升级订阅解锁' : m.description }}</text>
+						<text class="model-menu-item-name">{{ m.display_name }}</text>
+						<text class="model-menu-item-desc">{{ m.locked ? '升级订阅解锁' : m.description }}</text>
 					</view>
 					<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
 				</view>
@@ -651,20 +645,12 @@
 					/>
 				</view>
 
-				<view class="input-limit-row" :class="{ 'input-limit-row-warning': isInputTooLong }">
-					<text class="input-limit-text">{{ inputLimitTip }}</text>
-					<text class="input-limit-counter">{{ messageCharCount }}/{{ maxMessageLength }}</text>
-				</view>
-
 				<view class="input-bottom-row">
 					<view class="input-bottom-left">
 						<!-- 左侧：模型选择 pill -->
 						<view v-if="availableModels.length > 0" class="model-selector-btn" @click="toggleModelMenu">
 							<image class="model-selector-icon" src="/static/icons/phosphor-icons/SVGs/regular/faders.svg" mode="aspectFit"></image>
-							<text
-								class="model-selector-label"
-								:style="{ color: '#C7CBD4', '-webkit-text-fill-color': '#C7CBD4' }"
-							>{{ selectedModelName }}</text>
+							<text class="model-selector-label">{{ selectedModelName }}</text>
 							<image class="model-selector-chevron" src="/static/icons/phosphor-icons/SVGs/regular/caret-down.svg" mode="aspectFit"></image>
 						</view>
 						<!-- 深度思考切换按钮 -->
@@ -3805,7 +3791,7 @@
 		align-items: center;
 	}
 
-	.nav-icon {
+	.chat-page .nav-icon {
 		width: 48rpx;
 		height: 48rpx;
 		filter: brightness(0) invert(1);
@@ -5809,6 +5795,10 @@
 		background-color: rgba(63, 53, 42, 0.08);
 	}
 
+	.chat-page.theme-light .typing-dot {
+		background-color: rgba(31, 26, 22, 0.72);
+	}
+
 	.chat-page.theme-light .msg-retry-btn {
 		background-color: var(--chat-danger);
 	}
@@ -5920,8 +5910,7 @@
 	}
 
 	.chat-page.theme-light .ai-status-badge-text,
-	.chat-page.theme-light .ai-msg-action-icon,
-	.chat-page.theme-light .copy-icon-default,
+	.chat-page.theme-light .ai-msg-action-icon:not(.copy-icon-default):not(.copy-icon-check),
 	.chat-page.theme-light .user-msg-action-icon,
 	.chat-page.theme-light .model-menu-lock {
 		color: var(--chat-text-faint);
@@ -5929,7 +5918,26 @@
 		opacity: 0.5;
 	}
 
+	.chat-page.theme-light .copy-icon-default {
+		opacity: 0.5;
+		transform: scale(1);
+		filter: brightness(0) saturate(100%);
+	}
+
+	.chat-page.theme-light .copy-icon-default.copy-icon-hide {
+		opacity: 0;
+		transform: scale(0.6);
+	}
+
+	.chat-page.theme-light .copy-icon-check {
+		opacity: 0;
+		transform: scale(0.6);
+		filter: brightness(0) saturate(100%);
+	}
+
 	.chat-page.theme-light .copy-icon-check.copy-icon-show {
+		opacity: 1;
+		transform: scale(1);
 		filter: brightness(0) saturate(100%) invert(31%) sepia(64%) saturate(1481%) hue-rotate(210deg) brightness(97%) contrast(93%);
 	}
 
@@ -5966,7 +5974,7 @@
 		-webkit-text-fill-color: var(--chat-text-secondary);
 	}
 
-	.chat-page.theme-light .input-action,
+	.chat-page.theme-light .input-action:not(.send-btn-wrapper),
 	.chat-page.theme-light .model-selector-btn,
 	.chat-page.theme-light .thinking-toggle-btn {
 		background: var(--chat-surface-strong);
@@ -5974,7 +5982,7 @@
 		box-shadow: var(--chat-shadow-soft);
 	}
 
-	.chat-page.theme-light .input-action-icon,
+	.chat-page.theme-light .input-action-icon:not(.send-action-icon),
 	.chat-page.theme-light .model-selector-icon,
 	.chat-page.theme-light .model-selector-chevron,
 	.chat-page.theme-light .thinking-toggle-icon {
@@ -5991,6 +5999,12 @@
 	.chat-page.theme-light .model-menu-item-desc {
 		color: var(--chat-text-muted);
 		-webkit-text-fill-color: var(--chat-text-muted);
+	}
+
+	.chat-page.theme-light .model-menu-item-locked .model-menu-item-name,
+	.chat-page.theme-light .model-menu-item-locked .model-menu-item-desc {
+		color: var(--chat-text-faint);
+		-webkit-text-fill-color: var(--chat-text-faint);
 	}
 
 	.chat-page.theme-light .model-menu-item:active,

@@ -226,6 +226,8 @@
 <script>
 import { getQuizAttempt } from '@/api/space'
 import { getQuizEvaluationResult, removeQuizEvaluationResult } from '@/utils/storage'
+import { clearPendingNavigationIfMatches } from '@/utils/deepLink'
+import { goBack as safeGoBack } from '@/utils/navigation'
 import homeThemePageMixin from '@/mixins/homeThemePageMixin'
 
 export default {
@@ -309,6 +311,7 @@ export default {
     this.restoreThemeMode({ darkStatusBarBackground: '#1D1E20' })
     if (options.quizId) {
       this.quizId = options.quizId
+      clearPendingNavigationIfMatches(`/pages/testResult/testResult?quizId=${encodeURIComponent(options.quizId)}&fromList=true`)
     }
     if (options.quizTitle) {
       this.quizTitle = decodeURIComponent(options.quizTitle)
@@ -572,8 +575,8 @@ export default {
     },
 
     goBack() {
-      uni.navigateBack({
-        delta: 1
+      safeGoBack({
+        fallbackUrl: '/pages/index/index'
       })
     }
   }
@@ -728,7 +731,7 @@ export default {
   gap: 4rpx;
 }
 
-.nav-icon {
+.test-result-page .nav-icon {
   width: 48rpx;
   height: 48rpx;
   filter: brightness(0) invert(1);

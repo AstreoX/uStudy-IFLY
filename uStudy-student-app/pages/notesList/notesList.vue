@@ -1258,7 +1258,7 @@ export default {
   flex-shrink: 0;
 }
 
-.nav-icon {
+.notes-list-page .nav-icon {
   width: 48rpx;
   height: 48rpx;
   filter: brightness(0) invert(1);

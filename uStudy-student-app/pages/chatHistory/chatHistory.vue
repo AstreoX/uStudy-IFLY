@@ -371,7 +371,7 @@ export default {
 }
 </script>
 
-<style>
+<style scoped>
 .chat-history-page {
   width: 100%;
   min-height: 100vh;

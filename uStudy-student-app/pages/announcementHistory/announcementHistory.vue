@@ -323,7 +323,7 @@ export default {
   height: 72rpx;
 }
 
-.nav-icon {
+.history-page .nav-icon {
   width: 48rpx;
   height: 48rpx;
   filter: brightness(0) invert(1);

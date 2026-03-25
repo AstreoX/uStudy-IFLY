@@ -817,10 +817,15 @@ export default {
   flex-shrink: 0;
 }
 
-.nav-icon {
+.quiz-list-page .nav-icon {
   width: 48rpx;
   height: 48rpx;
   filter: brightness(0) invert(1);
+}
+
+.quiz-list-page .nav-action .nav-icon {
+  width: 40rpx;
+  height: 40rpx;
 }
 
 .nav-title {

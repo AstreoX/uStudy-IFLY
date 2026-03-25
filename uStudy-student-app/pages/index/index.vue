@@ -2312,17 +2312,18 @@ function _cleanOldSuggestionCache(currentKey) {
 		height: 100%;
 	}
 
-	.nav-icon {
+	.bottom-nav .nav-icon {
 		width: 75rpx;
 		height: 75rpx;
 		display: flex;
 		justify-content: center;
 		align-items: center;
 		opacity: 0.45;
+		filter: none;
 		transition: opacity 0.25s ease;
 	}
 
-	.nav-icon.nav-icon-active {
+	.bottom-nav .nav-icon.nav-icon-active {
 		opacity: 1;
 	}
 

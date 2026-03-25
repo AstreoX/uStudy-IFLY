@@ -942,7 +942,7 @@ export default {
   flex-shrink: 0;
 }
 
-.nav-icon {
+.settings-page .nav-icon {
   width: 48rpx;
   height: 48rpx;
   filter: brightness(0) invert(1);
@@ -1142,15 +1142,38 @@ export default {
 }
 
 .row-icon-wrap {
-  width: 36rpx;
-  height: 36rpx;
+  width: 60rpx;
+  height: 60rpx;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0;
-  background: transparent;
-  border: 0;
+  border-radius: 18rpx;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5rpx solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.04),
+    0 4rpx 12rpx rgba(0, 0, 0, 0.12);
+}
+
+.row-icon-wrap.row-icon-wrap-blue {
+  background: rgba(74, 108, 247, 0.18);
+  border-color: rgba(123, 146, 255, 0.24);
+}
+
+.row-icon-wrap.row-icon-wrap-green {
+  background: rgba(47, 143, 102, 0.18);
+  border-color: rgba(105, 194, 151, 0.24);
+}
+
+.row-icon-wrap.row-icon-wrap-violet {
+  background: rgba(122, 83, 201, 0.18);
+  border-color: rgba(168, 138, 235, 0.24);
+}
+
+.row-icon-wrap.row-icon-wrap-amber {
+  background: rgba(199, 119, 22, 0.18);
+  border-color: rgba(244, 178, 86, 0.24);
 }
 
 .share-mode-icon-wrap,
@@ -1180,8 +1203,8 @@ export default {
 }
 
 .item-icon {
-  width: 36rpx;
-  height: 36rpx;
+  width: 32rpx;
+  height: 32rpx;
   filter: brightness(0) invert(0.73) sepia(0.3) saturate(1.15) hue-rotate(194deg);
 }
 
@@ -1721,21 +1744,26 @@ export default {
   background: rgba(63, 53, 42, 0.1);
 }
 
-.settings-page.theme-light .row-icon-wrap-blue,
+.settings-page.theme-light .row-icon-wrap.row-icon-wrap-blue,
 .settings-page.theme-light .share-mode-icon-wrap.row-icon-wrap-blue {
-  background: rgba(47, 110, 234, 0.1);
+  background: rgba(47, 110, 234, 0.14);
+  border-color: rgba(47, 110, 234, 0.16);
 }
 
-.settings-page.theme-light .row-icon-wrap-green {
-  background: rgba(47, 143, 102, 0.1);
+.settings-page.theme-light .row-icon-wrap.row-icon-wrap-green {
+  background: rgba(47, 143, 102, 0.14);
+  border-color: rgba(47, 143, 102, 0.16);
 }
 
-.settings-page.theme-light .row-icon-wrap-violet {
-  background: rgba(122, 83, 201, 0.1);
+.settings-page.theme-light .row-icon-wrap.row-icon-wrap-violet,
+.settings-page.theme-light .share-mode-icon-wrap.row-icon-wrap-violet {
+  background: rgba(122, 83, 201, 0.14);
+  border-color: rgba(122, 83, 201, 0.16);
 }
 
-.settings-page.theme-light .row-icon-wrap-amber {
-  background: rgba(199, 119, 22, 0.1);
+.settings-page.theme-light .row-icon-wrap.row-icon-wrap-amber {
+  background: rgba(199, 119, 22, 0.14);
+  border-color: rgba(199, 119, 22, 0.16);
 }
 
 .settings-page.theme-light .danger-icon-wrap {
