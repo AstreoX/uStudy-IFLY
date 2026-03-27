@@ -5759,6 +5759,10 @@
 		box-shadow: var(--chat-shadow);
 	}
 
+	.chat-page.theme-light .space-mutation-confirm-text {
+		color: var(--chat-text-secondary);
+	}
+
 	.chat-page.theme-light .nav-left {
 		outline-color: var(--chat-outline);
 	}

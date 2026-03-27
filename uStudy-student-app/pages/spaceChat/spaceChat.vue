@@ -1370,7 +1370,7 @@
 			:message="snackbarMessage"
 			:actionText="snackbarActionType === 'view_result' ? '查看' : '进入'"
 			actionIcon="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg"
-			:duration="snackbarActionType === 'view_result' ? 6000 : 4000"
+			:duration="snackbarActionType === 'view_result' ? 2000 : 4000"
 			@action="handleSnackbarAction"
 			@close="showTestSnackbar = false"
 		></u-snackbar>
@@ -8041,11 +8041,11 @@
 		background: rgba(74, 108, 247, 0.06);
 	}
 
-	/* 状态2：正在后台生成测试题（黄色） */
+	/* 状态2：正在后台生成测试题（琥珀色，与评估中卡片风格一致） */
 	.quiz-gen-polling {
-		border-color: rgba(224, 177, 64, 0.9);
-		background: linear-gradient(180deg, rgba(255, 234, 179, 0.96) 0%, rgba(244, 214, 128, 0.92) 100%);
-		box-shadow: 0 8rpx 20rpx rgba(224, 177, 64, 0.16);
+		border-color: rgba(245, 158, 11, 0.36);
+		background: rgba(245, 158, 11, 0.08);
+		box-shadow: 0 8rpx 20rpx rgba(245, 158, 11, 0.08);
 	}
 
 	/* 状态3：已生成测试题（中性底色，参考 Pencil 设计） */
@@ -8079,8 +8079,8 @@
 	}
 
 	.quiz-gen-polling .quiz-gen-indicator-text {
-		color: #1F1A16;
-		-webkit-text-fill-color: #1F1A16;
+		color: rgba(255, 255, 255, 0.85);
+		-webkit-text-fill-color: rgba(255, 255, 255, 0.85);
 	}
 
 	.quiz-gen-indicator-spinner {
@@ -8093,10 +8093,10 @@
 		flex-shrink: 0;
 	}
 
-	/* 黄色 spinner */
+	/* 琥珀色 spinner */
 	.quiz-gen-spinner-amber {
-		border-color: rgba(31, 26, 22, 0.14);
-		border-top-color: #1F1A16;
+		border-color: rgba(245, 158, 11, 0.2);
+		border-top-color: rgba(245, 189, 84, 0.9);
 	}
 
 	/* circle-check 图标：绿色 #3D8A5A */
@@ -10090,14 +10090,14 @@
 	}
 
 	.chat-page.theme-light .quiz-gen-polling {
-		border-color: rgba(224, 177, 64, 0.88);
-		background: linear-gradient(180deg, rgba(255, 236, 186, 0.96) 0%, rgba(245, 216, 136, 0.94) 100%);
-		box-shadow: 0 10rpx 24rpx rgba(224, 177, 64, 0.18);
+		border-color: rgba(245, 158, 11, 0.45);
+		background: rgba(245, 158, 11, 0.08);
+		box-shadow: 0 10rpx 24rpx rgba(245, 158, 11, 0.1);
 	}
 
 	.chat-page.theme-light .quiz-gen-polling .quiz-gen-indicator-text {
-		color: var(--chat-text-primary);
-		-webkit-text-fill-color: var(--chat-text-primary);
+		color: rgba(199, 119, 22, 0.92);
+		-webkit-text-fill-color: rgba(199, 119, 22, 0.92);
 	}
 
 	.chat-page.theme-light .quiz-gen-indicator-icon {
@@ -10118,8 +10118,8 @@
 	}
 
 	.chat-page.theme-light .quiz-gen-spinner-amber {
-		border-color: rgba(31, 26, 22, 0.14);
-		border-top-color: var(--chat-text-primary);
+		border-color: rgba(245, 158, 11, 0.2);
+		border-top-color: rgba(199, 119, 22, 0.92);
 	}
 
 	.chat-page.theme-light .quiz-tool-done {
@@ -10223,6 +10223,15 @@
 
 	.chat-page.theme-light .quiz-evaluating-pulse {
 		filter: brightness(0) saturate(100%) invert(67%) sepia(70%) saturate(564%) hue-rotate(357deg) brightness(96%) contrast(92%);
+	}
+
+	.chat-page.theme-light .chart-saved-text {
+		color: var(--chat-text-muted);
+	}
+
+	.chat-page.theme-light .chart-saved-icon {
+		filter: brightness(0) saturate(100%);
+		opacity: 0.4;
 	}
 
 	.chat-page.theme-light .review-event-depth {
