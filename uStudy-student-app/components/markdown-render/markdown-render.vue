@@ -986,14 +986,19 @@ export default {
 					return
 				}
 				if (val.startsWith(this._lastContent) && this._lastContent.length > 0) {
-					// Streaming append — debounce re-parse
-					if (this._parseTimer) clearTimeout(this._parseTimer)
-					this._parseTimer = setTimeout(() => {
-						this._parseTimer = null
-						this._doParse(this.content)
-					}, 100)
+					// Streaming append — throttle re-parse (render at most every ~80ms)
+					if (!this._parseTimer) {
+						this._parseTimer = setTimeout(() => {
+							this._parseTimer = null
+							this._doParse(this.content)
+						}, 80)
+					}
 				} else {
 					// Full content change — parse immediately
+					if (this._parseTimer) {
+						clearTimeout(this._parseTimer)
+						this._parseTimer = null
+					}
 					this._doParse(val)
 				}
 				this._lastContent = val
