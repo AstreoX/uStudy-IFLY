@@ -111,18 +111,37 @@
             :key="conv.id"
             class="conversation-item"
             @click="openConversation(conv)"
+            @longpress.stop="showConvActions(conv)"
           >
             <view class="conv-content">
               <text class="conv-title">{{ conv.title }}</text>
               <text class="conv-time">{{ formatTime(conv.updated_at) }}</text>
             </view>
-            <view class="conv-delete" @click.stop="showDeleteOption(conv)">
-              <image class="conv-delete-icon" src="/static/icons/phosphor-icons/SVGs/regular/trash.svg" mode="aspectFit"></image>
-            </view>
           </view>
         </view>
       </scroll-view>
     </template>
+
+    <!-- Conversation Action Sheet -->
+    <u-action-sheet
+      :visible="showActionSheet"
+      :items="actionSheetItems"
+      @select="onActionSelect"
+      @close="showActionSheet = false"
+    />
+
+    <!-- Rename Modal -->
+    <u-input-modal
+      :visible="showRenameModal"
+      title="重命名对话"
+      :value="renameTitle"
+      placeholder="输入新标题"
+      :max-length="200"
+      :min-length="1"
+      :multiline="false"
+      @confirm="doRenameConversation"
+      @close="showRenameModal = false"
+    />
 
     <!-- Delete Confirmation Modal -->
     <u-modal
@@ -146,16 +165,20 @@
 </template>
 
 <script>
-import { getSpaceConversations, deleteConversation, searchSpaceConversations } from '@/api/chat'
+import { getSpaceConversations, deleteConversation, updateConversation, searchSpaceConversations } from '@/api/chat'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
+import UActionSheet from '@/components/u-action-sheet/u-action-sheet.vue'
+import UInputModal from '@/components/u-input-modal/u-input-modal.vue'
 import { goBack } from '@/utils/navigation'
 import { getStoredThemeMode } from '@/utils/themeMode'
 
 export default {
   components: {
     UModal,
-    UToast
+    UToast,
+    UActionSheet,
+    UInputModal
   },
 
   data() {
@@ -168,6 +191,15 @@ export default {
       showDeleteModal: false,
       selectedConvId: null,
       isDeleting: false,
+      showActionSheet: false,
+      actionSheetItems: [
+        { text: '重命名', icon: 'pencil-simple' },
+        { text: '删除', icon: 'trash', danger: true }
+      ],
+      selectedConv: null,
+      showRenameModal: false,
+      renameTitle: '',
+      isRenaming: false,
       scrollTop: 0,
       isSearching: false,
       searchQuery: '',
@@ -253,9 +285,39 @@ export default {
       })
     },
 
-    showDeleteOption(conv) {
+    showConvActions(conv) {
+      this.selectedConv = conv
       this.selectedConvId = conv.id
-      this.showDeleteModal = true
+      this.showActionSheet = true
+    },
+
+    onActionSelect(index) {
+      this.showActionSheet = false
+      if (index === 0) {
+        this.renameTitle = this.selectedConv?.title || ''
+        this.showRenameModal = true
+      } else if (index === 1) {
+        this.showDeleteModal = true
+      }
+    },
+
+    async doRenameConversation(newTitle) {
+      if (this.isRenaming || !this.selectedConv) return
+      this.isRenaming = true
+
+      try {
+        await updateConversation(this.selectedConv.id, { title: newTitle })
+        const conv = this.conversations.find(c => c.id === this.selectedConv.id)
+        if (conv) {
+          conv.title = newTitle
+        }
+        this.showRenameModal = false
+        this.showCustomToast('已重命名', 'success')
+      } catch (err) {
+        this.showCustomToast(err.message || '重命名失败', 'error')
+      } finally {
+        this.isRenaming = false
+      }
     },
 
     handleSearch() {
@@ -701,24 +763,6 @@ export default {
   flex-shrink: 0;
 }
 
-.conv-delete {
-  width: 44px;
-  height: 44px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-shrink: 0;
-  margin-left: 8rpx;
-}
-
-.conv-delete-icon {
-  width: 36rpx;
-  height: 36rpx;
-  filter: brightness(0) invert(1);
-  opacity: 0.3;
-  transition: opacity 0.15s ease;
-}
-
 /* Search Bar */
 .search-bar {
   flex: 1;
@@ -871,7 +915,6 @@ export default {
 .chat-history-page.theme-light .nav-icon-search,
 .chat-history-page.theme-light .search-bar-icon,
 .chat-history-page.theme-light .search-clear-icon,
-.chat-history-page.theme-light .conv-delete-icon,
 .chat-history-page.theme-light .empty-icon {
   filter: brightness(0) saturate(100%);
 }

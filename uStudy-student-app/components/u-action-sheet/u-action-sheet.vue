@@ -87,6 +87,7 @@ export default {
         'clock-counter-clockwise': '/static/icons/phosphor-icons/SVGs/regular/clock-counter-clockwise.svg',
         link: '/static/icons/phosphor-icons/SVGs/regular/link.svg',
         trash: '/static/icons/phosphor-icons/SVGs/regular/trash.svg',
+        'pencil-simple': '/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg',
         books: '/static/icons/phosphor-icons/SVGs/regular/books.svg',
         plus: '/static/icons/phosphor-icons/SVGs/regular/plus.svg'
       }
