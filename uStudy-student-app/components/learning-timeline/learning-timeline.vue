@@ -7,7 +7,12 @@
     </view>
 
     <!-- Timeline body -->
-    <scroll-view scroll-y class="timeline-scroll">
+    <scroll-view
+      scroll-y
+      class="timeline-scroll"
+      :lower-threshold="80"
+      @scrolltolower="handleScrollToLower"
+    >
     <view class="timeline-body">
       <!-- Vertical line -->
       <view class="timeline-line"></view>
@@ -94,6 +99,12 @@
           </view>
         </view>
       </template>
+
+      <view v-if="!loading && groupedItems.length && (loadingMore || !hasMore)" class="timeline-footer">
+        <text class="timeline-footer-text">
+          {{ loadingMore ? '正在加载更早的学习事项...' : '已经到底了' }}
+        </text>
+      </view>
     </view>
     </scroll-view>
 
@@ -135,6 +146,14 @@ export default {
       default: () => []
     },
     loading: {
+      type: Boolean,
+      default: false
+    },
+    hasMore: {
+      type: Boolean,
+      default: false
+    },
+    loadingMore: {
       type: Boolean,
       default: false
     },
@@ -278,6 +297,12 @@ export default {
       }
     },
 
+    handleScrollToLower() {
+      if (!this.loading && !this.loadingMore && this.hasMore) {
+        this.$emit('load-more')
+      }
+    },
+
     onSuggestionTap() {
       if (this.suggestion) {
         this.$emit('suggestion-tap', this.suggestion.item)
@@ -408,6 +433,18 @@ export default {
 .timeline-body {
   position: relative;
   padding-left: 68rpx;
+}
+
+.timeline-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12rpx 0 8rpx;
+}
+
+.timeline-footer-text {
+  font-size: 22rpx;
+  color: var(--timeline-text-muted);
 }
 
 .timeline-line {

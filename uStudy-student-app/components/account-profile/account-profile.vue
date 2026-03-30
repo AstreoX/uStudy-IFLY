@@ -102,8 +102,11 @@
             :theme-mode="themeMode"
             :items="recentItems"
             :loading="timelineLoading"
+            :has-more="timelineHasMore"
+            :loading-more="timelineLoadingMore"
             :ai-suggestion="aiSuggestion"
             :suggestion-loading="suggestionLoading"
+            @load-more="loadMoreActivityTimeline"
           />
         </view>
       </view>
@@ -204,8 +207,9 @@ function _cleanOldSuggestionCache(currentKey) {
   } catch (_) {}
 }
 
-const TIMELINE_CACHE_KEY = 'timeline_cache_v1'
+const TIMELINE_CACHE_KEY = 'timeline_cache_v2'
 const TIMELINE_CACHE_TTL = 5 * 60 * 1000
+const TIMELINE_PAGE_SIZE = 20
 
 const AVATAR_GRADIENTS = [
   'linear-gradient(135deg, #0F6FFF 0%, #B1DD8B 100%)',
@@ -249,6 +253,10 @@ export default {
       nodeCoverage: 0,
       recentItems: [],
       timelineLoading: false,
+      timelineLoadingMore: false,
+      timelinePage: 1,
+      timelineTotal: 0,
+      timelineHasMore: true,
       dueReviewCount: 0,
       aiSuggestion: null,
       suggestionLoading: false,
@@ -382,36 +390,78 @@ export default {
 
     async refreshTimelineSection() {
       await Promise.allSettled([
-        this.loadActivityTimeline(),
+        this.loadActivityTimeline({ reset: true }),
         this.loadDueReviews(),
         this.loadStudySuggestion()
       ])
     },
 
-    async loadActivityTimeline() {
-      // 1. 先查本地缓存（5分钟TTL）
-      try {
-        const raw = uni.getStorageSync(TIMELINE_CACHE_KEY)
-        if (raw) {
-          const { data, ts } = JSON.parse(raw)
-          if (Date.now() - ts < TIMELINE_CACHE_TTL) {
-            this.recentItems = data
-            this.timelineLoading = false
-            return
+    async loadActivityTimeline({ reset = false, useCache = true } = {}) {
+      if (!reset && (this.timelineLoading || this.timelineLoadingMore || !this.timelineHasMore)) return
+
+      if (reset) {
+        // 优先恢复最近一次分页状态，避免每次回到“我的”都只能看到第一页。
+        try {
+          const raw = uni.getStorageSync(TIMELINE_CACHE_KEY)
+          if (raw && useCache) {
+            const cached = JSON.parse(raw)
+            if (Date.now() - cached.ts < TIMELINE_CACHE_TTL) {
+              this.recentItems = cached.items || []
+              this.timelinePage = cached.page || 1
+              this.timelineTotal = cached.total || this.recentItems.length
+              this.timelineHasMore = typeof cached.hasMore === 'boolean'
+                ? cached.hasMore
+                : this.recentItems.length < this.timelineTotal
+              this.timelineLoading = false
+              return
+            }
           }
-        }
-      } catch (_) {}
-      // 2. 无缓存或已过期，请求 API
-      this.timelineLoading = true
+        } catch (_) {}
+      }
+
+      if (reset) {
+        this.timelineLoading = true
+      } else {
+        this.timelineLoadingMore = true
+      }
+
+      const nextPage = reset ? 1 : this.timelinePage + 1
       try {
-        const result = await getActivityTimeline(1, 20)
-        this.recentItems = result.items || []
-        uni.setStorageSync(TIMELINE_CACHE_KEY, JSON.stringify({ data: this.recentItems, ts: Date.now() }))
+        const result = await getActivityTimeline(nextPage, TIMELINE_PAGE_SIZE)
+        const incomingItems = result.items || []
+        const mergedItems = reset ? incomingItems : [...this.recentItems, ...incomingItems]
+        const total = typeof result.total === 'number' ? result.total : mergedItems.length
+
+        this.recentItems = mergedItems
+        this.timelinePage = result.page || nextPage
+        this.timelineTotal = total
+        this.timelineHasMore = mergedItems.length < total
+
+        uni.setStorageSync(
+          TIMELINE_CACHE_KEY,
+          JSON.stringify({
+            items: this.recentItems,
+            page: this.timelinePage,
+            total: this.timelineTotal,
+            hasMore: this.timelineHasMore,
+            ts: Date.now()
+          })
+        )
       } catch (_e) {
-        this.recentItems = []
+        if (reset) {
+          this.recentItems = []
+          this.timelinePage = 1
+          this.timelineTotal = 0
+          this.timelineHasMore = false
+        }
       } finally {
         this.timelineLoading = false
+        this.timelineLoadingMore = false
       }
+    },
+
+    async loadMoreActivityTimeline() {
+      await this.loadActivityTimeline({ reset: false, useCache: false })
     },
 
     async loadDueReviews() {
