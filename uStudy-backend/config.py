@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
+    max_concurrent_devices: int = 3
 
     # Apple Sign-In
     apple_client_id: str = ""

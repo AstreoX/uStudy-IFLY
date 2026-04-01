@@ -561,12 +561,16 @@ class RefreshToken(Base):
     replaced_by: Mapped[Optional[UUID]] = mapped_column(
         UUID(as_uuid=True), nullable=True
     )
+    family_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
 
     user: Mapped["User"] = relationship(back_populates="refresh_tokens")
 
     __table_args__ = (
         Index("ix_refresh_tokens_user_id", "user_id"),
         Index("ix_refresh_tokens_token_hash", "token_hash"),
+        Index("ix_refresh_tokens_family_id", "family_id"),
     )
 
 

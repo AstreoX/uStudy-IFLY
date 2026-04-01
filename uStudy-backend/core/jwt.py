@@ -9,7 +9,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from jose import JWTError, jwt
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.exceptions import (
@@ -83,6 +83,7 @@ async def create_refresh_token(
     Returns:
         Refresh token 字符串（明文）
     """
+    await _enforce_device_limit(user_id, db)
     token, refresh_obj = await _create_refresh_token_record(
         user_id=user_id,
         db=db,
@@ -96,6 +97,7 @@ async def _create_refresh_token_record(
     user_id: UUID,
     db: AsyncSession,
     device_info: str | None = None,
+    family_id: UUID | None = None,
 ) -> tuple[str, RefreshToken]:
     token = f"{uuid4()}{secrets.token_urlsafe(32)}"
     token_hash = _hash_token(token)
@@ -106,6 +108,9 @@ async def _create_refresh_token_record(
         expires_at=_now() + timedelta(days=settings.refresh_token_expire_days),
     )
     db.add(refresh_obj)
+    await db.flush()
+    # For new logins (family_id=None), use the token's own id as family root
+    refresh_obj.family_id = family_id or refresh_obj.id
     await db.flush()
     return token, refresh_obj
 
@@ -127,8 +132,13 @@ async def rotate_refresh_token(
         raise InvalidTokenError("无效的 refresh token")
 
     if old_refresh.revoked_at is not None:
-        await revoke_all_user_tokens(old_refresh.user_id, db)
-        raise TokenReuseError("检测到 token 重复使用，已撤销所有会话，请重新登录")
+        # Family-scoped revocation: only kill the affected device's session
+        if old_refresh.family_id is not None:
+            await _revoke_token_family(old_refresh.family_id, db)
+        else:
+            # Legacy token without family_id — fall back to revoking all
+            await revoke_all_user_tokens(old_refresh.user_id, db)
+        raise TokenReuseError("检测到 token 重复使用，已撤销该设备会话，请重新登录")
 
     if _normalize_datetime(old_refresh.expires_at) < _now():
         raise TokenExpiredError("登录已过期，请重新登录")
@@ -139,12 +149,50 @@ async def rotate_refresh_token(
         user_id=old_refresh.user_id,
         db=db,
         device_info=old_refresh.device_info,
+        family_id=old_refresh.family_id,
     )
     old_refresh.replaced_by = new_refresh.id
 
     access_token = create_access_token(str(old_refresh.user_id))
     await db.commit()
     return access_token, new_token
+
+
+async def _revoke_token_family(family_id: UUID, db: AsyncSession) -> None:
+    """Revoke all tokens in a token family (single device session)."""
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=_now())
+    )
+
+
+async def _enforce_device_limit(user_id: UUID, db: AsyncSession) -> None:
+    """Evict oldest device sessions if user exceeds max_concurrent_devices."""
+    max_devices = settings.max_concurrent_devices
+
+    # Get distinct active families ordered by most recent token creation
+    result = await db.execute(
+        select(
+            RefreshToken.family_id,
+            func.max(RefreshToken.created_at).label("latest"),
+        )
+        .where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > _now(),
+            RefreshToken.family_id.is_not(None),
+        )
+        .group_by(RefreshToken.family_id)
+        .order_by(func.max(RefreshToken.created_at).desc())
+    )
+    families = result.all()
+
+    # Keep (max_devices - 1) to make room for the new login
+    if len(families) >= max_devices:
+        families_to_revoke = families[max_devices - 1 :]
+        for family_row in families_to_revoke:
+            await _revoke_token_family(family_row.family_id, db)
 
 
 async def revoke_all_user_tokens(user_id: UUID, db: AsyncSession) -> None:
