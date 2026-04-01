@@ -39,8 +39,9 @@ PATH_EXPAND_TOOLS: list[dict] = [
                 "type": "object",
                 "properties": {
                     "node_sequence": {
-                        "type": "string",
-                        "description": "节点名称序列，用逗号分隔。第一个必须是当前路径末尾节点，如 '链表,栈,队列'",
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "节点名称序列（字符串数组）。第一个必须是当前路径末尾节点，如 [\"链表\", \"栈\", \"队列\"]",
                     },
                 },
                 "required": ["node_sequence"],
@@ -147,7 +148,7 @@ class LearningPathExpander:
                     if tool_result.success:
                         # Extract new node names (skip the first which is the junction node)
                         seq = tc.arguments.get("node_sequence", "")
-                        names = [n.strip() for n in seq.split(",")]
+                        names = seq if isinstance(seq, list) else [n.strip() for n in seq.split(",")]
                         new_path_nodes.extend(names[1:])  # Exclude junction node
 
                 # Build assistant message with tool calls

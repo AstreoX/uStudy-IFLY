@@ -223,8 +223,9 @@ GRAPH_TOOLS: list[dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "node_sequence": {
-                        "type": "string",
-                        "description": "节点名称序列，用逗号分隔，如 '数组,链表,栈'",
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "节点名称序列（字符串数组），如 [\"数组\", \"链表\", \"栈\"]",
                     },
                 },
                 "required": ["node_sequence"],
@@ -241,8 +242,9 @@ GRAPH_TOOLS: list[dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "node_sequence": {
-                        "type": "string",
-                        "description": "节点名称序列，用逗号分隔。第一个必须是现有路径末尾节点，如 'C,D,E'",
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "节点名称序列（字符串数组）。第一个必须是现有路径末尾节点，如 [\"C\", \"D\", \"E\"]",
                     },
                 },
                 "required": ["node_sequence"],
@@ -303,8 +305,9 @@ GRAPH_TOOLS: list[dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "node_sequence": {
-                        "type": "string",
-                        "description": "子路径节点序列，逗号分隔。首尾必须是原路径已有节点，中间可以是新节点。如 'B,D,E,C'",
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "子路径节点序列（字符串数组）。首尾必须是原路径已有节点，中间可以是新节点。如 [\"B\", \"D\", \"E\", \"C\"]",
                     },
                 },
                 "required": ["node_sequence"],
@@ -884,7 +887,7 @@ class GraphToolExecutor:
             )
 
         # 解析节点名称序列
-        node_names = [name.strip() for name in node_sequence.split(",")]
+        node_names = node_sequence if isinstance(node_sequence, list) else [name.strip() for name in node_sequence.split(",")]
 
         if len(node_names) < 2:
             return ToolResult(
@@ -921,7 +924,7 @@ class GraphToolExecutor:
                 success=False, data=None, message="节点序列不能为空"
             )
 
-        node_names = [name.strip() for name in node_sequence.split(",")]
+        node_names = node_sequence if isinstance(node_sequence, list) else [name.strip() for name in node_sequence.split(",")]
 
         if len(node_names) < 2:
             return ToolResult(
@@ -1088,7 +1091,7 @@ class GraphToolExecutor:
         if not node_sequence:
             return ToolResult(success=False, data=None, message="节点序列不能为空")
 
-        node_names = [name.strip() for name in node_sequence.split(",")]
+        node_names = node_sequence if isinstance(node_sequence, list) else [name.strip() for name in node_sequence.split(",")]
 
         if len(node_names) < 3:
             return ToolResult(
