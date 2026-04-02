@@ -51,6 +51,18 @@ export function getConversation(conversationId) {
 }
 
 /**
+ * 获取对话级 Agent Todo 列表
+ * @param {string} conversationId - 对话 ID
+ * @returns {Promise<Object>} { todos: [] }
+ */
+export function getConversationTodos(conversationId) {
+  return request({
+    url: `/api/conversations/${conversationId}/todos`,
+    method: 'GET'
+  })
+}
+
+/**
  * 删除对话
  * @param {string} conversationId - 对话 ID
  * @returns {Promise<void>}

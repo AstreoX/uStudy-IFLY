@@ -585,7 +585,7 @@
 			</view>
 
 			<scroll-view
-				v-if="shortcutPills.length > 0"
+				v-if="showShortcutPills"
 				class="shortcut-pills-scroll"
 				scroll-x
 				:show-scrollbar="false"
@@ -604,7 +604,17 @@
 				</view>
 			</scroll-view>
 
-			<view class="input-card">
+			<view class="input-drawer-stack" :class="{ 'input-drawer-stack-active': agentTodoLoaded && hasAgentTodos }">
+				<view v-if="agentTodoLoaded && hasAgentTodos" class="stacked-agent-drawer">
+					<agent-todo-drawer
+						:theme-mode="homeThemeMode"
+						:items="agentTodos"
+						:expanded="agentTodoExpanded"
+						@toggle="toggleAgentTodoDrawer"
+					/>
+				</view>
+
+				<view class="input-card">
 				<!-- 待发送附件预览区域 -->
 				<view v-if="pendingAttachments.length > 0 || uploadingFiles.length > 0" class="pending-attachments-area">
 					<!-- 已上传待发送的附件 -->
@@ -715,6 +725,7 @@
 						</view>
 					</view>
 				</view>
+				</view>
 			</view>
 
 			<view class="input-safe-area"></view>
@@ -775,11 +786,12 @@
 	import config from '@/config/index.js'
 	import { getSelectedModelId, setSelectedModelId, getThinkingMode, setThinkingMode } from '@/utils/storage'
 	import { getStoredThemeMode } from '@/utils/themeMode'
-	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage, getQuickChatToolTaskStatus, listQuickChatToolTasks, bindQuickChatToolTask, stopStreamingReply } from '@/api/chat'
+	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, getConversationTodos, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage, getQuickChatToolTaskStatus, listQuickChatToolTasks, bindQuickChatToolTask, stopStreamingReply } from '@/api/chat'
 	import { executeCalendarTool } from '@/utils/calendar'
 	import { createCalendarEvent, getCalendarEvents, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendarEvents'
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
 	import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
+	import AgentTodoDrawer from '@/components/agent-todo-drawer/agent-todo-drawer.vue'
 	import UInputModal from '@/components/u-input-modal/u-input-modal.vue'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
 	import PythonExecutionCard from '@/components/python-execution-card/python-execution-card.vue'
@@ -795,12 +807,23 @@
 	// #endif
 
 	const MAX_MESSAGE_LENGTH = 10000
+	const AGENT_TODO_TOOL_NAMES = new Set([
+		'create_todo', 'update_todo', 'complete_todo', 'delete_todo'
+	])
+
+	const HIDDEN_AGENT_TODO_TOOL_NAMES = new Set([
+		'create_todo'
+	])
 
 	// 工具名称映射
 	const TOOL_DISPLAY_NAMES = {
 		view_learning_spaces: '查看学习空间',
 		rebind_to_learning_space: '绑定到学习空间',
 		create_learning_space: '创建学习空间',
+		create_todo: '创建待办',
+		update_todo: '更新待办',
+		complete_todo: '完成待办',
+		delete_todo: '删除待办',
 		// 网络搜索工具
 		web_search: '联网搜索',
 		web_fetch: '获取网页',
@@ -832,6 +855,10 @@
 		view_learning_spaces: '/static/icons/phosphor-icons/SVGs/regular/eye.svg',
 		rebind_to_learning_space: '/static/icons/phosphor-icons/SVGs/regular/link.svg',
 		create_learning_space: '/static/icons/phosphor-icons/SVGs/regular/plus-circle.svg',
+		create_todo: '/static/icons/lucide/list-checks.svg',
+		update_todo: '/static/icons/lucide/list-checks.svg',
+		complete_todo: '/static/icons/lucide/list-checks.svg',
+		delete_todo: '/static/icons/lucide/list-checks.svg',
 		// 网络搜索工具
 		web_search: '/static/icons/phosphor-icons/SVGs/regular/magnifying-glass.svg',
 		web_fetch: '/static/icons/phosphor-icons/SVGs/regular/globe.svg',
@@ -922,6 +949,7 @@
 	export default {
 		components: {
 			MarkdownRender,
+			AgentTodoDrawer,
 			UInputModal,
 			ImageSourcePicker,
 			PythonExecutionCard,
@@ -944,6 +972,7 @@
 				textareaLineCount: 1, // 记录 linechange 上报的真实行数（用于非 H5 兜底）
 				keyboardHeight: 0,
 				inputBarHeight: 0,
+				agentTodoDrawerHeight: 0,
 				_initialWindowHeight: 0, // 键盘弹出前的窗口高度，用于检测 adjustResize
 				nextId: 1,
 				cancelSSE: null,
@@ -974,6 +1003,9 @@
 
 				// 工具调用相关
 				activeToolCalls: [],
+				agentTodos: [],
+				agentTodoLoaded: false,
+				agentTodoExpanded: false,
 
 				// 记忆工具最短显示时间跟踪
 				memoryToolStartTimes: {},    // { toolCallId: timestamp }
@@ -1197,13 +1229,26 @@
 			uploadingFileCount() {
 				return this.uploadingFiles.length
 			},
+			hasAgentTodos() {
+				return this.agentTodos.length > 0
+			},
+			showShortcutPills() {
+				return this.shortcutPills.length > 0 && !this.hasAgentTodos
+			},
 			messageBottomSpacerStyle() {
 				const baseWindowHeight = this._initialWindowHeight || uni.getSystemInfoSync().windowHeight || 0
-				const shortcutPillsReserveHeight = this.shortcutPills.length > 0 ? uni.upx2px(128) : 0
-				const legacyReserveHeight = (baseWindowHeight ? baseWindowHeight * 6 / 26 : uni.upx2px(280)) + shortcutPillsReserveHeight
-				const overlayBuffer = uni.upx2px(28)
-				const measuredReserveHeight = (Number(this.inputBarHeight) || 0) + overlayBuffer
-				const spacerHeight = Math.max(legacyReserveHeight, measuredReserveHeight) + (Number(this.keyboardHeight) || 0)
+				const shortcutPillsReserveHeight = this.showShortcutPills ? uni.upx2px(128) : 0
+				const legacyReserveHeight = (baseWindowHeight ? baseWindowHeight * 6 / 26 : uni.upx2px(280)) + shortcutPillsReserveHeight + (Number(this.keyboardHeight) || 0)
+				const measuredCoveredHeight = Number(this.inputBarHeight) || 0
+				const drawerHeight = Number(this.agentTodoDrawerHeight) || 0
+				const overlaySafetyGap = this.hasAgentTodos
+					? Math.max(
+						uni.upx2px(this.agentTodoExpanded ? 110 : 124),
+						Math.round(drawerHeight * (this.agentTodoExpanded ? 0.28 : 0.40))
+					)
+					: uni.upx2px(this.showShortcutPills ? 96 : 80)
+				const spacerBaseHeight = measuredCoveredHeight > 0 ? measuredCoveredHeight : legacyReserveHeight
+				const spacerHeight = spacerBaseHeight + overlaySafetyGap
 				return { height: `${Math.ceil(spacerHeight)}px` }
 			},
 			shortcutPills() {
@@ -1386,7 +1431,86 @@
 				return monitor && monitor.conversationId === this.conversationId
 			},
 
+			isAgentTodoTool(toolName) {
+				return AGENT_TODO_TOOL_NAMES.has(toolName)
+			},
+
+			isHiddenAgentTodoTool(toolName) {
+				return HIDDEN_AGENT_TODO_TOOL_NAMES.has(toolName)
+			},
+
+			cloneAgentTodos(todos = []) {
+				return (Array.isArray(todos) ? todos : []).map(todo => ({ ...todo }))
+			},
+
+			filterVisibleToolCalls(toolCalls = []) {
+				return (Array.isArray(toolCalls) ? toolCalls : []).filter(tc => !this.isHiddenAgentTodoTool(tc?.tool))
+			},
+
+			filterVisibleSegments(segments = []) {
+				return (Array.isArray(segments) ? segments : []).filter(seg => {
+					return !(seg?.type === 'tool' && this.isHiddenAgentTodoTool(seg.toolCall?.tool))
+				})
+			},
+
+			replaceAgentTodos(todos, { autoExpand = false } = {}) {
+				const nextTodos = this.cloneAgentTodos(todos)
+				this.agentTodos = nextTodos
+				this.agentTodoLoaded = true
+				if (nextTodos.length === 0) {
+					this.agentTodoExpanded = false
+				} else if (autoExpand) {
+					this.agentTodoExpanded = true
+				}
+				this.$nextTick(() => {
+					this.scheduleInputBarMeasure()
+				})
+			},
+
+			applyAgentTodoPayload(payload, { autoExpand = false } = {}) {
+				if (!payload || !Array.isArray(payload.todos)) return false
+				this.replaceAgentTodos(payload.todos, { autoExpand })
+				return true
+			},
+
+			syncAgentTodosFromToolCalls(toolCalls, { autoExpand = false } = {}) {
+				if (!Array.isArray(toolCalls)) return false
+				for (let i = toolCalls.length - 1; i >= 0; i--) {
+					const toolCall = toolCalls[i]
+					if (this.isAgentTodoTool(toolCall?.tool) && Array.isArray(toolCall?.result?.todos)) {
+						this.replaceAgentTodos(toolCall.result.todos, { autoExpand })
+						return true
+					}
+				}
+				return false
+			},
+
+			toggleAgentTodoDrawer() {
+				if (!this.agentTodos.length) return
+				this.agentTodoExpanded = !this.agentTodoExpanded
+				this.$nextTick(() => {
+					this.scheduleInputBarMeasure()
+				})
+			},
+
+			async loadAgentTodos() {
+				if (!this.conversationId) return
+				try {
+					const result = await getConversationTodos(this.conversationId)
+					this.replaceAgentTodos(result?.todos || [], {
+						autoExpand: Array.isArray(result?.todos) && result.todos.length > 0
+					})
+				} catch (error) {
+					console.warn('[QuickChat] Failed to load agent todos:', error)
+					this.agentTodoLoaded = true
+					this.$nextTick(() => {
+						this.scheduleInputBarMeasure()
+					})
+				}
+			},
+
 			buildHistoryMessage(msg) {
+				const visibleToolCalls = this.filterVisibleToolCalls(msg.tool_calls || [])
 				const mapped = {
 					id: this.nextId++,
 					role: msg.role === 'user' ? 'user' : 'ai',
@@ -1396,13 +1520,13 @@
 					isStreaming: false,
 					responseStatus: msg.response_status || 'completed'
 				}
-				if (mapped.role === 'ai' && msg.tool_calls && msg.tool_calls.length > 0) {
-					const segments = msg.tool_calls.map(tc => ({ type: 'tool', toolCall: { ...tc } }))
+				if (mapped.role === 'ai' && visibleToolCalls.length > 0) {
+					const segments = visibleToolCalls.map(tc => ({ type: 'tool', toolCall: { ...tc } }))
 					if (msg.content && msg.content.trim()) {
 						segments.push({ type: 'text', content: msg.content })
 					}
 					mapped.segments = segments
-					mapped.toolCalls = msg.tool_calls
+					mapped.toolCalls = visibleToolCalls.map(tc => ({ ...tc }))
 				}
 				return mapped
 			},
@@ -1424,12 +1548,17 @@
 				if (status.partial_thinking) {
 					aiMsg.thinkingContent = status.partial_thinking
 				}
-				if (Array.isArray(status.tool_calls) && status.tool_calls.length > 0) {
-					aiMsg.toolCalls = status.tool_calls.map(tc => ({ ...tc }))
-					aiMsg.streamSegments = status.tool_calls.map(tc => ({
+				this.syncAgentTodosFromToolCalls(status.tool_calls, { autoExpand: true })
+				const visibleToolCalls = this.filterVisibleToolCalls(status.tool_calls || [])
+				if (visibleToolCalls.length > 0) {
+					aiMsg.toolCalls = visibleToolCalls.map(tc => ({ ...tc }))
+					aiMsg.streamSegments = visibleToolCalls.map(tc => ({
 						type: 'tool',
 						toolCall: { ...tc }
 					}))
+				} else {
+					delete aiMsg.toolCalls
+					delete aiMsg.streamSegments
 				}
 				aiMsg.isStreaming = false
 				aiMsg.isWaitingOutput = false
@@ -1467,12 +1596,23 @@
 
 					// 2. Redis 缓存已过期，从数据库加载完整对话
 					if (!historyAlreadyLoaded) {
-						const result = await getConversation(this.conversationId)
+						const [result, todoResult] = await Promise.all([
+							getConversation(this.conversationId),
+							getConversationTodos(this.conversationId).catch((error) => {
+								console.warn('[QuickChat] Failed to refresh agent todos during recovery:', error)
+								return null
+							})
+						])
 						this.messages = []
 						this.nextId = 1
 						result.messages.forEach(msg => {
 							this.messages.push(this.buildHistoryMessage(msg))
 						})
+						if (todoResult && Array.isArray(todoResult.todos)) {
+							this.replaceAgentTodos(todoResult.todos, { autoExpand: todoResult.todos.length > 0 })
+						} else {
+							this.agentTodoLoaded = true
+						}
 					}
 					clearPendingMessages(this.conversationId)
 					this.$nextTick(() => this.scrollToLatestMessage())
@@ -1527,12 +1667,17 @@
 				if (status.partial_thinking) {
 					aiMsg.thinkingContent = status.partial_thinking
 				}
-				if (Array.isArray(status.tool_calls) && status.tool_calls.length > 0) {
-					aiMsg.toolCalls = status.tool_calls.map(tc => ({ ...tc }))
-					aiMsg.streamSegments = status.tool_calls.map(tc => ({
+				this.syncAgentTodosFromToolCalls(status.tool_calls, { autoExpand: true })
+				const visibleToolCalls = this.filterVisibleToolCalls(status.tool_calls || [])
+				if (visibleToolCalls.length > 0) {
+					aiMsg.toolCalls = visibleToolCalls.map(tc => ({ ...tc }))
+					aiMsg.streamSegments = visibleToolCalls.map(tc => ({
 						type: 'tool',
 						toolCall: { ...tc }
 					}))
+				} else {
+					delete aiMsg.toolCalls
+					delete aiMsg.streamSegments
 				}
 				if (status.is_stopped) {
 					aiMsg.responseStatus = 'stopped'
@@ -1740,16 +1885,42 @@
 
 			measureInputBarHeight() {
 				const query = uni.createSelectorQuery().in(this)
+				let barRect = null
+				let drawerRect = null
+				let cardRect = null
 				query.select('.input-bar').boundingClientRect(rect => {
-					if (!rect || !rect.height) return
-					const nextHeight = Math.ceil(rect.height)
-					if (Math.abs(nextHeight - this.inputBarHeight) > 1) {
+					barRect = rect
+				})
+				query.select('.stacked-agent-drawer').boundingClientRect(rect => {
+					drawerRect = rect
+				})
+				query.select('.input-card').boundingClientRect(rect => {
+					cardRect = rect
+				})
+				query.exec(() => {
+					const viewportHeight = uni.getSystemInfoSync().windowHeight || this._initialWindowHeight || 0
+					const topCandidates = [barRect?.top, drawerRect?.top, cardRect?.top].filter(v => typeof v === 'number')
+					const heightCandidates = [barRect?.height, cardRect?.height].filter(v => typeof v === 'number')
+					if (topCandidates.length === 0 && heightCandidates.length === 0) return
+					const overlayTop = topCandidates.length > 0 ? Math.min(...topCandidates) : 0
+					const baseHeight = heightCandidates.length > 0 ? Math.max(...heightCandidates) : 0
+					const coveredHeight = viewportHeight > 0
+						? Math.max(baseHeight, viewportHeight - overlayTop)
+						: baseHeight
+					const nextHeight = Math.ceil(coveredHeight)
+					const nextDrawerHeight = Math.ceil(drawerRect?.height || 0)
+					const heightChanged = Math.abs(nextHeight - this.inputBarHeight) > 1
+					const drawerChanged = Math.abs(nextDrawerHeight - this.agentTodoDrawerHeight) > 1
+					if (heightChanged) {
 						this.inputBarHeight = nextHeight
-						if (this.isAutoScrollEnabled) {
-							this.$nextTick(() => this.scrollToLatestMessage())
-						}
 					}
-				}).exec()
+					if (drawerChanged) {
+						this.agentTodoDrawerHeight = nextDrawerHeight
+					}
+					if ((heightChanged || drawerChanged) && this.isAutoScrollEnabled) {
+						this.$nextTick(() => this.scrollToLatestMessage())
+					}
+				})
 			},
 
 			isShortcutPillDisabled(pill) {
@@ -2069,12 +2240,15 @@
 			getMessageSegments(msg) {
 				// 如果有已处理的 segments，直接使用
 				if (msg.segments && msg.segments.length > 0) {
-					return msg.segments
+					const visibleSegments = this.filterVisibleSegments(msg.segments)
+					if (visibleSegments.length > 0) {
+						return visibleSegments
+					}
 				}
 
 				// 如果有流式片段，使用流式片段
 				if (msg.streamSegments && msg.streamSegments.length > 0) {
-					const segments = [...msg.streamSegments]
+					const segments = this.filterVisibleSegments(msg.streamSegments).map(seg => ({ ...seg }))
 					// 添加当前正在流式的文本
 					if (msg.content && msg.content.length > 0) {
 						segments.push({ type: 'text', content: msg.content })
@@ -2411,6 +2585,13 @@
 				if (!msg) return
 
 				const { id, tool, status, success, result, arguments: args, display_name, requires_confirmation, message } = data
+				if (this.isAgentTodoTool(tool) && status === 'done') {
+					this.applyAgentTodoPayload(result, { autoExpand: true })
+				}
+				if (this.isHiddenAgentTodoTool(tool)) {
+					this.$forceUpdate()
+					return
+				}
 
 				if (status === 'running') {
 					// 工具开始执行：关闭等待输出状态
@@ -3344,6 +3525,7 @@
 				try {
 					const res = await createQuickChatConversation('快速对话')
 					this.conversationId = res.id
+					await this.loadAgentTodos()
 				} catch (err) {
 					uni.showToast({ title: '创建对话失败', icon: 'none' })
 					throw err
@@ -3353,7 +3535,13 @@
 			async loadExistingConversation(convId) {
 				this.isLoadingHistory = true
 				try {
-					const result = await getConversation(convId)
+					const [result, todoResult] = await Promise.all([
+						getConversation(convId),
+						getConversationTodos(convId).catch((error) => {
+							console.warn('[QuickChat] Failed to load agent todos:', error)
+							return null
+						})
+					])
 					const historyMessages = result.messages || []
 					this.messages = []
 					this.nextId = 1
@@ -3361,6 +3549,11 @@
 					historyMessages.forEach(msg => {
 						this.messages.push(this.buildHistoryMessage(msg))
 					})
+					if (todoResult && Array.isArray(todoResult.todos)) {
+						this.replaceAgentTodos(todoResult.todos, { autoExpand: todoResult.todos.length > 0 })
+					} else {
+						this.agentTodoLoaded = true
+					}
 
 					// 后台监控 active 时，服务器数据已包含完整回复，清空缓存避免重复
 					const monitor = getActiveMonitor()
@@ -3527,6 +3720,9 @@
 								if (msg.streamSegments && msg.streamSegments.length > 0) {
 									for (const seg of msg.streamSegments) {
 										if (seg.type === 'tool') {
+											if (this.isHiddenAgentTodoTool(seg.toolCall?.tool)) {
+												continue
+											}
 											const tc = this.activeToolCalls.find(t => t.id === seg.toolCall.id)
 											finalSegments.push({
 												type: 'tool',
@@ -3546,8 +3742,11 @@
 								msg.segments = finalSegments
 								msg.content = fullContent
 								delete msg.streamSegments
-								if (this.activeToolCalls.length > 0) {
-									msg.toolCalls = this.activeToolCalls.map(tc => ({ ...tc }))
+								const visibleToolCalls = this.filterVisibleToolCalls(this.activeToolCalls)
+								if (visibleToolCalls.length > 0) {
+									msg.toolCalls = visibleToolCalls.map(tc => ({ ...tc }))
+								} else {
+									delete msg.toolCalls
 								}
 								msg.isWaitingOutput = false
 								msg.isStreaming = false
@@ -4595,14 +4794,33 @@
 		transition: bottom 0.25s ease;
 	}
 
+	.input-drawer-stack {
+		position: relative;
+		width: 100%;
+	}
+
+	.stacked-agent-drawer {
+		position: relative;
+		z-index: 0;
+		width: calc(100% - 44rpx);
+		margin: 0 auto -42rpx;
+	}
+
 	.input-card {
 		width: 100%;
 		position: relative;
+		z-index: 2;
 		background-color: rgb(36, 36, 36);
 		border-radius: 40rpx;
 		border: 2rpx solid rgba(255, 255, 255, 0.06);
 		box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.18);
 		overflow: hidden;
+	}
+
+	.input-drawer-stack-active .input-card {
+		box-shadow:
+			0 18rpx 36rpx rgba(0, 0, 0, 0.18),
+			0 4rpx 18rpx rgba(0, 0, 0, 0.12);
 	}
 
 	.input-field {
@@ -5965,6 +6183,12 @@
 		background: var(--chat-surface);
 		border-color: var(--chat-border);
 		box-shadow: var(--chat-shadow);
+	}
+
+	.chat-page.theme-light .input-drawer-stack-active .input-card {
+		box-shadow:
+			var(--chat-shadow),
+			0 18rpx 34rpx rgba(155, 129, 94, 0.10);
 	}
 
 	.chat-page.theme-light .space-mutation-confirm-text {

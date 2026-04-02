@@ -1437,7 +1437,7 @@
 			</view>
 
 			<scroll-view
-				v-if="shortcutPills.length > 0"
+				v-if="showShortcutPills"
 				class="shortcut-pills-scroll"
 				scroll-x
 				:show-scrollbar="false"
@@ -1456,7 +1456,17 @@
 				</view>
 			</scroll-view>
 
-			<view class="input-card">
+			<view class="input-drawer-stack" :class="{ 'input-drawer-stack-active': agentTodoLoaded && hasAgentTodos }">
+				<view v-if="agentTodoLoaded && hasAgentTodos" class="stacked-agent-drawer">
+					<agent-todo-drawer
+						:theme-mode="homeThemeMode"
+						:items="agentTodos"
+						:expanded="agentTodoExpanded"
+						@toggle="toggleAgentTodoDrawer"
+					/>
+				</view>
+
+				<view class="input-card">
 				<!-- 待发送附件预览区域 -->
 				<view v-if="pendingAttachments.length > 0 || uploadingFiles.length > 0" class="pending-attachments-area">
 					<!-- 已上传待发送的附件 -->
@@ -1566,6 +1576,7 @@
 							></image>
 						</view>
 					</view>
+				</view>
 				</view>
 			</view>
 
@@ -1747,6 +1758,7 @@
 	import USnackbar from '@/components/u-snackbar/u-snackbar.vue'
 	import UInputModal from '@/components/u-input-modal/u-input-modal.vue'
 	import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
+	import AgentTodoDrawer from '@/components/agent-todo-drawer/agent-todo-drawer.vue'
 	import PreKnowledgeCard from '@/components/pre-knowledge-card/pre-knowledge-card.vue'
 	import ImageSourcePicker from '@/components/image-source-picker/image-source-picker.vue'
 	import NoteCreationCard from '@/components/note-creation-card/note-creation-card.vue'
@@ -1755,7 +1767,7 @@
 	import PythonExecutionCard from '@/components/python-execution-card/python-execution-card.vue'
 	import KnowledgeTreeMini from '@/components/knowledge-tree-mini/knowledge-tree-mini.vue'
 	import { generateQuiz, getTaskStatus, getSpaceGraph } from '@/api/space'
-	import { createConversation, getConversation, sendMessage as sendChatMessage, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage, stopStreamingReply } from '@/api/chat'
+	import { createConversation, getConversation, getConversationTodos, sendMessage as sendChatMessage, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage, stopStreamingReply } from '@/api/chat'
 	import { connectNotificationStream } from '@/api/notification'
 	import { executeCalendarTool } from '@/utils/calendar'
 	import { createCalendarEvent, getCalendarEvents, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendarEvents'
@@ -1782,6 +1794,10 @@
 		view_learning_spaces: '查看学习空间',
 		rebind_to_learning_space: '绑定到学习空间',
 		create_learning_space: '创建学习空间',
+		create_todo: '创建待办',
+		update_todo: '更新待办',
+		complete_todo: '完成待办',
+		delete_todo: '删除待办',
 		// 知识图谱工具
 		get_graph_overview: '获取知识图谱',
 		add_node: '添加知识点',
@@ -1852,6 +1868,10 @@
 		view_learning_spaces: '/static/icons/phosphor-icons/SVGs/regular/eye.svg',
 		rebind_to_learning_space: '/static/icons/phosphor-icons/SVGs/regular/link.svg',
 		create_learning_space: '/static/icons/phosphor-icons/SVGs/regular/plus-circle.svg',
+		create_todo: '/static/icons/lucide/list-checks.svg',
+		update_todo: '/static/icons/lucide/list-checks.svg',
+		complete_todo: '/static/icons/lucide/list-checks.svg',
+		delete_todo: '/static/icons/lucide/list-checks.svg',
 		// 知识图谱工具
 		get_graph_overview: '/static/icons/phosphor-icons/SVGs/regular/graph.svg',
 		add_node: '/static/icons/phosphor-icons/SVGs/regular/plus-circle.svg',
@@ -2072,12 +2092,21 @@
 		web_fetch:        { running: '正在获取网页…', done: '已获取网页', failed: '获取网页失败' }
 	}
 
+	const AGENT_TODO_TOOL_NAMES = new Set([
+		'create_todo', 'update_todo', 'complete_todo', 'delete_todo'
+	])
+
+	const HIDDEN_AGENT_TODO_TOOL_NAMES = new Set([
+		'create_todo'
+	])
+
 	export default {
 		components: {
 			UCapsuleToast,
 			USnackbar,
 			UInputModal,
 			MarkdownRender,
+			AgentTodoDrawer,
 			PreKnowledgeCard,
 			ImageSourcePicker,
 			NoteCreationCard,
@@ -2105,6 +2134,7 @@
 				textareaLineCount: 1, // 记录 linechange 上报的真实行数（用于非 H5 兜底）
 				keyboardHeight: 0,
 				inputBarHeight: 0,
+				agentTodoDrawerHeight: 0,
 				_initialWindowHeight: 0, // 键盘弹出前的窗口高度，用于检测 adjustResize
 				nextId: 1,
 				activeMoreMsgId: null,
@@ -2186,6 +2216,9 @@
 				isLoadingHistory: false,
 				cancelSSE: null,
 				activeToolCalls: [],
+				agentTodos: [],
+				agentTodoLoaded: false,
+				agentTodoExpanded: false,
 				isSendingMessage: false,
 
 				// 前置知识卡片状态
@@ -2291,6 +2324,12 @@
 			uploadingFileCount() {
 				return this.uploadingFiles.length
 			},
+			hasAgentTodos() {
+				return this.agentTodos.length > 0
+			},
+			showShortcutPills() {
+				return this.shortcutPills.length > 0 && !this.hasAgentTodos
+			},
 			selectedModelName() {
 				const model = this.availableModels.find(m => m.id === this.selectedModelId)
 				return model ? model.display_name : '模型'
@@ -2300,11 +2339,18 @@
 			},
 			messageBottomSpacerStyle() {
 				const baseWindowHeight = this._initialWindowHeight || uni.getSystemInfoSync().windowHeight || 0
-				const shortcutPillsReserveHeight = this.shortcutPills.length > 0 ? uni.upx2px(128) : 0
-				const legacyReserveHeight = (baseWindowHeight ? baseWindowHeight * 6 / 26 : uni.upx2px(280)) + shortcutPillsReserveHeight
-				const overlayBuffer = uni.upx2px(28)
-				const measuredReserveHeight = (Number(this.inputBarHeight) || 0) + overlayBuffer
-				const spacerHeight = Math.max(legacyReserveHeight, measuredReserveHeight) + (Number(this.keyboardHeight) || 0)
+				const shortcutPillsReserveHeight = this.showShortcutPills ? uni.upx2px(128) : 0
+				const legacyReserveHeight = (baseWindowHeight ? baseWindowHeight * 6 / 26 : uni.upx2px(280)) + shortcutPillsReserveHeight + (Number(this.keyboardHeight) || 0)
+				const measuredCoveredHeight = Number(this.inputBarHeight) || 0
+				const drawerHeight = Number(this.agentTodoDrawerHeight) || 0
+				const overlaySafetyGap = this.hasAgentTodos
+					? Math.max(
+						uni.upx2px(this.agentTodoExpanded ? 110 : 124),
+						Math.round(drawerHeight * (this.agentTodoExpanded ? 0.28 : 0.40))
+					)
+					: uni.upx2px(this.showShortcutPills ? 96 : 80)
+				const spacerBaseHeight = measuredCoveredHeight > 0 ? measuredCoveredHeight : legacyReserveHeight
+				const spacerHeight = spacerBaseHeight + overlaySafetyGap
 				return { height: `${Math.ceil(spacerHeight)}px` }
 			},
 			currentModelSupportsThinking() {
@@ -2777,6 +2823,84 @@
 				}
 			},
 
+			isAgentTodoTool(toolName) {
+				return AGENT_TODO_TOOL_NAMES.has(toolName)
+			},
+
+			isHiddenAgentTodoTool(toolName) {
+				return HIDDEN_AGENT_TODO_TOOL_NAMES.has(toolName)
+			},
+
+			cloneAgentTodos(todos = []) {
+				return (Array.isArray(todos) ? todos : []).map(todo => ({ ...todo }))
+			},
+
+			filterVisibleToolCalls(toolCalls = []) {
+				return (Array.isArray(toolCalls) ? toolCalls : []).filter(tc => !this.isHiddenAgentTodoTool(tc?.tool))
+			},
+
+			filterVisibleSegments(segments = []) {
+				return (Array.isArray(segments) ? segments : []).filter(seg => {
+					return !(seg?.type === 'tool' && this.isHiddenAgentTodoTool(seg.toolCall?.tool))
+				})
+			},
+
+			replaceAgentTodos(todos, { autoExpand = false } = {}) {
+				const nextTodos = this.cloneAgentTodos(todos)
+				this.agentTodos = nextTodos
+				this.agentTodoLoaded = true
+				if (nextTodos.length === 0) {
+					this.agentTodoExpanded = false
+				} else if (autoExpand) {
+					this.agentTodoExpanded = true
+				}
+				this.$nextTick(() => {
+					this.scheduleInputBarMeasure()
+				})
+			},
+
+			applyAgentTodoPayload(payload, { autoExpand = false } = {}) {
+				if (!payload || !Array.isArray(payload.todos)) return false
+				this.replaceAgentTodos(payload.todos, { autoExpand })
+				return true
+			},
+
+			syncAgentTodosFromToolCalls(toolCalls, { autoExpand = false } = {}) {
+				if (!Array.isArray(toolCalls)) return false
+				for (let i = toolCalls.length - 1; i >= 0; i--) {
+					const toolCall = toolCalls[i]
+					if (this.isAgentTodoTool(toolCall?.tool) && Array.isArray(toolCall?.result?.todos)) {
+						this.replaceAgentTodos(toolCall.result.todos, { autoExpand })
+						return true
+					}
+				}
+				return false
+			},
+
+			toggleAgentTodoDrawer() {
+				if (!this.agentTodos.length) return
+				this.agentTodoExpanded = !this.agentTodoExpanded
+				this.$nextTick(() => {
+					this.scheduleInputBarMeasure()
+				})
+			},
+
+			async loadAgentTodos() {
+				if (!this.conversationId) return
+				try {
+					const result = await getConversationTodos(this.conversationId)
+					this.replaceAgentTodos(result?.todos || [], {
+						autoExpand: Array.isArray(result?.todos) && result.todos.length > 0
+					})
+				} catch (error) {
+					console.warn('[SpaceChat] Failed to load agent todos:', error)
+					this.agentTodoLoaded = true
+					this.$nextTick(() => {
+						this.scheduleInputBarMeasure()
+					})
+				}
+			},
+
 			// ==================== Renderjs SSE 事件处理 ====================
 			onRenderjsSseEvents(data) {
 				handleSseEvents(data)
@@ -2957,16 +3081,42 @@
 
 			measureInputBarHeight() {
 				const query = uni.createSelectorQuery().in(this)
+				let barRect = null
+				let drawerRect = null
+				let cardRect = null
 				query.select('.input-bar').boundingClientRect(rect => {
-					if (!rect || !rect.height) return
-					const nextHeight = Math.ceil(rect.height)
-					if (Math.abs(nextHeight - this.inputBarHeight) > 1) {
+					barRect = rect
+				})
+				query.select('.stacked-agent-drawer').boundingClientRect(rect => {
+					drawerRect = rect
+				})
+				query.select('.input-card').boundingClientRect(rect => {
+					cardRect = rect
+				})
+				query.exec(() => {
+					const viewportHeight = uni.getSystemInfoSync().windowHeight || this._initialWindowHeight || 0
+					const topCandidates = [barRect?.top, drawerRect?.top, cardRect?.top].filter(v => typeof v === 'number')
+					const heightCandidates = [barRect?.height, cardRect?.height].filter(v => typeof v === 'number')
+					if (topCandidates.length === 0 && heightCandidates.length === 0) return
+					const overlayTop = topCandidates.length > 0 ? Math.min(...topCandidates) : 0
+					const baseHeight = heightCandidates.length > 0 ? Math.max(...heightCandidates) : 0
+					const coveredHeight = viewportHeight > 0
+						? Math.max(baseHeight, viewportHeight - overlayTop)
+						: baseHeight
+					const nextHeight = Math.ceil(coveredHeight)
+					const nextDrawerHeight = Math.ceil(drawerRect?.height || 0)
+					const heightChanged = Math.abs(nextHeight - this.inputBarHeight) > 1
+					const drawerChanged = Math.abs(nextDrawerHeight - this.agentTodoDrawerHeight) > 1
+					if (heightChanged) {
 						this.inputBarHeight = nextHeight
-						if (this.isAutoScrollEnabled) {
-							this.$nextTick(() => this.scrollToLatestMessage())
-						}
 					}
-				}).exec()
+					if (drawerChanged) {
+						this.agentTodoDrawerHeight = nextDrawerHeight
+					}
+					if ((heightChanged || drawerChanged) && this.isAutoScrollEnabled) {
+						this.$nextTick(() => this.scrollToLatestMessage())
+					}
+				})
 			},
 
 			isShortcutPillDisabled(pill) {
@@ -3676,6 +3826,7 @@
 			},
 
 			buildHistoryMessage(msg) {
+				const visibleToolCalls = this.filterVisibleToolCalls(msg.tool_calls || [])
 				const mapped = {
 					id: this.nextId++,
 					role: msg.role === 'user' ? 'user' : 'ai',
@@ -3685,13 +3836,13 @@
 					created_at: msg.created_at,
 					responseStatus: msg.response_status || 'completed'
 				}
-				if (mapped.role === 'ai' && msg.tool_calls && msg.tool_calls.length > 0) {
-					const segments = msg.tool_calls.map(tc => ({ type: 'tool', toolCall: { ...tc } }))
+				if (mapped.role === 'ai' && visibleToolCalls.length > 0) {
+					const segments = visibleToolCalls.map(tc => ({ type: 'tool', toolCall: { ...tc } }))
 					if (msg.content && msg.content.trim()) {
 						segments.push({ type: 'text', content: msg.content })
 					}
 					mapped.segments = segments
-					mapped.toolCalls = msg.tool_calls
+					mapped.toolCalls = visibleToolCalls.map(tc => ({ ...tc }))
 				}
 				return mapped
 			},
@@ -3713,12 +3864,17 @@
 				if (status.partial_thinking) {
 					aiMsg.thinkingContent = status.partial_thinking
 				}
-				if (Array.isArray(status.tool_calls) && status.tool_calls.length > 0) {
-					aiMsg.toolCalls = status.tool_calls.map(tc => ({ ...tc }))
-					aiMsg.streamSegments = status.tool_calls.map(tc => ({
+				this.syncAgentTodosFromToolCalls(status.tool_calls, { autoExpand: true })
+				const visibleToolCalls = this.filterVisibleToolCalls(status.tool_calls || [])
+				if (visibleToolCalls.length > 0) {
+					aiMsg.toolCalls = visibleToolCalls.map(tc => ({ ...tc }))
+					aiMsg.streamSegments = visibleToolCalls.map(tc => ({
 						type: 'tool',
 						toolCall: { ...tc }
 					}))
+				} else {
+					delete aiMsg.toolCalls
+					delete aiMsg.streamSegments
 				}
 				aiMsg.isStreaming = false
 				aiMsg.isWaitingOutput = false
@@ -3759,7 +3915,13 @@
 
 					// 2. Redis 缓存已过期，从数据库加载完整对话
 					if (!historyAlreadyLoaded) {
-						const result = await getConversation(this.conversationId)
+						const [result, todoResult] = await Promise.all([
+							getConversation(this.conversationId),
+							getConversationTodos(this.conversationId).catch((error) => {
+								console.warn('[SpaceChat] Failed to refresh agent todos during recovery:', error)
+								return null
+							})
+						])
 						this.messages = []
 						this.nextId = 1
 						this.messages = result.messages.map((m) => {
@@ -3796,6 +3958,11 @@
 							}
 							return msg
 						})
+						if (todoResult && Array.isArray(todoResult.todos)) {
+							this.replaceAgentTodos(todoResult.todos, { autoExpand: todoResult.todos.length > 0 })
+						} else {
+							this.agentTodoLoaded = true
+						}
 					}
 					clearPendingMessages(this.conversationId)
 					if (!historyAlreadyLoaded) {
@@ -3855,12 +4022,17 @@
 				if (status.partial_thinking) {
 					aiMsg.thinkingContent = status.partial_thinking
 				}
-				if (Array.isArray(status.tool_calls) && status.tool_calls.length > 0) {
-					aiMsg.toolCalls = status.tool_calls.map(tc => ({ ...tc }))
-					aiMsg.streamSegments = status.tool_calls.map(tc => ({
+				this.syncAgentTodosFromToolCalls(status.tool_calls, { autoExpand: true })
+				const visibleToolCalls = this.filterVisibleToolCalls(status.tool_calls || [])
+				if (visibleToolCalls.length > 0) {
+					aiMsg.toolCalls = visibleToolCalls.map(tc => ({ ...tc }))
+					aiMsg.streamSegments = visibleToolCalls.map(tc => ({
 						type: 'tool',
 						toolCall: { ...tc }
 					}))
+				} else {
+					delete aiMsg.toolCalls
+					delete aiMsg.streamSegments
 				}
 				if (status.is_stopped) {
 					aiMsg.responseStatus = 'stopped'
@@ -3986,6 +4158,7 @@
 					try {
 						const conv = await createConversation(this.spaceId, text.slice(0, 50))
 						this.conversationId = conv.id
+						await this.loadAgentTodos()
 						// 新对话创建成功后，保存用户消息到本地存储
 						savePendingMessage(this.conversationId, userMessage)
 					} catch (err) {
@@ -4090,6 +4263,9 @@
 								// 复制已保存的片段，并更新工具调用状态
 								for (const seg of msg.streamSegments) {
 									if (seg.type === 'tool') {
+										if (this.isHiddenAgentTodoTool(seg.toolCall?.tool)) {
+											continue
+										}
 										const tc = this.activeToolCalls.find(t => t.id === seg.toolCall.id)
 										const resolved = tc ? {
 											...tc,
@@ -4130,12 +4306,15 @@
 							// 清理流式片段
 							delete msg.streamSegments
 							// 保存工具调用记录（兼容旧逻辑）
-							if (this.activeToolCalls.length > 0) {
-								msg.toolCalls = this.activeToolCalls.map(tc => ({
+							const visibleToolCalls = this.filterVisibleToolCalls(this.activeToolCalls)
+							if (visibleToolCalls.length > 0) {
+								msg.toolCalls = visibleToolCalls.map(tc => ({
 									...tc,
 									arguments: tc.arguments ? { ...tc.arguments } : null,
 									result: tc.result ? { ...tc.result } : null
 								}))
+							} else {
+								delete msg.toolCalls
 							}
 							msg.isWaitingOutput = false
 							msg.isStreaming = false
@@ -4295,6 +4474,7 @@
 					try {
 						const conv = await createConversation(this.spaceId, text.slice(0, 50))
 						this.conversationId = conv.id
+						await this.loadAgentTodos()
 						savePendingMessage(this.conversationId, msg)
 					} catch {
 						this.isSendingMessage = false
@@ -4356,6 +4536,9 @@
 							if (aiMsg.streamSegments && aiMsg.streamSegments.length > 0) {
 								for (const seg of aiMsg.streamSegments) {
 									if (seg.type === 'tool') {
+										if (this.isHiddenAgentTodoTool(seg.toolCall?.tool)) {
+											continue
+										}
 										const tc = this.activeToolCalls.find(t => t.id === seg.toolCall.id)
 										const resolved = tc ? { ...tc } : { ...seg.toolCall }
 										// done 事件已到达，所有工具必定已完成；强制修正未收到 tool_call(done) 的残留 running 状态
@@ -4378,8 +4561,11 @@
 							aiMsg.content = fullContent
 							aiMsg.citations = citations || null
 							delete aiMsg.streamSegments
-							if (this.activeToolCalls.length > 0) {
-								aiMsg.toolCalls = this.activeToolCalls.map(tc => ({ ...tc }))
+							const visibleToolCalls = this.filterVisibleToolCalls(this.activeToolCalls)
+							if (visibleToolCalls.length > 0) {
+								aiMsg.toolCalls = visibleToolCalls.map(tc => ({ ...tc }))
+							} else {
+								delete aiMsg.toolCalls
 							}
 							aiMsg.isWaitingOutput = false
 							aiMsg.isStreaming = false
@@ -4470,7 +4656,13 @@
 			async loadConversationHistory() {
 				this.isLoadingHistory = true
 				try {
-					const result = await getConversation(this.conversationId)
+					const [result, todoResult] = await Promise.all([
+						getConversation(this.conversationId),
+						getConversationTodos(this.conversationId).catch((error) => {
+							console.warn('[SpaceChat] Failed to load agent todos:', error)
+							return null
+						})
+					])
 					this.nextId = 1
 					this.messages = result.messages.map((m) => {
 						const msg = this.buildHistoryMessage(m)
@@ -4506,6 +4698,11 @@
 						}
 						return msg
 					})
+					if (todoResult && Array.isArray(todoResult.todos)) {
+						this.replaceAgentTodos(todoResult.todos, { autoExpand: todoResult.todos.length > 0 })
+					} else {
+						this.agentTodoLoaded = true
+					}
 					// 后台监控 active 时，服务器数据已包含完整回复，清空缓存避免重复
 					const monitor = getActiveMonitor()
 					if (monitor && monitor.conversationId === this.conversationId) {
@@ -4579,6 +4776,13 @@
 				if (!msg) return
 
 				const { id, tool, status, success, result, arguments: args } = data
+				if (this.isAgentTodoTool(tool) && status === 'done') {
+					this.applyAgentTodoPayload(result, { autoExpand: true })
+				}
+				if (this.isHiddenAgentTodoTool(tool)) {
+					this.$forceUpdate()
+					return
+				}
 
 				if (status === 'running' || status === 'pending_confirmation' || !status) {
 					// 工具开始：关闭等待状态（显示工具卡片）
@@ -5941,7 +6145,10 @@
 				}
 				// 流式结束后：使用保存的片段，若无则回退到纯文本
 				if (msg.segments && msg.segments.length > 0) {
-					return msg.segments
+					const visibleSegments = this.filterVisibleSegments(msg.segments)
+					if (visibleSegments.length > 0) {
+						return visibleSegments
+					}
 				}
 				// 兼容旧数据：纯文本消息
 				if (msg.content) {
@@ -5958,7 +6165,7 @@
 
 				// 使用消息的实时片段数组（如果有）
 				if (msg.streamSegments && msg.streamSegments.length > 0) {
-					for (const seg of msg.streamSegments) {
+					for (const seg of this.filterVisibleSegments(msg.streamSegments)) {
 						if (seg.type === 'tool') {
 							// 同步最新的工具调用状态
 							const tc = this.activeToolCalls.find(t => t.id === seg.toolCall.id)
@@ -7254,14 +7461,33 @@
 		transition: bottom 0.25s ease;
 	}
 
+	.input-drawer-stack {
+		position: relative;
+		width: 100%;
+	}
+
+	.stacked-agent-drawer {
+		position: relative;
+		z-index: 0;
+		width: calc(100% - 44rpx);
+		margin: 0 auto -42rpx;
+	}
+
 	.input-card {
 		width: 100%;
 		position: relative;
+		z-index: 2;
 		background-color: rgb(36, 36, 36);
 		border-radius: 40rpx;
 		border: 2rpx solid rgba(255, 255, 255, 0.06);
 		box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.18);
 		overflow: hidden;
+	}
+
+	.input-drawer-stack-active .input-card {
+		box-shadow:
+			0 18rpx 36rpx rgba(0, 0, 0, 0.18),
+			0 4rpx 18rpx rgba(0, 0, 0, 0.12);
 	}
 
 	.input-field {
@@ -10112,6 +10338,12 @@
 		background: var(--chat-surface);
 		border-color: var(--chat-border);
 		box-shadow: var(--chat-shadow);
+	}
+
+	.chat-page.theme-light .input-drawer-stack-active .input-card {
+		box-shadow:
+			var(--chat-shadow),
+			0 18rpx 34rpx rgba(155, 129, 94, 0.10);
 	}
 
 	.chat-page.theme-light .nav-left {
