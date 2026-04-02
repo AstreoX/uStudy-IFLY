@@ -63,6 +63,21 @@ export function getConversationTodos(conversationId) {
 }
 
 /**
+ * 更新对话级 Agent Todo 完成状态
+ * @param {string} conversationId - 对话 ID
+ * @param {string} taskId - todo task_id
+ * @param {boolean} completed - 目标完成状态
+ * @returns {Promise<Object>} { todos: [] }
+ */
+export function updateConversationTodoStatus(conversationId, taskId, completed) {
+  return request({
+    url: `/api/conversations/${conversationId}/todos/${encodeURIComponent(taskId)}`,
+    method: 'PATCH',
+    data: { completed }
+  })
+}
+
+/**
  * 删除对话
  * @param {string} conversationId - 对话 ID
  * @returns {Promise<void>}

@@ -595,7 +595,6 @@
 						v-for="pill in shortcutPills"
 						:key="pill.id"
 						class="shortcut-pill"
-						:class="{ 'shortcut-pill-disabled': isShortcutPillDisabled(pill) }"
 						@click="handleShortcutPillTap(pill)"
 					>
 						<image class="shortcut-pill-icon" :src="pill.icon" mode="aspectFit"></image>
@@ -610,7 +609,9 @@
 						:theme-mode="homeThemeMode"
 						:items="agentTodos"
 						:expanded="agentTodoExpanded"
+						:loading-task-ids="agentTodoUpdatingTaskIds"
 						@toggle="toggleAgentTodoDrawer"
+						@toggle-item="handleAgentTodoToggle"
 					/>
 				</view>
 
@@ -786,7 +787,7 @@
 	import config from '@/config/index.js'
 	import { getSelectedModelId, setSelectedModelId, getThinkingMode, setThinkingMode } from '@/utils/storage'
 	import { getStoredThemeMode } from '@/utils/themeMode'
-	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, getConversationTodos, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage, getQuickChatToolTaskStatus, listQuickChatToolTasks, bindQuickChatToolTask, stopStreamingReply } from '@/api/chat'
+	import { createQuickChatConversation, sendQuickChatMessage, confirmToolExecution, getConversation, getConversationTodos, updateConversationTodoStatus, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage, getQuickChatToolTaskStatus, listQuickChatToolTasks, bindQuickChatToolTask, stopStreamingReply } from '@/api/chat'
 	import { executeCalendarTool } from '@/utils/calendar'
 	import { createCalendarEvent, getCalendarEvents, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendarEvents'
 	import { uploadAttachment, deleteAttachment, formatFileSize } from '@/api/attachment'
@@ -1006,6 +1007,7 @@
 				agentTodos: [],
 				agentTodoLoaded: false,
 				agentTodoExpanded: false,
+				agentTodoUpdatingTaskIds: [],
 
 				// 记忆工具最短显示时间跟踪
 				memoryToolStartTimes: {},    // { toolCallId: timestamp }
@@ -1237,7 +1239,7 @@
 			},
 			messageBottomSpacerStyle() {
 				const baseWindowHeight = this._initialWindowHeight || uni.getSystemInfoSync().windowHeight || 0
-				const shortcutPillsReserveHeight = this.showShortcutPills ? uni.upx2px(128) : 0
+				const shortcutPillsReserveHeight = this.showShortcutPills ? uni.upx2px(144) : 0
 				const legacyReserveHeight = (baseWindowHeight ? baseWindowHeight * 6 / 26 : uni.upx2px(280)) + shortcutPillsReserveHeight + (Number(this.keyboardHeight) || 0)
 				const measuredCoveredHeight = Number(this.inputBarHeight) || 0
 				const drawerHeight = Number(this.agentTodoDrawerHeight) || 0
@@ -1246,7 +1248,7 @@
 						uni.upx2px(this.agentTodoExpanded ? 110 : 124),
 						Math.round(drawerHeight * (this.agentTodoExpanded ? 0.28 : 0.40))
 					)
-					: uni.upx2px(this.showShortcutPills ? 96 : 80)
+					: uni.upx2px(this.showShortcutPills ? 104 : 80)
 				const spacerBaseHeight = measuredCoveredHeight > 0 ? measuredCoveredHeight : legacyReserveHeight
 				const spacerHeight = spacerBaseHeight + overlaySafetyGap
 				return { height: `${Math.ceil(spacerHeight)}px` }
@@ -1491,6 +1493,34 @@
 				this.$nextTick(() => {
 					this.scheduleInputBarMeasure()
 				})
+			},
+
+			isAgentTodoUpdating(taskId) {
+				return this.agentTodoUpdatingTaskIds.includes(taskId)
+			},
+
+			async handleAgentTodoToggle(payload) {
+				const taskId = payload?.taskId
+				const completed = !!payload?.completed
+				if (!taskId || this.isAgentTodoUpdating(taskId)) return
+				if (!this.conversationId) {
+					uni.showToast({ title: '待办尚未初始化', icon: 'none' })
+					return
+				}
+
+				this.agentTodoUpdatingTaskIds = [...this.agentTodoUpdatingTaskIds, taskId]
+				try {
+					const result = await updateConversationTodoStatus(this.conversationId, taskId, !completed)
+					if (Array.isArray(result?.todos)) {
+						this.replaceAgentTodos(result.todos, { autoExpand: true })
+					} else {
+						await this.loadAgentTodos()
+					}
+				} catch (error) {
+					uni.showToast({ title: error?.message || '更新待办失败', icon: 'none' })
+				} finally {
+					this.agentTodoUpdatingTaskIds = this.agentTodoUpdatingTaskIds.filter(id => id !== taskId)
+				}
 			},
 
 			async loadAgentTodos() {
@@ -4838,7 +4868,7 @@
 
 	.shortcut-pills-scroll {
 		width: 100%;
-		padding: 0 20rpx 18rpx;
+		padding: 0 16rpx 20rpx;
 		box-sizing: border-box;
 	}
 
@@ -4857,8 +4887,9 @@
 		align-items: center;
 		gap: 8rpx;
 		flex-shrink: 0;
-		padding: 8rpx 16rpx 8rpx 14rpx;
-		border-radius: 18rpx;
+		min-height: 56rpx;
+		padding: 10rpx 18rpx 10rpx 16rpx;
+		border-radius: 20rpx;
 		border: 2rpx solid var(--shortcut-pill-border);
 		background: var(--shortcut-pill-bg);
 		box-shadow: none;
@@ -4870,21 +4901,17 @@
 		filter: brightness(0.96);
 	}
 
-	.shortcut-pill-disabled {
-		opacity: 0.42;
-	}
-
 	.shortcut-pill-icon {
-		width: 20rpx;
-		height: 20rpx;
+		width: 22rpx;
+		height: 22rpx;
 		filter: brightness(0) invert(1);
 		opacity: 0.86;
 		flex-shrink: 0;
 	}
 
 	.shortcut-pill-text {
-		font-size: 22rpx;
-		line-height: 1;
+		font-size: 23rpx;
+		line-height: 1.1;
 		color: var(--shortcut-pill-text);
 		-webkit-text-fill-color: var(--shortcut-pill-text);
 		white-space: nowrap;
@@ -6430,11 +6457,6 @@
 	.chat-page.theme-light .shortcut-pill:active {
 		background: var(--chat-surface);
 		border-color: var(--chat-border-strong);
-	}
-
-	.chat-page.theme-light .shortcut-pill-disabled {
-		background: var(--chat-surface-soft);
-		opacity: 0.56;
 	}
 
 	.chat-page.theme-light .shortcut-pill-icon {
