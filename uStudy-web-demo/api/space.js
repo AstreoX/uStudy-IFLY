@@ -336,3 +336,16 @@ export function updateNote(spaceId, noteId, data) {
     data
   })
 }
+
+/**
+ * 删除笔记
+ * @param {string|number} spaceId
+ * @param {string|number} noteId
+ * @returns {Promise<void>}
+ */
+export function deleteNote(spaceId, noteId) {
+  return request({
+    url: `/api/spaces/${spaceId}/notes/${noteId}`,
+    method: 'DELETE'
+  })
+}
