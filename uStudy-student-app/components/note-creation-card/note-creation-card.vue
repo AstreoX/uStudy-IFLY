@@ -85,7 +85,7 @@
               <text class="ncc-tab" :class="{ 'ncc-tab-active': editMode === 'preview' }" @click="editMode = 'preview'">预览</text>
             </view>
           </view>
-          <textarea v-if="editMode === 'code'" class="ncc-textarea" v-model="editContent" placeholder="笔记内容 (Markdown)" :auto-height="false"></textarea>
+          <textarea v-if="editMode === 'code'" class="ncc-textarea" v-model="editContent" placeholder="笔记内容 (Markdown)" :auto-height="false" :maxlength="-1"></textarea>
           <view v-else class="ncc-preview-wrap"><MarkdownRender :content="editContent" :theme-mode="resolvedThemeMode" /></view>
         </view>
         <view class="ncc-btns-row">
@@ -163,7 +163,7 @@
               <text class="ncc-tab" :class="{ 'ncc-tab-active': editMode === 'preview' }" @click="editMode = 'preview'">预览</text>
             </view>
           </view>
-          <textarea v-if="editMode === 'code'" class="ncc-textarea" v-model="editContent" placeholder="笔记内容 (Markdown)" :auto-height="false"></textarea>
+          <textarea v-if="editMode === 'code'" class="ncc-textarea" v-model="editContent" placeholder="笔记内容 (Markdown)" :auto-height="false" :maxlength="-1"></textarea>
           <view v-else class="ncc-preview-wrap"><MarkdownRender :content="editContent" :theme-mode="resolvedThemeMode" /></view>
         </view>
         <view class="ncc-btns-row">

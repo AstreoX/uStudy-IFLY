@@ -556,7 +556,7 @@
 			</template>
 		</view>
 
-		<view class="message-bottom-spacer" :style="keyboardHeight > 0 ? { height: 'calc(100vh * 6 / 26 + ' + keyboardHeight + 'px)' } : {}"></view>
+		<view class="message-bottom-spacer" :style="messageBottomSpacerStyle"></view>
 		</scroll-view>
 
 
@@ -583,6 +583,26 @@
 					<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
 				</view>
 			</view>
+
+			<scroll-view
+				v-if="shortcutPills.length > 0"
+				class="shortcut-pills-scroll"
+				scroll-x
+				:show-scrollbar="false"
+			>
+				<view class="shortcut-pills-row">
+					<view
+						v-for="pill in shortcutPills"
+						:key="pill.id"
+						class="shortcut-pill"
+						:class="{ 'shortcut-pill-disabled': isShortcutPillDisabled(pill) }"
+						@click="handleShortcutPillTap(pill)"
+					>
+						<image class="shortcut-pill-icon" :src="pill.icon" mode="aspectFit"></image>
+						<text class="shortcut-pill-text">{{ pill.label }}</text>
+					</view>
+				</view>
+			</scroll-view>
 
 			<view class="input-card">
 				<!-- 待发送附件预览区域 -->
@@ -632,6 +652,8 @@
 						class="input-field"
 						v-model="inputText"
 						placeholder=""
+						:focus="inputFocusActive"
+						:cursor="inputCursor"
 						:maxlength="-1"
 						:adjust-position="false"
 						confirm-type="send"
@@ -767,6 +789,7 @@
 	import { savePendingMessage, getPendingMessages, removePendingMessage, savePendingMessagesFromArray, clearPendingMessages } from '@/utils/messageDraft'
 	import { startBackgroundMonitor, stopBackgroundMonitor, getActiveMonitor } from '@/utils/backgroundChatMonitor'
 	import { ensureAlbumWritePermission, ensureCameraPermission, isPermissionDenied, guideToSettings } from '@/utils/permission'
+	import { CHAT_PROMPT_PILL_ACTIONS, CHAT_PROMPT_PAGE_KEYS, getChatPromptPills } from '@/config/chatPromptPills.js'
 	// #ifdef APP-PLUS
 	import SseRenderjs from '@/components/sse-renderjs/sse-renderjs.vue'
 	// #endif
@@ -913,11 +936,14 @@
 				conversationId: null,
 				messages: [],
 				inputText: '',
+				inputFocusActive: false,
+				inputCursor: -1,
 				textareaHeight: 'auto',
 				textareaOverflow: 'hidden',
 				textareaMaxLines: 4, // 输入框可撑高的最大行数
 				textareaLineCount: 1, // 记录 linechange 上报的真实行数（用于非 H5 兜底）
 				keyboardHeight: 0,
+				inputBarHeight: 0,
 				_initialWindowHeight: 0, // 键盘弹出前的窗口高度，用于检测 adjustResize
 				nextId: 1,
 				cancelSSE: null,
@@ -1066,6 +1092,7 @@
 				// #ifdef H5
 				this.adjustTextareaHeight()
 				// #endif
+				this.scheduleInputBarMeasure()
 				this.scrollToLatestMessage()
 			})
 
@@ -1087,6 +1114,7 @@
 					this.isAutoScrollEnabled = true
 					this.$nextTick(() => {
 						this.scrollToLatestMessage()
+						this.scheduleInputBarMeasure()
 					})
 				}
 			})
@@ -1121,6 +1149,14 @@
 				cancelAnimationFrame(this._scrollRAF)
 				this._scrollRAF = null
 			}
+			if (this._inputBarMeasureRAF) {
+				cancelAnimationFrame(this._inputBarMeasureRAF)
+				this._inputBarMeasureRAF = null
+			}
+			if (this._inputBarMeasureTimer) {
+				clearTimeout(this._inputBarMeasureTimer)
+				this._inputBarMeasureTimer = null
+			}
 			if (this.cancelSSE) {
 				this.cancelSSE()
 				this.cancelSSE = null
@@ -1154,6 +1190,24 @@
 			},
 			canSend() {
 				return this.inputText.trim().length > 0 && !this.isInputTooLong
+			},
+			pendingAttachmentCount() {
+				return this.pendingAttachments.length
+			},
+			uploadingFileCount() {
+				return this.uploadingFiles.length
+			},
+			messageBottomSpacerStyle() {
+				const baseWindowHeight = this._initialWindowHeight || uni.getSystemInfoSync().windowHeight || 0
+				const shortcutPillsReserveHeight = this.shortcutPills.length > 0 ? uni.upx2px(128) : 0
+				const legacyReserveHeight = (baseWindowHeight ? baseWindowHeight * 6 / 26 : uni.upx2px(280)) + shortcutPillsReserveHeight
+				const overlayBuffer = uni.upx2px(28)
+				const measuredReserveHeight = (Number(this.inputBarHeight) || 0) + overlayBuffer
+				const spacerHeight = Math.max(legacyReserveHeight, measuredReserveHeight) + (Number(this.keyboardHeight) || 0)
+				return { height: `${Math.ceil(spacerHeight)}px` }
+			},
+			shortcutPills() {
+				return getChatPromptPills(CHAT_PROMPT_PAGE_KEYS.QUICK_CHAT)
 			},
 			selectedModelName() {
 				const model = this.availableModels.find(m => m.id === this.selectedModelId)
@@ -1198,8 +1252,21 @@
 				// #ifdef H5
 				this.$nextTick(() => {
 					this.adjustTextareaHeight()
+					this.scheduleInputBarMeasure()
 				})
 				// #endif
+				// #ifndef H5
+				this.scheduleInputBarMeasure()
+				// #endif
+			},
+			pendingAttachmentCount() {
+				this.scheduleInputBarMeasure()
+			},
+			uploadingFileCount() {
+				this.scheduleInputBarMeasure()
+			},
+			keyboardHeight() {
+				this.scheduleInputBarMeasure()
 			}
 		},
 
@@ -1589,6 +1656,7 @@
 				this.textareaHeight = lineH * visibleLines + padV + 'px'
 				this.textareaOverflow = normalizedLineCount > maxLines ? 'auto' : 'hidden'
 				// #endif
+				this.scheduleInputBarMeasure()
 			},
 
 			adjustTextareaHeight() {
@@ -1644,6 +1712,90 @@
 				} else {
 					this.textareaOverflow = 'hidden'
 				}
+				this.scheduleInputBarMeasure()
+			},
+
+			scheduleInputBarMeasure() {
+				if (this._inputBarMeasureTimer) {
+					clearTimeout(this._inputBarMeasureTimer)
+					this._inputBarMeasureTimer = null
+				}
+				if (this._inputBarMeasureRAF) {
+					cancelAnimationFrame(this._inputBarMeasureRAF)
+					this._inputBarMeasureRAF = null
+				}
+				this.$nextTick(() => {
+					const runMeasure = () => {
+						this._inputBarMeasureTimer = null
+						this._inputBarMeasureRAF = null
+						this.measureInputBarHeight()
+					}
+					if (typeof requestAnimationFrame === 'function') {
+						this._inputBarMeasureRAF = requestAnimationFrame(runMeasure)
+						return
+					}
+					this._inputBarMeasureTimer = setTimeout(runMeasure, 0)
+				})
+			},
+
+			measureInputBarHeight() {
+				const query = uni.createSelectorQuery().in(this)
+				query.select('.input-bar').boundingClientRect(rect => {
+					if (!rect || !rect.height) return
+					const nextHeight = Math.ceil(rect.height)
+					if (Math.abs(nextHeight - this.inputBarHeight) > 1) {
+						this.inputBarHeight = nextHeight
+						if (this.isAutoScrollEnabled) {
+							this.$nextTick(() => this.scrollToLatestMessage())
+						}
+					}
+				}).exec()
+			},
+
+			isShortcutPillDisabled(pill) {
+				return pill.actionType === CHAT_PROMPT_PILL_ACTIONS.SEND && this.isAiStreaming
+			},
+
+			handleShortcutPillTap(pill) {
+				if (!pill || this.isShortcutPillDisabled(pill)) return
+
+				if (pill.actionType === CHAT_PROMPT_PILL_ACTIONS.FILL) {
+					this.inputText = pill.promptText
+					this.$nextTick(() => {
+						this.adjustTextareaHeight()
+						this.focusInputToEnd()
+					})
+					return
+				}
+
+				this.inputText = pill.promptText
+				this.sendMessage()
+			},
+
+			focusInputToEnd() {
+				const cursor = (this.inputText || '').length
+				this.inputFocusActive = false
+				this.inputCursor = cursor
+
+				this.$nextTick(() => {
+					this.inputCursor = cursor
+					this.inputFocusActive = true
+
+					// #ifdef H5
+					const ref = this.$refs.textareaRef
+					const el = ref && ref.$el
+						? (ref.$el.querySelector('textarea') || ref.$el)
+						: ref
+					if (el && typeof el.focus === 'function') {
+						setTimeout(() => {
+							el.focus()
+							if (typeof el.setSelectionRange === 'function') {
+								el.setSelectionRange(cursor, cursor)
+							}
+						}, 0)
+					}
+					// #endif
+				})
 			},
 
 			goBack() {
@@ -3533,6 +3685,7 @@
 			},
 
 			onInputFocus() {
+				this.inputFocusActive = true
 				const sysInfo = uni.getSystemInfoSync()
 				console.log(`[QuickChat-KB] onInputFocus: currentKeyboardH=${this.keyboardHeight}px, screenH=${sysInfo.screenHeight}, windowH=${sysInfo.windowHeight}, model=${sysInfo.model}`)
 				if (this.isAutoScrollEnabled) {
@@ -3541,6 +3694,7 @@
 			},
 
 			onInputBlur() {
+				this.inputFocusActive = false
 				console.log(`[QuickChat-KB] onInputBlur: keyboardH=${this.keyboardHeight}px (应即将归零)`)
 				// keyboardHeight 会通过 onKeyboardHeightChange 自动重置
 			},
@@ -4462,6 +4616,60 @@
 		box-sizing: border-box;
 		resize: none;
 		overflow-y: hidden;
+	}
+
+	.shortcut-pills-scroll {
+		width: 100%;
+		padding: 0 20rpx 18rpx;
+		box-sizing: border-box;
+	}
+
+	.shortcut-pills-row {
+		display: inline-flex;
+		align-items: center;
+		gap: 12rpx;
+		padding-right: 4rpx;
+	}
+
+	.shortcut-pill {
+		--shortcut-pill-bg: #2A2C31;
+		--shortcut-pill-border: #4A4D55;
+		--shortcut-pill-text: #E2E4E8;
+		display: inline-flex;
+		align-items: center;
+		gap: 8rpx;
+		flex-shrink: 0;
+		padding: 8rpx 16rpx 8rpx 14rpx;
+		border-radius: 18rpx;
+		border: 2rpx solid var(--shortcut-pill-border);
+		background: var(--shortcut-pill-bg);
+		box-shadow: none;
+		transition: transform 0.15s ease, filter 0.15s ease, border-color 0.15s ease;
+	}
+
+	.shortcut-pill:active {
+		transform: scale(0.97);
+		filter: brightness(0.96);
+	}
+
+	.shortcut-pill-disabled {
+		opacity: 0.42;
+	}
+
+	.shortcut-pill-icon {
+		width: 20rpx;
+		height: 20rpx;
+		filter: brightness(0) invert(1);
+		opacity: 0.86;
+		flex-shrink: 0;
+	}
+
+	.shortcut-pill-text {
+		font-size: 22rpx;
+		line-height: 1;
+		color: var(--shortcut-pill-text);
+		-webkit-text-fill-color: var(--shortcut-pill-text);
+		white-space: nowrap;
 	}
 
 	.input-bottom-row {
@@ -5984,6 +6192,35 @@
 		background: var(--chat-surface-strong);
 		border-color: var(--chat-border);
 		box-shadow: var(--chat-shadow-soft);
+	}
+
+	.chat-page.theme-light .shortcut-pill {
+		--shortcut-pill-bg: var(--chat-surface-strong);
+		--shortcut-pill-border: var(--chat-border);
+		--shortcut-pill-text: var(--chat-text-primary);
+		background: var(--chat-surface-strong);
+		border-color: var(--chat-border);
+		box-shadow: var(--chat-shadow-soft);
+	}
+
+	.chat-page.theme-light .shortcut-pill:active {
+		background: var(--chat-surface);
+		border-color: var(--chat-border-strong);
+	}
+
+	.chat-page.theme-light .shortcut-pill-disabled {
+		background: var(--chat-surface-soft);
+		opacity: 0.56;
+	}
+
+	.chat-page.theme-light .shortcut-pill-icon {
+		filter: brightness(0) saturate(100%);
+		opacity: 0.72;
+	}
+
+	.chat-page.theme-light .shortcut-pill-text {
+		color: var(--chat-text-primary);
+		-webkit-text-fill-color: var(--chat-text-primary);
 	}
 
 	.chat-page.theme-light .input-action-icon:not(.send-action-icon),

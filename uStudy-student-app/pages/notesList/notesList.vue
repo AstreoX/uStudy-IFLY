@@ -16,8 +16,13 @@
         <text class="nav-title">笔记管理</text>
         <text v-if="spaceName" class="nav-subtitle">{{ spaceName }}</text>
       </view>
-      <view class="nav-action" @click="showCreateFolderDialog">
-        <image class="nav-icon" src="/static/icons/lucide/folder-plus.svg" mode="aspectFit"></image>
+      <view class="nav-actions">
+        <view class="nav-action" @click="startCreateNote">
+          <image class="nav-icon" src="/static/icons/lucide/plus.svg" mode="aspectFit"></image>
+        </view>
+        <view class="nav-action" @click="showCreateFolderDialog">
+          <image class="nav-icon" src="/static/icons/lucide/folder-plus.svg" mode="aspectFit"></image>
+        </view>
       </view>
     </view>
 
@@ -148,7 +153,7 @@
     </scroll-view>
 
     <!-- Note Detail Overlay -->
-    <view v-if="showNoteDetail" class="note-detail-overlay" @click="closeNoteDetail">
+    <view v-if="showNoteDetail && !showNoteEdit" class="note-detail-overlay" @click="closeNoteDetail">
       <view class="overlay-bg">
         <view class="bg-mesh"></view>
         <view class="bg-glow bg-glow-blue"></view>
@@ -244,7 +249,7 @@
               <image class="detail-circle-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
             </view>
             <view class="detail-title-wrap">
-              <text class="detail-title-main">编辑笔记</text>
+              <text class="detail-title-main">{{ isCreatingNote ? '新建笔记' : '编辑笔记' }}</text>
               <text v-if="editingNodeLabel" class="detail-title-sub">{{ editingNodeLabel }}</text>
             </view>
           </view>
@@ -254,12 +259,12 @@
             </view>
             <view class="edit-save-pill" @click="saveNoteEdit">
               <image class="edit-save-icon" src="/static/icons/lucide/save.svg" mode="aspectFit"></image>
-              <text class="edit-save-text">{{ isSaving ? '保存中...' : '保存' }}</text>
+              <text class="edit-save-text">{{ isSaving ? (isCreatingNote ? '创建中...' : '保存中...') : (isCreatingNote ? '创建' : '保存') }}</text>
             </view>
           </view>
         </view>
         <!-- Form Sections -->
-        <view class="edit-scroll" style="overflow-y: auto;">
+        <view class="edit-scroll">
           <view class="edit-form">
             <!-- Node Section -->
             <view class="edit-section">
@@ -282,6 +287,7 @@
                 placeholder="输入笔记标题"
                 maxlength="200"
                 placeholder-style="color: #5C5B59"
+                :adjust-position="false"
               />
             </view>
             <!-- Content Section -->
@@ -311,10 +317,16 @@
                 <textarea
                   v-if="editPreviewMode === 'source'"
                   class="edit-textarea"
-                  v-model="editContent"
+                  :value="editContent"
                   placeholder="笔记内容（支持 Markdown）"
                   placeholder-style="color: #5C5B59"
-                  auto-height
+                  :maxlength="-1"
+                  :fixed="true"
+                  :adjust-position="false"
+                  :auto-height="false"
+                  :cursor-spacing="24"
+                  :show-confirm-bar="false"
+                  @input="onEditContentInput"
                 />
                 <view v-else class="edit-preview-wrap">
                   <markdown-render v-if="editContent" :content="editContent" :theme-mode="homeThemeMode" />
@@ -486,7 +498,7 @@
 </template>
 
 <script>
-import { getSpaceNotes, getNoteDetail, updateNote, deleteNote } from '@/api/note'
+import { getSpaceNotes, getNoteDetail, createNote, updateNote, deleteNote } from '@/api/note'
 import { getFolders, createFolder, updateFolder, deleteFolder as deleteFolderApi, moveNotes } from '@/api/folder'
 import { getSpace, getSpaceMembers, getSpaceGraph } from '@/api/space'
 import { useUserStore } from '@/store/user'
@@ -520,6 +532,7 @@ export default {
       selectedNote: null,
       detailLoading: false,
       showNoteEdit: false,
+      noteEditMode: 'edit',
       editNoteId: null,
       editTitle: '',
       editContent: '',
@@ -565,6 +578,10 @@ export default {
   },
 
   computed: {
+    isCreatingNote() {
+      return this.noteEditMode === 'create'
+    },
+
     deleteModalContent() {
       return `确定要删除笔记「${this.noteToDelete ? this.getNoteTitle(this.noteToDelete) : ''}」吗？此操作无法撤销。`
     },
@@ -891,8 +908,24 @@ export default {
       this.selectedNote = null
     },
 
+    startCreateNote() {
+      this.noteEditMode = 'create'
+      this.showNoteDetail = false
+      this.selectedNote = null
+      this.editNoteId = null
+      this.editTitle = ''
+      this.editContent = ''
+      this.editingNodeLabel = ''
+      this.editingNodeId = null
+      this.editingNote = null
+      this.editPreviewMode = 'source'
+      this.showNodePicker = false
+      this.showNoteEdit = true
+    },
+
     startEditNote(note) {
       if (!note || !this.canEditNote(note)) return
+      this.noteEditMode = 'edit'
       this.editNoteId = note.id
       this.editTitle = note.title || ''
       this.editContent = note.content || ''
@@ -905,11 +938,19 @@ export default {
 
     closeNoteEdit() {
       this.showNoteEdit = false
+      this.showNodePicker = false
+      this.noteEditMode = 'edit'
+      this.editNoteId = null
       this.editingNote = null
+      this.editPreviewMode = 'source'
     },
 
     toggleEditPreview(mode) {
       this.editPreviewMode = mode
+    },
+
+    onEditContentInput(e) {
+      this.editContent = e?.detail?.value || ''
     },
 
     async openNodePicker() {
@@ -938,30 +979,49 @@ export default {
     async saveNoteEdit() {
       if (this.isSaving) return
       this.isSaving = true
+      const isCreating = this.isCreatingNote
       try {
-        const updateData = {
+        const notePayload = {
           title: this.editTitle,
           content: this.editContent,
           node_id: this.editingNodeId || null
         }
-        await updateNote(this.spaceId, this.editNoteId, updateData)
-        const updatedFields = {
-          title: this.editTitle,
-          content: this.editContent,
-          node_id: this.editingNodeId || null,
-          node_label: this.editingNodeLabel || ''
-        }
-        const idx = this.notes.findIndex(n => n.id === this.editNoteId)
-        if (idx !== -1) {
-          this.notes.splice(idx, 1, { ...this.notes[idx], ...updatedFields })
-        }
-        if (this.selectedNote?.id === this.editNoteId) {
-          this.selectedNote = { ...this.selectedNote, ...updatedFields }
+
+        if (isCreating) {
+          const createdNote = await createNote(this.spaceId, {
+            ...notePayload,
+            folder_id: this.currentFolderId || null
+          })
+          await Promise.all([this.loadFolders(), this.loadNotes()])
+          if (createdNote?.id) {
+            this.selectedNote = {
+              ...createdNote,
+              node_label: this.editingNodeLabel || createdNote.node_label || ''
+            }
+          }
+        } else {
+          await updateNote(this.spaceId, this.editNoteId, notePayload)
+          const updatedFields = {
+            title: this.editTitle,
+            content: this.editContent,
+            node_id: this.editingNodeId || null,
+            node_label: this.editingNodeLabel || ''
+          }
+          const idx = this.notes.findIndex(n => n.id === this.editNoteId)
+          if (idx !== -1) {
+            this.notes.splice(idx, 1, { ...this.notes[idx], ...updatedFields })
+          }
+          if (this.selectedNote?.id === this.editNoteId) {
+            this.selectedNote = { ...this.selectedNote, ...updatedFields }
+          }
         }
         this.showNoteEdit = false
-        this.showCustomToast('已保存', 'success')
+        this.noteEditMode = 'edit'
+        this.editNoteId = null
+        this.editingNote = null
+        this.showCustomToast(isCreating ? '已创建笔记' : '已保存', 'success')
       } catch (e) {
-        this.showCustomToast(e?.message || '保存失败', 'error')
+        this.showCustomToast(e?.message || (isCreating ? '创建失败' : '保存失败'), 'error')
       } finally {
         this.isSaving = false
       }
@@ -1096,6 +1156,12 @@ export default {
         if (this.selectedNote?.id === this.noteToDelete.id) {
           this.showNoteDetail = false
           this.selectedNote = null
+        }
+        if (this.editNoteId === this.noteToDelete.id) {
+          this.showNoteEdit = false
+          this.noteEditMode = 'edit'
+          this.editNoteId = null
+          this.editingNote = null
         }
         this.showCustomToast('已删除', 'success')
       } catch (e) {
@@ -1255,6 +1321,13 @@ export default {
 .nav-spacer {
   width: 72rpx;
   height: 72rpx;
+  flex-shrink: 0;
+}
+
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
   flex-shrink: 0;
 }
 
@@ -1870,6 +1943,7 @@ export default {
   gap: 32rpx;
   padding: 0 40rpx 40rpx 40rpx;
   min-height: calc(100vh - 200rpx);
+  box-sizing: border-box;
 }
 
 .edit-section {
@@ -2000,25 +2074,37 @@ export default {
 /* Content Box */
 .edit-content-box {
   flex: 1;
-  min-height: 400rpx;
+  min-height: 520rpx;
+  height: 520rpx;
+  max-height: 520rpx;
   background: rgb(36, 36, 36);
   border: 2rpx solid rgba(255, 255, 255, 0.06);
   border-radius: 24rpx;
-  padding: 28rpx;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .edit-textarea {
   width: 100%;
-  min-height: 360rpx;
+  height: 100%;
+  min-height: 520rpx;
+  padding: 28rpx;
   font-size: 28rpx;
-  color: rgba(248, 248, 248, 0.85);
+  color: rgb(248, 248, 248);
+  -webkit-text-fill-color: rgb(248, 248, 248);
   line-height: 1.7;
   background: transparent;
   border: none;
+  box-sizing: border-box;
 }
 
 .edit-preview-wrap {
-  /* rendered markdown preview inside edit */
+  width: 100%;
+  height: 100%;
+  min-height: 520rpx;
+  padding: 28rpx;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 /* ========== Artifact Action Bar ========== */

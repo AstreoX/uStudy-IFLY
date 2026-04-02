@@ -156,17 +156,14 @@
 							<text class="memory-tool-text">{{ getMemoryToolText(seg.toolCall.tool) }}</text>
 						</view>
 
-						<!-- 规划类工具 (get_tool_details)：行内银光掠过 -->
+						<!-- 上下文工具：行内银色状态文字 -->
 						<view
-							v-else-if="seg.type === 'tool' && isPlanningTool(seg.toolCall.tool)"
-							:key="'planning-tool-' + segIdx"
+							v-else-if="seg.type === 'tool' && isInlineContextTool(seg.toolCall.tool)"
+							:key="'inline-context-tool-' + segIdx"
 							class="planning-tool-inline"
-							:class="{
-								'planning-tool-active': seg.toolCall.status === 'running',
-								'planning-tool-done': seg.toolCall.status === 'done'
-							}"
+							:class="getInlineContextToolStateClass(seg.toolCall)"
 						>
-							<text class="planning-tool-text">{{ planningToolText }}</text>
+							<text class="planning-tool-text">{{ getInlineContextToolText(seg.toolCall) }}</text>
 						</view>
 
 						<!-- 复习工具：pill + 可折叠详情卡片 -->
@@ -1358,7 +1355,7 @@
 			</template>
 		</view>
 
-		<view class="message-bottom-spacer" :style="keyboardHeight > 0 ? { height: 'calc(100vh * 6 / 26 + ' + keyboardHeight + 'px)' } : {}"></view>
+		<view class="message-bottom-spacer" :style="messageBottomSpacerStyle"></view>
 		</scroll-view>
 
 		<!-- 弹出菜单遮罩 -->
@@ -1439,6 +1436,26 @@
 				</view>
 			</view>
 
+			<scroll-view
+				v-if="shortcutPills.length > 0"
+				class="shortcut-pills-scroll"
+				scroll-x
+				:show-scrollbar="false"
+			>
+				<view class="shortcut-pills-row">
+					<view
+						v-for="pill in shortcutPills"
+						:key="pill.id"
+						class="shortcut-pill"
+						:class="{ 'shortcut-pill-disabled': isShortcutPillDisabled(pill) }"
+						@click="handleShortcutPillTap(pill)"
+					>
+						<image class="shortcut-pill-icon" :src="pill.icon" mode="aspectFit"></image>
+						<text class="shortcut-pill-text">{{ pill.label }}</text>
+					</view>
+				</view>
+			</scroll-view>
+
 			<view class="input-card">
 				<!-- 待发送附件预览区域 -->
 				<view v-if="pendingAttachments.length > 0 || uploadingFiles.length > 0" class="pending-attachments-area">
@@ -1487,6 +1504,8 @@
 						class="input-field"
 						v-model="inputText"
 						placeholder=""
+						:focus="inputFocusActive"
+						:cursor="inputCursor"
 						:maxlength="-1"
 						:adjust-position="false"
 						confirm-type="send"
@@ -1750,6 +1769,7 @@
 	import { createNote } from '@/api/note'
 	import { ensureAlbumWritePermission, ensureCameraPermission, isPermissionDenied, guideToSettings } from '@/utils/permission'
 	import { getStoredThemeMode } from '@/utils/themeMode'
+	import { CHAT_PROMPT_PILL_ACTIONS, CHAT_PROMPT_PAGE_KEYS, getChatPromptPills } from '@/config/chatPromptPills.js'
 	// #ifdef APP-PLUS
 	import SseRenderjs from '@/components/sse-renderjs/sse-renderjs.vue'
 	// #endif
@@ -1896,9 +1916,36 @@
 		web_crawl: '/static/icons/phosphor-icons/SVGs/regular/globe.svg'
 	}
 
-	// 规划类工具（行内银光掠过效果）
-	const PLANNING_TOOLS = new Set(['get_tool_details'])
-	const PLANNING_TOOL_TEXT = '正在规划下一步……'
+	// 上下文工具（行内银色状态文字）
+	const INLINE_CONTEXT_TOOL_CONFIG = {
+		get_tool_details: {
+			running: '正在规划下一步……',
+			done: '',
+			persistDone: false
+		},
+		get_context_memories: {
+			running: '正在召回相关记忆',
+			done: '已召回相关记忆',
+			persistDone: true
+		},
+		get_context_documents: {
+			running: '正在检索相关资料',
+			done: '已检索相关资料',
+			persistDone: true
+		},
+		get_previous_context: {
+			running: '正在获取前序记忆',
+			done: '已获取前序记忆',
+			persistDone: true
+		},
+		get_guidance: {
+			running: '正在规划下一步……',
+			done: '',
+			persistDone: false
+		}
+	}
+
+	const INLINE_CONTEXT_TOOLS = new Set(Object.keys(INLINE_CONTEXT_TOOL_CONFIG))
 
 	// 记忆类工具集合（使用行内银光掠过效果）
 	const MEMORY_TOOLS = new Set([
@@ -2050,11 +2097,14 @@
 				spaceTitle: '学习空间',
 				messages: [],
 				inputText: '',
+				inputFocusActive: false,
+				inputCursor: -1,
 				textareaHeight: 'auto',
 				textareaOverflow: 'hidden',
 				textareaMaxLines: 4, // 输入框可撑高的最大行数
 				textareaLineCount: 1, // 记录 linechange 上报的真实行数（用于非 H5 兜底）
 				keyboardHeight: 0,
+				inputBarHeight: 0,
 				_initialWindowHeight: 0, // 键盘弹出前的窗口高度，用于检测 adjustResize
 				nextId: 1,
 				activeMoreMsgId: null,
@@ -2214,9 +2264,6 @@
 			miniGraphNodeLabelShadowColor() {
 				return this.isLightTheme ? 'rgba(255, 250, 244, 0.96)' : 'rgba(0, 0, 0, 0.45)'
 			},
-			planningToolText() {
-				return PLANNING_TOOL_TEXT
-			},
 			isAiStreaming() {
 				return this.messages.some(msg => msg.role === 'ai' && msg.isStreaming)
 			},
@@ -2238,9 +2285,27 @@
 			canSend() {
 				return this.inputText.trim().length > 0 && !this.isInputTooLong
 			},
+			pendingAttachmentCount() {
+				return this.pendingAttachments.length
+			},
+			uploadingFileCount() {
+				return this.uploadingFiles.length
+			},
 			selectedModelName() {
 				const model = this.availableModels.find(m => m.id === this.selectedModelId)
 				return model ? model.display_name : '模型'
+			},
+			shortcutPills() {
+				return getChatPromptPills(CHAT_PROMPT_PAGE_KEYS.SPACE_CHAT)
+			},
+			messageBottomSpacerStyle() {
+				const baseWindowHeight = this._initialWindowHeight || uni.getSystemInfoSync().windowHeight || 0
+				const shortcutPillsReserveHeight = this.shortcutPills.length > 0 ? uni.upx2px(128) : 0
+				const legacyReserveHeight = (baseWindowHeight ? baseWindowHeight * 6 / 26 : uni.upx2px(280)) + shortcutPillsReserveHeight
+				const overlayBuffer = uni.upx2px(28)
+				const measuredReserveHeight = (Number(this.inputBarHeight) || 0) + overlayBuffer
+				const spacerHeight = Math.max(legacyReserveHeight, measuredReserveHeight) + (Number(this.keyboardHeight) || 0)
+				return { height: `${Math.ceil(spacerHeight)}px` }
 			},
 			currentModelSupportsThinking() {
 				const model = this.availableModels.find(m => m.id === this.selectedModelId)
@@ -2452,6 +2517,7 @@
 				// #ifdef H5
 				this.adjustTextareaHeight()
 				// #endif
+				this.scheduleInputBarMeasure()
 				this.scrollToLatestMessage()
 
 				// 组件准备就绪后发送待发送的初始消息
@@ -2489,6 +2555,7 @@
 					this.isAutoScrollEnabled = true
 					this.$nextTick(() => {
 						this.scrollToLatestMessage()
+						this.scheduleInputBarMeasure()
 					})
 				}
 			}
@@ -2531,6 +2598,14 @@
 				cancelAnimationFrame(this._scrollRAF)
 				this._scrollRAF = null
 			}
+			if (this._inputBarMeasureRAF) {
+				cancelAnimationFrame(this._inputBarMeasureRAF)
+				this._inputBarMeasureRAF = null
+			}
+			if (this._inputBarMeasureTimer) {
+				clearTimeout(this._inputBarMeasureTimer)
+				this._inputBarMeasureTimer = null
+			}
 
 			// 清理流式回复定时器
 			if (this.streamInterval) {
@@ -2565,8 +2640,21 @@
 				// #ifdef H5
 				this.$nextTick(() => {
 					this.adjustTextareaHeight()
+					this.scheduleInputBarMeasure()
 				})
 				// #endif
+				// #ifndef H5
+				this.scheduleInputBarMeasure()
+				// #endif
+			},
+			pendingAttachmentCount() {
+				this.scheduleInputBarMeasure()
+			},
+			uploadingFileCount() {
+				this.scheduleInputBarMeasure()
+			},
+			keyboardHeight() {
+				this.scheduleInputBarMeasure()
 			}
 		},
 
@@ -2783,6 +2871,7 @@
 				this.textareaHeight = lineH * visibleLines + padV + 'px'
 				this.textareaOverflow = normalizedLineCount > maxLines ? 'auto' : 'hidden'
 				// #endif
+				this.scheduleInputBarMeasure()
 			},
 
 			adjustTextareaHeight() {
@@ -2840,6 +2929,90 @@
 				} else {
 					this.textareaOverflow = 'hidden'
 				}
+				this.scheduleInputBarMeasure()
+			},
+
+			scheduleInputBarMeasure() {
+				if (this._inputBarMeasureTimer) {
+					clearTimeout(this._inputBarMeasureTimer)
+					this._inputBarMeasureTimer = null
+				}
+				if (this._inputBarMeasureRAF) {
+					cancelAnimationFrame(this._inputBarMeasureRAF)
+					this._inputBarMeasureRAF = null
+				}
+				this.$nextTick(() => {
+					const runMeasure = () => {
+						this._inputBarMeasureTimer = null
+						this._inputBarMeasureRAF = null
+						this.measureInputBarHeight()
+					}
+					if (typeof requestAnimationFrame === 'function') {
+						this._inputBarMeasureRAF = requestAnimationFrame(runMeasure)
+						return
+					}
+					this._inputBarMeasureTimer = setTimeout(runMeasure, 0)
+				})
+			},
+
+			measureInputBarHeight() {
+				const query = uni.createSelectorQuery().in(this)
+				query.select('.input-bar').boundingClientRect(rect => {
+					if (!rect || !rect.height) return
+					const nextHeight = Math.ceil(rect.height)
+					if (Math.abs(nextHeight - this.inputBarHeight) > 1) {
+						this.inputBarHeight = nextHeight
+						if (this.isAutoScrollEnabled) {
+							this.$nextTick(() => this.scrollToLatestMessage())
+						}
+					}
+				}).exec()
+			},
+
+			isShortcutPillDisabled(pill) {
+				return pill.actionType === CHAT_PROMPT_PILL_ACTIONS.SEND && this.isAiStreaming
+			},
+
+			handleShortcutPillTap(pill) {
+				if (!pill || this.isShortcutPillDisabled(pill)) return
+
+				if (pill.actionType === CHAT_PROMPT_PILL_ACTIONS.FILL) {
+					this.inputText = pill.promptText
+					this.$nextTick(() => {
+						this.adjustTextareaHeight()
+						this.focusInputToEnd()
+					})
+					return
+				}
+
+				this.inputText = pill.promptText
+				this.sendMessage()
+			},
+
+			focusInputToEnd() {
+				const cursor = (this.inputText || '').length
+				this.inputFocusActive = false
+				this.inputCursor = cursor
+
+				this.$nextTick(() => {
+					this.inputCursor = cursor
+					this.inputFocusActive = true
+
+					// #ifdef H5
+					const ref = this.$refs.textareaRef
+					const el = ref && ref.$el
+						? (ref.$el.querySelector('textarea') || ref.$el)
+						: ref
+					if (el && typeof el.focus === 'function') {
+						setTimeout(() => {
+							el.focus()
+							if (typeof el.setSelectionRange === 'function') {
+								el.setSelectionRange(cursor, cursor)
+							}
+						}, 0)
+					}
+					// #endif
+				})
 			},
 
 			goBack() {
@@ -4934,10 +5107,40 @@
 			},
 
 			/**
-			 * 判断是否为规划类工具
+			 * 判断是否为上下文类行内状态工具
 			 */
-			isPlanningTool(toolName) {
-				return PLANNING_TOOLS.has(toolName)
+			isInlineContextTool(toolName) {
+				return INLINE_CONTEXT_TOOLS.has(toolName)
+			},
+
+			getInlineContextToolConfig(toolName) {
+				return INLINE_CONTEXT_TOOL_CONFIG[toolName] || null
+			},
+
+			shouldPersistInlineContextTool(toolCall) {
+				if (!toolCall) return false
+				const config = this.getInlineContextToolConfig(toolCall.tool)
+				return !!(config?.persistDone && toolCall.status === 'done' && toolCall.success !== false)
+			},
+
+			getInlineContextToolStateClass(toolCall) {
+				if (this.shouldPersistInlineContextTool(toolCall)) {
+					return 'planning-tool-done-persist'
+				}
+				if (toolCall?.status === 'running') {
+					return 'planning-tool-active'
+				}
+				return 'planning-tool-done-hide'
+			},
+
+			getInlineContextToolText(toolCall) {
+				if (!toolCall) return ''
+				const config = this.getInlineContextToolConfig(toolCall.tool)
+				if (!config) return toolCall.tool
+				if (this.shouldPersistInlineContextTool(toolCall)) {
+					return config.done || config.running || toolCall.tool
+				}
+				return config.running || config.done || toolCall.tool
 			},
 
 			isGraphTool(toolName) {
@@ -5978,6 +6181,7 @@
 			},
 
 			onInputFocus() {
+				this.inputFocusActive = true
 				const sysInfo = uni.getSystemInfoSync()
 				console.log(`[SpaceChat-KB] onInputFocus: currentKeyboardH=${this.keyboardHeight}px, screenH=${sysInfo.screenHeight}, windowH=${sysInfo.windowHeight}, model=${sysInfo.model}`)
 				if (this.isAutoScrollEnabled) {
@@ -5986,6 +6190,7 @@
 			},
 
 			onInputBlur() {
+				this.inputFocusActive = false
 				console.log(`[SpaceChat-KB] onInputBlur: keyboardH=${this.keyboardHeight}px (应即将归零)`)
 				// keyboardHeight 会通过 onKeyboardHeightChange 自动重置
 			},
@@ -7072,6 +7277,60 @@
 		overflow-y: hidden;
 	}
 
+	.shortcut-pills-scroll {
+		width: 100%;
+		padding: 0 20rpx 18rpx;
+		box-sizing: border-box;
+	}
+
+	.shortcut-pills-row {
+		display: inline-flex;
+		align-items: center;
+		gap: 12rpx;
+		padding-right: 4rpx;
+	}
+
+	.shortcut-pill {
+		--shortcut-pill-bg: #2A2C31;
+		--shortcut-pill-border: #4A4D55;
+		--shortcut-pill-text: #E2E4E8;
+		display: inline-flex;
+		align-items: center;
+		gap: 8rpx;
+		flex-shrink: 0;
+		padding: 8rpx 16rpx 8rpx 14rpx;
+		border-radius: 18rpx;
+		border: 2rpx solid var(--shortcut-pill-border);
+		background: var(--shortcut-pill-bg);
+		box-shadow: none;
+		transition: transform 0.15s ease, filter 0.15s ease, border-color 0.15s ease;
+	}
+
+	.shortcut-pill:active {
+		transform: scale(0.97);
+		filter: brightness(0.96);
+	}
+
+	.shortcut-pill-disabled {
+		opacity: 0.42;
+	}
+
+	.shortcut-pill-icon {
+		width: 20rpx;
+		height: 20rpx;
+		filter: brightness(0) invert(1);
+		opacity: 0.86;
+		flex-shrink: 0;
+	}
+
+	.shortcut-pill-text {
+		font-size: 22rpx;
+		line-height: 1;
+		color: var(--shortcut-pill-text);
+		-webkit-text-fill-color: var(--shortcut-pill-text);
+		white-space: nowrap;
+	}
+
 	.input-bottom-row {
 		display: flex;
 		align-items: center;
@@ -7322,7 +7581,7 @@
 		}
 	}
 
-	/* ========== 规划工具行内银光掠过 ========== */
+	/* ========== 上下文工具行内银色状态 ========== */
 	.planning-tool-inline {
 		margin: 8rpx 0;
 		max-height: 0;
@@ -7331,12 +7590,13 @@
 		transition: max-height 0.4s ease, opacity 0.4s ease, margin 0.4s ease;
 	}
 
-	.planning-tool-active {
+	.planning-tool-active,
+	.planning-tool-done-persist {
 		max-height: 60rpx;
 		opacity: 1;
 	}
 
-	.planning-tool-done {
+	.planning-tool-done-hide {
 		max-height: 0;
 		opacity: 0;
 		margin: 0;
@@ -7363,8 +7623,10 @@
 		animation: planning-shimmer 2s ease-in-out infinite;
 	}
 
-	.planning-tool-done .planning-tool-text {
+	.planning-tool-done-persist .planning-tool-text,
+	.planning-tool-done-hide .planning-tool-text {
 		animation: none;
+		background-position: 50% 50%;
 	}
 
 	@keyframes planning-shimmer {
@@ -10424,6 +10686,35 @@
 		box-shadow: var(--chat-shadow-soft);
 	}
 
+	.chat-page.theme-light .shortcut-pill {
+		--shortcut-pill-bg: var(--chat-surface-strong);
+		--shortcut-pill-border: var(--chat-border);
+		--shortcut-pill-text: var(--chat-text-primary);
+		background: var(--chat-surface-strong);
+		border-color: var(--chat-border);
+		box-shadow: var(--chat-shadow-soft);
+	}
+
+	.chat-page.theme-light .shortcut-pill:active {
+		background: var(--chat-surface);
+		border-color: var(--chat-border-strong);
+	}
+
+	.chat-page.theme-light .shortcut-pill-disabled {
+		background: var(--chat-surface-soft);
+		opacity: 0.56;
+	}
+
+	.chat-page.theme-light .shortcut-pill-icon {
+		filter: brightness(0) saturate(100%);
+		opacity: 0.72;
+	}
+
+	.chat-page.theme-light .shortcut-pill-text {
+		color: var(--chat-text-primary);
+		-webkit-text-fill-color: var(--chat-text-primary);
+	}
+
 	.chat-page.theme-light .input-action-icon:not(.send-action-icon),
 	.chat-page.theme-light .model-selector-icon,
 	.chat-page.theme-light .thinking-toggle-icon {
@@ -10490,8 +10781,7 @@
 	}
 
 	.chat-page.theme-light .wave-loading-text,
-	.chat-page.theme-light .memory-tool-text,
-	.chat-page.theme-light .planning-tool-text {
+	.chat-page.theme-light .memory-tool-text {
 		background: linear-gradient(
 			90deg,
 			rgba(122, 111, 98, 0.42) 0%,
@@ -10504,10 +10794,15 @@
 	}
 
 	.chat-page.theme-light .planning-tool-text {
-		background: none;
-		color: var(--chat-text-secondary);
-		-webkit-text-fill-color: var(--chat-text-secondary);
-		text-shadow: 0 1rpx 0 rgba(255, 250, 244, 0.78);
-		animation: none;
+		background: linear-gradient(
+			90deg,
+			rgba(136, 146, 160, 0.42) 0%,
+			rgba(171, 181, 196, 0.74) 22%,
+			rgba(244, 247, 251, 0.98) 44%,
+			rgba(171, 181, 196, 0.74) 66%,
+			rgba(136, 146, 160, 0.42) 100%
+		);
+		background-size: 300% 100%;
 	}
+
 </style>
