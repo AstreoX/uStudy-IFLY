@@ -145,7 +145,7 @@ class SearchToolExecutor:
             )
 
     async def _academic_search(self, args: dict) -> ToolResult:
-        """Search academic papers via Semantic Scholar API."""
+        """Search academic papers via OpenAlex API (primary) with Semantic Scholar fallback."""
         query = args.get("query", "").strip()
         max_results = min(max(args.get("max_results", 5), 1), 10)
 
@@ -156,14 +156,73 @@ class SearchToolExecutor:
 
         logger.info(f"Academic search: query={query[:50]}..., max_results={max_results}")
 
+        try:
+            return await self._openalex_search(query, max_results)
+        except Exception as e:
+            logger.warning(f"OpenAlex failed ({e}), falling back to Semantic Scholar")
+            return await self._semantic_scholar_search(query, max_results)
+
+    async def _openalex_search(self, query: str, max_results: int) -> ToolResult:
+        """Search via OpenAlex API (open access, no rate limits)."""
+        url = "https://api.openalex.org/works"
+        params = {
+            "search": query,
+            "per_page": max_results,
+            "select": "title,authorships,publication_year,cited_by_count,doi,primary_location",
+        }
+        headers = {
+            "User-Agent": "uStudy/1.0 (https://ustudy.top; contact@ustudy.top) httpx/0.27",
+        }
+
+        async with httpx.AsyncClient(timeout=self.semantic_scholar_timeout, headers=headers) as client:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+        papers = data.get("results", [])
+        formatted = []
+        for paper in papers:
+            authorships = paper.get("authorships", [])
+            authors_list = [a.get("author", {}).get("display_name", "") for a in authorships[:3]]
+            authors_str = ", ".join(filter(None, authors_list))
+            if len(authorships) > 3:
+                authors_str += " et al."
+
+            doi = paper.get("doi") or ""
+            landing_url = (paper.get("primary_location") or {}).get("landing_page_url") or ""
+            paper_url = landing_url or (f"https://doi.org/{doi.removeprefix('https://doi.org/')}" if doi else "")
+
+            formatted.append({
+                "title": paper.get("title", ""),
+                "url": paper_url,
+                "snippet": "",
+                "source": "academic",
+                "authors": authors_str,
+                "year": paper.get("publication_year"),
+                "citation_count": paper.get("cited_by_count", 0),
+            })
+
+        logger.info(f"OpenAlex search completed: {len(formatted)} results")
+
+        return ToolResult(
+            success=True,
+            data={"results": formatted, "query": query, "channel": "academic"},
+            message=f"找到 {len(formatted)} 篇学术论文",
+        )
+
+    async def _semantic_scholar_search(self, query: str, max_results: int) -> ToolResult:
+        """Fallback: search via Semantic Scholar API."""
         url = "https://api.semanticscholar.org/graph/v1/paper/search"
         params = {
             "query": query,
             "limit": max_results,
             "fields": "title,authors,year,citationCount,url,abstract",
         }
+        headers = {
+            "User-Agent": "uStudy/1.0 (https://ustudy.top; contact@ustudy.top) httpx/0.27",
+        }
 
-        async with httpx.AsyncClient(timeout=self.semantic_scholar_timeout) as client:
+        async with httpx.AsyncClient(timeout=self.semantic_scholar_timeout, headers=headers) as client:
             response = await client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
@@ -189,7 +248,7 @@ class SearchToolExecutor:
                 "citation_count": paper.get("citationCount", 0),
             })
 
-        logger.info(f"Academic search completed: {len(formatted)} results")
+        logger.info(f"Semantic Scholar search completed: {len(formatted)} results")
 
         return ToolResult(
             success=True,
@@ -223,7 +282,11 @@ class SearchToolExecutor:
             "utf8": 1,
         }
 
-        async with httpx.AsyncClient(timeout=self.wikipedia_timeout) as client:
+        headers = {
+            "User-Agent": "uStudy/1.0 (https://ustudy.top; contact@ustudy.top) httpx/0.27",
+        }
+
+        async with httpx.AsyncClient(timeout=self.wikipedia_timeout, headers=headers) as client:
             response = await client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
