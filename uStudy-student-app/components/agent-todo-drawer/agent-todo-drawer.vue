@@ -23,41 +23,19 @@
           class="drawer-item"
           :class="{ 'drawer-item-completed': item.status === 'completed' }"
         >
-          <view class="drawer-item-icon-wrap">
-            <view
-              class="drawer-item-toggle"
-              :class="{ 'drawer-item-toggle-loading': isItemLoading(item.task_id) }"
-              @click.stop="handleToggleItem(item)"
-            >
-              <view v-if="isItemLoading(item.task_id)" class="drawer-item-spinner"></view>
-              <svg
-                v-else-if="item.status !== 'completed'"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                class="drawer-item-icon drawer-item-icon-pending"
-              >
-                <circle cx="12" cy="12" r="10" />
-              </svg>
-              <svg
-                v-else
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                class="drawer-item-icon drawer-item-icon-completed"
-              >
-                <path d="M21.801 10A10 10 0 1 1 17 3.335" />
-                <path d="m9 11 3 3L22 4" />
-              </svg>
-            </view>
+          <view class="drawer-item-icon-wrap" @click.stop="handleToggleItem(item)">
+            <image
+              v-if="item.status !== 'completed'"
+              class="drawer-item-icon"
+              src="/static/icons/todo-circle.svg"
+              mode="aspectFit"
+            />
+            <image
+              v-else
+              class="drawer-item-icon"
+              src="/static/icons/todo-check-circle.svg"
+              mode="aspectFit"
+            />
           </view>
           <view class="drawer-item-content">
             <view class="drawer-item-head">
@@ -289,86 +267,18 @@ export default {
 }
 
 .drawer-item-icon-wrap {
-  width: 52rpx;
-  height: 52rpx;
+  width: 36rpx;
+  height: 36rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: -2rpx;
+  margin-top: 2rpx;
   flex-shrink: 0;
-}
-
-.drawer-item-toggle {
-  width: 52rpx;
-  height: 52rpx;
-  border-radius: 16rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 160ms ease, background 160ms ease;
-}
-
-.drawer-item-toggle:active {
-  transform: scale(0.96);
-}
-
-.theme-dark .drawer-item-toggle {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.theme-dark .drawer-item-toggle:active {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.theme-light .drawer-item-toggle {
-  background: rgba(154, 126, 91, 0.06);
-}
-
-.theme-light .drawer-item-toggle:active {
-  background: rgba(154, 126, 91, 0.1);
-}
-
-.drawer-item-toggle-loading {
-  pointer-events: none;
-}
-
-.drawer-item-spinner {
-  width: 22rpx;
-  height: 22rpx;
-  border-radius: 50%;
-  border: 3rpx solid transparent;
-  animation: drawer-spin 0.7s linear infinite;
-}
-
-.theme-dark .drawer-item-spinner {
-  border-color: rgba(240, 201, 104, 0.22);
-  border-top-color: rgba(247, 208, 110, 0.95);
-}
-
-.theme-light .drawer-item-spinner {
-  border-color: rgba(188, 135, 54, 0.18);
-  border-top-color: rgba(195, 138, 50, 0.95);
 }
 
 .drawer-item-icon {
   width: 24rpx;
   height: 24rpx;
-}
-
-.theme-dark .drawer-item-icon-pending {
-  color: rgba(240, 201, 104, 0.82);
-}
-
-.theme-light .drawer-item-icon-pending {
-  color: rgba(188, 135, 54, 0.74);
-}
-
-.theme-dark .drawer-item-icon-completed {
-  color: rgba(247, 208, 110, 0.98);
-}
-
-.theme-light .drawer-item-icon-completed {
-  color: rgba(195, 138, 50, 0.96);
 }
 
 .drawer-item-content {
@@ -439,14 +349,5 @@ export default {
 
 .drawer-expanded .drawer-shell {
   transform: translateY(0);
-}
-
-@keyframes drawer-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
 }
 </style>

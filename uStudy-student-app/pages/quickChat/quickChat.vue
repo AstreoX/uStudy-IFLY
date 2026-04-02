@@ -1238,17 +1238,34 @@
 				return this.shortcutPills.length > 0 && !this.hasAgentTodos
 			},
 			messageBottomSpacerStyle() {
-				const baseWindowHeight = this._initialWindowHeight || uni.getSystemInfoSync().windowHeight || 0
+				const currentWindowHeight = uni.getSystemInfoSync().windowHeight || 0
+				const baseWindowHeight = this._initialWindowHeight || currentWindowHeight || 0
+				const viewportKeyboardInset = baseWindowHeight > 0 && currentWindowHeight > 0
+					? Math.max(0, baseWindowHeight - currentWindowHeight)
+					: 0
+				const effectiveKeyboardInset = Math.max(Number(this.keyboardHeight) || 0, viewportKeyboardInset)
+				const keyboardActive = effectiveKeyboardInset > 0
 				const shortcutPillsReserveHeight = this.showShortcutPills ? uni.upx2px(144) : 0
-				const legacyReserveHeight = (baseWindowHeight ? baseWindowHeight * 6 / 26 : uni.upx2px(280)) + shortcutPillsReserveHeight + (Number(this.keyboardHeight) || 0)
+				const legacyReserveHeight = (baseWindowHeight ? baseWindowHeight * 6 / 26 : uni.upx2px(280)) + shortcutPillsReserveHeight + effectiveKeyboardInset
 				const measuredCoveredHeight = Number(this.inputBarHeight) || 0
 				const drawerHeight = Number(this.agentTodoDrawerHeight) || 0
-				const overlaySafetyGap = this.hasAgentTodos
-					? Math.max(
-						uni.upx2px(this.agentTodoExpanded ? 110 : 124),
-						Math.round(drawerHeight * (this.agentTodoExpanded ? 0.28 : 0.40))
+				const overlaySafetyGap = keyboardActive
+					? (
+						this.hasAgentTodos
+							? Math.max(
+								uni.upx2px(this.agentTodoExpanded ? 20 : 16),
+								Math.round(drawerHeight * (this.agentTodoExpanded ? 0.04 : 0.08))
+							)
+							: uni.upx2px(this.showShortcutPills ? 16 : 12)
 					)
-					: uni.upx2px(this.showShortcutPills ? 104 : 80)
+					: (
+						this.hasAgentTodos
+							? Math.max(
+								uni.upx2px(this.agentTodoExpanded ? 110 : 124),
+								Math.round(drawerHeight * (this.agentTodoExpanded ? 0.28 : 0.40))
+							)
+							: uni.upx2px(this.showShortcutPills ? 104 : 80)
+					)
 				const spacerBaseHeight = measuredCoveredHeight > 0 ? measuredCoveredHeight : legacyReserveHeight
 				const spacerHeight = spacerBaseHeight + overlaySafetyGap
 				return { height: `${Math.ceil(spacerHeight)}px` }
