@@ -20,6 +20,7 @@ from chat.tools.vector_memory_tools import VECTOR_MEMORY_TOOLS
 from chat.tools.time_tools import TIME_TOOLS
 from chat.tools.review_tools import REVIEW_TOOLS
 from chat.tools.note_tools import NOTE_TOOLS
+from chat.tools.image_tools import IMAGE_TOOLS
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ def _build_registry() -> dict[str, dict]:
         TIME_TOOLS,
         REVIEW_TOOLS,
         NOTE_TOOLS,
+        IMAGE_TOOLS,
     ]
     for tool_list in all_tool_lists:
         for tool_def in tool_list:
@@ -121,6 +123,9 @@ TOOL_CATALOG: list[ToolCatalogEntry] = [
     ToolCatalogEntry("view_note_detail", "笔记", "查看笔记完整内容（带行号）"),
     ToolCatalogEntry("update_note", "笔记", "更新笔记内容（支持按行号局部替换）"),
     ToolCatalogEntry("delete_note", "笔记", "删除指定笔记"),
+
+    # ── 图表生成 (1) ──
+    ToolCatalogEntry("generate_chart", "图表生成", "根据描述生成图表或图片"),
 ]
 
 # 按分类组织的目录（用于 API 返回和前端展示）
