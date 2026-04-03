@@ -289,6 +289,36 @@
                       </text>
                     </view>
 
+                    <!-- Chart generation tool: image preview card -->
+                    <view
+                      v-else-if="seg.toolCall.tool === 'generate_chart'"
+                      class="tool-call-card"
+                      :class="getToolCardClass(seg.toolCall)"
+                    >
+                      <view class="tool-call-header">
+                        <view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
+                        <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-success">
+                          <polyline points="88 136 112 160 168 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                        </svg>
+                        <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-failed">
+                          <line x1="160" y1="96" x2="96" y2="160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          <line x1="160" y1="160" x2="96" y2="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                        </svg>
+                        <view class="tool-call-icon" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
+                        <text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
+                      </view>
+                      <view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.image_url" class="chart-image-preview">
+                        <img
+                          :src="getFullImageUrl(seg.toolCall.result.image_url)"
+                          class="chart-preview-img"
+                          @click="previewChartImage(seg.toolCall.result.image_url)"
+                        />
+                      </view>
+                      <view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
+                        <text class="tool-call-result-text">{{ seg.toolCall.result?.message || '图表生成失败' }}</text>
+                      </view>
+                    </view>
+
                     <!-- Regular tools: card -->
                     <view
                       v-else
@@ -534,7 +564,8 @@ const TOOL_DISPLAY_NAMES = {
   encyclopedia_search: '百科搜索',
   course_search: 'B站课程搜索',
   get_review_events: '查看复习事件',
-  mark_review_completed: '标记复习完成'
+  mark_review_completed: '标记复习完成',
+  generate_chart: '生成图表'
 }
 
 // Tool icon SVGs
@@ -543,6 +574,7 @@ const TOOL_ICON_SVGS = {
   rebind_to_learning_space: '<svg viewBox="0 0 256 256" width="14" height="14"><path d="M122.33,71.39a48,48,0,0,1,62.28,62.28" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><path d="M71.39,122.33a48,48,0,0,0,62.28,62.28" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>',
   create_learning_space: '<svg viewBox="0 0 256 256" width="14" height="14"><circle cx="128" cy="128" r="96" fill="none" stroke="currentColor" stroke-width="16"/><line x1="88" y1="128" x2="168" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><line x1="128" y1="88" x2="128" y2="168" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/></svg>',
   memory: '<svg viewBox="0 0 256 256" width="14" height="14"><path d="M128,24A96,96,0,0,0,64,184V224h128V184A96,96,0,0,0,128,24Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="112" y1="224" x2="112" y2="192" fill="none" stroke="currentColor" stroke-width="16"/><line x1="144" y1="224" x2="144" y2="192" fill="none" stroke="currentColor" stroke-width="16"/></svg>',
+  generate_chart: '<svg viewBox="0 0 256 256" width="14" height="14"><rect x="40" y="40" width="176" height="176" rx="8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><path d="M,160l40-48,40,32,48-56,48,40" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><circle cx="100" cy="92" r="16" fill="none" stroke="currentColor" stroke-width="16"/></svg>',
   default: '<svg viewBox="0 0 256 256" width="14" height="14"><circle cx="128" cy="128" r="40" fill="none" stroke="currentColor" stroke-width="16"/><path d="M128,48a80,80,0,0,1,80,80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><path d="M48,128a80,80,0,0,1,80-80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><path d="M208,128a80,80,0,0,1-80,80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><path d="M128,208a80,80,0,0,1-80-80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/></svg>'
 }
 
@@ -1864,6 +1896,17 @@ export default {
       return TOOL_ICON_SVGS.default
     },
 
+    getFullImageUrl(relativePath) {
+      if (!relativePath) return ''
+      if (relativePath.startsWith('http')) return relativePath
+      return config.API_BASE_URL + relativePath
+    },
+
+    previewChartImage(imageUrl) {
+      const fullUrl = this.getFullImageUrl(imageUrl)
+      window.open(fullUrl, '_blank')
+    },
+
     getToolCardClass(toolCall) {
       if (toolCall.status === 'running') return 'tool-call-running'
       if (toolCall.status === 'pending_confirmation') return 'tool-call-pending'
@@ -3076,6 +3119,24 @@ export default {
   color: rgba(255, 255, 255, 0.5);
   line-height: 1.4;
   white-space: pre-line;
+}
+
+/* Chart preview */
+.chart-image-preview {
+  margin-top: 8px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.chart-preview-img {
+  width: 100%;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.chart-preview-img:hover {
+  opacity: 0.9;
 }
 
 /* Tool spaces list */

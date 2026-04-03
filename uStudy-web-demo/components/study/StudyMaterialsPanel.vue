@@ -1436,6 +1436,7 @@ export default {
   inset: 0;
   z-index: 95;
   background: rgba(7, 8, 22, 0.92);
+  touch-action: auto;
 }
 
 .preview-container {
@@ -1511,6 +1512,8 @@ export default {
   flex: 1;
   min-height: 0;
   position: relative;
+  overflow: hidden;
+  touch-action: auto;
 }
 
 .preview-state {
@@ -1602,6 +1605,9 @@ export default {
 .preview-frame-wrap {
   width: 100%;
   height: 100%;
+  overflow: hidden;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 
 .preview-iframe {
@@ -1609,12 +1615,14 @@ export default {
   height: 100%;
   border: none;
   background: #fff;
+  touch-action: auto;
 }
 
 .preview-docx-scroll {
   width: 100%;
   height: 100%;
   background: #f5f5f5;
+  -webkit-overflow-scrolling: touch;
 }
 
 .preview-docx-container {

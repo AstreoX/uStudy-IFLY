@@ -496,8 +496,8 @@
                         v-else-if="isPlanningTool(seg.toolCall.tool)"
                         class="planning-tool-inline"
                         :class="{
-                          'planning-tool-active': seg.toolCall.status === 'running',
-                          'planning-tool-done': seg.toolCall.status === 'done'
+                          'planning-tool-active': getPlanningToolDisplayStatus(seg.toolCall) === 'running',
+                          'planning-tool-done': getPlanningToolDisplayStatus(seg.toolCall) === 'done'
                         }"
                       >
                         <text class="planning-tool-text">{{ planningToolText }}</text>
@@ -552,6 +552,36 @@
                         :space-id="spaceId"
                         :conversation-id="conversationId"
                       />
+
+                      <!-- Chart generation tool: image preview card -->
+                      <view
+                        v-else-if="seg.toolCall.tool === 'generate_chart'"
+                        class="tool-call-card"
+                        :class="getToolCardClass(seg.toolCall)"
+                      >
+                        <view class="tool-call-header">
+                          <view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
+                          <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-success">
+                            <polyline points="88 136 112 160 168 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                          <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-failed">
+                            <line x1="160" y1="96" x2="96" y2="160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                            <line x1="160" y1="160" x2="96" y2="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                          <view class="tool-call-icon" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
+                          <text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
+                        </view>
+                        <view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.image_url" class="chart-image-preview">
+                          <img
+                            :src="getFullImageUrl(seg.toolCall.result.image_url)"
+                            class="chart-preview-img"
+                            @click="previewChartImage(seg.toolCall.result.image_url)"
+                          />
+                        </view>
+                        <view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
+                          <text class="tool-call-result-text">{{ seg.toolCall.result?.message || '图表生成失败' }}</text>
+                        </view>
+                      </view>
 
                       <!-- Regular tools: card -->
                       <view
@@ -786,7 +816,8 @@ const TOOL_DISPLAY_NAMES = {
   list_notes: 'List Notes',
   view_note_detail: 'View Note',
   update_note: 'Update Note',
-  delete_note: 'Delete Note'
+  delete_note: 'Delete Note',
+  generate_chart: 'Generate Chart'
 }
 
 // Graph-mutating tools (trigger auto-refresh of knowledge graph)
@@ -828,6 +859,7 @@ const TOOL_ICON_SVGS = {
   calendar: '<svg viewBox="0 0 256 256" width="14" height="14"><rect x="40" y="40" width="176" height="176" rx="8" fill="none" stroke="currentColor" stroke-width="16"/><line x1="176" y1="24" x2="176" y2="56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><line x1="80" y1="24" x2="80" y2="56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><line x1="40" y1="88" x2="216" y2="88" fill="none" stroke="currentColor" stroke-width="16"/></svg>',
   review: '<svg viewBox="0 0 256 256" width="14" height="14"><circle cx="128" cy="128" r="96" fill="none" stroke="currentColor" stroke-width="16"/><polyline points="128 80 128 128 168 152" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>',
   note: '<svg viewBox="0 0 256 256" width="14" height="14"><path d="M200,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32ZM80,80h96a8,8,0,0,1,0,16H80a8,8,0,0,1,0-16Zm0,40h96a8,8,0,0,1,0,16H80a8,8,0,0,1,0-16Zm0,40h64a8,8,0,0,1,0,16H80a8,8,0,0,1,0-16Z" fill="currentColor"/></svg>',
+  image: '<svg viewBox="0 0 256 256" width="14" height="14"><rect x="40" y="40" width="176" height="176" rx="8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><circle cx="100" cy="92" r="16" fill="none" stroke="currentColor" stroke-width="16"/><path d="M,160l40-48,40,32,48-56,48,40" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>',
   default: '<svg viewBox="0 0 256 256" width="14" height="14"><circle cx="128" cy="128" r="40" fill="none" stroke="currentColor" stroke-width="16"/><path d="M128,48a80,80,0,0,1,80,80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><path d="M48,128a80,80,0,0,1,80-80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><path d="M208,128a80,80,0,0,1-80,80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><path d="M128,208a80,80,0,0,1-80-80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/></svg>'
 }
 
@@ -846,7 +878,8 @@ const TOOL_ICON_MAP = {
   write_to_space_memory: 'memory', delete_from_space_memory: 'memory',
   get_review_events: 'review', mark_review_completed: 'review',
   create_note: 'note', list_notes: 'note', view_note_detail: 'note',
-  update_note: 'note', delete_note: 'note'
+  update_note: 'note', delete_note: 'note',
+  generate_chart: 'image'
 }
 
 const DEFAULT_BROWSER_URL = 'https://www.wikipedia.org'
@@ -901,6 +934,8 @@ export default {
       isAutoScrollEnabled: true,
       memoryToolDelayedDone: {},
       memoryToolStartTimes: {},
+      planningToolDelayedDone: {},
+      planningToolStartTimes: {},
       expandedSearchResults: {},
 
       // Thinking model state
@@ -2165,6 +2200,9 @@ export default {
         if (MEMORY_TOOLS.has(tool)) {
           this.memoryToolStartTimes[id] = Date.now()
         }
+        if (PLANNING_TOOLS.has(tool)) {
+          this.planningToolStartTimes[id] = Date.now()
+        }
 
         msg.streamSegments.push({ type: 'tool', toolCall })
         this.activeToolCalls.push(toolCall)
@@ -2195,6 +2233,25 @@ export default {
             } else {
               const { [id]: _, ...restStarts } = this.memoryToolStartTimes
               this.memoryToolStartTimes = restStarts
+            }
+          }
+
+          if (PLANNING_TOOLS.has(tool)) {
+            const startTime = this.planningToolStartTimes[id]
+            const elapsed = startTime ? Date.now() - startTime : 2000
+            const minDisplayTime = 2000
+
+            if (elapsed < minDisplayTime) {
+              this.planningToolDelayedDone = { ...this.planningToolDelayedDone, [id]: true }
+              setTimeout(() => {
+                const { [id]: _d, ...restDelayed } = this.planningToolDelayedDone
+                this.planningToolDelayedDone = restDelayed
+                const { [id]: _s, ...restStarts } = this.planningToolStartTimes
+                this.planningToolStartTimes = restStarts
+              }, minDisplayTime - elapsed)
+            } else {
+              const { [id]: _, ...restStarts } = this.planningToolStartTimes
+              this.planningToolStartTimes = restStarts
             }
           }
         }
@@ -2443,6 +2500,17 @@ export default {
       return 'tool-call-running'
     },
 
+    getFullImageUrl(relativePath) {
+      if (!relativePath) return ''
+      if (relativePath.startsWith('http')) return relativePath
+      return config.API_BASE_URL + relativePath
+    },
+
+    previewChartImage(imageUrl) {
+      const fullUrl = this.getFullImageUrl(imageUrl)
+      window.open(fullUrl, '_blank')
+    },
+
     isMemoryTool(toolName) {
       return MEMORY_TOOLS.has(toolName)
     },
@@ -2497,6 +2565,12 @@ export default {
     getMemoryToolDisplayStatus(toolCall) {
       if (!toolCall) return 'running'
       if (this.memoryToolDelayedDone[toolCall.id]) return 'running'
+      return toolCall.status
+    },
+
+    getPlanningToolDisplayStatus(toolCall) {
+      if (!toolCall) return 'running'
+      if (this.planningToolDelayedDone[toolCall.id]) return 'running'
       return toolCall.status
     },
 
@@ -3640,6 +3714,36 @@ export default {
   max-width: 100%;
 }
 
+/* Chart preview */
+.chart-image-preview {
+  margin-top: 8px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.chart-preview-img {
+  width: 100%;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.chart-preview-img:hover {
+  opacity: 0.9;
+}
+
+.tool-call-result {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tool-call-result-text {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.4;
+}
+
 /* Memory Tool Inline */
 .memory-tool-inline {
   display: inline-flex;
@@ -3676,7 +3780,8 @@ export default {
   align-items: center;
   padding: 2px 0;
   overflow: hidden;
-  transition: max-height 0.4s ease, opacity 0.4s ease, margin 0.4s ease;
+  max-height: 0;
+  transition: max-height 0.4s ease, opacity 0.4s ease, margin 0.4s ease, padding 0.4s ease, line-height 0.4s ease, font-size 0.4s ease;
 }
 
 .planning-tool-active {
@@ -3689,6 +3794,10 @@ export default {
   opacity: 0;
   margin: 0;
   padding: 0;
+  line-height: 0;
+  font-size: 0;
+  border: 0;
+  pointer-events: none;
 }
 
 .planning-tool-text {

@@ -450,6 +450,9 @@ export default {
 .notes-scroll {
   flex: 1;
   width: 100%;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
 .notes-card-grid {
@@ -485,6 +488,12 @@ export default {
 
 .note-card:hover .note-card-actions {
   opacity: 1;
+}
+
+@media (hover: none) {
+  .note-card-actions {
+    opacity: 1;
+  }
 }
 
 .note-action-btn {
@@ -627,6 +636,9 @@ export default {
 .detail-scroll {
   flex: 1;
   width: 100%;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
 .detail-body {
@@ -737,6 +749,9 @@ export default {
 .edit-scroll {
   flex: 1;
   width: 100%;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
 .edit-body {

@@ -2076,6 +2076,7 @@ export default {
 .kg-note-preview-body {
   flex: 1;
   padding: 20px 24px;
+  overflow-x: hidden;
 }
 
 .kg-note-preview-tag {
@@ -2096,6 +2097,8 @@ export default {
   color: rgba(241, 245, 249, 0.85);
   line-height: 1.8;
   word-break: break-word;
+  overflow-x: auto;
+  max-width: 100%;
 }
 
 .kg-note-preview-empty {
