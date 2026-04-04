@@ -14,7 +14,7 @@ from upload.storage import get_storage
 logger = logging.getLogger(__name__)
 
 # Gemini image generation model
-_IMAGE_MODEL = "google/gemini-2.0-flash-exp:free"
+_IMAGE_MODEL = "google/gemini-2.5-flash-image"
 _IMAGE_TIMEOUT = 90  # seconds
 
 # ============ Tool Definition ============
