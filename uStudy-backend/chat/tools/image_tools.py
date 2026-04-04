@@ -144,10 +144,21 @@ class ImageToolExecutor:
             )
 
         # Decode and save the first image
-        image_data_url = images[0]
-        # Format: "data:image/png;base64,..." or raw base64
+        # Response format varies: string "data:image/png;base64,..." or dict {"type":"image_url","image_url":{"url":"data:..."}}
+        raw_image = images[0]
+        if isinstance(raw_image, dict):
+            image_data_url = raw_image.get("image_url", {}).get("url", "") if isinstance(raw_image.get("image_url"), dict) else raw_image.get("image_url", "")
+        else:
+            image_data_url = raw_image
+
+        if not image_data_url:
+            return ToolResult(
+                success=False,
+                data=None,
+                message="图片生成失败：无法解析图片数据",
+            )
+
         if image_data_url.startswith("data:"):
-            # Extract base64 portion after the comma
             _, b64_data = image_data_url.split(",", 1)
         else:
             b64_data = image_data_url
