@@ -34,6 +34,10 @@ IMAGE_TOOLS: list[dict[str, Any]] = [
                         "type": "string",
                         "description": "详细描述要生成的图表内容、样式、数据等",
                     },
+                    "node_label": {
+                        "type": "string",
+                        "description": "将图表保存到的知识节点名称。不传或传 'FREE' 表示自由笔记",
+                    },
                 },
                 "required": ["prompt"],
             },
@@ -177,4 +181,5 @@ class ImageToolExecutor:
                 "description": text_content[:500] if text_content else "",
             },
             message="图表已生成",
+            image_base64=b64_data,
         )

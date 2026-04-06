@@ -48,6 +48,9 @@ from chat.tools.review_tools import REVIEW_TOOLS, REVIEW_TOOL_NAMES, QUICK_CHAT_
 from chat.tools.note_tools import NOTE_TOOL_NAMES, NoteToolExecutor
 from chat.tools.image_tools import IMAGE_TOOLS, IMAGE_TOOL_NAMES, ImageToolExecutor
 from review.service import get_due_reviews_count_by_space, get_due_reviews_total
+from notes.service import NoteService
+from notes.schemas import NoteCreate
+from graph.service import GraphService
 from db.database import get_scoped_session
 from db.models import LongTermMemory
 from config import get_settings
@@ -384,6 +387,20 @@ class QuickChatOrchestrator:
                             tool_call.name,
                             tool_call.arguments,
                         )
+                        # Auto-save chart as note
+                        if tool_result.success and tool_result.data and tool_result.image_base64:
+                            import base64 as _b64
+                            note_info = await self._auto_save_chart_as_note(
+                                image_url=tool_result.data.get("image_url", ""),
+                                description=tool_result.data.get("description", ""),
+                                prompt=tool_call.arguments.get("prompt", ""),
+                                image_bytes=_b64.b64decode(tool_result.image_base64),
+                                node_label=tool_call.arguments.get("node_label"),
+                            )
+                            if note_info:
+                                tool_result.data["note_id"] = note_info["note_id"]
+                                tool_result.data["note_title"] = note_info["note_title"]
+                                tool_result.data["auto_saved"] = True
                     else:
                         tool_result = await self.tool_executor.execute(
                             tool_call.name,
@@ -450,6 +467,23 @@ class QuickChatOrchestrator:
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "content": json.dumps(tool_result.to_dict(), ensure_ascii=False),
+                    })
+
+                # Inject chart images as visual context for follow-up analysis
+                image_parts = []
+                for _tc, tr in tool_results_for_context:
+                    if tr.image_base64:
+                        image_parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{tr.image_base64}"},
+                        })
+                if image_parts:
+                    messages.append({
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "[系统提示] 以上是刚生成的图表，请基于图表内容进行分析讲解。"},
+                            *image_parts,
+                        ],
                     })
 
                 # Continue to next iteration - AI can now see the tool results
@@ -615,6 +649,57 @@ class LLMOrchestrator:
             # 自动模式：仅注册 get_tool_details 元工具
             self.available_tools = [GET_TOOL_DETAILS_TOOL]
             self._tool_catalog_text = format_catalog_for_prompt()
+
+    async def _auto_save_chart_as_note(
+        self,
+        image_url: str,
+        description: str,
+        prompt: str,
+        image_bytes: bytes,
+        node_label: str | None,
+    ) -> dict | None:
+        """Auto-save a generated chart as a note with attachment.
+
+        Returns dict with note_id/note_title on success, None on failure.
+        """
+        try:
+            async with get_scoped_session() as session:
+                # Resolve node_id from label if provided
+                node_id = None
+                if node_label and node_label.upper() != "FREE":
+                    graph_svc = GraphService(session)
+                    node = await graph_svc.get_node_by_label(self.space_id, node_label)
+                    if node:
+                        node_id = node.id
+
+                # Create note
+                title = (prompt[:47] + "...") if len(prompt) > 50 else prompt
+                note_svc = NoteService(session)
+                note_resp = await note_svc.create_note(
+                    self.user_id,
+                    self.space_id,
+                    NoteCreate(
+                        title=title,
+                        content=description or None,
+                        node_id=node_id,
+                    ),
+                )
+
+                # Add chart image as attachment
+                await note_svc.add_attachment(
+                    self.user_id,
+                    self.space_id,
+                    note_resp.id,
+                    file_data=image_bytes,
+                    original_filename="chart.png",
+                    mime_type="image/png",
+                )
+
+            logger.info("Auto-saved chart as note %s in space %s", note_resp.id, self.space_id)
+            return {"note_id": str(note_resp.id), "note_title": title}
+        except Exception:
+            logger.warning("Failed to auto-save chart as note", exc_info=True)
+            return None
 
     async def process_message(
         self,
@@ -992,6 +1077,23 @@ class LLMOrchestrator:
                             ),
                         }
                     )
+
+                # Inject chart images as visual context for follow-up analysis
+                image_parts = []
+                for _tc, tr in tool_results_for_context:
+                    if tr.image_base64:
+                        image_parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{tr.image_base64}"},
+                        })
+                if image_parts:
+                    messages.append({
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "[系统提示] 以上是刚生成的图表，请基于图表内容进行分析讲解。"},
+                            *image_parts,
+                        ],
+                    })
 
                 # Continue loop to let LLM process tool results
                 continue

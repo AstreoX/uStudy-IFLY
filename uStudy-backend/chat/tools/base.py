@@ -11,6 +11,7 @@ class ToolResult:
     success: bool
     data: Any
     message: str
+    image_base64: str | None = None  # Transient: for injecting visual context, not serialized
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization"""
