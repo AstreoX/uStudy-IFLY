@@ -401,6 +401,8 @@ class QuickChatOrchestrator:
                                 tool_result.data["note_id"] = note_info["note_id"]
                                 tool_result.data["note_title"] = note_info["note_title"]
                                 tool_result.data["auto_saved"] = True
+                                if note_info.get("node_label"):
+                                    tool_result.data["node_label"] = note_info["node_label"]
                     else:
                         tool_result = await self.tool_executor.execute(
                             tool_call.name,
@@ -696,7 +698,10 @@ class LLMOrchestrator:
                 )
 
             logger.info("Auto-saved chart as note %s in space %s", note_resp.id, self.space_id)
-            return {"note_id": str(note_resp.id), "note_title": title}
+            result = {"note_id": str(note_resp.id), "note_title": title}
+            if node_id:
+                result["node_label"] = node_label
+            return result
         except Exception:
             logger.warning("Failed to auto-save chart as note", exc_info=True)
             return None
