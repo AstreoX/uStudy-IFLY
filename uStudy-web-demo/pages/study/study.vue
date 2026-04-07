@@ -578,6 +578,9 @@
                             @click="previewChartImage(seg.toolCall.result.image_url)"
                           />
                         </view>
+                        <view v-if="seg.toolCall.result?.auto_saved" class="chart-saved-badge">
+                          <span class="chart-saved-text">📒 已保存为笔记</span>
+                        </view>
                         <view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
                           <text class="tool-call-result-text">{{ seg.toolCall.result?.message || '图表生成失败' }}</text>
                         </view>
@@ -3730,6 +3733,17 @@ export default {
 
 .chart-preview-img:hover {
   opacity: 0.9;
+}
+
+.chart-saved-badge {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.chart-saved-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .tool-call-result {
