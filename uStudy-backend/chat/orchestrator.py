@@ -643,6 +643,7 @@ class LLMOrchestrator:
         prompt: str,
         image_bytes: bytes,
         node_label: str | None,
+        title: str | None = None,
     ) -> dict | None:
         """Auto-save a generated chart as a note with attachment.
 
@@ -658,15 +659,15 @@ class LLMOrchestrator:
                     if node:
                         node_id = node.id
 
-                # Create note
-                title = (prompt[:47] + "...") if len(prompt) > 50 else prompt
+                # Create note — use AI title if provided, fallback to prompt truncation
+                note_title = title or ((prompt[:47] + "...") if len(prompt) > 50 else prompt)
                 note_svc = NoteService(session)
                 note_resp = await note_svc.create_note(
                     self.user_id,
                     self.space_id,
                     NoteCreate(
-                        title=title,
-                        content=description or None,
+                        title=note_title,
+                        content=None,
                         node_id=node_id,
                     ),
                 )
@@ -682,7 +683,7 @@ class LLMOrchestrator:
                 )
 
             logger.info("Auto-saved chart as note %s in space %s", note_resp.id, self.space_id)
-            result = {"note_id": str(note_resp.id), "note_title": title}
+            result = {"note_id": str(note_resp.id), "note_title": note_title}
             if node_id:
                 result["node_label"] = node_label
             return result
@@ -965,6 +966,7 @@ class LLMOrchestrator:
                                 prompt=tool_call.arguments.get("prompt", ""),
                                 image_bytes=_b64.b64decode(tool_result.image_base64),
                                 node_label=tool_call.arguments.get("node_label"),
+                                title=tool_call.arguments.get("title"),
                             )
                             if note_info:
                                 tool_result.data["note_id"] = note_info["note_id"]

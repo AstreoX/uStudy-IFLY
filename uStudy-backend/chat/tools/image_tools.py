@@ -26,6 +26,8 @@ IMAGE_TOOLS: list[dict[str, Any]] = [
             "name": "generate_chart",
             "description": (
                 "根据用户描述生成图表或图片。仅在用户明确要求绘制图表、生成图片时使用。"
+                "生成的图表会自动保存为笔记。请根据图表内容提供简短标题(title)，"
+                "并根据对话上下文判断最相关的知识节点名称(node_label)传入。"
             ),
             "parameters": {
                 "type": "object",
@@ -34,9 +36,16 @@ IMAGE_TOOLS: list[dict[str, Any]] = [
                         "type": "string",
                         "description": "详细描述要生成的图表内容、样式、数据等",
                     },
+                    "title": {
+                        "type": "string",
+                        "description": "图表的简短标题，用于保存笔记，如'人体肌肉解剖图'、'光合作用流程图'",
+                    },
                     "node_label": {
                         "type": "string",
-                        "description": "将图表保存到的知识节点名称。不传或传 'FREE' 表示自由笔记",
+                        "description": (
+                            "将图表挂载到的知识节点名称。请根据当前对话主题和空间知识图谱，"
+                            "选择最相关的节点名称。不传或传 'FREE' 表示不挂载到任何节点。"
+                        ),
                     },
                 },
                 "required": ["prompt"],
