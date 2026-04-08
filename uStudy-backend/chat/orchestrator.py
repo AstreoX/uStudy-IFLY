@@ -387,22 +387,6 @@ class QuickChatOrchestrator:
                             tool_call.name,
                             tool_call.arguments,
                         )
-                        # Auto-save chart as note
-                        if tool_result.success and tool_result.data and tool_result.image_base64:
-                            import base64 as _b64
-                            note_info = await self._auto_save_chart_as_note(
-                                image_url=tool_result.data.get("image_url", ""),
-                                description=tool_result.data.get("description", ""),
-                                prompt=tool_call.arguments.get("prompt", ""),
-                                image_bytes=_b64.b64decode(tool_result.image_base64),
-                                node_label=tool_call.arguments.get("node_label"),
-                            )
-                            if note_info:
-                                tool_result.data["note_id"] = note_info["note_id"]
-                                tool_result.data["note_title"] = note_info["note_title"]
-                                tool_result.data["auto_saved"] = True
-                                if note_info.get("node_label"):
-                                    tool_result.data["node_label"] = note_info["node_label"]
                     else:
                         tool_result = await self.tool_executor.execute(
                             tool_call.name,
@@ -972,6 +956,22 @@ class LLMOrchestrator:
                             tool_call.name,
                             tool_call.arguments,
                         )
+                        # Auto-save chart as note
+                        if tool_result.success and tool_result.data and tool_result.image_base64:
+                            import base64 as _b64
+                            note_info = await self._auto_save_chart_as_note(
+                                image_url=tool_result.data.get("image_url", ""),
+                                description=tool_result.data.get("description", ""),
+                                prompt=tool_call.arguments.get("prompt", ""),
+                                image_bytes=_b64.b64decode(tool_result.image_base64),
+                                node_label=tool_call.arguments.get("node_label"),
+                            )
+                            if note_info:
+                                tool_result.data["note_id"] = note_info["note_id"]
+                                tool_result.data["note_title"] = note_info["note_title"]
+                                tool_result.data["auto_saved"] = True
+                                if note_info.get("node_label"):
+                                    tool_result.data["node_label"] = note_info["node_label"]
                     elif tool_call.name in self._note_tool_names:
                         if tool_call.name == "create_note":
                             # Require user confirmation before creating note
