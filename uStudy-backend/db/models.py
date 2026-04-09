@@ -1578,7 +1578,8 @@ class NoteAttachment(Base):
         nullable=False,
     )
     attachment_type: Mapped[NoteAttachmentType] = mapped_column(
-        Enum(NoteAttachmentType), nullable=False
+        Enum(NoteAttachmentType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
     )
     file_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     original_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
