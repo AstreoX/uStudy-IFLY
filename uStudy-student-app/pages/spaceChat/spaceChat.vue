@@ -2340,36 +2340,24 @@
 				return getChatPromptPills(CHAT_PROMPT_PAGE_KEYS.SPACE_CHAT)
 			},
 			messageBottomSpacerStyle() {
-				const currentWindowHeight = uni.getSystemInfoSync().windowHeight || 0
-				const baseWindowHeight = this._initialWindowHeight || currentWindowHeight || 0
-				const viewportKeyboardInset = baseWindowHeight > 0 && currentWindowHeight > 0
-					? Math.max(0, baseWindowHeight - currentWindowHeight)
-					: 0
-				const effectiveKeyboardInset = Math.max(Number(this.keyboardHeight) || 0, viewportKeyboardInset)
-				const keyboardActive = effectiveKeyboardInset > 0
-				const shortcutPillsReserveHeight = this.showShortcutPills ? uni.upx2px(144) : 0
-				const legacyReserveHeight = (baseWindowHeight ? baseWindowHeight * 6 / 26 : uni.upx2px(280)) + shortcutPillsReserveHeight + effectiveKeyboardInset
-				const measuredCoveredHeight = Number(this.inputBarHeight) || 0
-				const drawerHeight = Number(this.agentTodoDrawerHeight) || 0
-				const overlaySafetyGap = keyboardActive
-					? (
-						this.hasAgentTodos
-							? Math.max(
-								uni.upx2px(this.agentTodoExpanded ? 20 : 16),
-								Math.round(drawerHeight * (this.agentTodoExpanded ? 0.04 : 0.08))
-							)
-							: uni.upx2px(this.showShortcutPills ? 16 : 12)
-					)
-					: (
-						this.hasAgentTodos
-							? Math.max(
-								uni.upx2px(this.agentTodoExpanded ? 110 : 124),
-								Math.round(drawerHeight * (this.agentTodoExpanded ? 0.28 : 0.40))
-							)
-							: uni.upx2px(this.showShortcutPills ? 104 : 80)
-					)
-				const spacerBaseHeight = measuredCoveredHeight > 0 ? measuredCoveredHeight : legacyReserveHeight
-				const spacerHeight = spacerBaseHeight + overlaySafetyGap
+				const baseWindowHeight = this._initialWindowHeight || uni.getSystemInfoSync().windowHeight || 0
+				const measuredBarHeight = Number(this.inputBarHeight) || 0
+				// iOS: keyboardHeight = actual value; Android: always 0 (adjustResize handles it)
+				const kbOffset = Number(this.keyboardHeight) || 0
+				// CSS: .input-bar { bottom: calc(100vh * 0.5 / 26) }
+				// On iOS keyboard up, inline bottom overrides CSS → skip dockGap
+				const dockGap = kbOffset > 0 ? 0 : (baseWindowHeight ? baseWindowHeight * 0.5 / 26 : uni.upx2px(18))
+				const breathingRoom = uni.upx2px(80)
+
+				let spacerHeight
+				if (measuredBarHeight > 0) {
+					spacerHeight = measuredBarHeight + dockGap + breathingRoom + kbOffset
+				} else {
+					// Before DOM measurement: generous fallback covering pills + input card + gap
+					const shortcutReserve = this.showShortcutPills ? uni.upx2px(120) : 0
+					spacerHeight = (baseWindowHeight ? baseWindowHeight * 5 / 26 : uni.upx2px(200))
+						+ shortcutReserve + kbOffset
+				}
 				return { height: `${Math.ceil(spacerHeight)}px` }
 			},
 			currentModelSupportsThinking() {
@@ -2568,6 +2556,10 @@
 			// 记录初始窗口高度，用于判断 adjustResize 是否生效
 			this._initialWindowHeight = uni.getSystemInfoSync().windowHeight
 			console.log(`[SpaceChat-KB] mounted: initialWindowH=${this._initialWindowHeight}`)
+			this.$nextTick(() => {
+				this.scheduleInputBarMeasure()
+				setTimeout(() => { if (!this.inputBarHeight) this.scheduleInputBarMeasure() }, 300)
+			})
 
 			// #ifdef APP-PLUS
 			if (this.$refs.sseRenderjs) {
@@ -2618,11 +2610,13 @@
 
 				if (res.height > 0) {
 					this.isAutoScrollEnabled = true
-					this.$nextTick(() => {
-						this.scrollToLatestMessage()
-						this.scheduleInputBarMeasure()
-					})
 				}
+				this.$nextTick(() => {
+					if (res.height > 0) {
+						this.scrollToLatestMessage()
+					}
+					this.scheduleInputBarMeasure()
+				})
 			}
 			uni.onKeyboardHeightChange(this.keyboardCallback)
 		},
@@ -2719,6 +2713,12 @@
 				this.scheduleInputBarMeasure()
 			},
 			keyboardHeight() {
+				this.scheduleInputBarMeasure()
+			},
+			showShortcutPills() {
+				this.scheduleInputBarMeasure()
+			},
+			hasAgentTodos() {
 				this.scheduleInputBarMeasure()
 			}
 		},
@@ -3141,16 +3141,10 @@
 					cardRect = rect
 				})
 				query.exec(() => {
-					const viewportHeight = uni.getSystemInfoSync().windowHeight || this._initialWindowHeight || 0
-					const topCandidates = [barRect?.top, drawerRect?.top, cardRect?.top].filter(v => typeof v === 'number')
 					const heightCandidates = [barRect?.height, cardRect?.height].filter(v => typeof v === 'number')
-					if (topCandidates.length === 0 && heightCandidates.length === 0) return
-					const overlayTop = topCandidates.length > 0 ? Math.min(...topCandidates) : 0
-					const baseHeight = heightCandidates.length > 0 ? Math.max(...heightCandidates) : 0
-					const coveredHeight = viewportHeight > 0
-						? Math.max(baseHeight, viewportHeight - overlayTop)
-						: baseHeight
-					const nextHeight = Math.ceil(coveredHeight)
+					if (heightCandidates.length === 0 && typeof drawerRect?.height !== 'number') return
+					// 只记录输入栏自身高度，避免键盘把 fixed 输入栏顶上去时把那段位移也算进 spacer。
+					const nextHeight = Math.ceil(heightCandidates.length > 0 ? Math.max(...heightCandidates) : 0)
 					const nextDrawerHeight = Math.ceil(drawerRect?.height || 0)
 					const heightChanged = Math.abs(nextHeight - this.inputBarHeight) > 1
 					const drawerChanged = Math.abs(nextDrawerHeight - this.agentTodoDrawerHeight) > 1
