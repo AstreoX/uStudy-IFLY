@@ -1252,15 +1252,16 @@
 				// CSS: .input-bar { bottom: calc(100vh * 0.5 / 26) }
 				// On iOS keyboard up, inline bottom overrides CSS → skip dockGap
 				const dockGap = kbOffset > 0 ? 0 : (baseWindowHeight ? baseWindowHeight * 0.5 / 26 : uni.upx2px(18))
-				const breathingRoom = uni.upx2px(80)
+				// Generous breathing room so the typing dots clearly clear the shortcut pills
+				const breathingRoom = uni.upx2px(220)
 
 				let spacerHeight
 				if (measuredBarHeight > 0) {
 					spacerHeight = measuredBarHeight + dockGap + breathingRoom + kbOffset
 				} else {
 					// Before DOM measurement: generous fallback covering pills + input card + gap
-					const shortcutReserve = this.showShortcutPills ? uni.upx2px(120) : 0
-					spacerHeight = (baseWindowHeight ? baseWindowHeight * 5 / 26 : uni.upx2px(200))
+					const shortcutReserve = this.showShortcutPills ? uni.upx2px(160) : 0
+					spacerHeight = (baseWindowHeight ? baseWindowHeight * 6 / 26 : uni.upx2px(280))
 						+ shortcutReserve + kbOffset
 				}
 				return { height: `${Math.ceil(spacerHeight)}px` }
@@ -1936,6 +1937,7 @@
 				let barRect = null
 				let drawerRect = null
 				let cardRect = null
+				let pillsRect = null
 				query.select('.input-bar').boundingClientRect(rect => {
 					barRect = rect
 				})
@@ -1945,11 +1947,20 @@
 				query.select('.input-card').boundingClientRect(rect => {
 					cardRect = rect
 				})
+				query.select('.shortcut-pills-scroll').boundingClientRect(rect => {
+					pillsRect = rect
+				})
 				query.exec(() => {
-					const heightCandidates = [barRect?.height, cardRect?.height].filter(v => typeof v === 'number')
-					if (heightCandidates.length === 0 && typeof drawerRect?.height !== 'number') return
-					// 只记录输入栏自身高度，避免键盘把 fixed 输入栏顶上去时把那段位移也算进 spacer。
-					const nextHeight = Math.ceil(heightCandidates.length > 0 ? Math.max(...heightCandidates) : 0)
+					const cardH = cardRect?.height || 0
+					const pillsH = pillsRect?.height || 0
+					// drawer has margin-bottom: -42rpx overlap with card; ignore drawer for bar height
+					// Sum pills + card + .input-bar padding (16rpx 0 = 8px top + 8px bottom)
+					const summedHeight = cardH + pillsH + uni.upx2px(32)
+					const barH = barRect?.height || 0
+					// Prefer the larger of direct bar measurement and summed parts
+					// (barRect may be unreliable for fixed elements on some platforms)
+					const nextHeight = Math.ceil(Math.max(barH, summedHeight))
+					if (nextHeight === 0 && typeof drawerRect?.height !== 'number') return
 					const nextDrawerHeight = Math.ceil(drawerRect?.height || 0)
 					const heightChanged = Math.abs(nextHeight - this.inputBarHeight) > 1
 					const drawerChanged = Math.abs(nextDrawerHeight - this.agentTodoDrawerHeight) > 1
@@ -6607,15 +6618,18 @@
 
 	.chat-page.theme-light .wave-loading-text,
 	.chat-page.theme-light .memory-tool-text {
-		background: linear-gradient(
+		background-image: linear-gradient(
 			90deg,
-			rgba(122, 111, 98, 0.42) 0%,
-			rgba(122, 111, 98, 0.72) 22%,
-			rgba(31, 26, 22, 0.92) 44%,
-			rgba(122, 111, 98, 0.72) 66%,
-			rgba(122, 111, 98, 0.42) 100%
+			rgba(112, 101, 88, 0.56) 0%,
+			rgba(87, 76, 64, 0.82) 22%,
+			rgba(31, 26, 22, 0.98) 44%,
+			rgba(87, 76, 64, 0.82) 66%,
+			rgba(112, 101, 88, 0.56) 100%
 		);
 		background-size: 300% 100%;
+		-webkit-background-clip: text;
+		background-clip: text;
+		-webkit-text-fill-color: transparent;
 	}
 
 	.chat-page.theme-light .review-event-depth {
