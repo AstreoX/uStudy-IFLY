@@ -649,18 +649,18 @@ class LLMOrchestrator:
 
         Returns dict with note_id/note_title on success, None on failure.
         """
+        note_title = title or ((prompt[:47] + "...") if len(prompt) > 50 else prompt)
+        node_id = None
+
+        # Phase 1: Create note
         try:
             async with get_scoped_session() as session:
-                # Resolve node_id from label if provided
-                node_id = None
                 if node_label and node_label.upper() != "FREE":
                     graph_svc = GraphService(session)
                     node = await graph_svc.get_node_by_label(self.space_id, node_label)
                     if node:
                         node_id = node.id
 
-                # Create note — use AI title if provided, fallback to prompt truncation
-                note_title = title or ((prompt[:47] + "...") if len(prompt) > 50 else prompt)
                 note_svc = NoteService(session)
                 note_resp = await note_svc.create_note(
                     self.user_id,
@@ -671,8 +671,15 @@ class LLMOrchestrator:
                         node_id=node_id,
                     ),
                 )
+            logger.info("Auto-saved chart as note %s in space %s", note_resp.id, self.space_id)
+        except Exception:
+            logger.warning("Failed to create note for chart auto-save", exc_info=True)
+            return None
 
-                # Add chart image as attachment
+        # Phase 2: Add attachment (separate session to avoid state leaks)
+        try:
+            async with get_scoped_session() as session:
+                note_svc = NoteService(session)
                 await note_svc.add_attachment(
                     self.user_id,
                     self.space_id,
@@ -681,15 +688,15 @@ class LLMOrchestrator:
                     original_filename="chart.png",
                     mime_type="image/png",
                 )
-
-            logger.info("Auto-saved chart as note %s in space %s", note_resp.id, self.space_id)
-            result = {"note_id": str(note_resp.id), "note_title": note_title}
-            if node_id:
-                result["node_label"] = node_label
-            return result
+            logger.info("Added chart attachment to note %s", note_resp.id)
         except Exception:
-            logger.warning("Failed to auto-save chart as note", exc_info=True)
-            return None
+            logger.warning("Failed to add attachment to note %s", note_resp.id, exc_info=True)
+
+        # Return note info regardless of attachment success
+        result = {"note_id": str(note_resp.id), "note_title": note_title}
+        if node_id:
+            result["node_label"] = node_label
+        return result
 
     async def process_message(
         self,
