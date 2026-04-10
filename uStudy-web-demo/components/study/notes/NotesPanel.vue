@@ -91,13 +91,19 @@
             <text v-else class="detail-content-empty">（无内容）</text>
 
             <view v-if="selectedNote.attachments && selectedNote.attachments.length" class="detail-attachments">
-              <text class="detail-attach-label">附件</text>
               <view
                 v-for="(att, idx) in selectedNote.attachments"
                 :key="idx"
                 class="detail-attach-item"
               >
-                <text class="detail-attach-name">{{ getAttachmentDisplayName(att) }}</text>
+                <image
+                  v-if="att.mime_type && att.mime_type.startsWith('image/')"
+                  :src="getFullAttachmentUrl(att.file_url)"
+                  class="detail-attach-image"
+                  mode="widthFix"
+                  @click="previewAttachmentImage(att.file_url)"
+                />
+                <text v-else class="detail-attach-name">{{ getAttachmentDisplayName(att) }}</text>
               </view>
             </view>
 
@@ -171,6 +177,7 @@
 import UToast from '@/components/u-toast/u-toast.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 import { getSpaceNotes, getNoteDetail, updateNote, deleteNote } from '@/api/space'
+import config from '@/config'
 
 export default {
   name: 'NotesPanel',
@@ -354,6 +361,19 @@ export default {
     getAttachmentDisplayName(att) {
       if (!att) return '未命名附件'
       return att.link_title || att.original_filename || att.link_url || att.file_url || '未命名附件'
+    },
+
+    getFullAttachmentUrl(path) {
+      if (!path) return ''
+      if (/^https?:\/\//i.test(path)) return path
+      return config.API_BASE_URL + path
+    },
+
+    previewAttachmentImage(fileUrl) {
+      const fullUrl = this.getFullAttachmentUrl(fileUrl)
+      if (fullUrl) {
+        window.open(fullUrl, '_blank')
+      }
     },
 
     formatDate(dateStr) {
@@ -686,19 +706,19 @@ export default {
   border-top: 1rpx solid rgba(255, 255, 255, 0.08);
 }
 
-.detail-attach-label {
-  display: block;
-  font-size: 26rpx;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
-  margin-bottom: 14rpx;
+.detail-attach-item {
+  margin-bottom: 10rpx;
 }
 
-.detail-attach-item {
-  padding: 14rpx 16rpx;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 10rpx;
-  margin-bottom: 10rpx;
+.detail-attach-image {
+  width: 100%;
+  border-radius: 8rpx;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.detail-attach-image:hover {
+  opacity: 0.85;
 }
 
 .detail-attach-name {

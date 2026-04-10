@@ -579,7 +579,13 @@
                           />
                         </view>
                         <view v-if="seg.toolCall.result?.auto_saved" class="chart-saved-badge">
-                          <span class="chart-saved-text">📒 已保存为笔记</span>
+                          <image class="chart-saved-icon" src="/static/icons/phosphor/regular/notebook-white.svg" mode="aspectFit" />
+                          <span class="chart-saved-text">已保存为笔记</span>
+                          <template v-if="seg.toolCall.result?.node_label">
+                            <span class="chart-saved-text chart-saved-node"> · </span>
+                            <image class="chart-saved-icon" src="/static/icons/phosphor/regular/push-pin-white.svg" mode="aspectFit" />
+                            <span class="chart-saved-text chart-saved-node">{{ seg.toolCall.result.node_label }}</span>
+                          </template>
                         </view>
                         <view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
                           <text class="tool-call-result-text">{{ seg.toolCall.result?.message || '图表生成失败' }}</text>
@@ -3739,6 +3745,14 @@ export default {
   margin-top: 4px;
   display: flex;
   align-items: center;
+}
+
+.chart-saved-icon {
+  width: 14px;
+  height: 14px;
+  opacity: 0.45;
+  margin-right: 3px;
+  flex-shrink: 0;
 }
 
 .chart-saved-text {
