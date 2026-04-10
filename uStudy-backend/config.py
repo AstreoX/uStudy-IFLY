@@ -90,8 +90,8 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_bridge_url: str = ""  # JP bridge for region-restricted models (Gemini etc.)
-    openrouter_model: str = "x-ai/grok-4-fast"
-    gemini_model: str = "x-ai/grok-4-fast"
+    openrouter_model: str = "qwen/qwen3.5-397b-a17b"
+    gemini_model: str = "qwen/qwen3.5-397b-a17b"
     llm_timeout_seconds: int = 300  # 5分钟
     llm_max_retries: int = 3
     llm_proxy_url: str = ""  # 可选：显式设置代理 URL，为空则使用系统环境变量
@@ -146,7 +146,7 @@ class Settings(BaseSettings):
 
     # 掌握分评估配置
     mastery_evaluation_enabled: bool = True
-    mastery_evaluation_model: str = "x-ai/grok-4-fast"  # 空则使用默认模型
+    mastery_evaluation_model: str = "qwen/qwen3.5-397b-a17b"  # 空则使用默认模型
 
     # 学习路径自动扩展
     learning_path_auto_expand_enabled: bool = True

@@ -18,35 +18,35 @@ TIER_LIMITS: dict[SubscriptionTier, TierLimits] = {
     SubscriptionTier.FREE: TierLimits(
         max_spaces=1,
         daily_messages=20,
-        allowed_model_ids=("grok-4-fast",),
+        allowed_model_ids=("qwen3.5-397b",),
         storage_per_space_bytes=30 * 1024 * 1024,  # 30 MB
         max_upload_file_bytes=10 * 1024 * 1024,  # 10 MB
     ),
     SubscriptionTier.BASIC: TierLimits(
         max_spaces=5,
         daily_messages=150,
-        allowed_model_ids=("grok-4-fast", "kimi-k2.5"),
+        allowed_model_ids=("qwen3.5-397b", "kimi-k2.5"),
         storage_per_space_bytes=200 * 1024 * 1024,  # 200 MB
         max_upload_file_bytes=50 * 1024 * 1024,  # 50 MB
     ),
     SubscriptionTier.PREMIUM: TierLimits(
         max_spaces=None,
         daily_messages=None,
-        allowed_model_ids=("grok-4-fast", "kimi-k2.5", "gemini-3.1-pro"),
+        allowed_model_ids=("qwen3.5-397b", "kimi-k2.5", "gemini-3.1-pro"),
         storage_per_space_bytes=500 * 1024 * 1024,  # 500 MB
         max_upload_file_bytes=100 * 1024 * 1024,  # 100 MB
     ),
     SubscriptionTier.ALPHA: TierLimits(
         max_spaces=None,
         daily_messages=None,
-        allowed_model_ids=("grok-4-fast", "kimi-k2.5", "gemini-3.1-pro"),
+        allowed_model_ids=("qwen3.5-397b", "kimi-k2.5", "gemini-3.1-pro"),
         storage_per_space_bytes=500 * 1024 * 1024,  # 500 MB
         max_upload_file_bytes=100 * 1024 * 1024,  # 100 MB
     ),
     SubscriptionTier.ULTRA: TierLimits(
         max_spaces=None,
         daily_messages=None,
-        allowed_model_ids=("grok-4-fast", "kimi-k2.5", "gemini-3.1-pro"),
+        allowed_model_ids=("qwen3.5-397b", "kimi-k2.5", "gemini-3.1-pro"),
         storage_per_space_bytes=1024 * 1024 * 1024,  # 1 GB
         max_upload_file_bytes=200 * 1024 * 1024,  # 200 MB
     ),

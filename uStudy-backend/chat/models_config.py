@@ -8,9 +8,9 @@ if TYPE_CHECKING:
     from db.models import SubscriptionTier
 
 ALLOWED_MODELS: dict[str, dict[str, Any]] = {
-    "grok-4-fast": {
-        "openrouter_id": "x-ai/grok-4-fast",
-        "display_name": "Grok 4 Fast",
+    "qwen3.5-397b": {
+        "openrouter_id": "qwen/qwen3.5-397b-a17b",
+        "display_name": "Qwen 3.5",
         "description": "快速响应，适合日常对话",
         "is_default": True,
     },
@@ -27,7 +27,7 @@ ALLOWED_MODELS: dict[str, dict[str, Any]] = {
     },
 }
 
-DEFAULT_MODEL_ID = "grok-4-fast"
+DEFAULT_MODEL_ID = "qwen3.5-397b"
 
 
 def get_openrouter_model(model_id: str | None) -> str:
