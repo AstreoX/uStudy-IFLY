@@ -77,6 +77,7 @@ class AgentTaskType(str, enum.Enum):
     GENERATE_KNOWLEDGE_GRAPH = "generate_knowledge_graph"
     GENERATE_QUIZ = "generate_quiz"
     EXPAND_NODE = "expand_node"
+    GENERATE_ARTIFACT = "generate_artifact"
 
 
 class QuickChatToolTaskStatus(str, enum.Enum):
@@ -316,6 +317,11 @@ class Conversation(Base):
         nullable=True,
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    artifact_note_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("notes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=func.now(), nullable=False
     )
@@ -334,6 +340,7 @@ class Conversation(Base):
     __table_args__ = (
         Index("ix_conversations_user_created", "user_id", "created_at"),
         Index("ix_conversations_space_id", "space_id"),
+        Index("ix_conversations_artifact_note_id", "artifact_note_id"),
     )
 
 
@@ -1543,6 +1550,10 @@ class Note(Base):
     )
     title: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    note_type: Mapped[str] = mapped_column(String(50), default="text", nullable=False)
+    metadata_: Mapped[Optional[dict]] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), nullable=False

@@ -46,6 +46,7 @@ from chat.tools.search_tools import SEARCH_TOOLS, SEARCH_TOOL_NAMES, SearchToolE
 from chat.tools.time_tools import TIME_TOOLS, TIME_TOOL_NAMES, TimeToolExecutor
 from chat.tools.review_tools import REVIEW_TOOLS, REVIEW_TOOL_NAMES, QUICK_CHAT_REVIEW_TOOLS, ReviewToolExecutor
 from chat.tools.note_tools import NOTE_TOOL_NAMES, NoteToolExecutor
+from chat.tools.artifact_tools import ARTIFACT_TOOL_NAMES, ArtifactToolExecutor
 from chat.tools.image_tools import IMAGE_TOOLS, IMAGE_TOOL_NAMES, ImageToolExecutor
 from review.service import get_due_reviews_count_by_space, get_due_reviews_total
 from notes.service import NoteService
@@ -585,6 +586,9 @@ class LLMOrchestrator:
         # 笔记工具
         self.note_tool_executor = NoteToolExecutor(user_id, space_id)
 
+        # Artifact 工具
+        self.artifact_tool_executor = ArtifactToolExecutor(user_id, space_id, conversation_id)
+
         # 图表生成工具
         self.image_tool_executor = ImageToolExecutor()
 
@@ -622,6 +626,7 @@ class LLMOrchestrator:
         self._time_tool_names = TIME_TOOL_NAMES
         self._review_tool_names = REVIEW_TOOL_NAMES
         self._note_tool_names = NOTE_TOOL_NAMES
+        self._artifact_tool_names = ARTIFACT_TOOL_NAMES
         self._image_tool_names = IMAGE_TOOL_NAMES
 
         # 根据模式初始化 available_tools
@@ -981,6 +986,11 @@ class LLMOrchestrator:
                                 tool_result.data["auto_saved"] = True
                                 if note_info.get("node_label"):
                                     tool_result.data["node_label"] = note_info["node_label"]
+                    elif tool_call.name in self._artifact_tool_names:
+                        tool_result = await self.artifact_tool_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
                     elif tool_call.name in self._note_tool_names:
                         if tool_call.name == "create_note":
                             # Require user confirmation before creating note

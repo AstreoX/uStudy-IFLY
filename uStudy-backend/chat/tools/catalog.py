@@ -20,6 +20,7 @@ from chat.tools.vector_memory_tools import VECTOR_MEMORY_TOOLS
 from chat.tools.time_tools import TIME_TOOLS
 from chat.tools.review_tools import REVIEW_TOOLS
 from chat.tools.note_tools import NOTE_TOOLS
+from chat.tools.artifact_tools import ARTIFACT_TOOLS
 from chat.tools.image_tools import IMAGE_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ def _build_registry() -> dict[str, dict]:
         REVIEW_TOOLS,
         NOTE_TOOLS,
         IMAGE_TOOLS,
+        ARTIFACT_TOOLS,
     ]
     for tool_list in all_tool_lists:
         for tool_def in tool_list:
@@ -126,6 +128,10 @@ TOOL_CATALOG: list[ToolCatalogEntry] = [
 
     # ── 图表生成 (1) ──
     ToolCatalogEntry("generate_chart", "图表生成", "根据描述生成图表或图片"),
+
+    # ── 互动演示 (2) ──
+    ToolCatalogEntry("create_artifact", "互动演示", "创建交互式 HTML 演示（教学动画/图表/可视化）"),
+    ToolCatalogEntry("update_artifact", "互动演示", "更新当前对话的交互式演示"),
 ]
 
 # 按分类组织的目录（用于 API 返回和前端展示）

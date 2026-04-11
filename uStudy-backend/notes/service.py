@@ -117,6 +117,8 @@ class NoteService:
                 node_label=node_label,
                 title=note.title,
                 content=note.content,
+                note_type=note.note_type,
+                metadata_=note.metadata_,
                 sort_order=note.sort_order,
                 created_at=note.created_at,
                 updated_at=note.updated_at,

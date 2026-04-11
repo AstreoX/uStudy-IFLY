@@ -57,6 +57,8 @@ class NoteResponse(BaseModel):
     node_label: Optional[str] = None
     title: Optional[str] = None
     content: Optional[str] = None
+    note_type: str = "text"
+    metadata_: Optional[dict] = None
     sort_order: int = 0
     created_at: datetime
     updated_at: datetime
@@ -72,6 +74,8 @@ class NoteListItem(BaseModel):
     node_label: Optional[str] = None
     title: Optional[str] = None
     content: Optional[str] = None
+    note_type: str = "text"
+    metadata_: Optional[dict] = None
     sort_order: int = 0
     created_at: datetime
     updated_at: datetime

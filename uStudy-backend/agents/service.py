@@ -16,6 +16,7 @@ from agents.exceptions import (
     SpaceNotFoundError,
     TaskNotFoundError,
 )
+from agents.artifact_agent import ArtifactGenerationAgent
 from agents.knowledge_graph_agent import KnowledgeGraphAgent
 from agents.node_expand_agent import NodeExpandAgent
 from agents.schemas import (
@@ -27,7 +28,7 @@ from agents.schemas import (
 )
 from agents.test_generation_agent import TestGenerationAgent
 from db.database import AsyncSessionLocal
-from db.models import AgentTask, AgentTaskStatus, AgentTaskType, DifficultyLevel, Node, Quiz, Space
+from db.models import AgentTask, AgentTaskStatus, AgentTaskType, Conversation, DifficultyLevel, Node, Note, Quiz, Space
 
 logger = logging.getLogger(__name__)
 
@@ -609,6 +610,186 @@ class AgentService:
                     )
                 )
                 await session.commit()
+
+    async def create_artifact_task(
+        self,
+        user_id: UUID,
+        space_id: UUID,
+        conversation_id: UUID,
+        note_id: UUID,
+        description: str,
+        libraries: list[str] | None = None,
+        existing_html: str | None = None,
+    ) -> AgentTaskResponse:
+        """创建 Artifact HTML 生成任务"""
+        await self._verify_space_ownership(space_id, user_id)
+
+        task = AgentTask(
+            user_id=user_id,
+            space_id=space_id,
+            conversation_id=conversation_id,
+            task_type=AgentTaskType.GENERATE_ARTIFACT,
+            status=AgentTaskStatus.PENDING,
+            input_data={
+                "note_id": str(note_id),
+                "description": description,
+                "libraries": libraries,
+                "has_existing": existing_html is not None,
+            },
+        )
+        self.db.add(task)
+        await self.db.commit()
+        await self.db.refresh(task)
+
+        logger.info("创建 Artifact 生成任务: task_id=%s, note_id=%s", task.id, note_id)
+
+        background_task = asyncio.create_task(
+            self._run_artifact_task(
+                task_id=task.id,
+                user_id=user_id,
+                space_id=space_id,
+                conversation_id=conversation_id,
+                note_id=note_id,
+                description=description,
+                libraries=libraries,
+                existing_html=existing_html,
+            ),
+            name=f"artifact_task_{task.id}",
+        )
+        background_task.add_done_callback(self._handle_task_exception)
+
+        return AgentTaskResponse(
+            task_id=task.id,
+            status=AgentTaskStatusEnum(task.status.value),
+            task_type=task.task_type.value,
+            created_at=task.created_at,
+        )
+
+    async def _run_artifact_task(
+        self,
+        task_id: UUID,
+        user_id: UUID,
+        space_id: UUID,
+        conversation_id: UUID,
+        note_id: UUID,
+        description: str,
+        libraries: list[str] | None = None,
+        existing_html: str | None = None,
+    ) -> None:
+        """后台执行 Artifact HTML 生成任务"""
+        async with AsyncSessionLocal() as session:
+            try:
+                await session.execute(
+                    update(AgentTask)
+                    .where(AgentTask.id == task_id)
+                    .values(
+                        status=AgentTaskStatus.RUNNING,
+                        started_at=datetime.now(timezone.utc),
+                    )
+                )
+                await session.commit()
+
+                logger.info("开始执行 Artifact 生成任务: task_id=%s", task_id)
+
+                agent = ArtifactGenerationAgent()
+                html = await agent.generate(
+                    description=description,
+                    libraries=libraries,
+                    existing_html=existing_html,
+                )
+
+                # 更新 Note 内容
+                result = await session.execute(
+                    select(Note).where(Note.id == note_id)
+                )
+                note = result.scalar_one_or_none()
+                if note:
+                    note.content = html
+                    note.metadata_ = {**(note.metadata_ or {}), "generating": False}
+                    await session.commit()
+
+                # 更新 task 状态
+                await session.execute(
+                    update(AgentTask)
+                    .where(AgentTask.id == task_id)
+                    .values(
+                        status=AgentTaskStatus.DONE,
+                        completed_at=datetime.now(timezone.utc),
+                        output_data={
+                            "note_id": str(note_id),
+                            "html_size": len(html.encode("utf-8")),
+                        },
+                    )
+                )
+                await session.commit()
+
+                logger.info("Artifact 生成任务完成: task_id=%s, note_id=%s", task_id, note_id)
+
+                # 推送通知
+                from notifications.queue import push_notification
+                await push_notification(user_id, {
+                    "type": "artifact_ready",
+                    "data": {
+                        "note_id": str(note_id),
+                        "conversation_id": str(conversation_id),
+                        "space_id": str(space_id),
+                        "title": note.title if note else "",
+                        "status": "done",
+                    },
+                })
+
+            except Exception as e:
+                logger.error("Artifact 生成任务失败: task_id=%s, error=%s", task_id, e)
+                await session.rollback()
+
+                # User-safe error message (hide internal details)
+                user_error = "交互演示生成失败，请稍后重试"
+                if isinstance(e, ValueError):
+                    user_error = str(e)  # ValueError messages are user-facing
+
+                # 更新 Note metadata
+                try:
+                    result = await session.execute(
+                        select(Note).where(Note.id == note_id)
+                    )
+                    note = result.scalar_one_or_none()
+                    if note:
+                        note.metadata_ = {
+                            **(note.metadata_ or {}),
+                            "generating": False,
+                            "error": user_error,
+                        }
+                        await session.commit()
+                except Exception:
+                    await session.rollback()
+
+                await session.execute(
+                    update(AgentTask)
+                    .where(AgentTask.id == task_id)
+                    .values(
+                        status=AgentTaskStatus.FAILED,
+                        completed_at=datetime.now(timezone.utc),
+                        error_message=str(e),  # internal log only
+                        output_data={
+                            "error_type": type(e).__name__,
+                            "error_message": str(e),
+                        },
+                    )
+                )
+                await session.commit()
+
+                # 推送失败通知 (user-safe message only)
+                from notifications.queue import push_notification
+                await push_notification(user_id, {
+                    "type": "artifact_ready",
+                    "data": {
+                        "note_id": str(note_id),
+                        "conversation_id": str(conversation_id),
+                        "space_id": str(space_id),
+                        "status": "failed",
+                        "error_message": user_error,
+                    },
+                })
 
     async def get_task_status(
         self,
