@@ -37,6 +37,7 @@ from admin.router import router as admin_router
 from upload.router import router as upload_router
 from notes.router import router as notes_router
 from search_settings.router import router as search_settings_router
+from calendar_events.router import router as calendar_events_router
 
 settings = get_settings()
 
@@ -199,6 +200,7 @@ app.include_router(quota_router)
 app.include_router(admin_router)
 app.include_router(notes_router)
 app.include_router(search_settings_router)
+app.include_router(calendar_events_router)
 
 
 @app.get("/health")

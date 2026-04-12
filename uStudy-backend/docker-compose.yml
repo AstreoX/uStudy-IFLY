@@ -43,10 +43,16 @@ services:
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       OPENROUTER_BRIDGE_URL: ${OPENROUTER_BRIDGE_URL:-}
       # 邮件配置
-      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-resend}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-smtpdm.aliyun.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@ustudy.app}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-uStudy}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-true}
       # 支付宝
       ALIPAY_APP_ID: ${ALIPAY_APP_ID:-}
       ALIPAY_APP_PRIVATE_KEY_PATH: /app/certs/alipay_app_private_key.pem

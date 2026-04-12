@@ -1609,3 +1609,26 @@ class NoteAttachment(Base):
     __table_args__ = (
         Index("ix_note_attachments_note_id", "note_id"),
     )
+
+
+class CalendarEvent(Base):
+    """用户日历事件"""
+    __tablename__ = "calendar_events"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    external_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    source_conversation_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_calendar_events_user_id", "user_id"),
+        Index("ix_calendar_events_user_start", "user_id", "start_time"),
+    )
