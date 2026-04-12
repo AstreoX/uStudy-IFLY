@@ -84,6 +84,7 @@
                 :key="`quiz-panel-${spaceId || 'none'}`"
               />
               <NotesPanel
+                ref="notesPanel"
                 v-else-if="activeTab === 'notes'"
                 :space-id="spaceId"
                 :key="`notes-panel-${spaceId || 'none'}`"
@@ -209,6 +210,19 @@
             :index="notif.index"
             @click="handleQuizNotificationClick(notif)"
             @close="removeQuizNotification(notif.id)"
+          />
+
+          <!-- Artifact completion notifications -->
+          <UArtifactNotification
+            v-for="notif in artifactNotifications"
+            :key="'artifact-notif-' + notif.id"
+            :visible="notif.visible"
+            :title="notif.title"
+            :status="notif.status"
+            :error-message="notif.errorMessage"
+            :index="notif.index"
+            @click="handleArtifactNotificationClick(notif)"
+            @close="removeArtifactNotification(notif.id)"
           />
           <view class="panel-chat-inner">
             <!-- Chat Panel Header -->
@@ -553,6 +567,15 @@
                         :conversation-id="conversationId"
                       />
 
+                      <!-- Artifact creation/update: card -->
+                      <ArtifactCreationCard
+                        v-else-if="seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact'"
+                        :tool-call="seg.toolCall"
+                        :space-id="spaceId"
+                        :conversation-id="conversationId"
+                        @view-artifact="handleViewArtifact"
+                      />
+
                       <!-- Chart generation tool: image preview card -->
                       <view
                         v-else-if="seg.toolCall.tool === 'generate_chart'"
@@ -778,9 +801,11 @@ import StudyMaterialsPanel from '@/components/study/StudyMaterialsPanel.vue'
 import QuizPanel from '@/components/study/quiz/QuizPanel.vue'
 import NotesPanel from '@/components/study/notes/NotesPanel.vue'
 import NoteCreationCard from '@/components/study/notes/NoteCreationCard.vue'
+import ArtifactCreationCard from '@/components/study/notes/ArtifactCreationCard.vue'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UMasteryToast from '@/components/u-mastery-toast/u-mastery-toast.vue'
 import UQuizNotification from '@/components/u-quiz-notification/u-quiz-notification.vue'
+import UArtifactNotification from '@/components/u-artifact-notification/u-artifact-notification.vue'
 import { connectNotificationStream } from '@/api/notification'
 import { getSpaces, deleteSpace, getTaskStatus, generateKnowledgeGraph, getToolCatalog, updateSpace, getSpace } from '@/api/space'
 import { createConversation, getSpaceConversations, getConversation, sendMessage, uploadAttachment, deleteAttachment, getModels } from '@/api/chat'
@@ -895,7 +920,7 @@ const DEFAULT_BROWSER_URL = 'https://www.wikipedia.org'
 const BROWSER_LOAD_TIMEOUT_MS = 8000
 
 export default {
-  components: { HomeSidebar, KnowledgeGraph, MarkdownRender, StudyMaterialsPanel, QuizPanel, NotesPanel, NoteCreationCard, UModal, UMasteryToast, UQuizNotification },
+  components: { HomeSidebar, KnowledgeGraph, MarkdownRender, StudyMaterialsPanel, QuizPanel, NotesPanel, NoteCreationCard, ArtifactCreationCard, UModal, UMasteryToast, UQuizNotification, UArtifactNotification },
   data() {
     return {
       sidebarCollapsed: false,
@@ -995,6 +1020,10 @@ export default {
       // Quiz evaluation notifications
       quizEvaluationNotifications: [],
       quizNotificationIdCounter: 0,
+
+      // Artifact completion tracking
+      artifactNotifications: [],
+      artifactNotificationIdCounter: 0,
 
       // Quiz generation polling
       isGeneratingQuiz: false,
@@ -1117,7 +1146,8 @@ export default {
       this.notificationAbort = connectNotificationStream({
         onMasteryUpdate: (data) => this.onMasteryUpdate(data),
         onQuizEvaluationComplete: (data) => this.onQuizEvaluationComplete(data),
-        onLearningPathExpanded: (data) => this.onLearningPathExpanded(data)
+        onLearningPathExpanded: (data) => this.onLearningPathExpanded(data),
+        onArtifactReady: (data) => this.onArtifactReady(data)
       })
     },
 
@@ -1182,6 +1212,90 @@ export default {
 
     removeQuizNotification(id) {
       this.quizEvaluationNotifications = this.quizEvaluationNotifications.filter(n => n.id !== id)
+    },
+
+    // ==================== Artifact Notifications ====================
+    onArtifactReady(data) {
+      const { note_id, space_id, status, title, error_message } = data
+      if (String(space_id) !== String(this.spaceId)) return
+
+      // Directly update the toolCall's result.status in the message segments
+      if (note_id) {
+        this.updateArtifactToolCallStatus(note_id, status)
+      }
+
+      // Push toast notification
+      this.artifactNotificationIdCounter++
+      const id = this.artifactNotificationIdCounter
+      const index = this.artifactNotifications.length
+      this.artifactNotifications = [
+        ...this.artifactNotifications,
+        {
+          id,
+          visible: true,
+          noteId: note_id,
+          title: title || '交互演示',
+          status: status === 'done' ? 'done' : 'failed',
+          errorMessage: error_message || '',
+          index
+        }
+      ]
+
+      // Refresh notes panel if on notes tab
+      if (status === 'done' && this.activeTab === 'notes' && this.$refs.notesPanel) {
+        this.$refs.notesPanel.loadNotes()
+      }
+    },
+
+    handleArtifactNotificationClick(notification) {
+      this.removeArtifactNotification(notification.id)
+      if (notification.noteId) {
+        this.activeTab = 'notes'
+        this.$nextTick(async () => {
+          const notesPanel = this.$refs.notesPanel
+          if (notesPanel) {
+            await notesPanel.loadNotes()
+            notesPanel.openNoteById(notification.noteId)
+          }
+        })
+      }
+    },
+
+    removeArtifactNotification(id) {
+      this.artifactNotifications = this.artifactNotifications.filter(n => n.id !== id)
+    },
+
+    updateArtifactToolCallStatus(noteId, newStatus) {
+      for (const msg of this.messages) {
+        const updateSegments = (segments) => {
+          if (!Array.isArray(segments)) return false
+          for (const seg of segments) {
+            if (seg.type === 'tool' && seg.toolCall &&
+                (seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact') &&
+                seg.toolCall.result?.note_id === noteId) {
+              seg.toolCall = { ...seg.toolCall, result: { ...seg.toolCall.result, status: newStatus } }
+              return true
+            }
+          }
+          return false
+        }
+        if (updateSegments(msg.segments) || updateSegments(msg.streamSegments)) {
+          break
+        }
+      }
+      this.$forceUpdate()
+    },
+
+    handleViewArtifact({ noteId, spaceId }) {
+      if (!noteId) return
+      if (spaceId && String(spaceId) !== String(this.spaceId)) return
+      this.activeTab = 'notes'
+      this.$nextTick(() => {
+        const notesPanel = this.$refs.notesPanel
+        if (notesPanel) {
+          notesPanel.openNoteById(noteId)
+        }
+      })
     },
 
     // ==================== Knowledge Graph Generation Polling ====================
@@ -1884,6 +1998,22 @@ export default {
           return msg
         })
         this.nextId = this.messages.length + 1
+
+        // Fix artifact tool calls loaded from history: if the tool call succeeded
+        // but result.status is still 'generating', it means generation completed
+        // after the original SSE response — mark as 'done' so the card shows success
+        for (const msg of this.messages) {
+          if (!msg.segments) continue
+          for (const seg of msg.segments) {
+            if (seg.type === 'tool' && seg.toolCall &&
+                (seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact') &&
+                seg.toolCall.status === 'done' && seg.toolCall.success &&
+                seg.toolCall.result?.status === 'generating') {
+              seg.toolCall = { ...seg.toolCall, result: { ...seg.toolCall.result, status: 'done' } }
+            }
+          }
+        }
+
         this.$nextTick(() => this.scrollToBottom())
       } catch (err) {
         console.error('[StudyPage] Failed to load history:', err)

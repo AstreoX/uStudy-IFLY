@@ -37,15 +37,18 @@
               @click="openNoteDetail(note)"
             >
               <view class="note-card-actions" @click.stop>
-                <view class="note-action-btn" @click.stop="startEditNote(note)">
+                <view v-if="note.note_type !== 'interactive_html'" class="note-action-btn" @click.stop="startEditNote(note)">
                   <image class="note-action-icon" src="/static/icons/phosphor/regular/pencil-white.svg" mode="aspectFit" />
                 </view>
                 <view class="note-action-btn note-action-delete" @click.stop="confirmDeleteNote(note)">
                   <image class="note-action-icon" src="/static/icons/phosphor/regular/trash.svg" mode="aspectFit" />
                 </view>
               </view>
+              <view v-if="note.note_type === 'interactive_html'" class="note-card-artifact-badge">
+                <text class="note-card-artifact-badge-text">互动演示</text>
+              </view>
               <text class="note-card-title">{{ getNoteTitle(note) }}</text>
-              <text class="note-card-preview">{{ truncateContent(note.content) }}</text>
+              <text class="note-card-preview">{{ note.note_type === 'interactive_html' ? '交互式 HTML 演示' : truncateContent(note.content) }}</text>
               <view class="note-card-footer">
                 <text class="note-card-time">{{ formatDate(note.created_at) }}</text>
                 <view v-if="getNoteNodeTag(note)" class="note-card-tag">{{ getNoteNodeTag(note) }}</view>
@@ -66,7 +69,7 @@
             <text class="detail-back-text">返回列表</text>
           </view>
           <view class="detail-header-actions">
-            <view class="note-action-btn" @click="startEditNote(selectedNote)">
+            <view v-if="selectedNote && selectedNote.note_type !== 'interactive_html'" class="note-action-btn" @click="startEditNote(selectedNote)">
               <image class="note-action-icon" src="/static/icons/phosphor/regular/pencil-white.svg" mode="aspectFit" />
             </view>
             <view class="note-action-btn note-action-delete" @click="confirmDeleteNote(selectedNote)">
@@ -79,6 +82,16 @@
           <text class="notes-status-text">加载中...</text>
         </view>
 
+        <!-- Interactive HTML Artifact -->
+        <template v-else-if="selectedNote && selectedNote.note_type === 'interactive_html'">
+          <ArtifactRenderer
+            :html="selectedNote.content"
+            :title="getNoteTitle(selectedNote)"
+            :metadata="selectedNote.metadata_"
+          />
+        </template>
+
+        <!-- Normal note -->
         <scroll-view v-else-if="selectedNote" class="detail-scroll" scroll-y>
           <view class="detail-body">
             <text class="detail-title">{{ getNoteTitle(selectedNote) }}</text>
@@ -176,6 +189,7 @@
 <script>
 import UToast from '@/components/u-toast/u-toast.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
+import ArtifactRenderer from './ArtifactRenderer.vue'
 import { getSpaceNotes, getNoteDetail, updateNote, deleteNote } from '@/api/space'
 import config from '@/config'
 
@@ -183,7 +197,8 @@ export default {
   name: 'NotesPanel',
   components: {
     UToast,
-    MarkdownRender
+    MarkdownRender,
+    ArtifactRenderer
   },
   props: {
     spaceId: {
@@ -250,6 +265,11 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+
+    async openNoteById(noteId) {
+      if (!noteId) return
+      await this.openNoteDetail({ id: noteId })
     },
 
     async openNoteDetail(note) {
@@ -604,6 +624,19 @@ export default {
   color: rgba(34, 197, 94, 0.9);
   padding: 3rpx 10rpx;
   background: rgba(34, 197, 94, 0.12);
+  border-radius: 6rpx;
+}
+
+.note-card-artifact-badge {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-bottom: 4rpx;
+}
+.note-card-artifact-badge-text {
+  font-size: 20rpx;
+  color: rgba(99, 102, 241, 0.9);
+  padding: 3rpx 10rpx;
+  background: rgba(99, 102, 241, 0.12);
   border-radius: 6rpx;
 }
 
