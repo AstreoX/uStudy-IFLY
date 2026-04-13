@@ -24,7 +24,10 @@ ARTIFACT_TOOLS: list[dict[str, Any]] = [
             "name": "create_artifact",
             "description": (
                 "创建交互式 HTML 教学演示（物理模拟、数据可视化、动画、交互图表等）。"
-                "演示将在笔记面板中以 iframe 方式渲染。异步生成，立即返回。"
+                "演示将在笔记面板中以 iframe 方式渲染。异步生成，立即返回。\n"
+                "【重要】每个对话仅允许一个 artifact。如果当前对话已有 artifact，"
+                "请使用 update_artifact 修改，不要重复调用 create_artifact。"
+                "再次调用 create_artifact 会覆盖已有的 artifact。"
             ),
             "parameters": {
                 "type": "object",
@@ -66,6 +69,7 @@ ARTIFACT_TOOLS: list[dict[str, Any]] = [
             "description": (
                 "更新当前对话中已有的交互式 HTML 演示。"
                 "基于现有内容进行修改，异步生成。"
+                "当用户要求修改、调整、改进已有 artifact 时使用此工具。"
             ),
             "parameters": {
                 "type": "object",

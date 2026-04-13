@@ -130,8 +130,8 @@ TOOL_CATALOG: list[ToolCatalogEntry] = [
     ToolCatalogEntry("generate_chart", "图表生成", "根据描述生成图表或图片"),
 
     # ── 互动演示 (2) ──
-    ToolCatalogEntry("create_artifact", "互动演示", "创建交互式 HTML 演示（教学动画/图表/可视化）"),
-    ToolCatalogEntry("update_artifact", "互动演示", "更新当前对话的交互式演示"),
+    ToolCatalogEntry("create_artifact", "互动演示", "创建交互式 HTML 演示（每个对话仅限一个，禁止在一个对话session中重复调用）"),
+    ToolCatalogEntry("update_artifact", "互动演示", "修改已有的交互式演示（对话已有 artifact 时优先使用此工具）"),
 ]
 
 # 按分类组织的目录（用于 API 返回和前端展示）
