@@ -808,7 +808,8 @@ import UQuizNotification from '@/components/u-quiz-notification/u-quiz-notificat
 import UArtifactNotification from '@/components/u-artifact-notification/u-artifact-notification.vue'
 import { connectNotificationStream } from '@/api/notification'
 import { getSpaces, deleteSpace, getTaskStatus, generateKnowledgeGraph, getToolCatalog, updateSpace, getSpace } from '@/api/space'
-import { createConversation, getSpaceConversations, getConversation, sendMessage, uploadAttachment, deleteAttachment, getModels } from '@/api/chat'
+import { createConversation, getSpaceConversations, getConversation, sendMessage, submitToolResult, uploadAttachment, deleteAttachment, getModels } from '@/api/chat'
+import { getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendar'
 import { useUserStore } from '@/store/user'
 import { useSpacesStore } from '@/store/spaces'
 import config from '@/config'
@@ -865,6 +866,9 @@ const GRAPH_MUTATING_TOOLS = new Set([
   'extend_learning_path',
   'delete_all_learning_paths'
 ])
+
+// Schedule tools (auto-executed via backend API on web)
+const SCHEDULE_TOOLS = new Set(['get_schedule', 'add_schedule', 'delete_schedule', 'update_schedule'])
 
 // Planning tools (shown as inline shimmer text that fades out)
 const PLANNING_TOOLS = new Set(['get_tool_details'])
@@ -2430,11 +2434,9 @@ export default {
       // Find existing entry (created by tool_call running event)
       const existing = this.activeToolCalls.find(tc => tc.id === tool_call_id)
       if (existing) {
-        // Update status and arguments in-place
         existing.status = 'pending_confirmation'
         existing.arguments = params
 
-        // Sync to streamSegments
         if (msg.streamSegments) {
           const seg = msg.streamSegments.find(s => s.type === 'tool' && s.toolCall && s.toolCall.id === tool_call_id)
           if (seg) {
@@ -2442,7 +2444,6 @@ export default {
           }
         }
       } else {
-        // Fallback: no running entry yet (edge case — tool_call_start not received)
         if (msg.isWaitingOutput) msg.isWaitingOutput = false
         this.flushThinkingBuffer()
         this.flushTypewriter()
@@ -2464,7 +2465,105 @@ export default {
         this.activeToolCalls.push(toolCall)
       }
 
+      // Auto-execute schedule tools via backend API (web has no system calendar)
+      if (SCHEDULE_TOOLS.has(tool)) {
+        this.executeScheduleToolViaBackend(aiMsgId, tool_call_id, tool, params)
+      }
+
       this.$forceUpdate()
+      if (this.isAutoScrollEnabled) {
+        this.$nextTick(() => this.scrollToBottom())
+      }
+    },
+
+    async executeScheduleToolViaBackend(aiMsgId, toolCallId, tool, params) {
+      const updateToolCallStatus = (status, success, result) => {
+        const tc = this.activeToolCalls.find(t => t.id === toolCallId)
+        if (tc) {
+          tc.status = status
+          if (success !== undefined) tc.success = success
+          if (result !== undefined) tc.result = result
+        }
+        const msg = this.messages.find(m => m.id === aiMsgId)
+        if (msg?.streamSegments) {
+          const seg = msg.streamSegments.find(s => s.type === 'tool' && s.toolCall?.id === toolCallId)
+          if (seg) seg.toolCall = { ...seg.toolCall, status, ...(success !== undefined ? { success } : {}), ...(result !== undefined ? { result } : {}) }
+        }
+        this.$forceUpdate()
+      }
+
+      updateToolCallStatus('running')
+
+      try {
+        let resultText = ''
+
+        if (tool === 'get_schedule') {
+          const startDate = params.start_date || new Date().toISOString().split('T')[0]
+          const endDate = params.end_date || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+          const events = await getCalendarEvents(startDate + 'T00:00:00', endDate + 'T23:59:59')
+          if (!events || events.length === 0) {
+            resultText = '该时间范围内没有日程安排。'
+          } else {
+            resultText = events.map(e => {
+              const start = new Date(e.start_time).toLocaleString('zh-CN')
+              const end = new Date(e.end_time).toLocaleString('zh-CN')
+              return `- ${e.title}: ${start} ~ ${end}${e.details ? ' (' + e.details + ')' : ''}`
+            }).join('\n')
+          }
+        } else if (tool === 'add_schedule') {
+          const event = await createCalendarEvent({
+            title: params.title,
+            start_time: params.start_time || params.begin_time,
+            end_time: params.end_time,
+            details: params.description || params.details || null,
+            source_conversation_id: this.conversationId || null
+          })
+          resultText = `日程已添加：${event.title}`
+        } else if (tool === 'delete_schedule') {
+          const eventId = params.event_id || params.id
+          if (eventId) {
+            await deleteCalendarEvent(eventId)
+            resultText = '日程已删除。'
+          } else {
+            resultText = '未提供要删除的日程 ID。'
+          }
+        } else if (tool === 'update_schedule') {
+          const eventId = params.event_id || params.id
+          if (eventId) {
+            const updateData = {}
+            if (params.title) updateData.title = params.title
+            if (params.start_time || params.begin_time) updateData.start_time = params.start_time || params.begin_time
+            if (params.end_time) updateData.end_time = params.end_time
+            if (params.description || params.details) updateData.details = params.description || params.details
+            const event = await updateCalendarEvent(eventId, updateData)
+            resultText = `日程已更新：${event.title}`
+          } else {
+            resultText = '未提供要更新的日程 ID。'
+          }
+        }
+
+        updateToolCallStatus('done', true, { text: resultText })
+
+        if (this.conversationId) {
+          submitToolResult(this.conversationId, {
+            tool_call_id: toolCallId,
+            result: resultText,
+            success: true
+          }).catch(() => {})
+        }
+      } catch (err) {
+        const errMsg = err.message || '日程操作失败'
+        updateToolCallStatus('done', false, { text: errMsg })
+
+        if (this.conversationId) {
+          submitToolResult(this.conversationId, {
+            tool_call_id: toolCallId,
+            result: errMsg,
+            success: false
+          }).catch(() => {})
+        }
+      }
+
       if (this.isAutoScrollEnabled) {
         this.$nextTick(() => this.scrollToBottom())
       }

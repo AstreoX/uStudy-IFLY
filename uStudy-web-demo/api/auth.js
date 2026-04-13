@@ -57,6 +57,16 @@ export function getMe() {
   })
 }
 
+export function resetPassword(data) {
+  return request({
+    url: '/api/auth/reset-password',
+    method: 'POST',
+    data,
+    skipAuth: true,
+    skipRefresh: true
+  })
+}
+
 export function activateCode(code) {
   return request({
     url: '/api/auth/activate',

@@ -415,6 +415,26 @@ export default {
   padding: 24rpx;
   box-sizing: border-box;
   overflow-y: auto;
+  /* Custom scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.question-wrap::-webkit-scrollbar {
+  width: 6px;
+}
+
+.question-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.question-wrap::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.question-wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .question-header {
@@ -552,11 +572,16 @@ export default {
 
 .short-answer-wrap {
   margin-top: 18rpx;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .short-answer-textarea {
   width: 100%;
   min-height: 300rpx;
+  max-height: 100%;
   border-radius: 14rpx;
   border: 1rpx solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.03);
@@ -565,6 +590,26 @@ export default {
   color: #ffffff;
   font-size: 24rpx;
   line-height: 1.5;
+  resize: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.short-answer-textarea::-webkit-scrollbar {
+  width: 6px;
+}
+
+.short-answer-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.short-answer-textarea::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.short-answer-textarea::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .short-answer-placeholder {

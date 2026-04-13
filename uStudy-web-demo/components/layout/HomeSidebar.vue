@@ -24,6 +24,8 @@
             <svg v-else-if="item.id === 'study'" viewBox="0 0 256 256"><rect width="256" height="256" fill="none"/><polygon points="8 96 128 32 248 96 128 160 8 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><polyline points="128 96 184 125.87 184 240" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><path d="M216,113.07v53.22a8,8,0,0,1-2,5.31c-11.3,12.59-38.9,36.4-86,36.4s-74.68-23.81-86-36.4a8,8,0,0,1-2-5.31V113.07" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>
             <!-- chat -->
             <svg v-else-if="item.id === 'direct'" viewBox="0 0 256 256"><path d="M216,48H40A16,16,0,0,0,24,64V224a15.84,15.84,0,0,0,9.25,14.5A16.05,16.05,0,0,0,40,240a15.89,15.89,0,0,0,10.25-3.78l.09-.07L83,208H216a16,16,0,0,0,16-16V64A16,16,0,0,0,216,48ZM216,192H80a8,8,0,0,0-5.23,1.95L40,224V64H216Z" fill="currentColor"/></svg>
+            <!-- calendar -->
+            <svg v-else-if="item.id === 'calendar'" viewBox="0 0 256 256"><rect width="256" height="256" fill="none"/><rect x="40" y="40" width="176" height="176" rx="8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="176" y1="24" x2="176" y2="56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="80" y1="24" x2="80" y2="56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="40" y1="88" x2="216" y2="88" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>
           </view>
           <text v-if="!collapsed" class="nav-label">{{ item.label }}</text>
           <!-- caret-right for expandable -->
@@ -205,7 +207,8 @@ export default {
       menuItems: [
         { id: 'home',    label: '首页',      expandable: false, route: '/pages/index/index' },
         { id: 'study',   label: '学习空间',  expandable: true },
-        { id: 'direct',  label: '快速对话',  expandable: false, route: '/pages/quickChat/quickChat' }
+        { id: 'direct',  label: '快速对话',  expandable: false, route: '/pages/quickChat/quickChat' },
+        { id: 'calendar', label: '日程',     expandable: false, route: '/pages/calendar/calendar' }
       ]
     }
   },

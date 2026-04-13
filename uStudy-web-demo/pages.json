@@ -9,6 +9,14 @@
 			}
 		},
 		{
+			"path": "pages/forgotPassword/forgotPassword",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "找回密码",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
 			"path": "pages/register/register",
 			"style": {
 				"navigationStyle": "custom",
@@ -61,6 +69,14 @@
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTitleText": "搜索设置",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/calendar/calendar",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "日程",
 				"backgroundColor": "#0A0A12"
 			}
 		}
