@@ -349,3 +349,18 @@ export function deleteNote(spaceId, noteId) {
     method: 'DELETE'
   })
 }
+
+export function generateShareCode(spaceId) {
+  return request({
+    url: `/api/spaces/${spaceId}/share-code`,
+    method: 'POST'
+  })
+}
+
+export function importSpaceByCode(shareCode) {
+  return request({
+    url: '/api/spaces/import',
+    method: 'POST',
+    data: { share_code: shareCode }
+  })
+}

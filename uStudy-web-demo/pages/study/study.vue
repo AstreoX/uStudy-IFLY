@@ -22,6 +22,18 @@
         <text class="study-header-title">{{ spaceName }}</text>
         <view class="study-header-actions">
           <view
+            class="share-space-btn"
+            :class="{ 'share-space-btn-disabled': !spaceId || isGeneratingShareCode }"
+            @tap="handleShareSpace"
+          >
+            <svg viewBox="0 0 256 256" class="share-space-icon">
+              <rect width="256" height="256" fill="none"/>
+              <line x1="128" y1="144" x2="128" y2="32" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+              <polyline points="216 144 216 208 40 208 40 144" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+              <polyline points="88 72 128 32 168 72" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+            </svg>
+          </view>
+          <view
             class="delete-space-btn"
             :class="{ 'delete-space-btn-disabled': !spaceId || isDeletingSpace }"
             @tap="handleDeleteSpace"
@@ -787,6 +799,25 @@
         @confirm="confirmDeleteSpace"
         @close="showDeleteSpaceModal = false"
       />
+
+      <!-- Share Code Modal -->
+      <view v-if="showShareCodeModal" class="share-modal-backdrop" @tap.self="showShareCodeModal = false">
+        <view class="share-modal-card">
+          <text class="share-modal-title">分享学习空间</text>
+          <text class="share-modal-sub">将分享码发送给好友，对方可导入此空间的知识图谱和笔记</text>
+          <view class="share-modal-code-box">
+            <text class="share-modal-code">{{ displayShareCode }}</text>
+          </view>
+          <view class="share-modal-actions">
+            <view class="share-modal-copy-btn" @tap="handleCopyShareCode">
+              <text class="share-modal-copy-text">{{ copyBtnText }}</text>
+            </view>
+            <view class="share-modal-close-btn" @tap="showShareCodeModal = false">
+              <text class="share-modal-close-text">关闭</text>
+            </view>
+          </view>
+        </view>
+      </view>
     </view>
 
   </view>
@@ -807,7 +838,7 @@ import UMasteryToast from '@/components/u-mastery-toast/u-mastery-toast.vue'
 import UQuizNotification from '@/components/u-quiz-notification/u-quiz-notification.vue'
 import UArtifactNotification from '@/components/u-artifact-notification/u-artifact-notification.vue'
 import { connectNotificationStream } from '@/api/notification'
-import { getSpaces, deleteSpace, getTaskStatus, generateKnowledgeGraph, getToolCatalog, updateSpace, getSpace } from '@/api/space'
+import { getSpaces, deleteSpace, getTaskStatus, generateKnowledgeGraph, getToolCatalog, updateSpace, getSpace, generateShareCode } from '@/api/space'
 import { createConversation, getSpaceConversations, getConversation, sendMessage, submitToolResult, uploadAttachment, deleteAttachment, getModels } from '@/api/chat'
 import { getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendar'
 import { useUserStore } from '@/store/user'
@@ -1015,6 +1046,13 @@ export default {
       showDeleteSpaceModal: false,
       deleteTargetSpaceId: null,
       deleteTargetSpaceName: '',
+
+      // Space share
+      showShareCodeModal: false,
+      shareCode: '',
+      displayShareCode: '',
+      isGeneratingShareCode: false,
+      copyBtnText: '复制分享码',
 
       // Mastery notification
       masteryNotifications: [],
@@ -1738,6 +1776,50 @@ export default {
       if (typeof detail?.message === 'string') return detail.message
       if (typeof error?.message === 'string') return error.message
       return '删除失败，请重试'
+    },
+
+    async handleShareSpace() {
+      if (!this.spaceId || this.isGeneratingShareCode) return
+      this.isGeneratingShareCode = true
+      try {
+        const res = await generateShareCode(this.spaceId)
+        this.shareCode = res.code
+        this.displayShareCode = res.display_code
+        this.copyBtnText = '复制分享码'
+        this.showShareCodeModal = true
+      } catch (err) {
+        const msg = err?.data?.detail || err?.message || '生成分享码失败'
+        uni.showToast({ title: msg, icon: 'none' })
+      } finally {
+        this.isGeneratingShareCode = false
+      }
+    },
+
+    handleCopyShareCode() {
+      const code = this.displayShareCode || this.shareCode
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(code).then(() => {
+          this.copyBtnText = '已复制!'
+          setTimeout(() => { this.copyBtnText = '复制分享码' }, 2000)
+        }).catch(() => {
+          this._fallbackCopy(code)
+        })
+      } else {
+        this._fallbackCopy(code)
+      }
+    },
+
+    _fallbackCopy(text) {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      this.copyBtnText = '已复制!'
+      setTimeout(() => { this.copyBtnText = '复制分享码' }, 2000)
     },
 
     handleDeleteSpace() {
@@ -3316,6 +3398,143 @@ export default {
   width: 18px;
   height: 18px;
   color: #F87171;
+}
+
+.share-space-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(96, 165, 250, 0.15);
+  border: 1px solid rgba(96, 165, 250, 0.42);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.share-space-btn:hover {
+  background: rgba(96, 165, 250, 0.22);
+  border-color: rgba(96, 165, 250, 0.62);
+}
+
+.share-space-btn-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.share-space-icon {
+  width: 18px;
+  height: 18px;
+  color: #60A5FA;
+}
+
+/* Share Code Modal */
+.share-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.share-modal-card {
+  background: rgba(30, 32, 44, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 32px;
+  width: 380px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.share-modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.share-modal-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.share-modal-code-box {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 16px 32px;
+  margin: 8px 0;
+}
+
+.share-modal-code {
+  font-size: 28px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  color: #60A5FA;
+  letter-spacing: 3px;
+}
+
+.share-modal-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.share-modal-copy-btn {
+  flex: 1;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.5), rgba(96, 165, 250, 0.4));
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.share-modal-copy-btn:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.65), rgba(96, 165, 250, 0.55));
+}
+
+.share-modal-copy-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.share-modal-close-btn {
+  width: 80px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.share-modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.share-modal-close-text {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 /* Two-Panel Split */

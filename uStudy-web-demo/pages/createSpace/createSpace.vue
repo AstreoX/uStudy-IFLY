@@ -85,6 +85,49 @@
             <text class="create-btn-text">{{ isCreating ? '创建中...' : '开始学习' }}</text>
           </view>
         </view>
+
+        <!-- Import Section -->
+        <view class="import-section">
+          <view class="import-divider">
+            <view class="import-divider-line"></view>
+            <text class="import-divider-text">或</text>
+            <view class="import-divider-line"></view>
+          </view>
+          <view class="import-btn" @click="showImportModal = true">
+            <text class="import-btn-text">通过分享码导入</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- Import Modal -->
+    <view v-if="showImportModal" class="import-modal-backdrop" @tap.self="showImportModal = false">
+      <view class="import-modal-card">
+        <text class="import-modal-title">导入学习空间</text>
+        <text class="import-modal-sub">输入好友分享的8位分享码</text>
+        <view class="import-modal-input-wrap">
+          <input
+            class="import-modal-input"
+            type="text"
+            v-model="importCode"
+            placeholder="A1B2-C3D4"
+            placeholder-class="import-placeholder"
+            maxlength="9"
+            @confirm="handleImport"
+          />
+        </view>
+        <view class="import-modal-actions">
+          <view class="import-modal-cancel-btn" @tap="showImportModal = false">
+            <text class="import-modal-cancel-text">取消</text>
+          </view>
+          <view
+            class="import-modal-confirm-btn"
+            :class="{ 'import-modal-confirm-disabled': !importCode.trim() || isImporting }"
+            @tap="handleImport"
+          >
+            <text class="import-modal-confirm-text">{{ isImporting ? '导入中...' : '导入' }}</text>
+          </view>
+        </view>
       </view>
     </view>
   </view>
@@ -92,7 +135,7 @@
 
 <script>
 import HomeSidebar from '@/components/layout/HomeSidebar.vue'
-import { createSpace, generateKnowledgeGraph } from '@/api/space'
+import { createSpace, generateKnowledgeGraph, importSpaceByCode } from '@/api/space'
 import { useSpacesStore } from '@/store/spaces'
 
 const ENABLE_AUTO_SCROLL = true
@@ -142,7 +185,11 @@ export default {
       mouseDragActive: false,
       mouseDragStartX: 0,
       mouseDragStartScrollLeft: 0,
-      mouseDragDistance: 0
+      mouseDragDistance: 0,
+      // Import
+      showImportModal: false,
+      importCode: '',
+      isImporting: false
     }
   },
 
@@ -412,6 +459,26 @@ export default {
         return
       }
       this.togglePreference(id)
+    },
+
+    // ==================== Import Space ====================
+
+    async handleImport() {
+      if (!this.importCode.trim() || this.isImporting) return
+      this.isImporting = true
+      try {
+        const space = await importSpaceByCode(this.importCode.trim())
+        const spacesStore = useSpacesStore()
+        spacesStore.invalidate()
+        this.showImportModal = false
+        this.importCode = ''
+        uni.reLaunch({ url: `/pages/study/study?spaceId=${space.id}` })
+      } catch (err) {
+        const msg = err?.data?.detail || err?.message || '导入失败，请检查分享码'
+        uni.showToast({ title: msg, icon: 'none' })
+      } finally {
+        this.isImporting = false
+      }
     },
 
     // ==================== Create Space ====================
@@ -795,5 +862,176 @@ export default {
 
 .create-btn-disabled .create-btn-text {
   color: rgba(255, 255, 255, 0.4);
+}
+
+/* Import Section */
+.import-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 24px;
+}
+
+.import-divider {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.import-divider-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.import-divider-text {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.import-btn {
+  cursor: pointer;
+  padding: 6px 16px;
+}
+
+.import-btn-text {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.55);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.2s ease;
+}
+
+.import-btn:hover .import-btn-text {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Import Modal */
+.import-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.import-modal-card {
+  background: rgba(30, 32, 44, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 32px;
+  width: 380px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.import-modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.import-modal-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.import-modal-input-wrap {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin: 4px 0;
+  transition: border-color 0.2s ease;
+}
+
+.import-modal-input-wrap:focus-within {
+  border-color: rgba(96, 165, 250, 0.5);
+}
+
+.import-modal-input {
+  width: 100%;
+  font-size: 20px;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  color: #ffffff;
+  background: transparent;
+  border: none;
+  outline: none;
+  text-align: center;
+  letter-spacing: 3px;
+}
+
+.import-placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.import-modal-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.import-modal-cancel-btn {
+  width: 80px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.import-modal-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.import-modal-cancel-text {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.import-modal-confirm-btn {
+  flex: 1;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.5), rgba(96, 165, 250, 0.4));
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.import-modal-confirm-btn:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.65), rgba(96, 165, 250, 0.55));
+}
+
+.import-modal-confirm-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.import-modal-confirm-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
 }
 </style>
