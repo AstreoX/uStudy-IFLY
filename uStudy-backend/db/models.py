@@ -1632,3 +1632,32 @@ class CalendarEvent(Base):
         Index("ix_calendar_events_user_id", "user_id"),
         Index("ix_calendar_events_user_start", "user_id", "start_time"),
     )
+
+
+class SpaceShareCode(Base):
+    """学习空间分享码"""
+
+    __tablename__ = "space_share_codes"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    code: Mapped[str] = mapped_column(String(8), nullable=False, unique=True)
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    creator_user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 关系
+    space: Mapped["Space"] = relationship()
+    creator: Mapped["User"] = relationship()
