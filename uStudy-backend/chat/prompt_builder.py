@@ -395,6 +395,16 @@ class PromptBuilder:
 """
 
 
+    DUAL_SYNC_SECTION = """
+# 双栏同步模式
+
+用户已开启双栏同步，你可以在用户消息中看到左面板的截图。
+截图上有百分比网格标记（0%-100%），用于帮助你定位内容。
+
+当你讨论到截图中可见的具体内容时，请使用 annotate_panel 工具
+画一个方框圈住相关区域并附上批注文字。坐标使用百分比。
+"""
+
     # 旧版长期记忆段落模板（QuickChat 暂时保留）
     LONG_TERM_MEMORY_SECTION = """
 # 长期记忆
@@ -416,6 +426,7 @@ class PromptBuilder:
         previous_conversation_context: Optional[str] = None,
         reviews_count: int = 0,
         tool_catalog: Optional[str] = None,
+        has_panel_screenshot: bool = False,
     ) -> str:
         """
         Build system prompt for learning space mode.
@@ -440,6 +451,9 @@ class PromptBuilder:
         # 自动模式：注入工具目录到系统提示词
         if tool_catalog:
             base_prompt = base_prompt + "\n" + tool_catalog
+
+        if has_panel_screenshot:
+            base_prompt = base_prompt + "\n" + self.DUAL_SYNC_SECTION
 
         # 如果有上一次对话上下文（新对话时加载），拼接到提示词
         if previous_conversation_context:

@@ -305,6 +305,7 @@ async def send_message(
         request.attachment_ids,
         model_id=request.model_id,
         validated_space_id=validated_space_id,
+        panel_screenshot=request.panel_screenshot,
     )
 
     logger.info(f"[Perf] Router total: {(time.monotonic() - t_start)*1000:.0f}ms")

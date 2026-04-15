@@ -48,6 +48,7 @@ from chat.tools.review_tools import REVIEW_TOOLS, REVIEW_TOOL_NAMES, QUICK_CHAT_
 from chat.tools.note_tools import NOTE_TOOL_NAMES, NoteToolExecutor
 from chat.tools.artifact_tools import ARTIFACT_TOOL_NAMES, ArtifactToolExecutor
 from chat.tools.image_tools import IMAGE_TOOLS, IMAGE_TOOL_NAMES, ImageToolExecutor
+from chat.tools.annotation_tools import ANNOTATION_TOOLS, ANNOTATION_TOOL_NAMES, AnnotationToolExecutor
 from review.service import get_due_reviews_count_by_space, get_due_reviews_total
 from notes.service import NoteService
 from notes.schemas import NoteCreate
@@ -543,6 +544,7 @@ class LLMOrchestrator:
         search_channels: dict[str, bool] | None = None,
         tool_mode: str = "auto",
         enabled_tools: list[str] | None = None,
+        has_panel_screenshot: bool = False,
     ) -> None:
         """
         Initialize the orchestrator.
@@ -629,6 +631,11 @@ class LLMOrchestrator:
         self._artifact_tool_names = ARTIFACT_TOOL_NAMES
         self._image_tool_names = IMAGE_TOOL_NAMES
 
+        # Annotation tool (dual-sync mode)
+        self._has_panel_screenshot = has_panel_screenshot
+        self._annotation_tool_names = ANNOTATION_TOOL_NAMES
+        self.annotation_executor = AnnotationToolExecutor()
+
         # 根据模式初始化 available_tools
         if tool_mode == "manual":
             # 手动模式：直接注册用户选择的工具完整定义
@@ -640,6 +647,10 @@ class LLMOrchestrator:
             # 自动模式：仅注册 get_tool_details 元工具
             self.available_tools = [GET_TOOL_DETAILS_TOOL]
             self._tool_catalog_text = format_catalog_for_prompt()
+
+        # Add annotation tools when dual-sync mode is active
+        if has_panel_screenshot:
+            self.available_tools = list(self.available_tools) + ANNOTATION_TOOLS
 
     async def _auto_save_chart_as_note(
         self,
@@ -763,6 +774,7 @@ class LLMOrchestrator:
             previous_conversation_context=self.previous_conversation_context,
             reviews_count=reviews_count,
             tool_catalog=self._tool_catalog_text,
+            has_panel_screenshot=self._has_panel_screenshot,
         )
         logger.info(f"[Perf] Build prompt ({len(system_prompt)} chars): {(time.monotonic()-t0)*1000:.0f}ms")
 
@@ -1032,6 +1044,11 @@ class LLMOrchestrator:
                                 tool_call.name,
                                 tool_call.arguments,
                             )
+                    elif tool_call.name in self._annotation_tool_names:
+                        tool_result = await self.annotation_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
                     else:
                         tool_result = await self.graph_tool_executor.execute(
                             tool_call.name,

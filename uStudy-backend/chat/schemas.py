@@ -22,6 +22,9 @@ class SendMessageRequest(BaseModel):
     model_id: Optional[str] = Field(
         default=None, max_length=50, description="模型ID，不指定则使用默认模型"
     )
+    panel_screenshot: Optional[str] = Field(
+        default=None, max_length=500000, description="左面板截图 (base64 data URI, 双栏同步模式)"
+    )
 
 
 class CreateConversationRequest(BaseModel):

@@ -453,6 +453,7 @@ class ChatService:
         attachment_ids: list[UUID] | None = None,
         model_id: str | None = None,
         validated_space_id: UUID | None = None,
+        panel_screenshot: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Send a message in a conversation and get SSE response stream.
@@ -562,6 +563,18 @@ class ChatService:
             current_message_dict = await _build_llm_message_with_attachments_async(
                 user_message, db
             )
+
+            # Inject panel screenshot into current message (transient, not saved to DB)
+            if panel_screenshot:
+                if isinstance(current_message_dict["content"], str):
+                    current_message_dict["content"] = [
+                        {"type": "text", "text": current_message_dict["content"]},
+                    ]
+                current_message_dict["content"].insert(0, {
+                    "type": "image_url",
+                    "image_url": {"url": panel_screenshot},
+                })
+
             logger.info(f"[Perf] Build LLM history: {(time.monotonic()-t0)*1000:.0f}ms")
 
             # 5. Get space info
@@ -638,6 +651,7 @@ class ChatService:
             search_channels=enabled_channels,
             tool_mode=space_tool_mode,
             enabled_tools=space_enabled_tools,
+            has_panel_screenshot=bool(panel_screenshot),
         )
 
         queue: asyncio.Queue = asyncio.Queue()
