@@ -11,6 +11,7 @@ from uuid import UUID
 
 from agents.llm import OpenRouterClient
 from agents.llm.full_quiz_evaluation_prompts import build_full_quiz_evaluation_prompt
+from config import get_settings
 from quiz.evaluator import evaluate_short_answer
 
 logger = logging.getLogger(__name__)
@@ -250,7 +251,7 @@ class QuizEvaluationService:
 
         # 获取模型名称
         try:
-            client = OpenRouterClient()
+            client = OpenRouterClient(model_override=get_settings().quiz_evaluation_model or None)
             debug_info.model_name = client.model
         except Exception:
             debug_info.model_name = "unknown"
@@ -670,7 +671,7 @@ class QuizEvaluationService:
         )
 
         try:
-            client = OpenRouterClient()
+            client = OpenRouterClient(model_override=get_settings().quiz_evaluation_model or None)
             response = await client.complete(
                 messages=messages,
                 temperature=AI_EVALUATION_TEMPERATURE,

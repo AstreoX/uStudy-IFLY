@@ -35,7 +35,7 @@ class KnowledgeGraphAgent:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
-        self.llm_client = OpenRouterClient()
+        self.llm_client = OpenRouterClient(model_override=get_settings().knowledge_graph_model or None)
         self.parser = KnowledgeGraphParser()
         self.settings = get_settings()
 

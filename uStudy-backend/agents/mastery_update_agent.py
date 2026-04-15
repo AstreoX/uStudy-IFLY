@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from agents.llm import OpenRouterClient
 from agents.llm.mastery_update_prompts import build_mastery_update_prompt
+from config import get_settings
 from db.database import AsyncSessionLocal
 from db.models import Node
 from graph.service import GraphService
@@ -98,7 +99,7 @@ class MasteryUpdateAgent:
                     question_results=question_results,
                 )
 
-                client = OpenRouterClient()
+                client = OpenRouterClient(model_override=get_settings().mastery_evaluation_model or None)
                 response = await client.complete(
                     messages=messages,
                     temperature=MASTERY_UPDATE_TEMPERATURE,

@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_bridge_url: str = ""  # JP bridge for region-restricted models (Gemini etc.)
     openrouter_model: str = "qwen/qwen3.5-397b-a17b"
-    gemini_model: str = "qwen/qwen3.5-397b-a17b"
+    gemini_model: str = "z-ai/glm-4.7-flash"
     llm_timeout_seconds: int = 300  # 5分钟
     llm_max_retries: int = 3
     llm_proxy_url: str = ""  # 可选：显式设置代理 URL，为空则使用系统环境变量
@@ -144,9 +144,15 @@ class Settings(BaseSettings):
     memory_auto_extract_enabled: bool = True  # 是否启用自动记忆提取
     memory_extraction_model: str = "moonshotai/kimi-k2.5"  # 记忆提取用的 LLM 模型（空则使用默认模型）
 
+    # 知识图谱生成配置
+    knowledge_graph_model: str = "z-ai/glm-4.7-flash"  # 空则使用默认模型
+
+    # 整卷综合评估配置
+    quiz_evaluation_model: str = "z-ai/glm-4.7-flash"  # 空则使用默认模型
+
     # 掌握分评估配置
     mastery_evaluation_enabled: bool = True
-    mastery_evaluation_model: str = "qwen/qwen3.5-397b-a17b"  # 空则使用默认模型
+    mastery_evaluation_model: str = "z-ai/glm-4.7-flash"  # 空则使用默认模型
 
     # 学习路径自动扩展
     learning_path_auto_expand_enabled: bool = True
