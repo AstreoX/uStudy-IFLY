@@ -596,6 +596,10 @@ export default {
       return `${month}月${day}日 ${hours}:${minutes}`
     },
 
+    getCanvas() {
+      return this._canvasEl || null
+    },
+
     // --- Canvas initialization ---
     initCanvas() {
       const wrap = this.$refs.canvasWrap

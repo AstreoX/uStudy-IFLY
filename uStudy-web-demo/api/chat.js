@@ -247,13 +247,16 @@ export function bindQuickChatToolTask(conversationId, toolCallId) {
   })
 }
 
-export function sendMessage(conversationId, content, callbacks, attachmentIds = null, modelId = null) {
+export function sendMessage(conversationId, content, callbacks, attachmentIds = null, modelId = null, panelScreenshot = null) {
   const data = { content }
   if (attachmentIds && attachmentIds.length > 0) {
     data.attachment_ids = attachmentIds
   }
   if (modelId) {
     data.model_id = modelId
+  }
+  if (panelScreenshot) {
+    data.panel_screenshot = panelScreenshot
   }
   return connectSSE({
     url: `/api/conversations/${conversationId}/messages`,

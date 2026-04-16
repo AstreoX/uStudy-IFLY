@@ -173,6 +173,24 @@
               </template>
             </view>
 
+            <!-- Annotation overlay for dual-sync mode -->
+            <view v-if="annotations.length > 0" class="annotation-overlay">
+              <view
+                v-for="ann in annotations"
+                :key="ann.id"
+                class="ann-rect"
+                :style="{
+                  left: ann.x + '%',
+                  top: ann.y + '%',
+                  width: ann.w + '%',
+                  height: ann.h + '%',
+                  borderColor: ann.color || '#FF6B6B'
+                }"
+              >
+                <view class="ann-comment">{{ ann.comment }}</view>
+              </view>
+            </view>
+
             <!-- Bottom Action Buttons (graph tab only) -->
             <view v-if="activeTab === 'graph'" class="graph-actions">
               <view
@@ -333,6 +351,11 @@
                     </view>
                   </view>
                 </transition>
+              </view>
+
+              <!-- Dual Sync Toggle -->
+              <view v-if="spaceId" class="dual-sync-toggle" :class="{ 'dual-sync-active': dualSyncEnabled }" @tap="dualSyncEnabled = !dualSyncEnabled">
+                <text class="dual-sync-label">双栏同步</text>
               </view>
 
               <!-- Tool mode selector -->
@@ -883,7 +906,8 @@ const TOOL_DISPLAY_NAMES = {
   view_note_detail: 'View Note',
   update_note: 'Update Note',
   delete_note: 'Delete Note',
-  generate_chart: 'Generate Chart'
+  generate_chart: 'Generate Chart',
+  annotate_panel: '面板标注'
 }
 
 // Graph-mutating tools (trigger auto-refresh of knowledge graph)
@@ -948,7 +972,8 @@ const TOOL_ICON_MAP = {
   get_review_events: 'review', mark_review_completed: 'review',
   create_note: 'note', list_notes: 'note', view_note_detail: 'note',
   update_note: 'note', delete_note: 'note',
-  generate_chart: 'image'
+  generate_chart: 'image',
+  annotate_panel: 'default'
 }
 
 const DEFAULT_BROWSER_URL = 'https://www.wikipedia.org'
@@ -1076,7 +1101,18 @@ export default {
       // Knowledge graph generation polling
       graphTaskId: null,
       graphGenerating: false,
-      _abortGraphPoll: false
+      _abortGraphPoll: false,
+
+      // Dual-sync mode
+      dualSyncEnabled: false,
+      annotations: []
+    }
+  },
+  watch: {
+    dualSyncEnabled(val) {
+      if (!val) {
+        this.annotations = []
+      }
     }
   },
   computed: {
@@ -1753,6 +1789,7 @@ export default {
       this.isStreaming = false
       this.isSending = false
       this.activeToolCalls = []
+      this.annotations = []
       this.inputText = ''
       this.resetChatInputHeight()
       this.cleanupPendingAttachments()
@@ -1792,6 +1829,156 @@ export default {
         uni.showToast({ title: msg, icon: 'none' })
       } finally {
         this.isGeneratingShareCode = false
+      }
+    },
+
+    async captureArtifactToCanvas(htmlContent) {
+      // Strategy: inject html2canvas INTO the temp iframe so it runs in the
+      // same document context as the artifact.  The iframe captures its own
+      // body and sends the base64 result back via postMessage.
+      return new Promise((resolve) => {
+        const iframe = document.createElement('iframe')
+        iframe.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;height:600px;border:none;opacity:0;pointer-events:none'
+        iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts')
+
+        // Build capture helper (injected before </body>).
+        // Avoid literal <script in source — SFC parser treats them as real blocks.
+        const SO = '<' + 'script'
+        const SC = '<' + '/script>'
+        const captureHelper =
+          SO + ' src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js">' + SC +
+          SO + '>' +
+          'window.addEventListener("message",function(e){' +
+            'if(e.data&&e.data.type==="__ds_cap__"){' +
+              'var fn=typeof html2canvas==="function"' +
+                '?html2canvas(document.body,{useCORS:true,scale:1,logging:false})' +
+                ':Promise.reject("no h2c");' +
+              'fn.then(function(c){' +
+                'parent.postMessage({type:"__ds_res__",d:c.toDataURL("image/png")},"*")' +
+              '}).catch(function(){' +
+                'parent.postMessage({type:"__ds_res__",d:null},"*")' +
+              '})' +
+            '}' +
+          '})' + SC
+
+        let html = htmlContent
+        const idx = html.lastIndexOf('</body>')
+        html = idx !== -1
+          ? html.slice(0, idx) + captureHelper + html.slice(idx)
+          : html + captureHelper
+
+        iframe.srcdoc = html
+        document.body.appendChild(iframe)
+
+        const cleanup = () => {
+          window.removeEventListener('message', onMsg)
+          try { document.body.removeChild(iframe) } catch (_) {}
+        }
+
+        const timer = setTimeout(() => {
+          console.warn('[DualSync] Artifact capture timed out')
+          cleanup()
+          resolve(null)
+        }, 12000)
+
+        function onMsg(e) {
+          if (!e.data || e.data.type !== '__ds_res__') return
+          clearTimeout(timer)
+          if (!e.data.d) { cleanup(); resolve(null); return }
+          const img = new Image()
+          img.onload = () => {
+            const c = document.createElement('canvas')
+            c.width = img.width
+            c.height = img.height
+            c.getContext('2d').drawImage(img, 0, 0)
+            cleanup()
+            resolve(c)
+          }
+          img.onerror = () => { cleanup(); resolve(null) }
+          img.src = e.data.d
+        }
+        window.addEventListener('message', onMsg)
+
+        iframe.onload = () => {
+          // Wait for artifact scripts to execute + html2canvas CDN to load
+          setTimeout(() => {
+            try { iframe.contentWindow.postMessage({ type: '__ds_cap__' }, '*') }
+            catch (_) { clearTimeout(timer); cleanup(); resolve(null) }
+          }, 1500)
+        }
+      })
+    },
+
+    async capturePanelScreenshot() {
+      try {
+        let canvas
+        if (this.activeTab === 'graph' && this.$refs.knowledgeGraph) {
+          // For graph tab, get the native canvas element directly
+          canvas = this.$refs.knowledgeGraph._canvasEl
+          if (!canvas) return null
+        } else if (this.activeTab === 'notes') {
+          // For notes tab, check if viewing an interactive HTML artifact
+          const note = this.$refs.notesPanel?.selectedNote
+          if (note?.note_type === 'interactive_html' && note.content && typeof html2canvas === 'function') {
+            canvas = await this.captureArtifactToCanvas(note.content)
+          }
+          // Fallback to html2canvas on .tab-content-area if artifact capture failed or not an artifact
+          if (!canvas) {
+            const panelEl = document.querySelector('.tab-content-area')
+            if (!panelEl || typeof html2canvas !== 'function') return null
+            canvas = await html2canvas(panelEl, { useCORS: true, scale: 1, logging: false })
+          }
+        } else {
+          // For other tabs, use html2canvas
+          const panelEl = document.querySelector('.tab-content-area')
+          if (!panelEl || typeof html2canvas !== 'function') return null
+          canvas = await html2canvas(panelEl, {
+            useCORS: true,
+            scale: 1,
+            logging: false
+          })
+        }
+
+        if (!canvas) return null
+
+        // Resize to max 800px wide
+        const maxW = 800
+        const srcW = canvas.width
+        const srcH = canvas.height
+        const scale = srcW > maxW ? maxW / srcW : 1
+        const dstW = Math.round(srcW * scale)
+        const dstH = Math.round(srcH * scale)
+
+        const offscreen = document.createElement('canvas')
+        offscreen.width = dstW
+        offscreen.height = dstH
+        const ctx = offscreen.getContext('2d')
+        ctx.drawImage(canvas, 0, 0, dstW, dstH)
+
+        // Draw percentage grid overlay
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
+        ctx.lineWidth = 1
+        ctx.font = '10px sans-serif'
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
+        for (let pct = 20; pct <= 80; pct += 20) {
+          const x = Math.round(dstW * pct / 100)
+          const y = Math.round(dstH * pct / 100)
+          ctx.beginPath()
+          ctx.moveTo(x, 0)
+          ctx.lineTo(x, dstH)
+          ctx.stroke()
+          ctx.beginPath()
+          ctx.moveTo(0, y)
+          ctx.lineTo(dstW, y)
+          ctx.stroke()
+          ctx.fillText(`${pct}%`, x + 2, 12)
+          ctx.fillText(`${pct}%`, 2, y - 3)
+        }
+
+        return offscreen.toDataURL('image/jpeg', 0.7)
+      } catch (err) {
+        console.error('[DualSync] Screenshot failed:', err)
+        return null
       }
     },
 
@@ -2184,7 +2371,11 @@ export default {
       this.activeToolCalls = []
 
       const callbacks = this._buildSSECallbacks(aiMsgId, userMsgId)
-      this.cancelSSE = sendMessage(this.conversationId, text, callbacks, attachmentIds.length > 0 ? attachmentIds : null, this.selectedModelId)
+      let panelScreenshot = null
+      if (this.dualSyncEnabled) {
+        panelScreenshot = await this.capturePanelScreenshot()
+      }
+      this.cancelSSE = sendMessage(this.conversationId, text, callbacks, attachmentIds.length > 0 ? attachmentIds : null, this.selectedModelId, panelScreenshot)
     },
 
     _buildSSECallbacks(aiMsgId, userMsgId) {
@@ -2390,7 +2581,11 @@ export default {
       this.activeToolCalls = []
 
       const callbacks = this._buildSSECallbacks(aiMsgId, msg.id)
-      this.cancelSSE = sendMessage(this.conversationId, text, callbacks, attachmentIds.length > 0 ? attachmentIds : null, this.selectedModelId)
+      let panelScreenshot = null
+      if (this.dualSyncEnabled) {
+        panelScreenshot = await this.capturePanelScreenshot()
+      }
+      this.cancelSSE = sendMessage(this.conversationId, text, callbacks, attachmentIds.length > 0 ? attachmentIds : null, this.selectedModelId, panelScreenshot)
     },
 
     handleToolCallEvent(aiMsgId, data) {
@@ -2491,6 +2686,13 @@ export default {
 
         if (tool === 'generate_test' && success && result?.task_id) {
           this.handleGenerateTestCompletion(aiMsgId, result.task_id, id)
+        }
+
+        // Handle annotation tool results
+        if (tool === 'annotate_panel' && success && result?.annotations) {
+          this.annotations = result.annotations.map((a, i) => ({
+            ...a, id: `ann-${Date.now()}-${i}`
+          }))
         }
 
         if (msg.streamSegments) {
@@ -3082,6 +3284,7 @@ export default {
       this.isStreaming = false
       this.isSending = false
       this.activeToolCalls = []
+      this.annotations = []
 
       // Switch to selected conversation
       this.conversationId = conv.id
@@ -3104,6 +3307,7 @@ export default {
       this.isStreaming = false
       this.isSending = false
       this.activeToolCalls = []
+      this.annotations = []
       this.cleanupPendingAttachments()
 
       // Reset to fresh state — next handleSend will create a new conversation
@@ -5501,5 +5705,69 @@ textarea.chat-input-textarea {
   position: fixed;
   inset: 0;
   z-index: 90;
+}
+
+/* Dual Sync Toggle */
+.dual-sync-toggle {
+  display: flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-right: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.dual-sync-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.dual-sync-active {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+.dual-sync-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+}
+.dual-sync-active .dual-sync-label {
+  color: rgba(99, 102, 241, 0.9);
+}
+
+/* Annotation Overlay */
+.annotation-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 100;
+}
+.ann-rect {
+  position: absolute;
+  border: 2.5px solid;
+  border-radius: 4px;
+  background: rgba(255, 107, 107, 0.08);
+  animation: ann-fade-in 0.3s ease;
+}
+.ann-comment {
+  position: absolute;
+  bottom: -28px;
+  left: 0;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@keyframes ann-fade-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
 }
 </style>
