@@ -31,6 +31,9 @@
         referrerpolicy="no-referrer"
         loading="lazy"
       ></iframe>
+      <view v-if="isFullscreen" class="fullscreen-exit-btn" @click="toggleFullscreen">
+        <text class="fullscreen-exit-text">✕ 退出全屏</text>
+      </view>
       <!-- #endif -->
     </template>
 
@@ -63,6 +66,18 @@ export default {
       isFullscreen: false
     }
   },
+  mounted() {
+    this._onKeydown = (e) => {
+      if (e.key === 'Escape' && this.isFullscreen) {
+        this.toggleFullscreen()
+      }
+    }
+    document.addEventListener('keydown', this._onKeydown)
+  },
+  beforeUnmount() {
+    document.removeEventListener('keydown', this._onKeydown)
+    document.body.style.overflow = ''
+  },
   computed: {
     isGenerating() {
       return this.metadata && this.metadata.generating === true
@@ -87,6 +102,7 @@ export default {
   methods: {
     toggleFullscreen() {
       this.isFullscreen = !this.isFullscreen
+      document.body.style.overflow = this.isFullscreen ? 'hidden' : ''
     }
   }
 }
@@ -159,6 +175,26 @@ export default {
   z-index: 9999;
   border-radius: 0;
   min-height: unset;
+}
+
+.fullscreen-exit-btn {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 10000;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 8px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.2s;
+}
+.fullscreen-exit-btn:hover {
+  background: rgba(0, 0, 0, 0.85);
+}
+.fullscreen-exit-text {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .artifact-loading {

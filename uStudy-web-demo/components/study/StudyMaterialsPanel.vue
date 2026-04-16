@@ -260,12 +260,24 @@
           </view>
           <!-- #endif -->
 
-          <view v-else-if="previewKind === 'doc'" class="preview-state">
-            <text class="preview-state-title">.doc 格式暂不支持在线预览</text>
-            <text class="preview-state-sub">请下载后使用 Word 打开查看</text>
-            <view class="preview-state-btn" @tap="downloadPreviewFile">
-              <text class="preview-state-btn-text">下载文件</text>
+          <view v-else-if="previewKind === 'office'" class="preview-frame-wrap">
+            <!-- #ifdef H5 -->
+            <iframe
+              v-if="previewIframeUrl"
+              class="preview-iframe"
+              :src="previewIframeUrl"
+              @load="handlePreviewFrameLoad"
+            ></iframe>
+            <!-- #endif -->
+
+            <!-- #ifndef H5 -->
+            <view class="preview-state">
+              <text class="preview-state-title">当前平台不支持内嵌预览</text>
+              <view class="preview-state-btn" @tap="downloadPreviewFile">
+                <text class="preview-state-btn-text">下载文件</text>
+              </view>
             </view>
+            <!-- #endif -->
           </view>
 
           <view v-else class="preview-state">
@@ -344,7 +356,7 @@ import('docx-preview').then(m => { renderAsync = m.renderAsync }).catch(() => {}
 
 const POLLING_INTERVAL_MS = 5000
 const INITIAL_POLLING_WINDOW_MS = 5 * 60 * 1000
-const PREVIEW_IFRAME_TIMEOUT_MS = 12000
+const PREVIEW_IFRAME_TIMEOUT_MS = 20000
 
 export default {
   name: 'StudyMaterialsPanel',
@@ -539,10 +551,16 @@ export default {
       return this.previewDoc?.title || '文件预览'
     },
     previewTypeLabel() {
+      if (this.previewKind === 'office') {
+        const ext = this.getDocExt(this.previewDoc).toLowerCase()
+        if (ext === 'doc') return 'Word 预览'
+        if (ext === 'ppt' || ext === 'pptx') return 'PPT 预览'
+        if (ext === 'xls' || ext === 'xlsx') return 'Excel 预览'
+        return '文件预览'
+      }
       const labels = {
         txt: 'TXT 文本预览',
         pdf: 'PDF 预览',
-        doc: 'Word 预览',
         docx: 'Word 预览'
       }
       return labels[this.previewKind] || '文件预览'
@@ -888,8 +906,8 @@ export default {
       const ext = this.getDocExt(doc).toLowerCase()
       if (ext === 'txt') return 'txt'
       if (ext === 'pdf') return 'pdf'
-      if (ext === 'doc') return 'doc'
       if (ext === 'docx') return 'docx'
+      if (['doc', 'ppt', 'pptx', 'xls', 'xlsx'].includes(ext)) return 'office'
       return 'unsupported'
     },
     startIframePreview(url, withTimeout = true) {
@@ -973,6 +991,10 @@ export default {
         useBase64URL: true,
       })
     },
+    loadOfficePreview(fileUrl) {
+      const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fileUrl)}`
+      this.startIframePreview(viewerUrl, true)
+    },
     async openPreview(doc) {
       if (doc?.doc_type !== 'document') return
 
@@ -1012,9 +1034,8 @@ export default {
           return
         }
 
-        if (previewKind === 'doc') {
-          this.previewLoading = false
-          this.previewError = '.doc 格式暂不支持在线预览，请下载后查看。'
+        if (previewKind === 'office') {
+          this.loadOfficePreview(fileUrl)
           return
         }
 
@@ -1106,6 +1127,8 @@ export default {
       const ext = this.getDocExt(doc).toLowerCase()
       if (ext === 'pdf') return 'PDF 文档'
       if (ext === 'doc' || ext === 'docx') return 'Word 文档'
+      if (ext === 'ppt' || ext === 'pptx') return 'PPT 文档'
+      if (ext === 'xls' || ext === 'xlsx') return 'Excel 文档'
       if (ext === 'txt') return '文本文件'
       return '文档'
     },
