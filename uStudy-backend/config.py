@@ -171,6 +171,12 @@ class Settings(BaseSettings):
     # Artifact 生成配置
     artifact_model: str = "z-ai/glm-5"
 
+    # 代码沙箱配置
+    code_sandbox_timeout: int = 30
+    code_sandbox_memory_mb: int = 256
+    code_sandbox_max_code_length: int = 10000
+    code_sandbox_max_output_length: int = 5000
+
     # 对话标题自动生成配置
     title_generation_enabled: bool = True
     title_generation_model: str = "qwen/qwen3-8b"

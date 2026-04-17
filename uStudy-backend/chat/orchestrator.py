@@ -48,6 +48,7 @@ from chat.tools.review_tools import REVIEW_TOOLS, REVIEW_TOOL_NAMES, QUICK_CHAT_
 from chat.tools.note_tools import NOTE_TOOL_NAMES, NoteToolExecutor
 from chat.tools.artifact_tools import ARTIFACT_TOOL_NAMES, ArtifactToolExecutor
 from chat.tools.image_tools import IMAGE_TOOLS, IMAGE_TOOL_NAMES, ImageToolExecutor
+from chat.tools.code_sandbox_tools import CODE_SANDBOX_TOOLS, CODE_SANDBOX_TOOL_NAMES, CodeSandboxExecutor
 from chat.tools.annotation_tools import ANNOTATION_TOOLS, ANNOTATION_TOOL_NAMES, AnnotationToolExecutor
 from review.service import get_due_reviews_count_by_space, get_due_reviews_total
 from notes.service import NoteService
@@ -121,6 +122,7 @@ class QuickChatOrchestrator:
         self.time_tool_executor = TimeToolExecutor()
         self.review_tool_executor = ReviewToolExecutor(user_id)  # No space_id = cross-space mode
         self.image_tool_executor = ImageToolExecutor()
+        self.code_sandbox_executor = CodeSandboxExecutor()
 
         # Search channels: default all enabled
         channels = search_channels or {
@@ -130,13 +132,14 @@ class QuickChatOrchestrator:
             "course_search_enabled": True,
         }
 
-        # Available tools for quick chat (learning space + memory + time + review + web + search)
+        # Available tools for quick chat (learning space + memory + time + review + web + search + code sandbox)
         self.available_tools = (
             LEARNING_SPACE_TOOLS
             + MEMORY_TOOLS
             + TIME_TOOLS
             + QUICK_CHAT_REVIEW_TOOLS
             + IMAGE_TOOLS
+            + CODE_SANDBOX_TOOLS
             + (WEB_TOOLS if channels.get("web_search_enabled", True) else [])
         )
 
@@ -389,6 +392,11 @@ class QuickChatOrchestrator:
                             tool_call.name,
                             tool_call.arguments,
                         )
+                    elif tool_call.name in CODE_SANDBOX_TOOL_NAMES:
+                        tool_result = await self.code_sandbox_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
                     else:
                         tool_result = await self.tool_executor.execute(
                             tool_call.name,
@@ -594,6 +602,9 @@ class LLMOrchestrator:
         # 图表生成工具
         self.image_tool_executor = ImageToolExecutor()
 
+        # 代码沙箱工具
+        self.code_sandbox_executor = CodeSandboxExecutor()
+
         # 新向量记忆系统（统一处理长期记忆和空间记忆）
         self.vector_memory_executor = VectorMemoryExecutor(user_id, space_id)
         self.memory_retriever = MemoryRetriever(user_id, space_id)
@@ -630,6 +641,7 @@ class LLMOrchestrator:
         self._note_tool_names = NOTE_TOOL_NAMES
         self._artifact_tool_names = ARTIFACT_TOOL_NAMES
         self._image_tool_names = IMAGE_TOOL_NAMES
+        self._code_sandbox_tool_names = CODE_SANDBOX_TOOL_NAMES
 
         # Annotation tool (dual-sync mode)
         self._has_panel_screenshot = has_panel_screenshot
@@ -1000,6 +1012,11 @@ class LLMOrchestrator:
                                     tool_result.data["node_label"] = note_info["node_label"]
                     elif tool_call.name in self._artifact_tool_names:
                         tool_result = await self.artifact_tool_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
+                    elif tool_call.name in self._code_sandbox_tool_names:
+                        tool_result = await self.code_sandbox_executor.execute(
                             tool_call.name,
                             tool_call.arguments,
                         )

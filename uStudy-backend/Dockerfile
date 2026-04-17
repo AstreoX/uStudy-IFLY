@@ -23,6 +23,16 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 # 安装其他 Python 依赖（使用阿里云镜像）
 RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
+# 安装代码沙箱所需的科学计算库
+RUN pip install --no-cache-dir \
+    numpy pandas matplotlib sympy scipy \
+    scikit-learn seaborn networkx \
+    statsmodels jieba wordcloud \
+    -i https://mirrors.aliyun.com/pypi/simple/
+
+# 创建沙箱用户（用于后续安全加固）
+RUN useradd -r -s /bin/false -d /tmp sandbox_user
+
 # 复制应用代码
 COPY . .
 

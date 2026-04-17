@@ -23,6 +23,7 @@ from chat.tools.note_tools import NOTE_TOOLS
 from chat.tools.artifact_tools import ARTIFACT_TOOLS
 from chat.tools.image_tools import IMAGE_TOOLS
 from chat.tools.annotation_tools import ANNOTATION_TOOLS
+from chat.tools.code_sandbox_tools import CODE_SANDBOX_TOOLS
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ def _build_registry() -> dict[str, dict]:
         IMAGE_TOOLS,
         ARTIFACT_TOOLS,
         ANNOTATION_TOOLS,
+        CODE_SANDBOX_TOOLS,
     ]
     for tool_list in all_tool_lists:
         for tool_def in tool_list:
@@ -137,6 +139,9 @@ TOOL_CATALOG: list[ToolCatalogEntry] = [
 
     # ── 面板标注 (1) ──
     ToolCatalogEntry("annotate_panel", "面板标注", "在左面板上画方框并附批注文字"),
+
+    # ── 代码执行 (1) ──
+    ToolCatalogEntry("run_python_code", "代码执行", "执行 Python 代码（支持 numpy/pandas/matplotlib/sympy/sklearn/seaborn 等）"),
 ]
 
 # 按分类组织的目录（用于 API 返回和前端展示）

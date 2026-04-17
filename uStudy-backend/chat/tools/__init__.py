@@ -16,6 +16,7 @@ from chat.tools.space_memory_executor import SpaceMemoryToolExecutor, format_spa
 from chat.tools.time_tools import TIME_TOOLS, TIME_TOOL_NAMES, TIME_TOOL_METADATA, TimeToolExecutor
 from chat.tools.review_tools import REVIEW_TOOLS, REVIEW_TOOL_NAMES, REVIEW_TOOL_METADATA, QUICK_CHAT_REVIEW_TOOLS, ReviewToolExecutor
 from chat.tools.quiz_result_tools import QUIZ_RESULT_TOOLS, QUIZ_RESULT_TOOL_NAMES, QuizResultToolExecutor
+from chat.tools.code_sandbox_tools import CODE_SANDBOX_TOOLS, CODE_SANDBOX_TOOL_NAMES, CodeSandboxExecutor
 
 __all__ = [
     "ToolResult",
@@ -46,4 +47,7 @@ __all__ = [
     "QUIZ_RESULT_TOOLS",
     "QUIZ_RESULT_TOOL_NAMES",
     "QuizResultToolExecutor",
+    "CODE_SANDBOX_TOOLS",
+    "CODE_SANDBOX_TOOL_NAMES",
+    "CodeSandboxExecutor",
 ]
