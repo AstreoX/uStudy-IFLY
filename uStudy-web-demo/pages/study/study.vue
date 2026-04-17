@@ -54,7 +54,7 @@
       <view class="study-panels">
         <!-- Left Panel: Knowledge Graph -->
         <view class="panel-graph">
-          <view class="panel-graph-inner">
+          <view class="panel-graph-inner" :class="{ 'panel-synced': dualSyncEnabled }">
             <!-- Chrome-style Tab Bar -->
             <view class="chrome-tabs-bar">
               <view
@@ -215,6 +215,18 @@
           </view>
         </view>
 
+        <!-- Dual-sync link indicator -->
+        <view v-if="dualSyncEnabled" class="dual-sync-link-indicator link-active">
+          <svg viewBox="0 0 256 256" class="link-icon">
+            <rect width="256" height="256" fill="none"/>
+            <!-- Opaque capsule fill behind strokes -->
+            <rect x="16" y="80" width="224" height="96" rx="48" ry="48" fill="#181825"/>
+            <line x1="80" y1="128" x2="176" y2="128" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+            <path d="M104,176H64a48,48,0,0,1,0-96h40" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+            <path d="M152,80h40a48,48,0,0,1,48,48h0a48,48,0,0,1-48,48H152" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+          </svg>
+        </view>
+
         <!-- Right Panel: Chat -->
         <view class="panel-chat">
           <!-- Mastery score toast notifications -->
@@ -254,7 +266,7 @@
             @click="handleArtifactNotificationClick(notif)"
             @close="removeArtifactNotification(notif.id)"
           />
-          <view class="panel-chat-inner">
+          <view class="panel-chat-inner" :class="{ 'panel-synced': dualSyncEnabled }">
             <!-- Chat Panel Header -->
             <view class="chat-panel-header">
               <view
@@ -356,62 +368,6 @@
               <!-- Dual Sync Toggle -->
               <view v-if="spaceId" class="dual-sync-toggle" :class="{ 'dual-sync-active': dualSyncEnabled }" @tap="dualSyncEnabled = !dualSyncEnabled">
                 <text class="dual-sync-label">双栏同步</text>
-              </view>
-
-              <!-- Tool mode selector -->
-              <view v-if="spaceId" class="tool-selector-wrap">
-                <view class="tool-selector-btn" @tap="toggleToolMenu">
-                  <svg viewBox="0 0 256 256" class="tool-selector-icon">
-                    <path d="M232,96l-29.3,29.3a8.1,8.1,0,0,1-5.7,2.3H160.3a8,8,0,0,0-5.6,2.3L138.3,146a8.1,8.1,0,0,1-5.7,2.3H119.8a7.7,7.7,0,0,0-5.6,2.3l-32,32a8.1,8.1,0,0,0,0,11.4l31.2,31.2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-                    <path d="M29.7,218.3a8.1,8.1,0,0,0,11.4,0l69.6-69.6a8,8,0,0,1,5.6-2.3H117a8,8,0,0,0,5.7-2.4l50.7-50.7a8,8,0,0,1,5.6-2.3h26.3a8.1,8.1,0,0,0,5.7-2.3L232,68" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-                  </svg>
-                  <text class="tool-selector-label">{{ toolModeLabel }}</text>
-                  <svg viewBox="0 0 256 256" class="tool-selector-chevron">
-                    <polyline points="208 96 128 176 48 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="20"/>
-                  </svg>
-                </view>
-                <transition name="model-menu-fade">
-                  <view v-if="showToolMenu" class="tool-menu tool-menu-down">
-                    <view class="tool-menu-header">
-                      <text class="tool-menu-title">工具模式</text>
-                    </view>
-                    <view class="tool-mode-options">
-                      <view class="tool-mode-option" :class="{ 'tool-mode-option-active': toolMode === 'auto' }" @tap="selectToolMode('auto')">
-                        <view class="tool-mode-radio" :class="{ 'tool-mode-radio-checked': toolMode === 'auto' }"></view>
-                        <view class="tool-mode-option-info">
-                          <text class="tool-mode-option-name">自动模式</text>
-                          <text class="tool-mode-option-desc">AI 按需加载工具</text>
-                        </view>
-                      </view>
-                      <view class="tool-mode-option" :class="{ 'tool-mode-option-active': toolMode === 'manual' }" @tap="selectToolMode('manual')">
-                        <view class="tool-mode-radio" :class="{ 'tool-mode-radio-checked': toolMode === 'manual' }"></view>
-                        <view class="tool-mode-option-info">
-                          <text class="tool-mode-option-name">手动模式</text>
-                          <text class="tool-mode-option-desc">自定义启用工具</text>
-                        </view>
-                      </view>
-                    </view>
-                    <view v-if="toolMode === 'manual' && toolCatalog" class="tool-catalog-list">
-                      <view v-for="cat in toolCatalog" :key="cat.category" class="tool-catalog-category">
-                        <view class="tool-catalog-category-header">
-                          <text class="tool-catalog-category-name">{{ cat.category }}</text>
-                          <text class="tool-catalog-category-count">{{ getCategoryEnabledCount(cat) }}/{{ cat.tools.length }}</text>
-                        </view>
-                        <view v-for="tool in cat.tools" :key="tool.name" class="tool-catalog-item" @tap="toggleTool(tool.name)">
-                          <view class="tool-catalog-checkbox" :class="{ 'tool-catalog-checkbox-checked': isToolEnabled(tool.name) }">
-                            <svg v-if="isToolEnabled(tool.name)" viewBox="0 0 256 256" class="tool-catalog-check-icon">
-                              <polyline points="40 144 96 200 216 80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
-                            </svg>
-                          </view>
-                          <text class="tool-catalog-item-name">{{ tool.summary }}</text>
-                        </view>
-                      </view>
-                    </view>
-                    <view v-if="toolMode === 'manual' && toolCatalogLoading" class="tool-catalog-loading">
-                      <text class="tool-catalog-loading-text">加载中...</text>
-                    </view>
-                  </view>
-                </transition>
               </view>
 
               <view
@@ -3743,6 +3699,7 @@ export default {
 
 /* Two-Panel Split */
 .study-panels {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: row;
@@ -5769,5 +5726,35 @@ textarea.chat-input-textarea {
 @keyframes ann-fade-in {
   from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }
+}
+
+/* Dual-sync panel border effects — outer ring with gap via outline + offset */
+.panel-graph-inner.panel-synced,
+.panel-chat-inner.panel-synced {
+  outline: 2px solid rgba(74, 222, 128, 0.5);
+  outline-offset: 4px;
+  box-shadow: 0 0 16px rgba(74, 222, 128, 0.15);
+  transition: outline-color 0.4s ease, box-shadow 0.4s ease;
+}
+
+/* Dual-sync link indicator — absolutely centered, overlaps both panel borders */
+.dual-sync-link-indicator {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+}
+
+.dual-sync-link-indicator .link-icon {
+  width: 24px;
+  height: 24px;
+  color: rgba(74, 222, 128, 0.8);
+  filter: drop-shadow(0 0 4px rgba(74, 222, 128, 0.4));
 }
 </style>
