@@ -56,8 +56,10 @@ def _setup_matplotlib():
 
 
 def main():
-    _set_resource_limits()
+    # Load heavy libraries BEFORE applying resource limits,
+    # because matplotlib/numpy imports alone exceed 256MB.
     _setup_matplotlib()
+    _set_resource_limits()
 
     script_path = os.path.join(os.getcwd(), "script.py")
     if not os.path.exists(script_path):
