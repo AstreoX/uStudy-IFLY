@@ -19,9 +19,13 @@ MAX_OUTPUT_LENGTH = int(os.environ.get("SANDBOX_MAX_OUTPUT", 5000))
 MAX_STDERR_LENGTH = 2000
 
 def _set_resource_limits():
-    """Apply resource limits via setrlimit."""
-    mem_bytes = MEMORY_LIMIT_MB * 1024 * 1024
-    resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
+    """Apply resource limits via setrlimit.
+
+    Note: RLIMIT_AS (virtual address space) is NOT used because Python +
+    numpy + matplotlib easily exceed 512MB of *virtual* memory even though
+    physical RSS is only ~150MB.  Docker container memory limits serve as
+    the real memory guard instead.
+    """
     resource.setrlimit(resource.RLIMIT_CPU, (CPU_TIME_LIMIT, CPU_TIME_LIMIT))
     # No child processes
     resource.setrlimit(resource.RLIMIT_NPROC, (0, 0))
