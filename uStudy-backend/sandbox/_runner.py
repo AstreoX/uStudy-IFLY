@@ -39,6 +39,9 @@ def _setup_matplotlib():
     try:
         import matplotlib
         matplotlib.use("Agg")
+        # Use Noto Sans CJK for Chinese text support
+        matplotlib.rcParams["font.sans-serif"] = ["Noto Sans CJK SC", "Noto Sans CJK", "DejaVu Sans"]
+        matplotlib.rcParams["axes.unicode_minus"] = False
         import matplotlib.pyplot as plt
 
         _original_show = plt.show
