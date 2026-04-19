@@ -31,6 +31,9 @@ RUN pip install --no-cache-dir \
     statsmodels jieba wordcloud \
     -i https://mirrors.aliyun.com/pypi/simple/
 
+# 重建 matplotlib 字体缓存（使其发现已安装的 CJK 字体）
+RUN python3 -c "import matplotlib.font_manager as fm; fm._load_fontmanager(try_read_cache=False)"
+
 # 创建沙箱用户（用于后续安全加固）
 RUN useradd -r -s /bin/false -d /tmp sandbox_user
 
