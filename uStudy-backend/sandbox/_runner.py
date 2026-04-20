@@ -39,9 +39,19 @@ def _setup_matplotlib():
     try:
         import matplotlib
         matplotlib.use("Agg")
-        # Use Noto Sans CJK for Chinese text support
-        matplotlib.rcParams["font.sans-serif"] = ["Noto Sans CJK SC", "Noto Sans CJK", "DejaVu Sans"]
+        import matplotlib.font_manager as fm
+
+        # Dynamically find an installed CJK font (font name varies by distro)
+        cjk_keywords = ["CJK", "WenQuanYi", "SimHei", "Heiti", "PingFang"]
+        cjk_font = None
+        for f in fm.fontManager.ttflist:
+            if any(kw in f.name for kw in cjk_keywords):
+                cjk_font = f.name
+                break
+        if cjk_font:
+            matplotlib.rcParams["font.sans-serif"] = [cjk_font] + ["DejaVu Sans"]
         matplotlib.rcParams["axes.unicode_minus"] = False
+
         import matplotlib.pyplot as plt
 
         _original_show = plt.show
