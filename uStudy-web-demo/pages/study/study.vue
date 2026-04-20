@@ -606,6 +606,49 @@
                         </view>
                       </view>
 
+                      <!-- Code execution tool: code + output card -->
+                      <view
+                        v-else-if="seg.toolCall.tool === 'run_python_code'"
+                        class="tool-call-card code-execution-card"
+                        :class="getToolCardClass(seg.toolCall)"
+                      >
+                        <view class="tool-call-header">
+                          <view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
+                          <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-success">
+                            <polyline points="88 136 112 160 168 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                          <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-failed">
+                            <line x1="160" y1="96" x2="96" y2="160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                            <line x1="160" y1="160" x2="96" y2="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                          <view class="tool-call-icon" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
+                          <text class="tool-call-name">{{ seg.toolCall.arguments?.description || getToolDisplayName(seg.toolCall.tool) }}</text>
+                        </view>
+                        <!-- Collapsible code block -->
+                        <view class="code-block-section">
+                          <view class="code-toggle-link" @click="toggleCodeExpand(seg.toolCall.id)">
+                            <text class="code-toggle-text">{{ isCodeExpanded(seg.toolCall.id) ? '收起代码' : '查看代码' }}</text>
+                            <text class="code-toggle-chevron" :class="{ 'code-toggle-chevron-expanded': isCodeExpanded(seg.toolCall.id) }">&#9662;</text>
+                          </view>
+                          <view class="code-block-wrapper" :class="{ 'code-block-collapsed': !isCodeExpanded(seg.toolCall.id) }">
+                            <pre class="code-block-pre"><code class="code-block-code">{{ seg.toolCall.arguments?.code || '' }}</code></pre>
+                          </view>
+                        </view>
+                        <!-- Output section -->
+                        <view v-if="seg.toolCall.status === 'done'" class="code-output-section">
+                          <pre v-if="seg.toolCall.result?.stdout" class="code-output-stdout">{{ seg.toolCall.result.stdout }}</pre>
+                          <pre v-if="seg.toolCall.result?.stderr" class="code-output-stderr">{{ seg.toolCall.result.stderr }}</pre>
+                          <view v-if="seg.toolCall.result?.image_url" class="chart-image-preview">
+                            <img
+                              :src="getFullImageUrl(seg.toolCall.result.image_url)"
+                              class="chart-preview-img"
+                              @click="previewChartImage(seg.toolCall.result.image_url)"
+                            />
+                          </view>
+                          <text v-if="!seg.toolCall.success && seg.toolCall.result?.message" class="tool-call-result-text">{{ seg.toolCall.result.message }}</text>
+                        </view>
+                      </view>
+
                       <!-- Regular tools: card -->
                       <view
                         v-else
@@ -863,7 +906,8 @@ const TOOL_DISPLAY_NAMES = {
   update_note: 'Update Note',
   delete_note: 'Delete Note',
   generate_chart: 'Generate Chart',
-  annotate_panel: '面板标注'
+  annotate_panel: '面板标注',
+  run_python_code: '执行 Python 代码'
 }
 
 // Graph-mutating tools (trigger auto-refresh of knowledge graph)
@@ -909,6 +953,7 @@ const TOOL_ICON_SVGS = {
   review: '<svg viewBox="0 0 256 256" width="14" height="14"><circle cx="128" cy="128" r="96" fill="none" stroke="currentColor" stroke-width="16"/><polyline points="128 80 128 128 168 152" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>',
   note: '<svg viewBox="0 0 256 256" width="14" height="14"><path d="M200,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32ZM80,80h96a8,8,0,0,1,0,16H80a8,8,0,0,1,0-16Zm0,40h96a8,8,0,0,1,0,16H80a8,8,0,0,1,0-16Zm0,40h64a8,8,0,0,1,0,16H80a8,8,0,0,1,0-16Z" fill="currentColor"/></svg>',
   image: '<svg viewBox="0 0 256 256" width="14" height="14"><rect x="40" y="40" width="176" height="176" rx="8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><circle cx="100" cy="92" r="16" fill="none" stroke="currentColor" stroke-width="16"/><path d="M80,160l40-48,40,32,48-56,48,40" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>',
+  code: '<svg viewBox="0 0 256 256" width="14" height="14"><polyline points="64 88 16 128 64 168" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><polyline points="192 88 240 128 192 168" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="160" y1="40" x2="96" y2="216" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>',
   default: '<svg viewBox="0 0 256 256" width="14" height="14"><circle cx="128" cy="128" r="40" fill="none" stroke="currentColor" stroke-width="16"/><path d="M128,48a80,80,0,0,1,80,80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><path d="M48,128a80,80,0,0,1,80-80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><path d="M208,128a80,80,0,0,1-80,80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><path d="M128,208a80,80,0,0,1-80-80" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/></svg>'
 }
 
@@ -929,7 +974,8 @@ const TOOL_ICON_MAP = {
   create_note: 'note', list_notes: 'note', view_note_detail: 'note',
   update_note: 'note', delete_note: 'note',
   generate_chart: 'image',
-  annotate_panel: 'default'
+  annotate_panel: 'default',
+  run_python_code: 'code'
 }
 
 const DEFAULT_BROWSER_URL = 'https://www.wikipedia.org'
@@ -987,6 +1033,7 @@ export default {
       planningToolDelayedDone: {},
       planningToolStartTimes: {},
       expandedSearchResults: {},
+      expandedCodeBlocks: {},
 
       // Thinking model state
       thinkingStartTime: null,
@@ -3023,6 +3070,17 @@ export default {
       }
     },
 
+    isCodeExpanded(toolCallId) {
+      return !!this.expandedCodeBlocks[toolCallId]
+    },
+
+    toggleCodeExpand(toolCallId) {
+      this.expandedCodeBlocks = {
+        ...this.expandedCodeBlocks,
+        [toolCallId]: !this.expandedCodeBlocks[toolCallId]
+      }
+    },
+
     openSearchResultUrl(url) {
       if (!url) return
       window.open(url, '_blank')
@@ -4379,6 +4437,108 @@ export default {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.5);
   line-height: 1.4;
+}
+
+/* Code Execution Card */
+.code-execution-card .code-block-section {
+  margin-top: 8px;
+}
+
+.code-toggle-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.code-toggle-text {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.code-toggle-text:hover {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.code-toggle-chevron {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  transition: transform 0.2s ease;
+}
+
+.code-toggle-chevron-expanded {
+  transform: rotate(180deg);
+}
+
+.code-block-wrapper {
+  max-height: 400px;
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.2s ease, margin-top 0.2s ease;
+  opacity: 1;
+  margin-top: 6px;
+}
+
+.code-block-collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+}
+
+.code-block-pre {
+  margin: 0;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 6px;
+  overflow-x: auto;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.code-block-code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: pre;
+  tab-size: 4;
+}
+
+.code-output-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.code-output-stdout {
+  margin: 0;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.8);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.code-output-stderr {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: rgba(220, 38, 38, 0.1);
+  border-radius: 6px;
+  border-left: 3px solid rgba(220, 38, 38, 0.4);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(248, 113, 113, 0.9);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 /* Memory Tool Inline */
