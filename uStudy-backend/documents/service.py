@@ -26,17 +26,16 @@ _background_tasks: set[asyncio.Task] = set()
 async def verify_space_ownership(
     db: AsyncSession, space_id: uuid.UUID, user_id: uuid.UUID
 ) -> Space:
-    """验证用户是否拥有该学习空间"""
-    result = await db.execute(select(Space).where(Space.id == space_id))
-    space = result.scalar_one_or_none()
+    """验证用户是否有权访问该学习空间（owner 或 member）"""
+    from spaces.authorization import SpaceAccessDeniedError, SpaceNotFoundError
+    from spaces.authorization import verify_space_access as _verify
 
-    if not space:
+    try:
+        return await _verify(db, space_id, user_id)
+    except SpaceNotFoundError:
         raise HTTPException(status_code=404, detail="学习空间不存在")
-
-    if space.user_id != user_id:
+    except SpaceAccessDeniedError:
         raise HTTPException(status_code=403, detail="无权访问该学习空间")
-
-    return space
 
 
 async def create_link(

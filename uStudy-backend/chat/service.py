@@ -911,24 +911,24 @@ class ChatService:
         space_id: UUID,
     ) -> Space:
         """
-        Get space with ownership validation (internal).
+        Get space with access validation (owner OR member).
 
         Raises:
             SpaceNotFoundError: If space not found
-            SpaceAccessDeniedError: If user doesn't own the space
+            SpaceAccessDeniedError: If user doesn't have access
         """
-        result = await self.db.execute(
-            select(Space).where(Space.id == space_id)
+        from spaces.authorization import verify_space_access as _verify
+        from spaces.authorization import (
+            SpaceAccessDeniedError as _AccessDenied,
+            SpaceNotFoundError as _NotFound,
         )
-        space = result.scalar_one_or_none()
 
-        if not space:
+        try:
+            return await _verify(self.db, space_id, user_id)
+        except _NotFound:
             raise SpaceNotFoundError(f"学习空间 {space_id} 不存在")
-
-        if space.user_id != user_id:
+        except _AccessDenied:
             raise SpaceAccessDeniedError(f"无权访问学习空间 {space_id}")
-
-        return space
 
     async def _get_conversation_with_check(
         self,

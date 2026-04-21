@@ -184,6 +184,20 @@ class NoteAttachmentType(str, enum.Enum):
     LINK = "link"
 
 
+class SpaceMemberRole(str, enum.Enum):
+    """协作空间成员角色"""
+
+    OWNER = "owner"
+    MEMBER = "member"
+
+
+class ShareMode(str, enum.Enum):
+    """分享模式"""
+
+    CLONE = "clone"
+    COLLABORATIVE = "collaborative"
+
+
 # ============ 表模型 ============
 
 
@@ -269,6 +283,13 @@ class Space(Base):
         nullable=True,
         comment="manual 模式下启用的工具名称数组",
     )
+    is_collaborative: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+        comment="是否为协作学习空间",
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=func.now(), nullable=False
     )
@@ -291,6 +312,9 @@ class Space(Base):
         back_populates="space", cascade="all, delete-orphan"
     )
     notes: Mapped[list["Note"]] = relationship(
+        back_populates="space", cascade="all, delete-orphan"
+    )
+    members: Mapped[list["SpaceMember"]] = relationship(
         back_populates="space", cascade="all, delete-orphan"
     )
 
@@ -498,6 +522,12 @@ class Edge(Base):
         nullable=False,
     )
     type: Mapped[EdgeType] = mapped_column(Enum(EdgeType), nullable=False)
+    user_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="Per-user edge owner (NULL=shared, set for LEARNING_PATH in collab spaces)",
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=func.now(), nullable=False
     )
@@ -508,13 +538,13 @@ class Edge(Base):
     to_node: Mapped["Node"] = relationship(foreign_keys=[to_node_id])
 
     # 索引和约束
+    # Note: The old uq_edges_unique is replaced by two partial indexes in the migration.
+    # SQLAlchemy model keeps basic indexes; partial unique indexes are created in migration SQL.
     __table_args__ = (
         Index("ix_edges_space_id", "space_id"),
         Index("ix_edges_from_node", "from_node_id"),
         Index("ix_edges_to_node", "to_node_id"),
-        UniqueConstraint(
-            "space_id", "from_node_id", "to_node_id", "type", name="uq_edges_unique"
-        ),
+        Index("ix_edges_user_id", "user_id"),
     )
 
 
@@ -1647,11 +1677,21 @@ class SpaceShareCode(Base):
         UUID(as_uuid=True),
         ForeignKey("spaces.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
     )
     creator_user_id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    share_mode: Mapped[ShareMode] = mapped_column(
+        Enum(
+            ShareMode,
+            name="sharemode",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        default=ShareMode.CLONE,
+        server_default="clone",
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -1661,3 +1701,88 @@ class SpaceShareCode(Base):
     # 关系
     space: Mapped["Space"] = relationship()
     creator: Mapped["User"] = relationship()
+
+    # one code per (space, mode)
+    __table_args__ = (
+        UniqueConstraint("space_id", "share_mode", name="uq_share_code_space_mode"),
+    )
+
+
+class SpaceMember(Base):
+    """协作学习空间成员表"""
+
+    __tablename__ = "space_members"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    role: Mapped[SpaceMemberRole] = mapped_column(
+        Enum(
+            SpaceMemberRole,
+            name="spacememberrole",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        nullable=False,
+    )
+    joined_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 关系
+    space: Mapped["Space"] = relationship(back_populates="members")
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("space_id", "user_id", name="uq_space_member"),
+        Index("ix_space_members_space_id", "space_id"),
+        Index("ix_space_members_user_id", "user_id"),
+    )
+
+
+class NodeUserMastery(Base):
+    """节点用户掌握度表（协作空间中每人独立）"""
+
+    __tablename__ = "node_user_mastery"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    node_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("nodes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    mastery: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # 关系
+    node: Mapped["Node"] = relationship()
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("node_id", "user_id", name="uq_node_user_mastery"),
+        Index("ix_node_user_mastery_node_id", "node_id"),
+        Index("ix_node_user_mastery_user_id", "user_id"),
+        CheckConstraint(
+            "mastery >= 0 AND mastery <= 100",
+            name="ck_node_user_mastery_range",
+        ),
+    )

@@ -83,16 +83,19 @@ class KnowledgeGraphAgent:
         return space.id, node_count, edge_count
 
     async def _verify_space(self, space_id: UUID, user_id: UUID) -> Space:
-        """验证学习空间存在且属于当前用户"""
-        result = await self.db.execute(
-            select(Space).where(Space.id == space_id, Space.user_id == user_id)
+        """验证学习空间存在且用户有权访问"""
+        from spaces.authorization import verify_space_access as _verify
+        from spaces.authorization import (
+            SpaceAccessDeniedError as _AccessDenied,
+            SpaceNotFoundError as _NotFound,
         )
-        space = result.scalar_one_or_none()
 
-        if not space:
+        try:
+            return await _verify(self.db, space_id, user_id)
+        except _NotFound:
             raise SpaceNotFoundError(f"学习空间不存在或无权访问: {space_id}")
-
-        return space
+        except _AccessDenied:
+            raise SpaceNotFoundError(f"学习空间不存在或无权访问: {space_id}")
 
     async def _call_llm_with_retry(
         self,

@@ -77,6 +77,8 @@ class SpaceResponse(BaseModel):
     memory_sharing_enabled: bool = False
     tool_mode: str = "auto"
     enabled_tools: Optional[list[str]] = None
+    is_collaborative: bool = False
+    user_role: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

@@ -214,14 +214,18 @@ class AgentService:
             )
 
     async def _verify_space_ownership(self, space_id: UUID, user_id: UUID) -> None:
-        """验证学习空间存在且属于当前用户"""
-        result = await self.db.execute(select(Space).where(Space.id == space_id))
-        space = result.scalar_one_or_none()
+        """验证学习空间存在且用户有权访问（owner 或 member）"""
+        from spaces.authorization import verify_space_access as _verify
+        from spaces.authorization import (
+            SpaceAccessDeniedError as _AccessDenied,
+            SpaceNotFoundError as _NotFound,
+        )
 
-        if not space:
+        try:
+            await _verify(self.db, space_id, user_id)
+        except _NotFound:
             raise SpaceNotFoundError(f"学习空间不存在: {space_id}")
-
-        if space.user_id != user_id:
+        except _AccessDenied:
             raise SpaceAccessDeniedError(f"无权访问该学习空间: {space_id}")
 
     async def _run_knowledge_graph_task(

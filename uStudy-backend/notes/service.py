@@ -31,16 +31,18 @@ class NoteService:
         self.storage = get_storage()
 
     async def _verify_space_access(self, user_id: UUID, space_id: UUID) -> Space:
-        result = await self.db.execute(select(Space).where(Space.id == space_id))
-        space = result.scalar_one_or_none()
+        from spaces.authorization import (
+            SpaceAccessDeniedError,
+            SpaceNotFoundError,
+            verify_space_access as _verify,
+        )
 
-        if not space:
+        try:
+            return await _verify(self.db, space_id, user_id)
+        except SpaceNotFoundError:
             raise NoteNotFoundError(f"学习空间 {space_id} 不存在")
-
-        if space.user_id != user_id:
+        except SpaceAccessDeniedError:
             raise NoteAccessDeniedError(f"无权访问学习空间 {space_id}")
-
-        return space
 
     async def _get_note_with_access_check(
         self, user_id: UUID, space_id: UUID, note_id: UUID

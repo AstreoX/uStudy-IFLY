@@ -7,12 +7,29 @@ from pathlib import Path
 from typing import List
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from config import get_settings
-from db.models import DocumentType, Edge, Node, ReviewSchedule, Space, SpaceDocument, StudyActivityLog
+from db.models import (
+    DocumentType,
+    Edge,
+    Node,
+    ReviewSchedule,
+    Space,
+    SpaceDocument,
+    SpaceMember,
+    SpaceMemberRole,
+    StudyActivityLog,
+)
+from spaces.authorization import (
+    SpaceAccessDeniedError,
+    SpaceNotFoundError,
+    get_user_role_in_space,
+    verify_space_access,
+    verify_space_ownership,
+)
 from spaces.schemas import (
     EdgeResponse,
     NodeResponse,
@@ -24,17 +41,8 @@ from spaces.schemas import (
 
 logger = logging.getLogger(__name__)
 
-
-class SpaceNotFoundError(Exception):
-    """学习空间不存在"""
-
-    pass
-
-
-class SpaceAccessDeniedError(Exception):
-    """无权访问学习空间"""
-
-    pass
+# Re-export for backward compatibility with other modules that import from here
+__all__ = ["SpaceService", "SpaceNotFoundError", "SpaceAccessDeniedError"]
 
 
 class SpaceService:
@@ -61,31 +69,48 @@ class SpaceService:
             learning_preferences=preferences_dict,
         )
         self.db.add(space)
+        await self.db.flush()
+
+        # Seed space_members with OWNER row
+        owner_member = SpaceMember(
+            space_id=space.id,
+            user_id=user_id,
+            role=SpaceMemberRole.OWNER,
+        )
+        self.db.add(owner_member)
+
         await self.db.commit()
         await self.db.refresh(space)
-        return SpaceResponse.model_validate(space)
+        return self._to_response(space, user_role="owner")
 
     async def get_user_spaces(self, user_id: UUID) -> List[SpaceResponse]:
-        """获取用户所有学习空间"""
+        """获取用户所有学习空间 (owned + member)"""
+        # Join via space_members to get both owned and joined spaces
         stmt = (
-            select(Space)
-            .where(Space.user_id == user_id)
+            select(Space, SpaceMember.role)
+            .join(SpaceMember, SpaceMember.space_id == Space.id)
+            .where(SpaceMember.user_id == user_id)
             .order_by(Space.updated_at.desc())
         )
         result = await self.db.execute(stmt)
-        spaces = result.scalars().all()
-        return [SpaceResponse.model_validate(s) for s in spaces]
+        rows = result.all()
+
+        responses = []
+        for space, role in rows:
+            responses.append(self._to_response(space, user_role=role.value))
+        return responses
 
     async def get_space(self, user_id: UUID, space_id: UUID) -> SpaceResponse:
         """获取单个学习空间"""
-        space = await self._get_space_with_access_check(user_id, space_id)
-        return SpaceResponse.model_validate(space)
+        space = await verify_space_access(self.db, space_id, user_id)
+        user_role = await get_user_role_in_space(self.db, space_id, user_id)
+        return self._to_response(space, user_role=user_role)
 
     async def update_space(
         self, user_id: UUID, space_id: UUID, request: SpaceUpdate
     ) -> SpaceResponse:
         """更新学习空间"""
-        space = await self._get_space_with_access_check(user_id, space_id)
+        space = await verify_space_access(self.db, space_id, user_id)
 
         if request.name is not None:
             space.name = request.name
@@ -96,17 +121,17 @@ class SpaceService:
 
         await self.db.commit()
         await self.db.refresh(space)
-        return SpaceResponse.model_validate(space)
+        user_role = await get_user_role_in_space(self.db, space_id, user_id)
+        return self._to_response(space, user_role=user_role)
 
     async def delete_space(self, user_id: UUID, space_id: UUID) -> None:
-        """删除学习空间（含物理文件清理和级联删除）"""
-        space = await self._get_space_with_access_check(user_id, space_id)
+        """删除学习空间（含物理文件清理和级联删除）— 仅 owner"""
+        space = await verify_space_ownership(self.db, space_id, user_id)
 
         # 先收集需要删除的文件路径（在删除数据库记录之前）
         file_paths = await self._collect_document_file_paths(space_id)
 
-        # 删除该空间关联的复习计划（必须在空间删除前执行，
-        # 因为空间删除会 SET NULL StudyActivityLog.space_id，之后无法关联）
+        # 删除该空间关联的复习计划
         activity_ids_subquery = (
             select(StudyActivityLog.id)
             .where(StudyActivityLog.space_id == space_id)
@@ -118,7 +143,7 @@ class SpaceService:
             )
         )
 
-        # 删除数据库记录（级联删除 nodes, edges, conversations, documents 等）
+        # 删除数据库记录（级联删除 nodes, edges, conversations, documents, members 等）
         await self.db.delete(space)
         await self.db.commit()
 
@@ -133,7 +158,6 @@ class SpaceService:
         """收集空间下所有文档的物理文件路径（在删除数据库记录前调用）"""
         settings = get_settings()
 
-        # 查询该空间下所有 DOCUMENT 类型的记录
         stmt = select(SpaceDocument).where(
             SpaceDocument.space_id == space_id,
             SpaceDocument.doc_type == DocumentType.DOCUMENT,
@@ -151,11 +175,9 @@ class SpaceService:
             if not doc.url:
                 continue
 
-            # 提取相对路径并构建完整文件路径
             relative_path = doc.url.lstrip("/uploads/")
             file_path = (uploads_dir / relative_path).resolve()
 
-            # 安全验证：确保文件路径在 uploads 目录内（防止路径遍历攻击）
             if not file_path.is_relative_to(uploads_dir):
                 logger.warning(f"Skipping file outside uploads dir: {file_path}")
                 continue
@@ -185,8 +207,7 @@ class SpaceService:
         self, user_id: UUID, space_id: UUID
     ) -> SpaceGraphResponse:
         """获取学习空间的知识图谱（节点和边）"""
-        # 验证访问权限
-        await self._get_space_with_access_check(user_id, space_id)
+        await verify_space_access(self.db, space_id, user_id)
 
         # 查询节点
         nodes_stmt = select(Node).where(Node.space_id == space_id)
@@ -211,16 +232,76 @@ class SpaceService:
             ],
         )
 
-    async def _get_space_with_access_check(self, user_id: UUID, space_id: UUID) -> Space:
-        """获取空间并验证访问权限"""
-        stmt = select(Space).where(Space.id == space_id)
+    # ---- Membership ----
+
+    async def get_space_members(self, user_id: UUID, space_id: UUID) -> list[dict]:
+        """获取协作空间的成员列表"""
+        await verify_space_access(self.db, space_id, user_id)
+
+        from db.models import User
+
+        stmt = (
+            select(SpaceMember, User.nickname, User.avatar_url)
+            .join(User, User.id == SpaceMember.user_id)
+            .where(SpaceMember.space_id == space_id)
+            .order_by(SpaceMember.joined_at)
+        )
         result = await self.db.execute(stmt)
-        space = result.scalar_one_or_none()
+        rows = result.all()
 
-        if not space:
-            raise SpaceNotFoundError(f"Space {space_id} not found")
+        return [
+            {
+                "user_id": str(member.user_id),
+                "role": member.role.value,
+                "nickname": nickname,
+                "avatar_url": avatar_url,
+                "joined_at": member.joined_at.isoformat(),
+            }
+            for member, nickname, avatar_url in rows
+        ]
 
-        if space.user_id != user_id:
-            raise SpaceAccessDeniedError(f"Access denied to space {space_id}")
+    async def remove_member(
+        self, requesting_user_id: UUID, space_id: UUID, target_user_id: UUID
+    ) -> None:
+        """移除成员 (owner removes member, or member leaves)"""
+        space = await verify_space_access(self.db, space_id, requesting_user_id)
+        is_owner = space.user_id == requesting_user_id
+        is_self_leaving = requesting_user_id == target_user_id
 
-        return space
+        if not is_owner and not is_self_leaving:
+            raise SpaceAccessDeniedError("只有空间所有者可以移除其他成员")
+
+        # Cannot remove the owner
+        if target_user_id == space.user_id:
+            raise SpaceAccessDeniedError("无法移除空间所有者")
+
+        result = await self.db.execute(
+            select(SpaceMember).where(
+                SpaceMember.space_id == space_id,
+                SpaceMember.user_id == target_user_id,
+            )
+        )
+        member = result.scalar_one_or_none()
+        if not member:
+            raise SpaceNotFoundError("该用户不是此空间的成员")
+
+        await self.db.delete(member)
+        await self.db.commit()
+
+    def _to_response(self, space: Space, user_role: str | None = None) -> SpaceResponse:
+        """Convert Space model to SpaceResponse with optional role."""
+        return SpaceResponse(
+            id=space.id,
+            user_id=space.user_id,
+            name=space.name,
+            description=space.description,
+            color=space.color,
+            learning_preferences=space.learning_preferences,
+            memory_sharing_enabled=space.memory_sharing_enabled,
+            tool_mode=space.tool_mode,
+            enabled_tools=space.enabled_tools,
+            is_collaborative=space.is_collaborative,
+            user_role=user_role,
+            created_at=space.created_at,
+            updated_at=space.updated_at,
+        )

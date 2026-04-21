@@ -7,12 +7,22 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+class GenerateShareCodeRequest(BaseModel):
+    """生成分享码请求"""
+
+    share_mode: str = Field(
+        default="clone",
+        description="分享模式: clone (创建副本) 或 collaborative (共同学习)",
+    )
+
+
 class ShareCodeResponse(BaseModel):
     """分享码响应"""
 
     code: str = Field(..., description="原始8位分享码")
     display_code: str = Field(..., description="格式化显示码 XXXX-XXXX")
     space_name: str
+    share_mode: str = Field(default="clone", description="分享模式")
     created_at: datetime
 
     model_config = {"from_attributes": True}

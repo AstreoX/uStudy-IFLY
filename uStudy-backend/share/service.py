@@ -4,7 +4,7 @@ import logging
 import secrets
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,7 +15,10 @@ from db.models import (
     Note,
     NoteAttachment,
     NoteAttachmentType,
+    ShareMode,
     Space,
+    SpaceMember,
+    SpaceMemberRole,
     SpaceShareCode,
 )
 from share.schemas import ShareCodeResponse
@@ -43,7 +46,7 @@ class ShareService:
 
     @staticmethod
     async def generate_share_code(
-        db: AsyncSession, user_id: UUID, space_id: UUID
+        db: AsyncSession, user_id: UUID, space_id: UUID, share_mode: str = "clone"
     ) -> ShareCodeResponse:
         # Verify space exists and user owns it
         space = await db.get(Space, space_id)
@@ -52,18 +55,27 @@ class ShareService:
         if space.user_id != user_id:
             raise ShareCodeError("无权分享此学习空间")
 
-        # Check if code already exists for this space
+        # Validate share_mode
+        try:
+            mode_enum = ShareMode(share_mode)
+        except ValueError:
+            raise ShareCodeError("无效的分享模式，请选择 clone 或 collaborative")
+
+        # Check if code already exists for this space + mode
         existing = await db.execute(
-            select(SpaceShareCode).where(SpaceShareCode.space_id == space_id)
+            select(SpaceShareCode).where(
+                SpaceShareCode.space_id == space_id,
+                SpaceShareCode.share_mode == mode_enum,
+            )
         )
         existing_record = existing.scalar_one_or_none()
 
         if existing_record:
-            # Return existing code
             return ShareCodeResponse(
                 code=existing_record.code,
                 display_code=ShareService._format_display_code(existing_record.code),
                 space_name=space.name,
+                share_mode=existing_record.share_mode.value,
                 created_at=existing_record.created_at,
             )
 
@@ -83,6 +95,7 @@ class ShareService:
             code=code,
             space_id=space_id,
             creator_user_id=user_id,
+            share_mode=mode_enum,
         )
         db.add(share_record)
         await db.commit()
@@ -92,6 +105,7 @@ class ShareService:
             code=share_record.code,
             display_code=ShareService._format_display_code(share_record.code),
             space_name=space.name,
+            share_mode=share_record.share_mode.value,
             created_at=share_record.created_at,
         )
 
@@ -117,9 +131,70 @@ class ShareService:
         if not source_space:
             raise ShareCodeError("源学习空间已被删除")
 
-        # --- Deep copy in a single transaction ---
+        # Route by share_mode
+        if share_record.share_mode == ShareMode.COLLABORATIVE:
+            return await ShareService._import_collaborative(
+                db, user_id, source_space
+            )
+        else:
+            return await ShareService._import_clone(db, user_id, source_space)
 
-        # 1. Create new space (copy name, description, color only)
+    @staticmethod
+    async def _import_collaborative(
+        db: AsyncSession, user_id: UUID, source_space: Space
+    ) -> SpaceResponse:
+        """Join existing space as a member."""
+        # Cannot join your own space
+        if source_space.user_id == user_id:
+            raise ShareCodeError("你是该空间的所有者，无需导入")
+
+        # Check if already a member
+        existing_member = await db.execute(
+            select(SpaceMember).where(
+                SpaceMember.space_id == source_space.id,
+                SpaceMember.user_id == user_id,
+            )
+        )
+        if existing_member.scalar_one_or_none():
+            raise ShareCodeError("你已经是该空间的成员")
+
+        # Add user as member
+        member = SpaceMember(
+            space_id=source_space.id,
+            user_id=user_id,
+            role=SpaceMemberRole.MEMBER,
+        )
+        db.add(member)
+
+        # Mark space as collaborative if not already
+        if not source_space.is_collaborative:
+            source_space.is_collaborative = True
+
+        await db.commit()
+        await db.refresh(source_space)
+
+        return SpaceResponse(
+            id=source_space.id,
+            user_id=source_space.user_id,
+            name=source_space.name,
+            description=source_space.description,
+            color=source_space.color,
+            learning_preferences=source_space.learning_preferences,
+            memory_sharing_enabled=source_space.memory_sharing_enabled,
+            tool_mode=source_space.tool_mode,
+            enabled_tools=source_space.enabled_tools,
+            is_collaborative=source_space.is_collaborative,
+            user_role="member",
+            created_at=source_space.created_at,
+            updated_at=source_space.updated_at,
+        )
+
+    @staticmethod
+    async def _import_clone(
+        db: AsyncSession, user_id: UUID, source_space: Space
+    ) -> SpaceResponse:
+        """Deep-copy space (existing clone behavior)."""
+        # 1. Create new space
         new_space = Space(
             user_id=user_id,
             name=source_space.name,
@@ -127,14 +202,21 @@ class ShareService:
             color=source_space.color,
         )
         db.add(new_space)
-        await db.flush()  # get new_space.id
+        await db.flush()
 
-        # 2. Copy nodes (label only, mastery=NULL)
+        # Seed owner membership
+        owner_member = SpaceMember(
+            space_id=new_space.id,
+            user_id=user_id,
+            role=SpaceMemberRole.OWNER,
+        )
+        db.add(owner_member)
+
+        # 2. Copy nodes
         source_nodes = await db.execute(
             select(Node).where(Node.space_id == source_space.id)
         )
         old_to_new_node: dict[UUID, UUID] = {}
-        label_to_new_node: dict[str, UUID] = {}
         for node in source_nodes.scalars().all():
             new_node = Node(
                 space_id=new_space.id,
@@ -144,9 +226,8 @@ class ShareService:
             db.add(new_node)
             await db.flush()
             old_to_new_node[node.id] = new_node.id
-            label_to_new_node[node.label] = new_node.id
 
-        # 3. Copy edges (KNOWLEDGE_TREE and ADVANCED only, skip LEARNING_PATH)
+        # 3. Copy edges (KNOWLEDGE_TREE and ADVANCED only)
         source_edges = await db.execute(
             select(Edge).where(
                 Edge.space_id == source_space.id,
@@ -164,14 +245,13 @@ class ShareService:
                     type=edge.type,
                 ))
 
-        # 4. Copy notes (title, content, note_type, metadata_, sort_order)
+        # 4. Copy notes
         source_notes = await db.execute(
             select(Note)
             .where(Note.space_id == source_space.id)
             .options(selectinload(Note.attachments))
         )
         for note in source_notes.scalars().all():
-            # Remap node_id via label match
             new_node_id = None
             if note.node_id and note.node_id in old_to_new_node:
                 new_node_id = old_to_new_node[note.node_id]
@@ -188,7 +268,7 @@ class ShareService:
             db.add(new_note)
             await db.flush()
 
-            # 5. Copy LINK attachments only
+            # Copy LINK attachments only
             for att in note.attachments:
                 if att.attachment_type == NoteAttachmentType.LINK:
                     db.add(NoteAttachment(
@@ -202,4 +282,18 @@ class ShareService:
         await db.commit()
         await db.refresh(new_space)
 
-        return SpaceResponse.model_validate(new_space)
+        return SpaceResponse(
+            id=new_space.id,
+            user_id=new_space.user_id,
+            name=new_space.name,
+            description=new_space.description,
+            color=new_space.color,
+            learning_preferences=new_space.learning_preferences,
+            memory_sharing_enabled=new_space.memory_sharing_enabled,
+            tool_mode=new_space.tool_mode,
+            enabled_tools=new_space.enabled_tools,
+            is_collaborative=new_space.is_collaborative,
+            user_role="owner",
+            created_at=new_space.created_at,
+            updated_at=new_space.updated_at,
+        )

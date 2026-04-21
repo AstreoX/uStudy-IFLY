@@ -188,6 +188,58 @@ async def get_space_graph(
 
 
 @router.get(
+    "/{space_id}/members",
+    summary="获取协作空间成员列表",
+)
+async def get_space_members(
+    space_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """获取协作空间的所有成员（含角色、昵称、头像）"""
+    service = SpaceService(db)
+    try:
+        return await service.get_space_members(user.id, space_id)
+    except SpaceNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "SPACE_NOT_FOUND", "message": "学习空间不存在"},
+        )
+    except SpaceAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "SPACE_ACCESS_DENIED", "message": "无权访问该学习空间"},
+        )
+
+
+@router.delete(
+    "/{space_id}/members/{target_user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="移除成员或退出空间",
+)
+async def remove_space_member(
+    space_id: UUID,
+    target_user_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Owner 移除成员，或成员自行退出（target_user_id == self）"""
+    service = SpaceService(db)
+    try:
+        await service.remove_member(user.id, space_id, target_user_id)
+    except SpaceNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "MEMBER_NOT_FOUND", "message": "成员不存在"},
+        )
+    except SpaceAccessDeniedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "SPACE_ACCESS_DENIED", "message": str(e)},
+        )
+
+
+@router.get(
     "/{space_id}/path-events",
     response_model=list[LearningPathEventResponse],
     summary="获取学习路径扩展事件",
