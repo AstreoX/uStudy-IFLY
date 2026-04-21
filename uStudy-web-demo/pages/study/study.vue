@@ -1194,6 +1194,22 @@ export default {
     this.$nextTick(() => {
       this.resetChatInputHeight()
     })
+    // Listen for scroll/pan on left panel to clear stale annotations
+    this._clearAnnotationsOnWheel = () => {
+      if (this.annotations.length > 0) {
+        this.annotations = []
+      }
+    }
+    this._clearAnnotationsOnMousedown = () => {
+      if (this.annotations.length > 0) {
+        this.annotations = []
+      }
+    }
+    const tabContentEl = document.querySelector('.tab-content-area')
+    if (tabContentEl) {
+      tabContentEl.addEventListener('wheel', this._clearAnnotationsOnWheel)
+      tabContentEl.addEventListener('mousedown', this._clearAnnotationsOnMousedown)
+    }
   },
   beforeUnmount() {
     if (this.notificationAbort) {
@@ -1214,6 +1230,15 @@ export default {
       this._graphRefreshTimer = null
     }
     this._abortGraphPoll = true
+    const tabContentEl = document.querySelector('.tab-content-area')
+    if (tabContentEl) {
+      if (this._clearAnnotationsOnWheel) {
+        tabContentEl.removeEventListener('wheel', this._clearAnnotationsOnWheel)
+      }
+      if (this._clearAnnotationsOnMousedown) {
+        tabContentEl.removeEventListener('mousedown', this._clearAnnotationsOnMousedown)
+      }
+    }
   },
   methods: {
     resolveUrl(url) {
@@ -1754,6 +1779,9 @@ export default {
     },
 
     handleTabChange(tabId) {
+      if (this.annotations.length > 0) {
+        this.annotations = []
+      }
       this.activeTab = tabId
       if (tabId === 'graph' && this.graphDirty) {
         this.graphDirty = false
