@@ -77,7 +77,7 @@ def upgrade() -> None:
     # 5. Add share_mode to space_share_codes
     conn.execute(sa.text("""
         ALTER TABLE space_share_codes
-        ADD COLUMN IF NOT EXISTS share_mode VARCHAR(20) NOT NULL DEFAULT 'clone';
+        ADD COLUMN IF NOT EXISTS share_mode sharemode NOT NULL DEFAULT 'clone';
     """))
     # Drop old unique constraint on space_id (was UNIQUE on column)
     conn.execute(sa.text("""
