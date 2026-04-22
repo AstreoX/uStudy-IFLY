@@ -39,10 +39,22 @@ def upgrade() -> None:
         END $$;
     """))
 
+    # Drop the VARCHAR default before type conversion
+    conn.execute(sa.text("""
+        ALTER TABLE space_share_codes
+        ALTER COLUMN share_mode DROP DEFAULT;
+    """))
+
     # ALTER column type from VARCHAR to sharemode enum
     conn.execute(sa.text("""
         ALTER TABLE space_share_codes
         ALTER COLUMN share_mode TYPE sharemode USING share_mode::sharemode;
+    """))
+
+    # Re-add default as enum value
+    conn.execute(sa.text("""
+        ALTER TABLE space_share_codes
+        ALTER COLUMN share_mode SET DEFAULT 'clone'::sharemode;
     """))
 
     # Re-add the unique constraint
