@@ -350,10 +350,16 @@ export function deleteNote(spaceId, noteId) {
   })
 }
 
-export function generateShareCode(spaceId) {
+/**
+ * 生成分享码
+ * @param {string} spaceId
+ * @param {string} shareMode - 'clone' 或 'collaborative'
+ */
+export function generateShareCode(spaceId, shareMode = 'clone') {
   return request({
     url: `/api/spaces/${spaceId}/share-code`,
-    method: 'POST'
+    method: 'POST',
+    data: { share_mode: shareMode }
   })
 }
 
@@ -362,5 +368,28 @@ export function importSpaceByCode(shareCode) {
     url: '/api/spaces/import',
     method: 'POST',
     data: { share_code: shareCode }
+  })
+}
+
+/**
+ * 获取协作空间成员列表
+ * @param {string} spaceId
+ */
+export function getSpaceMembers(spaceId) {
+  return request({
+    url: `/api/spaces/${spaceId}/members`,
+    method: 'GET'
+  })
+}
+
+/**
+ * 移除成员或退出空间
+ * @param {string} spaceId
+ * @param {string} userId
+ */
+export function removeSpaceMember(spaceId, userId) {
+  return request({
+    url: `/api/spaces/${spaceId}/members/${userId}`,
+    method: 'DELETE'
   })
 }

@@ -472,7 +472,14 @@ export default {
         spacesStore.invalidate()
         this.showImportModal = false
         this.importCode = ''
-        uni.reLaunch({ url: `/pages/study/study?spaceId=${space.id}` })
+        if (space.is_collaborative) {
+          uni.showToast({ title: '已加入协作空间', icon: 'success' })
+          setTimeout(() => {
+            uni.reLaunch({ url: `/pages/study/study?spaceId=${space.id}` })
+          }, 500)
+        } else {
+          uni.reLaunch({ url: `/pages/study/study?spaceId=${space.id}` })
+        }
       } catch (err) {
         const msg = err?.data?.detail || err?.message || '导入失败，请检查分享码'
         uni.showToast({ title: msg, icon: 'none' })

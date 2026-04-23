@@ -822,11 +822,55 @@
         @close="showDeleteSpaceModal = false"
       />
 
+      <!-- Share Mode Selection Modal -->
+      <view v-if="showShareModeModal" class="share-modal-backdrop" @tap.self="showShareModeModal = false">
+        <view class="share-modal-card">
+          <text class="share-modal-title">选择分享方式</text>
+          <view class="share-mode-options">
+            <view class="share-mode-option" @tap="selectShareMode('clone')">
+              <view class="share-mode-icon-wrap">
+                <svg viewBox="0 0 256 256" class="share-mode-svg-icon">
+                  <rect width="256" height="256" fill="none"/>
+                  <rect x="40" y="72" width="144" height="144" rx="8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                  <path d="M72,72V56a8,8,0,0,1,8-8H216a8,8,0,0,1,8,8V200a8,8,0,0,1-8,8H184" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                </svg>
+              </view>
+              <view class="share-mode-info">
+                <text class="share-mode-label">创建副本</text>
+                <text class="share-mode-desc">对方导入后获得此空间的副本</text>
+              </view>
+              <svg viewBox="0 0 256 256" class="share-mode-arrow">
+                <polyline points="96 48 176 128 96 208" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+              </svg>
+            </view>
+            <view class="share-mode-divider"></view>
+            <view class="share-mode-option" @tap="selectShareMode('collaborative')">
+              <view class="share-mode-icon-wrap">
+                <svg viewBox="0 0 256 256" class="share-mode-svg-icon">
+                  <rect width="256" height="256" fill="none"/>
+                  <circle cx="88" cy="108" r="52" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                  <path d="M155.4,57.9A54,54,0,1,1,169.5,160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                  <path d="M16,197.4a88,88,0,0,1,144,0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                  <path d="M169.5,160a88,88,0,0,1,72,37.4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                </svg>
+              </view>
+              <view class="share-mode-info">
+                <text class="share-mode-label">共同学习</text>
+                <text class="share-mode-desc">对方导入后加入此空间一起学习</text>
+              </view>
+              <svg viewBox="0 0 256 256" class="share-mode-arrow">
+                <polyline points="96 48 176 128 96 208" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+              </svg>
+            </view>
+          </view>
+        </view>
+      </view>
+
       <!-- Share Code Modal -->
       <view v-if="showShareCodeModal" class="share-modal-backdrop" @tap.self="showShareCodeModal = false">
         <view class="share-modal-card">
           <text class="share-modal-title">分享学习空间</text>
-          <text class="share-modal-sub">将分享码发送给好友，对方可导入此空间的知识图谱和笔记</text>
+          <text class="share-modal-sub">{{ currentShareMode === 'collaborative' ? '对方导入后将加入此空间共同学习' : '将分享码发送给好友，对方可导入此空间的知识图谱和笔记' }}</text>
           <view class="share-modal-code-box">
             <text class="share-modal-code">{{ displayShareCode }}</text>
           </view>
@@ -1076,9 +1120,11 @@ export default {
       deleteTargetSpaceName: '',
 
       // Space share
+      showShareModeModal: false,
       showShareCodeModal: false,
       shareCode: '',
       displayShareCode: '',
+      currentShareMode: 'clone',
       isGeneratingShareCode: false,
       copyBtnText: '复制分享码',
 
@@ -1846,11 +1892,17 @@ export default {
       return '删除失败，请重试'
     },
 
-    async handleShareSpace() {
+    handleShareSpace() {
       if (!this.spaceId || this.isGeneratingShareCode) return
+      this.showShareModeModal = true
+    },
+
+    async selectShareMode(mode) {
+      this.showShareModeModal = false
+      this.currentShareMode = mode
       this.isGeneratingShareCode = true
       try {
-        const res = await generateShareCode(this.spaceId)
+        const res = await generateShareCode(this.spaceId, mode)
         this.shareCode = res.code
         this.displayShareCode = res.display_code
         this.copyBtnText = '复制分享码'
@@ -3781,6 +3833,73 @@ export default {
 .share-modal-close-text {
   font-size: 14px;
   color: rgba(255, 255, 255, 0.7);
+}
+
+/* Share Mode Selection */
+.share-mode-options {
+  width: 100%;
+}
+
+.share-mode-option {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: background 0.15s ease;
+}
+
+.share-mode-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.share-mode-icon-wrap {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  margin-right: 14px;
+  flex-shrink: 0;
+}
+
+.share-mode-svg-icon {
+  width: 22px;
+  height: 22px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.share-mode-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.share-mode-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.share-mode-desc {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.share-mode-arrow {
+  width: 16px;
+  height: 16px;
+  color: rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+}
+
+.share-mode-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 16px;
 }
 
 /* Two-Panel Split */
