@@ -818,12 +818,18 @@ class SpaceDocument(Base):
     original_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     mime_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    creator_user_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), nullable=False
     )
 
     # 关系
     space: Mapped["Space"] = relationship(back_populates="documents")
+    creator: Mapped[Optional["User"]] = relationship(foreign_keys=[creator_user_id])
     processing_task: Mapped[Optional["DocumentProcessingTask"]] = relationship(
         back_populates="document", uselist=False, cascade="all, delete-orphan"
     )
@@ -1585,6 +1591,11 @@ class Note(Base):
         "metadata", JSONB, nullable=True
     )
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    creator_user_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), nullable=False
     )
@@ -1595,6 +1606,7 @@ class Note(Base):
     # 关系
     space: Mapped["Space"] = relationship(back_populates="notes")
     node: Mapped[Optional["Node"]] = relationship()
+    creator: Mapped[Optional["User"]] = relationship(foreign_keys=[creator_user_id])
     attachments: Mapped[list["NoteAttachment"]] = relationship(
         back_populates="note", cascade="all, delete-orphan"
     )
@@ -1737,6 +1749,9 @@ class SpaceMember(Base):
     )
     joined_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    color: Mapped[str] = mapped_column(
+        String(7), default="#0088FF", server_default="#0088FF", nullable=False
     )
 
     # 关系

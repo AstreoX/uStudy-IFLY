@@ -4,11 +4,11 @@ import logging
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, delete
+from sqlalchemy import or_, select, delete, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Node, Edge, EdgeType
+from db.models import Node, Edge, EdgeType, NodeUserMastery
 from graph.exceptions import (
     NodeNotFoundError,
     EdgeNotFoundError,
@@ -25,20 +25,81 @@ class GraphService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_graph(self, space_id: UUID) -> dict:
+    async def get_graph(
+        self,
+        space_id: UUID,
+        user_id: UUID | None = None,
+        is_collaborative: bool = False,
+    ) -> dict:
         """
         Get full graph overview for a learning space.
 
+        Args:
+            space_id: Learning space ID
+            user_id: Current user ID (used in collaborative mode)
+            is_collaborative: Whether this is a collaborative space
+
         Returns:
-            dict with 'nodes' and 'edges' lists
+            dict with 'nodes' and 'edges' lists.
+            In collaborative mode, per-user mastery is used and edges include user_id
+            for learning_path edges.
         """
-        # Query nodes
+        if is_collaborative and user_id is not None:
+            # Collaborative mode: LEFT JOIN node_user_mastery for per-user mastery
+            stmt = (
+                select(Node, NodeUserMastery.mastery.label("user_mastery"))
+                .outerjoin(
+                    NodeUserMastery,
+                    (NodeUserMastery.node_id == Node.id)
+                    & (NodeUserMastery.user_id == user_id),
+                )
+                .where(Node.space_id == space_id)
+            )
+            nodes_result = await self.db.execute(stmt)
+            node_rows = nodes_result.all()
+
+            nodes_data = [
+                {
+                    "id": str(row.Node.id),
+                    "label": row.Node.label,
+                    "mastery": row.user_mastery if row.user_mastery is not None else row.Node.mastery,
+                }
+                for row in node_rows
+            ]
+
+            # Edges: filter LEARNING_PATH to user-owned or legacy (NULL user_id)
+            edges_result = await self.db.execute(
+                select(Edge).where(
+                    Edge.space_id == space_id,
+                    or_(
+                        Edge.type != EdgeType.LEARNING_PATH,
+                        Edge.user_id == user_id,
+                        Edge.user_id.is_(None),
+                    ),
+                )
+            )
+            edges = edges_result.scalars().all()
+
+            edges_data = []
+            for e in edges:
+                edge_dict = {
+                    "id": str(e.id),
+                    "from_node_id": str(e.from_node_id),
+                    "to_node_id": str(e.to_node_id),
+                    "type": e.type.value,
+                }
+                if e.type == EdgeType.LEARNING_PATH:
+                    edge_dict["user_id"] = str(e.user_id) if e.user_id else None
+                edges_data.append(edge_dict)
+
+            return {"nodes": nodes_data, "edges": edges_data}
+
+        # Non-collaborative mode: existing behavior
         nodes_result = await self.db.execute(
             select(Node).where(Node.space_id == space_id)
         )
         nodes = nodes_result.scalars().all()
 
-        # Query edges
         edges_result = await self.db.execute(
             select(Edge).where(Edge.space_id == space_id)
         )
@@ -218,17 +279,25 @@ class GraphService:
         space_id: UUID,
         node_id: UUID,
         mastery: int,
+        user_id: UUID | None = None,
+        is_collaborative: bool = False,
     ) -> Node:
         """
         Update node mastery score.
+
+        In collaborative mode, upserts into the per-user node_user_mastery table
+        instead of modifying the shared Node.mastery column.
 
         Args:
             space_id: Learning space ID
             node_id: Node ID
             mastery: New mastery score (0-100)
+            user_id: Current user ID (used in collaborative mode)
+            is_collaborative: Whether this is a collaborative space
 
         Returns:
-            Updated Node object
+            Updated Node object (in collaborative mode, the Node.mastery is unchanged;
+            the caller should use the passed mastery value for the user's view)
 
         Raises:
             NodeNotFoundError: If node not found
@@ -238,6 +307,26 @@ class GraphService:
             raise ValueError(f"Mastery must be between 0 and 100, got {mastery}")
 
         node = await self._get_node(space_id, node_id)
+
+        if is_collaborative and user_id is not None:
+            # Upsert per-user mastery in node_user_mastery table
+            stmt = text("""
+                INSERT INTO node_user_mastery (id, node_id, user_id, mastery, updated_at)
+                VALUES (gen_random_uuid(), :node_id, :user_id, :mastery, NOW())
+                ON CONFLICT (node_id, user_id)
+                DO UPDATE SET mastery = :mastery, updated_at = NOW()
+            """)
+            await self.db.execute(
+                stmt,
+                {"node_id": node_id, "user_id": user_id, "mastery": mastery},
+            )
+            await self.db.commit()
+            logger.info(
+                f"Updated per-user mastery for node {node_id}, user {user_id}: {mastery}"
+            )
+            return node
+
+        # Non-collaborative mode: update shared Node.mastery
         node.mastery = mastery
         await self.db.commit()
         await self.db.refresh(node)
@@ -419,6 +508,7 @@ class GraphService:
         self,
         space_id: UUID,
         node_ids: list[UUID],
+        user_id: UUID | None = None,
     ) -> list[Edge]:
         """
         Create a learning path by connecting nodes in sequence.
@@ -426,6 +516,7 @@ class GraphService:
         Args:
             space_id: Learning space ID
             node_ids: List of node IDs in learning order
+            user_id: Owner user ID for per-user learning paths (collaborative spaces)
 
         Returns:
             List of created Edge objects
@@ -447,15 +538,19 @@ class GraphService:
             from_id = node_ids[i]
             to_id = node_ids[i + 1]
 
-            # Check if edge already exists
-            existing = await self.db.execute(
-                select(Edge).where(
-                    Edge.space_id == space_id,
-                    Edge.from_node_id == from_id,
-                    Edge.to_node_id == to_id,
-                    Edge.type == EdgeType.LEARNING_PATH,
-                )
+            # Check if edge already exists (match user_id for per-user paths)
+            existing_query = select(Edge).where(
+                Edge.space_id == space_id,
+                Edge.from_node_id == from_id,
+                Edge.to_node_id == to_id,
+                Edge.type == EdgeType.LEARNING_PATH,
             )
+            if user_id is not None:
+                existing_query = existing_query.where(Edge.user_id == user_id)
+            else:
+                existing_query = existing_query.where(Edge.user_id.is_(None))
+
+            existing = await self.db.execute(existing_query)
             if existing.scalar_one_or_none():
                 continue  # Skip existing edges
 
@@ -465,6 +560,8 @@ class GraphService:
                 to_node_id=to_id,
                 type=EdgeType.LEARNING_PATH,
             )
+            if user_id is not None:
+                edge.user_id = user_id
             self.db.add(edge)
             created_edges.append(edge)
 
@@ -557,12 +654,20 @@ class GraphService:
         )
         return result.scalar_one_or_none()
 
-    async def delete_all_learning_paths(self, space_id: UUID) -> int:
+    async def delete_all_learning_paths(
+        self,
+        space_id: UUID,
+        user_id: UUID | None = None,
+    ) -> int:
         """
-        Delete all learning_path edges in a space.
+        Delete learning_path edges in a space.
+
+        When user_id is provided, only deletes LEARNING_PATH edges owned by that user.
+        When user_id is None, deletes all LEARNING_PATH edges in the space (legacy behavior).
 
         Args:
             space_id: Learning space ID
+            user_id: If provided, only delete this user's learning path edges
 
         Returns:
             Number of deleted edges
@@ -571,12 +676,14 @@ class GraphService:
             Exception: If database operation fails
         """
         try:
-            result = await self.db.execute(
-                delete(Edge).where(
-                    Edge.space_id == space_id,
-                    Edge.type == EdgeType.LEARNING_PATH,
-                )
+            delete_stmt = delete(Edge).where(
+                Edge.space_id == space_id,
+                Edge.type == EdgeType.LEARNING_PATH,
             )
+            if user_id is not None:
+                delete_stmt = delete_stmt.where(Edge.user_id == user_id)
+
+            result = await self.db.execute(delete_stmt)
             await self.db.commit()
         except Exception as e:
             await self.db.rollback()

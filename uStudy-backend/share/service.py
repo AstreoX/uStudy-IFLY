@@ -4,7 +4,7 @@ import logging
 import secrets
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -158,11 +158,22 @@ class ShareService:
         if existing_member.scalar_one_or_none():
             raise ShareCodeError("你已经是该空间的成员")
 
+        # Count existing members to assign color
+        from spaces.colors import get_next_color
+
+        member_count_result = await db.execute(
+            select(func.count()).select_from(SpaceMember).where(
+                SpaceMember.space_id == source_space.id
+            )
+        )
+        member_count = member_count_result.scalar()
+
         # Add user as member
         member = SpaceMember(
             space_id=source_space.id,
             user_id=user_id,
             role=SpaceMemberRole.MEMBER,
+            color=get_next_color(member_count),
         )
         db.add(member)
 

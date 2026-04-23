@@ -64,10 +64,11 @@ class PathExpansionResult:
 class LearningPathExpander:
     """Checks trigger conditions and expands learning paths via LLM."""
 
-    def __init__(self, space_id: UUID, user_id: UUID) -> None:
+    def __init__(self, space_id: UUID, user_id: UUID, is_collaborative: bool = False) -> None:
         self.space_id = space_id
         self.user_id = user_id
-        self.tool_executor = GraphToolExecutor(space_id)
+        self.is_collaborative = is_collaborative
+        self.tool_executor = GraphToolExecutor(space_id, user_id=user_id, is_collaborative=is_collaborative)
 
         settings = get_settings()
         model_override = settings.learning_path_expand_model or None
@@ -298,7 +299,7 @@ class LearningPathExpander:
         """Load the knowledge graph for the space."""
         async with get_scoped_session() as db:
             graph_service = GraphService(db)
-            return await graph_service.get_graph(self.space_id)
+            return await graph_service.get_graph(self.space_id, user_id=self.user_id, is_collaborative=self.is_collaborative)
 
     async def _load_preferences(self) -> dict | None:
         """Load user learning preferences for the space."""

@@ -283,6 +283,7 @@ async def _evaluate_mastery_and_notify(
     user_id: UUID,
     space_id: UUID,
     conversation: list[dict],
+    is_collaborative: bool = False,
 ) -> None:
     """
     后台评估掌握分并推送通知（每个节点一条通知）。
@@ -291,12 +292,13 @@ async def _evaluate_mastery_and_notify(
         user_id: 用户 ID
         space_id: 学习空间 ID
         conversation: 对话历史列表
+        is_collaborative: 是否为协作学习空间
     """
     try:
         from graph.mastery_evaluator import MasteryEvaluator
         from notifications.queue import push_notification
 
-        evaluator = MasteryEvaluator(space_id=space_id)
+        evaluator = MasteryEvaluator(space_id=space_id, user_id=user_id, is_collaborative=is_collaborative)
         result = await evaluator.evaluate_and_update(conversation)
 
         for update in result.updates:
@@ -330,6 +332,7 @@ async def _evaluate_mastery_then_expand_path(
     user_id: UUID,
     space_id: UUID,
     conversation: list[dict],
+    is_collaborative: bool = False,
 ) -> None:
     """
     后台链式任务：先评估掌握分，再检查是否需要扩展学习路径。
@@ -338,9 +341,10 @@ async def _evaluate_mastery_then_expand_path(
         user_id: 用户 ID
         space_id: 学习空间 ID
         conversation: 对话历史列表
+        is_collaborative: 是否为协作学习空间
     """
     # Step 1: 掌握分评估（原有逻辑）
-    await _evaluate_mastery_and_notify(user_id, space_id, conversation)
+    await _evaluate_mastery_and_notify(user_id, space_id, conversation, is_collaborative=is_collaborative)
 
     # Step 2: 学习路径扩展检查
     try:
@@ -351,7 +355,7 @@ async def _evaluate_mastery_then_expand_path(
         from graph.path_expander import LearningPathExpander
         from notifications.queue import push_notification
 
-        expander = LearningPathExpander(space_id=space_id, user_id=user_id)
+        expander = LearningPathExpander(space_id=space_id, user_id=user_id, is_collaborative=is_collaborative)
         result = await expander.check_and_expand()
 
         if result.expanded:
@@ -590,6 +594,7 @@ class ChatService:
             space_name = space.name
             space_tool_mode = getattr(space, "tool_mode", "auto") or "auto"
             space_enabled_tools = getattr(space, "enabled_tools", None)
+            space_is_collaborative = getattr(space, "is_collaborative", False) or False
             logger.info(f"[Perf] Load space info: {(time.monotonic()-t0)*1000:.0f}ms")
 
             # 6. 对话连续性：检测新对话并加载上一次对话上下文
@@ -652,6 +657,7 @@ class ChatService:
             tool_mode=space_tool_mode,
             enabled_tools=space_enabled_tools,
             has_panel_screenshot=bool(panel_screenshot),
+            is_collaborative=space_is_collaborative,
         )
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -725,6 +731,7 @@ class ChatService:
                                 user_id=user_id,
                                 space_id=space_id,
                                 conversation=conversation_for_evaluation,
+                                is_collaborative=space_is_collaborative,
                             )
                         )
 

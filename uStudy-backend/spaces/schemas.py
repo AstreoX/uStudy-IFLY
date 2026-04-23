@@ -102,6 +102,7 @@ class EdgeResponse(BaseModel):
     from_node_id: UUID
     to_node_id: UUID
     type: str = Field(..., description="边类型：knowledge_tree | learning_path | advanced")
+    user_id: Optional[UUID] = None
 
     model_config = {"from_attributes": True}
 

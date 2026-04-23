@@ -72,10 +72,13 @@ class SpaceService:
         await self.db.flush()
 
         # Seed space_members with OWNER row
+        from spaces.colors import get_next_color
+
         owner_member = SpaceMember(
             space_id=space.id,
             user_id=user_id,
             role=SpaceMemberRole.OWNER,
+            color=get_next_color(0),
         )
         self.db.add(owner_member)
 
@@ -204,11 +207,42 @@ class SpaceService:
         return deleted_count
 
     async def get_space_graph(
-        self, user_id: UUID, space_id: UUID
+        self, user_id: UUID, space_id: UUID, target_user_id: UUID | None = None
     ) -> SpaceGraphResponse:
         """获取学习空间的知识图谱（节点和边）"""
-        await verify_space_access(self.db, space_id, user_id)
+        space = await verify_space_access(self.db, space_id, user_id)
 
+        if space.is_collaborative:
+            effective_user_id = target_user_id or user_id
+            # Use GraphService with per-user mastery
+            from graph.service import GraphService
+
+            graph_service = GraphService(self.db)
+            graph_data = await graph_service.get_graph(
+                space_id, user_id=effective_user_id, is_collaborative=True
+            )
+            return SpaceGraphResponse(
+                nodes=[
+                    NodeResponse(
+                        id=UUID(n["id"]),
+                        label=n["label"],
+                        mastery=n["mastery"],
+                    )
+                    for n in graph_data["nodes"]
+                ],
+                edges=[
+                    EdgeResponse(
+                        id=UUID(e["id"]),
+                        from_node_id=UUID(e["from_node_id"]),
+                        to_node_id=UUID(e["to_node_id"]),
+                        type=e["type"],
+                        user_id=UUID(e["user_id"]) if e.get("user_id") else None,
+                    )
+                    for e in graph_data["edges"]
+                ],
+            )
+
+        # Non-collaborative: existing behavior
         # 查询节点
         nodes_stmt = select(Node).where(Node.space_id == space_id)
         nodes_result = await self.db.execute(nodes_stmt)
@@ -256,6 +290,7 @@ class SpaceService:
                 "nickname": nickname,
                 "avatar_url": avatar_url,
                 "joined_at": member.joined_at.isoformat(),
+                "color": member.color,
             }
             for member, nickname, avatar_url in rows
         ]

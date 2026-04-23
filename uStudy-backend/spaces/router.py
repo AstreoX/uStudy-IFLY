@@ -161,6 +161,7 @@ async def delete_space(
 )
 async def get_space_graph(
     space_id: UUID,
+    target_user_id: UUID | None = Query(None, description="目标用户ID（协作空间中查看其他成员的掌握度）"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SpaceGraphResponse:
@@ -174,7 +175,7 @@ async def get_space_graph(
     """
     service = SpaceService(db)
     try:
-        return await service.get_space_graph(user.id, space_id)
+        return await service.get_space_graph(user.id, space_id, target_user_id=target_user_id)
     except SpaceNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -518,8 +518,10 @@ def build_knowledge_tree_text(
 class GraphToolExecutor:
     """Executor for knowledge graph tools"""
 
-    def __init__(self, space_id: UUID) -> None:
+    def __init__(self, space_id: UUID, user_id: UUID | None = None, is_collaborative: bool = False) -> None:
         self.space_id = space_id
+        self.user_id = user_id
+        self.is_collaborative = is_collaborative
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> ToolResult:
         """
@@ -586,7 +588,7 @@ class GraphToolExecutor:
 
     async def _get_graph_overview(self, args: dict, graph_service: GraphService) -> ToolResult:
         """Get knowledge graph overview in compact text format"""
-        graph = await graph_service.get_graph(self.space_id)
+        graph = await graph_service.get_graph(self.space_id, user_id=self.user_id, is_collaborative=self.is_collaborative)
         node_count = len(graph["nodes"])
         edge_count = len(graph["edges"])
 
@@ -777,7 +779,7 @@ class GraphToolExecutor:
             )
 
         updated_node = await graph_service.update_mastery(
-            self.space_id, node.id, mastery
+            self.space_id, node.id, mastery, user_id=self.user_id, is_collaborative=self.is_collaborative
         )
 
         return ToolResult(
@@ -904,7 +906,9 @@ class GraphToolExecutor:
                 )
             node_ids.append(node.id)
 
-        edges = await graph_service.create_learning_path(self.space_id, node_ids)
+        edges = await graph_service.create_learning_path(
+            space_id=self.space_id, node_ids=node_ids, user_id=self.user_id
+        )
 
         return ToolResult(
             success=True,
@@ -975,7 +979,9 @@ class GraphToolExecutor:
                 ),
             )
 
-        edges = await graph_service.create_learning_path(self.space_id, node_ids)
+        edges = await graph_service.create_learning_path(
+            space_id=self.space_id, node_ids=node_ids, user_id=self.user_id
+        )
 
         return ToolResult(
             success=True,
@@ -1025,7 +1031,7 @@ class GraphToolExecutor:
     async def _delete_all_learning_paths(self, args: dict, graph_service: GraphService) -> ToolResult:
         """Delete all learning path edges in the space"""
         deleted_count = await graph_service.delete_all_learning_paths(
-            self.space_id
+            self.space_id, user_id=self.user_id
         )
 
         if deleted_count == 0:
@@ -1228,7 +1234,7 @@ class GraphToolExecutor:
         # Create new sub-path edges
         new_node_ids = [node.id for node in node_objs]
         new_edges = await graph_service.create_learning_path(
-            self.space_id, new_node_ids
+            space_id=self.space_id, node_ids=new_node_ids, user_id=self.user_id
         )
 
         # Build updated path text for confirmation

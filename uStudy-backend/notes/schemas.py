@@ -63,6 +63,8 @@ class NoteResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     attachments: list[NoteAttachmentResponse] = []
+    creator_user_id: Optional[UUID] = None
+    creator_nickname: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -80,5 +82,7 @@ class NoteListItem(BaseModel):
     created_at: datetime
     updated_at: datetime
     attachment_count: int = 0
+    creator_user_id: Optional[UUID] = None
+    creator_nickname: Optional[str] = None
 
     model_config = {"from_attributes": True}

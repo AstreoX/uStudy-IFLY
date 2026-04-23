@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from agents.llm import OpenRouterClient
 from agents.llm.mastery_update_prompts import build_mastery_update_prompt
@@ -47,8 +47,10 @@ class MasteryUpdateAgent:
     注意：该 Agent 使用独立的数据库会话，以支持与其他任务并行执行。
     """
 
-    def __init__(self, space_id: UUID) -> None:
+    def __init__(self, space_id: UUID, user_id: UUID | None = None, is_collaborative: bool = False) -> None:
         self.space_id = space_id
+        self.user_id = user_id
+        self.is_collaborative = is_collaborative
 
     async def update_mastery(
         self,
@@ -78,7 +80,9 @@ class MasteryUpdateAgent:
                 graph_service = GraphService(db)
 
                 # 1. 获取当前知识图谱
-                graph_data = await graph_service.get_graph(self.space_id)
+                graph_data = await graph_service.get_graph(
+                    self.space_id, user_id=self.user_id, is_collaborative=self.is_collaborative
+                )
                 nodes = graph_data.get("nodes", [])
 
                 if not nodes:
@@ -227,17 +231,17 @@ class MasteryUpdateAgent:
 
         try:
             for node_id, new_mastery, node_name, current_mastery, reason in valid_updates:
-                # 直接更新节点，不单独提交
-                result = await db.execute(
-                    select(Node).where(
-                        Node.id == node_id,
-                        Node.space_id == self.space_id,
+                if self.is_collaborative and self.user_id:
+                    # Collaborative mode: UPSERT into per-user node_user_mastery table
+                    await db.execute(
+                        text(
+                            "INSERT INTO node_user_mastery (id, node_id, user_id, mastery) "
+                            "VALUES (gen_random_uuid(), :node_id, :user_id, :mastery) "
+                            "ON CONFLICT (node_id, user_id) "
+                            "DO UPDATE SET mastery = :mastery, updated_at = now()"
+                        ),
+                        {"node_id": node_id, "user_id": self.user_id, "mastery": new_mastery},
                     )
-                )
-                node_obj = result.scalar_one_or_none()
-
-                if node_obj:
-                    node_obj.mastery = new_mastery
                     updates.append(
                         MasteryUpdateItem(
                             node_name=node_name,
@@ -248,18 +252,47 @@ class MasteryUpdateAgent:
                     )
                     success_count += 1
                     logger.info(
-                        "Updated mastery for node '%s': %s -> %s (%s)",
+                        "Updated per-user mastery for node '%s' user '%s': %s -> %s (%s)",
                         node_name,
+                        self.user_id,
                         current_mastery,
                         new_mastery,
                         reason,
                     )
                 else:
-                    logger.warning(
-                        "Node '%s' not found during update",
-                        node_name,
+                    # Non-collaborative mode: update Node.mastery directly
+                    result = await db.execute(
+                        select(Node).where(
+                            Node.id == node_id,
+                            Node.space_id == self.space_id,
+                        )
                     )
-                    failure_count += 1
+                    node_obj = result.scalar_one_or_none()
+
+                    if node_obj:
+                        node_obj.mastery = new_mastery
+                        updates.append(
+                            MasteryUpdateItem(
+                                node_name=node_name,
+                                current_mastery=current_mastery,
+                                new_mastery=new_mastery,
+                                reason=reason,
+                            )
+                        )
+                        success_count += 1
+                        logger.info(
+                            "Updated mastery for node '%s': %s -> %s (%s)",
+                            node_name,
+                            current_mastery,
+                            new_mastery,
+                            reason,
+                        )
+                    else:
+                        logger.warning(
+                            "Node '%s' not found during update",
+                            node_name,
+                        )
+                        failure_count += 1
 
             # 单次提交所有更新
             await db.commit()

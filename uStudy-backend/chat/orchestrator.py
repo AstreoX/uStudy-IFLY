@@ -553,6 +553,7 @@ class LLMOrchestrator:
         tool_mode: str = "auto",
         enabled_tools: list[str] | None = None,
         has_panel_screenshot: bool = False,
+        is_collaborative: bool = False,
     ) -> None:
         """
         Initialize the orchestrator.
@@ -567,6 +568,7 @@ class LLMOrchestrator:
             search_channels: User's search channel settings (channel_name -> enabled)
             tool_mode: "auto" (AI按需加载) or "manual" (用户自选)
             enabled_tools: manual 模式下启用的工具名称列表
+            is_collaborative: Whether this is a collaborative space
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
@@ -574,6 +576,7 @@ class LLMOrchestrator:
         self.space_name = space_name
         self.previous_conversation_context = previous_conversation_context
         self.tool_mode = tool_mode
+        self.is_collaborative = is_collaborative
 
         # Initialize components
         self.settings = get_settings()
@@ -583,7 +586,7 @@ class LLMOrchestrator:
         self.prompt_builder = PromptBuilder()
 
         # 所有执行器始终初始化（自动模式下工具定义延迟加载，但执行器预先就位）
-        self.graph_tool_executor = GraphToolExecutor(space_id)
+        self.graph_tool_executor = GraphToolExecutor(space_id, user_id=user_id, is_collaborative=is_collaborative)
         self.quiz_tool_executor = QuizGenerationToolExecutor(
             user_id, conversation_id, space_id
         )

@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from db.models import Node, Note, NoteAttachment, NoteAttachmentType, Space
+from db.models import Node, Note, NoteAttachment, NoteAttachmentType, Space, User as UserModel
 from notes.exceptions import NoteAccessDeniedError, NoteNotFoundError
 from notes.schemas import (
     AddLinkRequest,
@@ -74,6 +74,7 @@ class NoteService:
             title=request.title,
             content=request.content,
             sort_order=request.sort_order,
+            creator_user_id=user_id,
         )
         self.db.add(note)
         await self.db.commit()
@@ -95,11 +96,13 @@ class NoteService:
                 Note,
                 func.count(NoteAttachment.id).label("attachment_count"),
                 Node.label.label("node_label"),
+                UserModel.nickname.label("creator_nickname"),
             )
             .outerjoin(Node, Node.id == Note.node_id)
             .outerjoin(NoteAttachment, NoteAttachment.note_id == Note.id)
+            .outerjoin(UserModel, UserModel.id == Note.creator_user_id)
             .where(Note.space_id == space_id)
-            .group_by(Note.id, Node.label)
+            .group_by(Note.id, Node.label, UserModel.nickname)
             .order_by(Note.sort_order.asc(), Note.created_at.desc())
         )
 
@@ -125,8 +128,10 @@ class NoteService:
                 created_at=note.created_at,
                 updated_at=note.updated_at,
                 attachment_count=count,
+                creator_user_id=note.creator_user_id,
+                creator_nickname=creator_nickname,
             )
-            for note, count, node_label in rows
+            for note, count, node_label, creator_nickname in rows
         ]
 
     async def get_note(
@@ -139,12 +144,23 @@ class NoteService:
                 select(Node.label).where(Node.id == note.node_id)
             )
             resp.node_label = node_result.scalar_one_or_none()
+        if note.creator_user_id:
+            creator_result = await self.db.execute(
+                select(UserModel.nickname).where(UserModel.id == note.creator_user_id)
+            )
+            resp.creator_nickname = creator_result.scalar_one_or_none()
         return resp
 
     async def update_note(
         self, user_id: UUID, space_id: UUID, note_id: UUID, request: NoteUpdate
     ) -> NoteResponse:
         note = await self._get_note_with_access_check(user_id, space_id, note_id)
+
+        # Check collaborative permissions
+        space = await self._verify_space_access(user_id, space_id)
+        if space.is_collaborative and note.creator_user_id and note.creator_user_id != user_id:
+            if space.user_id != user_id:  # Not the owner
+                raise NoteAccessDeniedError("只有管理员可以编辑他人的笔记")
 
         provided = request.model_fields_set
         if "title" in provided:
@@ -172,6 +188,12 @@ class NoteService:
         self, user_id: UUID, space_id: UUID, note_id: UUID
     ) -> None:
         note = await self._get_note_with_access_check(user_id, space_id, note_id)
+
+        # Check collaborative permissions
+        space = await self._verify_space_access(user_id, space_id)
+        if space.is_collaborative and note.creator_user_id and note.creator_user_id != user_id:
+            if space.user_id != user_id:  # Not the owner
+                raise NoteAccessDeniedError("只有管理员可以删除他人的笔记")
 
         # Delete attachment files from storage
         for att in note.attachments:

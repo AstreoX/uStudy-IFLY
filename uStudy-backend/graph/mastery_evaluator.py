@@ -72,9 +72,11 @@ class MasteryEvaluationResult:
 class MasteryEvaluator:
     """Evaluates and updates knowledge graph mastery scores based on conversation."""
 
-    def __init__(self, space_id: UUID) -> None:
+    def __init__(self, space_id: UUID, user_id: UUID | None = None, is_collaborative: bool = False) -> None:
         self.space_id = space_id
-        self.tool_executor = GraphToolExecutor(space_id)
+        self.user_id = user_id
+        self.is_collaborative = is_collaborative
+        self.tool_executor = GraphToolExecutor(space_id, user_id=user_id, is_collaborative=is_collaborative)
 
         settings = get_settings()
         model_override = settings.mastery_evaluation_model or None
@@ -201,4 +203,4 @@ class MasteryEvaluator:
         """Load the knowledge graph for the space."""
         async with get_scoped_session() as db:
             graph_service = GraphService(db)
-            return await graph_service.get_graph(self.space_id)
+            return await graph_service.get_graph(self.space_id, user_id=self.user_id, is_collaborative=self.is_collaborative)
