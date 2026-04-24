@@ -62,19 +62,18 @@ class GraphService:
                 {
                     "id": str(row.Node.id),
                     "label": row.Node.label,
-                    "mastery": row.user_mastery if row.user_mastery is not None else row.Node.mastery,
+                    "mastery": row.user_mastery,  # None = unlearned for this user
                 }
                 for row in node_rows
             ]
 
-            # Edges: filter LEARNING_PATH to user-owned or legacy (NULL user_id)
+            # Edges: non-learning-path edges are shared; learning paths are per-user only
             edges_result = await self.db.execute(
                 select(Edge).where(
                     Edge.space_id == space_id,
                     or_(
                         Edge.type != EdgeType.LEARNING_PATH,
                         Edge.user_id == user_id,
-                        Edge.user_id.is_(None),
                     ),
                 )
             )
