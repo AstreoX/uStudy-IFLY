@@ -10,12 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from db.models import Quiz, QuizAttempt
-from spaces.authorization import (
-    SpaceAccessDeniedError,
-    SpaceNotFoundError,
-    verify_space_access,
-    verify_space_ownership,
-)
 from quiz.full_evaluation_service import (
     FullQuizEvaluationResult,
     QuizEvaluationService,
@@ -68,6 +62,33 @@ class QuizService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def _check_space_access(self, space_id: UUID, user_id: UUID) -> None:
+        """Verify user has access (owner or member). Raises QuizAccessDeniedError."""
+        # Lazy import to avoid circular: quizzes → spaces → chat → quizzes
+        from spaces.authorization import (
+            SpaceAccessDeniedError,
+            SpaceNotFoundError,
+            verify_space_access,
+        )
+
+        try:
+            await verify_space_access(self.db, space_id, user_id)
+        except (SpaceNotFoundError, SpaceAccessDeniedError):
+            raise QuizAccessDeniedError(f"无权访问该空间: {space_id}")
+
+    async def _check_space_ownership(self, space_id: UUID, user_id: UUID) -> None:
+        """Verify user is the space owner. Raises QuizAccessDeniedError."""
+        from spaces.authorization import (
+            SpaceAccessDeniedError,
+            SpaceNotFoundError,
+            verify_space_ownership,
+        )
+
+        try:
+            await verify_space_ownership(self.db, space_id, user_id)
+        except (SpaceNotFoundError, SpaceAccessDeniedError):
+            raise QuizAccessDeniedError(f"无权操作该空间: {space_id}")
+
     async def get_quiz_detail(
         self,
         user_id: UUID,
@@ -99,10 +120,7 @@ class QuizService:
             raise QuizNotFoundError(f"测试不存在: {quiz_id}")
 
         # 验证用户权限（owner 或 collaborative member）
-        try:
-            await verify_space_access(self.db, quiz.space_id, user_id)
-        except (SpaceNotFoundError, SpaceAccessDeniedError):
-            raise QuizAccessDeniedError(f"无权访问该测试: {quiz_id}")
+        await self._check_space_access(quiz.space_id, user_id)
 
         # 按 order_index 排序题目
         sorted_questions = sorted(quiz.questions, key=lambda q: q.order_index)
@@ -164,10 +182,7 @@ class QuizService:
             raise QuizNotFoundError(f"测试不存在: {quiz_id}")
 
         # 验证用户权限（owner 或 collaborative member）
-        try:
-            await verify_space_access(self.db, quiz.space_id, user_id)
-        except (SpaceNotFoundError, SpaceAccessDeniedError):
-            raise QuizAccessDeniedError(f"无权访问该测试: {quiz_id}")
+        await self._check_space_access(quiz.space_id, user_id)
 
         # 按 order_index 排序题目
         sorted_questions = sorted(quiz.questions, key=lambda q: q.order_index)
@@ -313,10 +328,7 @@ class QuizService:
             raise QuizNotFoundError(f"测试不存在: {quiz_id}")
 
         # 验证用户权限（owner 或 collaborative member）
-        try:
-            await verify_space_access(self.db, quiz.space_id, user_id)
-        except (SpaceNotFoundError, SpaceAccessDeniedError):
-            raise QuizAccessDeniedError(f"无权访问该测试: {quiz_id}")
+        await self._check_space_access(quiz.space_id, user_id)
 
         # 检查是否已经作答过
         existing_attempt = await self.db.execute(
@@ -412,12 +424,7 @@ class QuizService:
             QuizAccessDeniedError: 无权访问该空间
         """
         # 验证用户权限（owner 或 collaborative member）
-        try:
-            await verify_space_access(self.db, space_id, user_id)
-        except SpaceNotFoundError:
-            raise QuizAccessDeniedError(f"空间不存在: {space_id}")
-        except SpaceAccessDeniedError:
-            raise QuizAccessDeniedError(f"无权访问该空间: {space_id}")
+        await self._check_space_access(space_id, user_id)
 
         # 查询空间内所有测验
         quizzes_result = await self.db.execute(
@@ -485,10 +492,7 @@ class QuizService:
         if not quiz:
             raise QuizNotFoundError(f"测试不存在: {quiz_id}")
 
-        try:
-            await verify_space_access(self.db, quiz.space_id, user_id)
-        except (SpaceNotFoundError, SpaceAccessDeniedError):
-            raise QuizAccessDeniedError(f"无权访问该测试: {quiz_id}")
+        await self._check_space_access(quiz.space_id, user_id)
 
         # 查询作答记录
         attempt_result = await self.db.execute(
@@ -578,10 +582,7 @@ class QuizService:
         if not quiz:
             raise QuizNotFoundError(f"测试不存在: {quiz_id}")
 
-        try:
-            await verify_space_ownership(self.db, quiz.space_id, user_id)
-        except (SpaceNotFoundError, SpaceAccessDeniedError):
-            raise QuizAccessDeniedError(f"无权删除该测试: {quiz_id}")
+        await self._check_space_ownership(quiz.space_id, user_id)
 
         # 删除测验（关联的 questions 和 attempts 会级联删除）
         await self.db.execute(delete(Quiz).where(Quiz.id == quiz_id))
