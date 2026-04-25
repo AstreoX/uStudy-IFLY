@@ -994,7 +994,9 @@ class GraphToolExecutor:
 
     async def _get_learning_paths(self, args: dict, graph_service: GraphService) -> ToolResult:
         """Get all learning paths in the space"""
-        graph = await graph_service.get_graph(self.space_id)
+        graph = await graph_service.get_graph(
+            self.space_id, user_id=self.user_id, is_collaborative=self.is_collaborative
+        )
 
         # 筛选 learning_path 类型的边
         learning_path_edges = [
