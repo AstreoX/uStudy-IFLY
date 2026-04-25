@@ -4,7 +4,7 @@ import logging
 import secrets
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -180,6 +180,16 @@ class ShareService:
         # Mark space as collaborative if not already
         if not source_space.is_collaborative:
             source_space.is_collaborative = True
+            # Migrate owner's legacy learning path edges (user_id=NULL) to owner
+            await db.execute(
+                update(Edge)
+                .where(
+                    Edge.space_id == source_space.id,
+                    Edge.type == EdgeType.LEARNING_PATH,
+                    Edge.user_id.is_(None),
+                )
+                .values(user_id=source_space.user_id)
+            )
 
         await db.commit()
         await db.refresh(source_space)

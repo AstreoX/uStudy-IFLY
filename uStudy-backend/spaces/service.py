@@ -128,8 +128,13 @@ class SpaceService:
         return self._to_response(space, user_role=user_role)
 
     async def delete_space(self, user_id: UUID, space_id: UUID) -> None:
-        """删除学习空间（含物理文件清理和级联删除）— 仅 owner"""
-        space = await verify_space_ownership(self.db, space_id, user_id)
+        """删除学习空间 — owner 删除空间，member 退出空间"""
+        space = await verify_space_access(self.db, space_id, user_id)
+
+        if space.user_id != user_id:
+            # Non-owner member: leave instead of delete
+            await self.remove_member(user_id, space_id, user_id)
+            return
 
         # 先收集需要删除的文件路径（在删除数据库记录之前）
         file_paths = await self._collect_document_file_paths(space_id)
