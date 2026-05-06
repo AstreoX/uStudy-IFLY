@@ -41,6 +41,10 @@
 		<!-- 标题区域 -->
 		<view class="header" :class="{ 'header-hidden': isSelectionMode }">
 			<view class="header-actions">
+				<view class="wallet-chip" @click="goToSubscription">
+					<text class="wallet-chip-label">余额</text>
+					<text class="wallet-chip-value">{{ walletBalanceText }}</text>
+				</view>
 				<view class="header-action" @click="goToNotifications">
 					<image class="header-action-icon bell-icon" src="/static/icons/phosphor-icons/SVGs/regular/bell.svg" mode="aspectFit"></image>
 					<view v-if="notificationUnreadCount > 0" class="header-action-badge">
@@ -274,6 +278,7 @@
 	import { useUserStore } from '@/store/user'
 	import { useUpdateStore } from '@/store/update'
 	import { useNotificationStore } from '@/store/notification'
+	import { useWalletStore } from '@/store/wallet'
 	import KnowledgeTreeMini from '@/components/knowledge-tree-mini/knowledge-tree-mini.vue'
 import UpdateDialog from '@/components/update-dialog/update-dialog.vue'
 	import AnnouncementDialog from '@/components/announcement-dialog/announcement-dialog.vue'
@@ -431,8 +436,17 @@ function _cleanOldSuggestionCache(currentKey) {
 				return useNotificationStore()
 			},
 
+			walletStore() {
+				return useWalletStore()
+			},
+
 			notificationUnreadCount() {
 				return this.notificationStore.unreadCount
+			},
+
+			walletBalanceText() {
+				const cents = this.walletStore?.balanceCents || 0
+				return `¥${(cents / 100).toFixed(2)}`
 			},
 
 			isLightTheme() {
@@ -563,6 +577,7 @@ function _cleanOldSuggestionCache(currentKey) {
 					const loaded = await this.loadSpaces()
 					if (!loaded) return
 
+					this.refreshWallet()
 					this.loadStudySuggestion()  // 非阻塞，后台加载
 					this.fetchUnreadCount()     // 非阻塞
 					this.connectNotificationSSE()
@@ -692,6 +707,12 @@ function _cleanOldSuggestionCache(currentKey) {
 				try {
 					const res = await getUnreadCount()
 					this.notificationStore.setUnreadCount(res.count || 0)
+				} catch (_) {}
+			},
+
+			async refreshWallet() {
+				try {
+					await this.walletStore.refresh()
 				} catch (_) {}
 			},
 
@@ -1868,6 +1889,36 @@ function _cleanOldSuggestionCache(currentKey) {
 		-webkit-backdrop-filter: blur(26rpx) saturate(140%);
 		backdrop-filter: blur(26rpx) saturate(140%);
 		transition: transform 0.18s ease, background-color 0.2s ease, border-color 0.2s ease;
+	}
+
+	.wallet-chip {
+		height: 84rpx;
+		padding: 0 22rpx;
+		border-radius: 42rpx;
+		background: var(--home-header-action-bg);
+		border: 1rpx solid var(--home-header-action-border);
+		box-shadow: 0 14rpx 34rpx var(--home-header-action-shadow);
+		-webkit-backdrop-filter: blur(26rpx) saturate(140%);
+		backdrop-filter: blur(26rpx) saturate(140%);
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		justify-content: center;
+		min-width: 144rpx;
+	}
+
+	.wallet-chip-label {
+		font-size: 18rpx;
+		color: var(--home-header-action-icon);
+		opacity: 0.72;
+		line-height: 1.2;
+	}
+
+	.wallet-chip-value {
+		font-size: 24rpx;
+		font-weight: 700;
+		color: var(--home-header-text);
+		line-height: 1.2;
 	}
 
 	.header-action:active {

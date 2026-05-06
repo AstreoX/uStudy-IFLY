@@ -9,7 +9,7 @@
       <!-- State 1: Confirm & Pay -->
       <template v-if="!showSubmitted && !showQrCode">
         <view class="pm-header">
-          <text class="pm-title">确认订阅</text>
+          <text class="pm-title">确认订单</text>
         </view>
 
         <view class="pm-plan-info">
@@ -17,7 +17,7 @@
             <text class="pm-plan-label">方案</text>
             <text class="pm-plan-value">{{ planDisplayName }}</text>
           </view>
-          <view class="pm-plan-row">
+          <view class="pm-plan-row" v-if="!isCreditPack">
             <text class="pm-plan-label">周期</text>
             <text class="pm-plan-value">{{ cycleDisplayName }}</text>
           </view>
@@ -158,13 +158,17 @@ export default {
       return TIER_MAP[this.plan.id] || this.plan.id
     },
     planDisplayName() {
-      return this.plan?.name || ''
+      return this.plan?.name || this.plan?.product_code || ''
+    },
+    isCreditPack() {
+      return this.plan?.product_type === 'credit_pack'
     },
     cycleDisplayName() {
       return CYCLE_LABELS[this.billingCycle] || this.billingCycle
     },
     priceDisplay() {
       if (!this.plan) return ''
+      if (this.plan.amount_display) return this.plan.amount_display
       const pricing = this.plan.pricing?.[this.billingCycle]
       return pricing ? `${pricing.main}` : ''
     },
@@ -225,8 +229,10 @@ export default {
 
       try {
         const resp = await createOrder({
-          tier: this.backendTier,
-          billing_cycle: this.billingCycle
+          product_type: this.isCreditPack ? 'credit_pack' : 'subscription',
+          product_code: this.isCreditPack ? this.plan.product_code : null,
+          tier: this.isCreditPack ? null : this.backendTier,
+          billing_cycle: this.isCreditPack ? null : this.billingCycle
         })
 
         this.orderId = resp.order_id

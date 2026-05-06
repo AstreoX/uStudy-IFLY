@@ -35,6 +35,36 @@
           </view>
         </view>
 
+        <view class="wallet-panel">
+          <view>
+            <text class="wallet-label">当前余额</text>
+            <text class="wallet-balance">{{ formatMoney(walletStatus?.balance_cents || 0) }}</text>
+          </view>
+          <view class="wallet-side">
+            <text class="wallet-side-label">可用额度</text>
+            <text class="wallet-side-value">{{ formatMoney(walletStatus?.available_cents || 0) }}</text>
+          </view>
+        </view>
+
+        <view class="credit-section">
+          <view class="section-head-row">
+            <text class="section-title">购买余额</text>
+            <text class="section-subtitle">AI 按实际 token 用量扣费</text>
+          </view>
+          <view class="credit-grid">
+            <view
+              v-for="pack in creditPacks"
+              :key="pack.product_code"
+              class="credit-pack"
+              @tap="handleSelectCreditPack(pack)"
+            >
+              <text class="credit-name">{{ pack.name }}</text>
+              <text class="credit-price">{{ pack.amount_display }}</text>
+              <text class="credit-hint">到账 {{ formatMoney(pack.credit_amount_cents) }}</text>
+            </view>
+          </view>
+        </view>
+
         <!-- Billing Cycle Switch -->
         <view class="billing-switch">
           <view
@@ -158,7 +188,10 @@
 <script>
 import PaymentModal from '@/components/payment-modal/payment-modal.vue'
 import { getMe } from '@/api/auth'
+import { getPaymentProducts } from '@/api/payment'
+import { getWalletStatus } from '@/api/wallet'
 import { useUserStore } from '@/store/user'
+import { useWalletStore } from '@/store/wallet'
 import { getTokens } from '@/utils/storage'
 import { goBack } from '@/utils/navigation'
 import homeThemePageMixin from '@/mixins/homeThemePageMixin'
@@ -173,6 +206,8 @@ export default {
       user: null,
       showPaymentModal: false,
       selectedPlan: null,
+      walletStatus: null,
+      paymentProducts: null,
       billingCycle: 'monthly',
       billingCycles: [
         { id: 'monthly', label: '月付' },
@@ -192,8 +227,9 @@ export default {
           },
           features: [
             '最多创建 1 个学习空间',
-            '每日 AI 对话上限 20 次',
-            '模型：MiMo V2 Omni',
+            '注册送 ¥1 AI 余额',
+            'AI 按 token 用量扣余额',
+            '模型：Qwen 3.6 Plus',
             '每个学习空间知识库上限 30MB',
             '单文件上传上限 50MB'
           ],
@@ -215,8 +251,9 @@ export default {
           },
           features: [
             '最多创建 5 个学习空间',
-            '每日 AI 对话上限 150 次',
-            '模型：MiMo V2 Omni + Kimi K2.5',
+            '每月赠送 ¥10 AI 余额',
+            'AI 按 token 用量扣余额',
+            '模型：Qwen 3.6 Plus + Kimi K2.5',
             '每个学习空间知识库上限 300MB',
             '单文件上传上限 200MB',
             '优先客服响应'
@@ -225,7 +262,7 @@ export default {
         {
           id: 'ULTRA',
           name: 'Ultra',
-          desc: '顶尖模型 + 无限额度，为重度学习者打造',
+          desc: '顶尖模型 + 高阶权益，为重度学习者打造',
           buttonText: '选择 Ultra',
           pricing: {
             monthly: { main: '¥36.9', suffix: '/月', label: '月付' },
@@ -234,8 +271,9 @@ export default {
           },
           features: [
             '学习空间数量不限',
-            '每日 AI 对话不限',
-            '全部模型：MiMo V2 Omni / Kimi K2.5 / Gemini-3.1-pro',
+            '每月赠送 ¥40 AI 余额',
+            'AI 按 token 用量扣余额',
+            '全部模型：Qwen 3.6 Plus / Kimi K2.5 / Gemini-3.1-pro',
             '每个学习空间知识库上限 2GB',
             '单文件上传上限 500MB',
             '优先客服 + 新功能抢先体验'
@@ -244,8 +282,9 @@ export default {
       ],
       compareRows: [
         { metric: '学习空间数量', free: '1', plus: '5', ultra: '不限' },
-        { metric: '每日 AI 对话', free: '20 次', plus: '150 次', ultra: '不限' },
-        { metric: '模型能力', free: 'MiMo V2 Omni', plus: 'MiMo V2 Omni + Kimi', ultra: 'MiMo V2 Omni / Kimi / Gemini' },
+        { metric: 'AI 计费方式', free: '余额扣费', plus: '余额扣费', ultra: '余额扣费' },
+        { metric: '每月赠送余额', free: '注册送 ¥1', plus: '¥10/月', ultra: '¥40/月' },
+        { metric: '模型能力', free: 'Qwen 3.6 Plus', plus: 'Qwen 3.6 Plus + Kimi', ultra: 'Qwen 3.6 Plus / Kimi / Gemini' },
         { metric: '单空间知识库', free: '30MB', plus: '300MB', ultra: '2GB' },
         { metric: '单文件上传', free: '50MB', plus: '200MB', ultra: '500MB' },
         { metric: '优先客服', free: '—', plus: '✓', ultra: '✓' },
@@ -269,6 +308,13 @@ export default {
         ALPHA: 'Alpha'
       }
       return labels[this.normalizedTier] || 'Free'
+    },
+    creditPacks() {
+      return this.paymentProducts?.credit_packs || [
+        { product_type: 'credit_pack', product_code: 'credit_10', name: '余额包 ¥10', amount_display: '¥10.00', credit_amount_cents: 1000 },
+        { product_type: 'credit_pack', product_code: 'credit_30', name: '余额包 ¥30', amount_display: '¥30.00', credit_amount_cents: 3000 },
+        { product_type: 'credit_pack', product_code: 'credit_100', name: '余额包 ¥100', amount_display: '¥100.00', credit_amount_cents: 10000 }
+      ]
     }
   },
   created() {
@@ -277,6 +323,7 @@ export default {
   onShow() {
     this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
     this.loadUser()
+    this.loadWalletAndProducts()
   },
   methods: {
     goBack() {
@@ -297,9 +344,56 @@ export default {
         this.user = null
       }
     },
+    async loadWalletAndProducts() {
+      try {
+        const [wallet, products] = await Promise.all([
+          getWalletStatus(),
+          getPaymentProducts()
+        ])
+        this.walletStatus = wallet
+        this.paymentProducts = products
+        useWalletStore().status = wallet
+      } catch (err) {
+        console.warn('Load wallet/products failed:', err)
+      }
+    },
+    formatMoney(cents) {
+      const n = Number(cents || 0)
+      return `¥${(n / 100).toFixed(2)}`
+    },
+    findSubscriptionProduct(planId, cycle = this.billingCycle) {
+      const tierMap = {
+        PLUS: 'BASIC',
+        ULTRA: 'PREMIUM'
+      }
+      const tier = tierMap[planId]
+      if (!tier) return null
+      return (this.paymentProducts?.subscriptions || []).find(product =>
+        product.tier === tier && product.billing_cycle === cycle
+      ) || null
+    },
     getDisplayedPrice(plan) {
       if (!plan || !plan.pricing) {
         return { main: '', suffix: '', label: '' }
+      }
+      const product = this.findSubscriptionProduct(plan.id)
+      if (product) {
+        const suffixMap = {
+          monthly: '/月',
+          semester: '/4个月',
+          yearly: '/年'
+        }
+        const labelMap = {
+          monthly: '月付',
+          semester: '学期包（4个月）',
+          yearly: '年付'
+        }
+        return {
+          main: product.amount_display,
+          suffix: suffixMap[this.billingCycle] || '',
+          label: labelMap[this.billingCycle] || '',
+          hint: product.wallet_grant_cents ? `赠送 ${this.formatMoney(product.wallet_grant_cents)} 余额` : ''
+        }
       }
       return plan.pricing[this.billingCycle] || plan.pricing.monthly || { main: '', suffix: '', label: '' }
     },
@@ -309,10 +403,19 @@ export default {
     },
     handleSelectPlan(plan) {
       if (this.isCurrentPlan(plan.id) || plan.id === 'FREE') return
-      this.selectedPlan = plan
+      const product = this.findSubscriptionProduct(plan.id)
+      this.selectedPlan = product
+        ? { ...plan, product_type: 'subscription', product_code: product.product_code, amount_display: product.amount_display }
+        : plan
+      this.showPaymentModal = true
+    },
+    handleSelectCreditPack(pack) {
+      this.selectedPlan = pack
       this.showPaymentModal = true
     },
     handlePaymentSuccess(response) {
+      this.loadWalletAndProducts()
+      if (!response?.subscription_tier) return
       const userStore = useUserStore()
       userStore.updateSubscription(
         response.subscription_tier,
@@ -598,6 +701,95 @@ export default {
 .tier-chip-alpha {
   background: rgba(16, 185, 129, 0.18);
   border: 1rpx solid rgba(16, 185, 129, 0.25);
+}
+
+.wallet-panel {
+  margin-top: 24rpx;
+  border-radius: 24rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wallet-label,
+.wallet-side-label,
+.section-subtitle,
+.credit-hint {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.46);
+}
+
+.wallet-balance {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 46rpx;
+  line-height: 1;
+  font-weight: 800;
+  color: #fff;
+}
+
+.wallet-side {
+  text-align: right;
+}
+
+.wallet-side-value {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #60a5fa;
+}
+
+.credit-section {
+  margin-top: 28rpx;
+}
+
+.section-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16rpx;
+}
+
+.section-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.credit-grid {
+  margin-top: 16rpx;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14rpx;
+}
+
+.credit-pack {
+  border-radius: 20rpx;
+  padding: 22rpx 16rpx;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.credit-pack:active {
+  opacity: 0.78;
+}
+
+.credit-name {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.credit-price {
+  font-size: 34rpx;
+  font-weight: 800;
+  color: #f59e0b;
 }
 
 /* Billing Cycle Switch */

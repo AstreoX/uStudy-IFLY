@@ -37,6 +37,21 @@
           <text v-if="errors.email" class="error-message">{{ errors.email }}</text>
         </view>
 
+        <!-- Invite Code Input -->
+        <view class="form-group">
+          <text class="form-label">邀请码（选填）</text>
+          <input
+            class="form-input"
+            :class="{ error: inviteState === 'invalid' }"
+            type="text"
+            v-model="inviteCode"
+            placeholder="输入好友邀请码，双方各得 ¥1"
+            :disabled="isSubmitting"
+            @blur="resolveCurrentInvite"
+          />
+          <text v-if="inviteMessage" class="invite-message" :class="{ invalid: inviteState === 'invalid' }">{{ inviteMessage }}</text>
+        </view>
+
         <!-- Code Input -->
         <view class="form-group" v-if="step >= 2">
           <text class="form-label">验证码</text>
@@ -140,8 +155,10 @@
 
 <script>
 import { getMe, registerWithCode, sendCode, verifyCode } from '@/api/auth'
+import { resolveInviteCode } from '@/api/invite'
 import { setTokens } from '@/utils/storage'
 import { consumePendingNavigation, navigateToTarget } from '@/utils/deepLink'
+import { clearPendingInviteCode, extractInviteCode, getPendingInviteCode, normalizeInviteCode, savePendingInviteCode } from '@/utils/invite'
 import { useUserStore } from '@/store/user'
 import { goBack } from '@/utils/navigation'
 import homeThemePageMixin from '@/mixins/homeThemePageMixin'
@@ -170,7 +187,11 @@ export default {
       },
       showPassword: false,
       showConfirmPassword: false,
-      isSubmitting: false
+      isSubmitting: false,
+      inviteCode: '',
+      inviteState: '',
+      inviteMessage: '',
+      inviteResolving: false
     }
   },
   computed: {
@@ -186,6 +207,9 @@ export default {
   },
   created() {
     this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
+  },
+  onLoad(options = {}) {
+    this.initInviteCode(options)
   },
   onShow() {
     this.restoreThemeMode({ darkStatusBarBackground: '#0A0A12' })
@@ -219,6 +243,45 @@ export default {
         return detail.message || fallback
       }
       return fallback
+    },
+
+    async initInviteCode(options = {}) {
+      const incomingCode = extractInviteCode(options)
+      const pendingCode = getPendingInviteCode()
+      const code = incomingCode || pendingCode
+      if (!code) return
+      this.inviteCode = savePendingInviteCode(code)
+      await this.resolveCurrentInvite()
+    },
+
+    async resolveCurrentInvite() {
+      const code = normalizeInviteCode(this.inviteCode)
+      this.inviteCode = code
+      if (!code) {
+        this.inviteState = ''
+        this.inviteMessage = ''
+        clearPendingInviteCode()
+        return
+      }
+      this.inviteResolving = true
+      try {
+        const result = await resolveInviteCode(code)
+        if (result.valid) {
+          this.inviteState = 'valid'
+          this.inviteMessage = result.inviter_nickname
+            ? `来自 ${result.inviter_nickname} 的邀请，注册成功后双方各得 ¥1`
+            : '邀请码有效，注册成功后双方各得 ¥1'
+          savePendingInviteCode(code)
+        } else {
+          this.inviteState = 'invalid'
+          this.inviteMessage = result.message || '邀请码无效，不影响正常注册'
+        }
+      } catch (_error) {
+        this.inviteState = 'invalid'
+        this.inviteMessage = '暂时无法校验邀请码，不影响正常注册'
+      } finally {
+        this.inviteResolving = false
+      }
     },
 
     validateEmail() {
@@ -406,7 +469,8 @@ export default {
           email: this.form.email,
           verification_token: this.verificationToken,
           password: this.form.password,
-          nickname: this.form.nickname
+          nickname: this.form.nickname,
+          invite_code: normalizeInviteCode(this.inviteCode) || undefined
         })
 
         setTokens({
@@ -417,6 +481,7 @@ export default {
         const user = await getMe()
         const userStore = useUserStore()
         userStore.setUser(user)
+        clearPendingInviteCode()
 
         uni.showToast({
           title: '注册成功',
@@ -651,6 +716,16 @@ export default {
   font-size: 24rpx;
   color: #EF4444;
   margin-top: 8rpx;
+}
+
+.invite-message {
+  font-size: 24rpx;
+  color: #34D399;
+  margin-top: 8rpx;
+}
+
+.invite-message.invalid {
+  color: #F59E0B;
 }
 
 /* Terms Section */

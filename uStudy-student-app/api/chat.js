@@ -96,7 +96,7 @@ function parseQuotaError(errMessage) {
   const match = errMessage?.match(/^HTTP (\d+): (.+)$/s)
   if (!match) return null
   const statusCode = parseInt(match[1])
-  if (statusCode !== 429 && statusCode !== 403) return null
+  if (statusCode !== 429 && statusCode !== 403 && statusCode !== 402) return null
   try {
     const body = JSON.parse(match[2])
     if (body.detail?.code || body.code) {

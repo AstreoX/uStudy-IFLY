@@ -36,6 +36,16 @@
         </view>
       </view>
 
+      <view class="wallet-summary-card" @click="handleSubscription">
+        <view>
+          <text class="wallet-summary-label">账户余额</text>
+          <text class="wallet-summary-balance">{{ walletBalanceText }}</text>
+        </view>
+        <view class="wallet-summary-action">
+          <text class="wallet-summary-action-text">充值</text>
+        </view>
+      </view>
+
       <!-- Account Settings Section -->
       <view class="settings-section">
         <view class="settings-card">
@@ -202,6 +212,7 @@
 <script>
 import { useUserStore } from '@/store/user'
 import { useUpdateStore } from '@/store/update'
+import { useWalletStore } from '@/store/wallet'
 import { updateNickname } from '@/api/auth'
 import { uploadAvatar } from '@/api/user'
 import config from '@/config'
@@ -256,6 +267,7 @@ export default {
 
   onShow() {
     this.restoreThemeMode()
+    this.refreshWallet()
   },
 
   computed: {
@@ -336,10 +348,21 @@ export default {
 
     aboutContent() {
       return `uStudy v${config.APP_VERSION_NAME}\n\n您的智能学习助手`
+    },
+
+    walletBalanceText() {
+      const cents = useWalletStore().balanceCents || 0
+      return `¥${(cents / 100).toFixed(2)}`
     }
   },
 
   methods: {
+    async refreshWallet() {
+      try {
+        await useWalletStore().refresh()
+      } catch (_) {}
+    },
+
     restoreThemeMode() {
       this.homeThemeMode = getStoredThemeMode('dark')
       this.syncThemeSystemUi(this.homeThemeMode)
@@ -802,9 +825,55 @@ export default {
 }
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .profile-card {
+  .profile-card,
+  .wallet-summary-card {
     background: var(--account-surface-fallback);
   }
+}
+
+.wallet-summary-card {
+  margin: 24rpx calc(100vw / 24) 0;
+  padding: 28rpx 30rpx;
+  background: var(--account-surface);
+  border: 1rpx solid var(--account-border);
+  border-radius: 24rpx;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+
+.wallet-summary-label {
+  display: block;
+  font-size: 24rpx;
+  color: var(--account-text-muted);
+  margin-bottom: 8rpx;
+}
+
+.wallet-summary-balance {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--account-text-primary);
+}
+
+.wallet-summary-action {
+  min-width: 108rpx;
+  height: 60rpx;
+  padding: 0 24rpx;
+  border-radius: 30rpx;
+  background: var(--account-avatar-edit-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wallet-summary-action-text {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #ffffff;
 }
 
 .avatar-container {

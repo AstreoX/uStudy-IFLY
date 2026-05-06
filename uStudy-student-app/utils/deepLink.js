@@ -135,7 +135,18 @@ function parseRouteTarget(route, query = {}, options = {}) {
   }
 
   if (!normalizedRoute.startsWith('/pages/')) return null
-  if (AUTH_ROUTE_SET.has(normalizedRoute.replace(/^\//, ''))) return null
+  if (AUTH_ROUTE_SET.has(normalizedRoute.replace(/^\//, ''))) {
+    if (
+      normalizedRoute === '/pages/register/register' &&
+      (normalizedQuery.invite_code || normalizedQuery.invite || normalizedQuery.ref)
+    ) {
+      return createTarget(buildUrlFromRouteAndQuery(normalizedRoute, normalizedQuery), {
+        ...options,
+        requireAuth: false
+      })
+    }
+    return null
+  }
   return createTarget(buildUrlFromRouteAndQuery(normalizedRoute, normalizedQuery), options)
 }
 

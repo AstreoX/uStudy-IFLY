@@ -3,7 +3,7 @@
 const USE_PRODUCTION = true  // true = 连接服务器, false = 连接本地
 
 const LOCAL_BASE_URL = 'http://localhost:8000'
-const PRODUCTION_BASE_URL = 'https://api.ustudy.top'
+const PRODUCTION_BASE_URL = 'https://api.ustudy.cc'
 // ==============================
 
 const DEFAULT_BASE_URL = USE_PRODUCTION ? PRODUCTION_BASE_URL : LOCAL_BASE_URL
@@ -44,8 +44,8 @@ const API_BASE_URL = resolveBaseUrl()
 const TOKEN_KEY = 'ustudy_tokens'
 const USER_KEY = 'ustudy_user'
 const CARD_ORDER_KEY = 'ustudy_card_order'
-const APP_VERSION_NAME = '1.5.11'
-const APP_VERSION_CODE = 171
+const APP_VERSION_NAME = '1.5.12'
+const APP_VERSION_CODE = 172
 const NATIVE_VERSION_CODE = 171  // 仅在发布新 APK 时更新，WGT 发布不变
 const GITEE_RAW_BASE = 'https://gitee.com/Gskyer/u-study-release/raw/master'
 const UPDATE_STORAGE_KEY = 'ustudy_update_prefs'
@@ -55,8 +55,8 @@ const QUIZ_EVALUATION_KEY = 'quizEvaluationResult'
 const THINKING_MODE_KEY = 'uStudy_thinkingMode'
 const PENDING_NAVIGATION_KEY = 'ustudy_pending_navigation'
 const APP_SCHEME = 'ustudy'
-const APP_DOWNLOAD_URL = 'https://download.ustudy.top'
-const MOBILE_WEB_BASE_URL = 'https://app.ustudy.top'
+const APP_DOWNLOAD_URL = 'https://download.ustudy.cc'
+const MOBILE_WEB_BASE_URL = 'https://app.ustudy.cc'
 
 export default {
   API_BASE_URL,

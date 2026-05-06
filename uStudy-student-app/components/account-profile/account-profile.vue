@@ -55,6 +55,63 @@
         </view>
       </view>
 
+      <!-- Wallet Card -->
+      <view class="wallet-card glass-card">
+        <view class="wallet-main">
+          <view>
+            <text class="wallet-label">账户余额</text>
+            <text class="wallet-balance">{{ walletBalanceText }}</text>
+          </view>
+          <view class="wallet-recharge-btn" @click="navigateToSubscription">
+            <text class="wallet-recharge-text">充值</text>
+          </view>
+        </view>
+        <view class="wallet-stats">
+          <view class="wallet-stat">
+            <text class="wallet-stat-value">{{ walletAvailableText }}</text>
+            <text class="wallet-stat-label">可用额度</text>
+          </view>
+          <view class="wallet-stat-divider"></view>
+          <view class="wallet-stat">
+            <text class="wallet-stat-value">{{ walletSpentText }}</text>
+            <text class="wallet-stat-label">累计消耗</text>
+          </view>
+          <view class="wallet-stat-divider"></view>
+          <view class="wallet-stat">
+            <text class="wallet-stat-value">{{ walletMonthGrantText }}</text>
+            <text class="wallet-stat-label">本月赠送</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- Invite Card -->
+      <view class="invite-card glass-card">
+        <view class="invite-main">
+          <view>
+            <text class="invite-title">邀请好友</text>
+            <text class="invite-subtitle">好友注册后，你们各得 ¥1</text>
+          </view>
+          <view class="invite-copy-btn" @click="copyInviteLink">
+            <text class="invite-copy-text">{{ inviteStore?.loading ? '...' : '复制' }}</text>
+          </view>
+        </view>
+        <view class="invite-code-row">
+          <text class="invite-code-label">邀请码</text>
+          <text class="invite-code-value">{{ inviteCode || '加载中' }}</text>
+        </view>
+        <view class="invite-stats">
+          <view class="invite-stat">
+            <text class="invite-stat-value">{{ inviteTotal }}</text>
+            <text class="invite-stat-label">已邀请</text>
+          </view>
+          <view class="invite-stat-divider"></view>
+          <view class="invite-stat">
+            <text class="invite-stat-value">{{ inviteRewardText }}</text>
+            <text class="invite-stat-label">累计奖励</text>
+          </view>
+        </view>
+      </view>
+
       <!-- Combined Analytics Card -->
       <view class="analytics-card glass-card">
         <view class="analytics-row">
@@ -156,6 +213,8 @@
 
 <script>
 import { useUserStore } from '@/store/user'
+import { useWalletStore } from '@/store/wallet'
+import { useInviteStore } from '@/store/invite'
 import config from '@/config'
 import { activateCode } from '@/api/auth'
 import { getSpaces, getSpaceGraph } from '@/api/space'
@@ -237,6 +296,8 @@ export default {
 
   created() {
     this.userStore = useUserStore()
+    this.walletStore = useWalletStore()
+    this.inviteStore = useInviteStore()
   },
 
   data() {
@@ -323,6 +384,46 @@ export default {
       if (h <= 0) return '0h'
       if (h < 1) return `${h}h`
       return `${Math.round(h)}h`
+    },
+
+    walletStatus() {
+      return this.walletStore?.status || null
+    },
+
+    walletBalanceText() {
+      return this.formatWalletMoney(this.walletStatus?.balance_cents || 0)
+    },
+
+    walletAvailableText() {
+      return this.formatWalletMoney(this.walletStatus?.available_cents || 0)
+    },
+
+    walletSpentText() {
+      return this.formatWalletMoney(this.walletStatus?.total_spent_cents || 0)
+    },
+
+    walletMonthGrantText() {
+      return this.formatWalletMoney(this.walletStatus?.current_month_granted_cents || 0)
+    },
+
+    inviteInfo() {
+      return this.inviteStore?.info || null
+    },
+
+    inviteCode() {
+      return this.inviteInfo?.code || ''
+    },
+
+    inviteUrl() {
+      return this.inviteInfo?.invite_url || ''
+    },
+
+    inviteTotal() {
+      return this.inviteInfo?.total_invites || 0
+    },
+
+    inviteRewardText() {
+      return this.formatWalletMoney(this.inviteInfo?.total_reward_cents || 0)
     }
   },
 
@@ -333,9 +434,47 @@ export default {
     this.loadProfileStats()
     this.refreshTimelineSection()
     this.loadRadarScoresAndSnapshot()
+    this.refreshWallet()
+    this.refreshInvite()
   },
 
   methods: {
+    formatWalletMoney(cents) {
+      return `¥${((cents || 0) / 100).toFixed(2)}`
+    },
+
+    async refreshWallet() {
+      try {
+        await this.walletStore.refresh()
+      } catch (_e) {}
+    },
+
+    async refreshInvite() {
+      try {
+        await this.inviteStore.refresh()
+      } catch (_e) {}
+    },
+
+    async copyInviteLink() {
+      if (!this.inviteUrl) {
+        await this.refreshInvite()
+      }
+      const link = this.inviteUrl
+      if (!link) {
+        uni.showToast({ title: '邀请链接生成失败', icon: 'none' })
+        return
+      }
+      uni.setClipboardData({
+        data: link,
+        success: () => {
+          uni.showToast({ title: '邀请链接已复制', icon: 'none' })
+        },
+        fail: () => {
+          uni.showToast({ title: '复制失败，请稍后重试', icon: 'none' })
+        }
+      })
+    },
+
     async handleActivate() {
       const code = this.activationCode.trim()
       if (!code || this.activating) return
@@ -614,6 +753,10 @@ export default {
         url: '/pages/account/account'
       })
       // #endif
+    },
+
+    navigateToSubscription() {
+      uni.navigateTo({ url: '/pages/subscription/subscription' })
     }
   }
 }
@@ -837,6 +980,183 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 12rpx;
+}
+
+.wallet-card {
+  padding: 28rpx 30rpx;
+}
+
+.wallet-main {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24rpx;
+  margin-bottom: 24rpx;
+}
+
+.wallet-label {
+  display: block;
+  font-size: 24rpx;
+  color: var(--account-text-muted);
+  margin-bottom: 8rpx;
+}
+
+.wallet-balance {
+  display: block;
+  font-size: 48rpx;
+  font-weight: 700;
+  color: var(--account-text-primary);
+}
+
+.wallet-recharge-btn {
+  flex-shrink: 0;
+  min-width: 116rpx;
+  height: 64rpx;
+  border-radius: 32rpx;
+  background: var(--account-activation-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 28rpx;
+}
+
+.wallet-recharge-text {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--account-activation-text);
+}
+
+.wallet-stats {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  border-top: 1rpx solid var(--account-divider);
+  padding-top: 22rpx;
+}
+
+.wallet-stat {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.wallet-stat-value {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--account-text-secondary);
+}
+
+.wallet-stat-label {
+  font-size: 22rpx;
+  color: var(--account-text-muted);
+}
+
+.wallet-stat-divider {
+  width: 1rpx;
+  background: var(--account-divider);
+  margin: 0 22rpx;
+}
+
+.invite-card {
+  padding: 28rpx 30rpx;
+}
+
+.invite-main {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24rpx;
+  margin-bottom: 20rpx;
+}
+
+.invite-title {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--account-text-primary);
+  margin-bottom: 6rpx;
+}
+
+.invite-subtitle {
+  display: block;
+  font-size: 24rpx;
+  color: var(--account-text-muted);
+}
+
+.invite-copy-btn {
+  flex-shrink: 0;
+  min-width: 112rpx;
+  height: 64rpx;
+  border-radius: 32rpx;
+  background: var(--account-activation-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 28rpx;
+}
+
+.invite-copy-text {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--account-activation-text);
+}
+
+.invite-code-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18rpx 0;
+  border-top: 1rpx solid var(--account-divider);
+  border-bottom: 1rpx solid var(--account-divider);
+}
+
+.invite-code-label {
+  font-size: 24rpx;
+  color: var(--account-text-muted);
+}
+
+.invite-code-value {
+  font-size: 30rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+  color: var(--account-text-primary);
+}
+
+.invite-stats {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  padding-top: 20rpx;
+}
+
+.invite-stat {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.invite-stat-value {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--account-text-secondary);
+}
+
+.invite-stat-label {
+  font-size: 22rpx;
+  color: var(--account-text-muted);
+}
+
+.invite-stat-divider {
+  width: 1rpx;
+  background: var(--account-divider);
+  margin: 0 22rpx;
 }
 
 .nickname-row {
