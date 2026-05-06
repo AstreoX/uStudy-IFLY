@@ -595,6 +595,7 @@ class ChatService:
             space_tool_mode = getattr(space, "tool_mode", "auto") or "auto"
             space_enabled_tools = getattr(space, "enabled_tools", None)
             space_is_collaborative = getattr(space, "is_collaborative", False) or False
+            space_is_owner = (space.user_id == user_id)
             logger.info(f"[Perf] Load space info: {(time.monotonic()-t0)*1000:.0f}ms")
 
             # 6. 对话连续性：检测新对话并加载上一次对话上下文
@@ -658,6 +659,7 @@ class ChatService:
             enabled_tools=space_enabled_tools,
             has_panel_screenshot=bool(panel_screenshot),
             is_collaborative=space_is_collaborative,
+            is_owner=space_is_owner,
         )
 
         queue: asyncio.Queue = asyncio.Queue()

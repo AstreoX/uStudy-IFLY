@@ -518,10 +518,13 @@ def build_knowledge_tree_text(
 class GraphToolExecutor:
     """Executor for knowledge graph tools"""
 
-    def __init__(self, space_id: UUID, user_id: UUID | None = None, is_collaborative: bool = False) -> None:
+    _STRUCTURE_TOOLS = frozenset({"add_node", "delete_node", "add_edge", "delete_edge", "expand_node"})
+
+    def __init__(self, space_id: UUID, user_id: UUID | None = None, is_collaborative: bool = False, is_owner: bool = False) -> None:
         self.space_id = space_id
         self.user_id = user_id
         self.is_collaborative = is_collaborative
+        self.is_owner = is_owner
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> ToolResult:
         """
@@ -561,6 +564,13 @@ class GraphToolExecutor:
                 success=False,
                 data=None,
                 message=f"未知的工具: {tool_name}",
+            )
+
+        if self.is_collaborative and not self.is_owner and tool_name in self._STRUCTURE_TOOLS:
+            return ToolResult(
+                success=False,
+                data=None,
+                message="权限不足：只有空间管理员可以修改知识图谱结构（增删节点和边）。你可以更新掌握度或管理自己的学习路径。",
             )
 
         try:

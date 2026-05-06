@@ -554,6 +554,7 @@ class LLMOrchestrator:
         enabled_tools: list[str] | None = None,
         has_panel_screenshot: bool = False,
         is_collaborative: bool = False,
+        is_owner: bool = False,
     ) -> None:
         """
         Initialize the orchestrator.
@@ -586,7 +587,7 @@ class LLMOrchestrator:
         self.prompt_builder = PromptBuilder()
 
         # 所有执行器始终初始化（自动模式下工具定义延迟加载，但执行器预先就位）
-        self.graph_tool_executor = GraphToolExecutor(space_id, user_id=user_id, is_collaborative=is_collaborative)
+        self.graph_tool_executor = GraphToolExecutor(space_id, user_id=user_id, is_collaborative=is_collaborative, is_owner=is_owner)
         self.quiz_tool_executor = QuizGenerationToolExecutor(
             user_id, conversation_id, space_id
         )

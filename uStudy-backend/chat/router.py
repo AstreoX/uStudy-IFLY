@@ -449,7 +449,7 @@ async def execute_space_tool(
     space_service = SpaceService(db)
 
     try:
-        await space_service.get_space(user.id, space_id)
+        space = await space_service.get_space(user.id, space_id)
     except SpaceServiceNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -475,7 +475,12 @@ async def execute_space_tool(
     else:
         arguments = {}
 
-    executor = GraphToolExecutor(space_id)
+    executor = GraphToolExecutor(
+        space_id,
+        user_id=user.id,
+        is_collaborative=space.is_collaborative or False,
+        is_owner=(space.user_id == user.id),
+    )
     tool_result = await executor.execute(request.function.name, arguments)
     raw_tool_output = json.dumps(tool_result.to_dict(), ensure_ascii=False)
 
