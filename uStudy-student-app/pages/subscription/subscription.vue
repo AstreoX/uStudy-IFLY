@@ -41,7 +41,7 @@
             <text class="wallet-balance">{{ formatMoney(walletStatus?.balance_cents || 0) }}</text>
           </view>
           <view class="wallet-side">
-            <text class="wallet-side-label">可用额度</text>
+            <text class="wallet-side-label">含临时额度</text>
             <text class="wallet-side-value">{{ formatMoney(walletStatus?.available_cents || 0) }}</text>
           </view>
         </view>
@@ -1261,5 +1261,196 @@ export default {
 .compare-val-ultra {
   color: rgba(167, 139, 250, 0.85);
   font-weight: 500;
+}
+
+/* Light theme contrast fixes */
+.subscription-page.theme-light {
+  background-color: #f7f2ea;
+}
+
+.subscription-page.theme-light .aurora-blob-1 {
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.28) 0%, rgba(96, 165, 250, 0.12) 42%, transparent 72%);
+  opacity: 0.8;
+}
+
+.subscription-page.theme-light .aurora-blob-2 {
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.22) 0%, rgba(245, 158, 11, 0.1) 42%, transparent 72%);
+  opacity: 0.75;
+}
+
+.subscription-page.theme-light .aurora-blob-3 {
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.16) 0%, rgba(139, 92, 246, 0.08) 42%, transparent 72%);
+}
+
+.subscription-page.theme-light .sub-nav-bar::before {
+  background: linear-gradient(
+    to bottom,
+    rgba(247, 242, 234, 0.78) 0%,
+    rgba(247, 242, 234, 0.58) 52%,
+    rgba(247, 242, 234, 0) 100%
+  );
+}
+
+.subscription-page.theme-light .nav-left {
+  background-color: rgba(255, 255, 255, 0.86);
+  border-color: rgba(63, 53, 42, 0.08);
+  outline-color: rgba(255, 255, 255, 0.5);
+  box-shadow:
+    inset 0 1rpx 2rpx rgba(255, 255, 255, 0.9),
+    0 8rpx 24rpx rgba(118, 101, 80, 0.12);
+}
+
+.subscription-page.theme-light .nav-icon {
+  filter: brightness(0) saturate(100%);
+}
+
+.subscription-page.theme-light .nav-title,
+.subscription-page.theme-light .hero-title,
+.subscription-page.theme-light .section-title,
+.subscription-page.theme-light .plan-name,
+.subscription-page.theme-light .plan-price-main,
+.subscription-page.theme-light .compare-title {
+  color: #1f1a16;
+}
+
+.subscription-page.theme-light .hero-eyebrow {
+  color: rgba(63, 53, 42, 0.56);
+}
+
+.subscription-page.theme-light .hero-current-label,
+.subscription-page.theme-light .hero-current-expiry,
+.subscription-page.theme-light .wallet-label,
+.subscription-page.theme-light .wallet-side-label,
+.subscription-page.theme-light .section-subtitle,
+.subscription-page.theme-light .credit-name,
+.subscription-page.theme-light .credit-hint,
+.subscription-page.theme-light .plan-desc,
+.subscription-page.theme-light .plan-price-suffix,
+.subscription-page.theme-light .plan-price-label,
+.subscription-page.theme-light .feature-text,
+.subscription-page.theme-light .compare-cell {
+  color: rgba(31, 26, 22, 0.62);
+}
+
+.subscription-page.theme-light .wallet-panel,
+.subscription-page.theme-light .credit-pack,
+.subscription-page.theme-light .billing-switch,
+.subscription-page.theme-light .compare-card {
+  background: rgba(255, 255, 255, 0.58);
+  border-color: rgba(63, 53, 42, 0.08);
+  box-shadow: 0 10rpx 32rpx rgba(118, 101, 80, 0.08);
+}
+
+.subscription-page.theme-light .wallet-balance {
+  color: #1f1a16;
+}
+
+.subscription-page.theme-light .wallet-side-value,
+.subscription-page.theme-light .billing-tag,
+.subscription-page.theme-light .plan-price-hint,
+.subscription-page.theme-light .compare-head-plus,
+.subscription-page.theme-light .compare-val-plus {
+  color: #2f6eea;
+}
+
+.subscription-page.theme-light .credit-price {
+  color: #d97706;
+}
+
+.subscription-page.theme-light .billing-item {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(63, 53, 42, 0.08);
+}
+
+.subscription-page.theme-light .billing-item-active {
+  background: rgba(47, 110, 234, 0.12);
+  border-color: rgba(47, 110, 234, 0.24);
+  box-shadow: 0 6rpx 22rpx rgba(47, 110, 234, 0.1);
+}
+
+.subscription-page.theme-light .billing-label,
+.subscription-page.theme-light .billing-item-active .billing-label {
+  color: #1f1a16;
+}
+
+.subscription-page.theme-light .billing-tag {
+  background: rgba(47, 110, 234, 0.1);
+}
+
+.subscription-page.theme-light .plan-card {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(63, 53, 42, 0.09);
+  box-shadow: 0 12rpx 40rpx rgba(118, 101, 80, 0.1);
+}
+
+.subscription-page.theme-light .plan-card-current {
+  border-color: rgba(16, 128, 92, 0.28);
+  box-shadow: 0 0 0 1rpx rgba(16, 128, 92, 0.1) inset, 0 12rpx 40rpx rgba(118, 101, 80, 0.1);
+}
+
+.subscription-page.theme-light .plan-card-recommended {
+  border-color: rgba(47, 110, 234, 0.28);
+}
+
+.subscription-page.theme-light .plan-card-ultra .plan-name,
+.subscription-page.theme-light .plan-price-main-ultra,
+.subscription-page.theme-light .plan-price-hint-ultra,
+.subscription-page.theme-light .compare-head-ultra,
+.subscription-page.theme-light .compare-val-ultra {
+  color: #7c3aed;
+}
+
+.subscription-page.theme-light .plan-price-main-plus {
+  color: #2f6eea;
+}
+
+.subscription-page.theme-light .plan-price-strikethrough {
+  color: rgba(31, 26, 22, 0.36);
+}
+
+.subscription-page.theme-light .plan-divider {
+  background: linear-gradient(90deg, transparent, rgba(63, 53, 42, 0.1), transparent);
+}
+
+.subscription-page.theme-light .feature-icon-free {
+  background: rgba(63, 53, 42, 0.07);
+}
+
+.subscription-page.theme-light .feature-icon-plus {
+  background: rgba(47, 110, 234, 0.1);
+}
+
+.subscription-page.theme-light .feature-icon-ultra {
+  background: rgba(124, 58, 237, 0.1);
+}
+
+.subscription-page.theme-light .feature-text-limit {
+  color: rgba(31, 26, 22, 0.42);
+}
+
+.subscription-page.theme-light .compare-table {
+  border-color: rgba(63, 53, 42, 0.08);
+}
+
+.subscription-page.theme-light .compare-head {
+  background: rgba(63, 53, 42, 0.05);
+}
+
+.subscription-page.theme-light .compare-row:not(.compare-head) {
+  background: rgba(255, 255, 255, 0.36);
+  border-top-color: rgba(63, 53, 42, 0.06);
+}
+
+.subscription-page.theme-light .compare-row-alt {
+  background: rgba(63, 53, 42, 0.035) !important;
+}
+
+.subscription-page.theme-light .compare-metric {
+  color: rgba(31, 26, 22, 0.78);
+}
+
+.subscription-page.theme-light .compare-head-free,
+.subscription-page.theme-light .compare-val-free {
+  color: rgba(31, 26, 22, 0.56);
 }
 </style>

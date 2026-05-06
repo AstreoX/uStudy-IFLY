@@ -69,7 +69,7 @@
         <view class="wallet-stats">
           <view class="wallet-stat">
             <text class="wallet-stat-value">{{ walletAvailableText }}</text>
-            <text class="wallet-stat-label">可用额度</text>
+            <text class="wallet-stat-label">含临时额度</text>
           </view>
           <view class="wallet-stat-divider"></view>
           <view class="wallet-stat">
