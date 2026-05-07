@@ -37,10 +37,10 @@
               @click="openNoteDetail(note)"
             >
               <view class="note-card-actions" @click.stop>
-                <view v-if="note.note_type !== 'interactive_html'" class="note-action-btn" @click.stop="startEditNote(note)">
+                <view v-if="note.note_type !== 'interactive_html' && canEditNote(note)" class="note-action-btn" @click.stop="startEditNote(note)">
                   <image class="note-action-icon" src="/static/icons/phosphor/regular/pencil-white.svg" mode="aspectFit" />
                 </view>
-                <view class="note-action-btn note-action-delete" @click.stop="confirmDeleteNote(note)">
+                <view v-if="canEditNote(note)" class="note-action-btn note-action-delete" @click.stop="confirmDeleteNote(note)">
                   <image class="note-action-icon" src="/static/icons/phosphor/regular/trash.svg" mode="aspectFit" />
                 </view>
               </view>
@@ -49,6 +49,10 @@
               </view>
               <text class="note-card-title">{{ getNoteTitle(note) }}</text>
               <text class="note-card-preview">{{ note.note_type === 'interactive_html' ? '交互式 HTML 演示' : truncateContent(note.content) }}</text>
+              <view v-if="isCollaborative && note.creator_nickname" class="note-creator">
+                <view class="color-dot" :style="{ background: getCreatorColor(note.creator_user_id) }"></view>
+                <text class="note-creator-name">{{ note.creator_nickname }}</text>
+              </view>
               <view class="note-card-footer">
                 <text class="note-card-time">{{ formatDate(note.created_at) }}</text>
                 <view v-if="getNoteNodeTag(note)" class="note-card-tag">{{ getNoteNodeTag(note) }}</view>
@@ -69,10 +73,10 @@
             <text class="detail-back-text">返回列表</text>
           </view>
           <view class="detail-header-actions">
-            <view v-if="selectedNote && selectedNote.note_type !== 'interactive_html'" class="note-action-btn" @click="startEditNote(selectedNote)">
+            <view v-if="selectedNote && selectedNote.note_type !== 'interactive_html' && canEditNote(selectedNote)" class="note-action-btn" @click="startEditNote(selectedNote)">
               <image class="note-action-icon" src="/static/icons/phosphor/regular/pencil-white.svg" mode="aspectFit" />
             </view>
-            <view class="note-action-btn note-action-delete" @click="confirmDeleteNote(selectedNote)">
+            <view v-if="canEditNote(selectedNote)" class="note-action-btn note-action-delete" @click="confirmDeleteNote(selectedNote)">
               <image class="note-action-icon" src="/static/icons/phosphor/regular/trash.svg" mode="aspectFit" />
             </view>
           </view>
@@ -204,6 +208,22 @@ export default {
     spaceId: {
       type: [String, Number],
       default: ''
+    },
+    isCollaborative: {
+      type: Boolean,
+      default: false
+    },
+    userRole: {
+      type: String,
+      default: null
+    },
+    currentUserId: {
+      type: String,
+      default: null
+    },
+    spaceMembers: {
+      type: Array,
+      default: () => []
     }
   },
   data() {
@@ -405,6 +425,18 @@ export default {
       const hours = date.getHours().toString().padStart(2, '0')
       const minutes = date.getMinutes().toString().padStart(2, '0')
       return `${month}月${day}日 ${hours}:${minutes}`
+    },
+
+    canEditNote(note) {
+      if (!this.isCollaborative) return true
+      if (this.userRole === 'owner') return true
+      return note?.creator_user_id === this.currentUserId
+    },
+
+    getCreatorColor(creatorUserId) {
+      if (!creatorUserId) return '#666'
+      const member = this.spaceMembers.find(m => m.user_id === creatorUserId)
+      return member ? member.color : '#666'
     }
   }
 }
@@ -924,5 +956,22 @@ export default {
 .confirm-delete-btn--loading {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.note-creator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+.note-creator-name {
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+}
+.color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 </style>

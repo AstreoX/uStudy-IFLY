@@ -129,6 +129,10 @@
                 <text v-if="doc.doc_type === 'link'" class="document-url">{{ doc.url }}</text>
                 <text v-else-if="doc.file_size" class="document-size">{{ formatFileSize(doc.file_size) }}</text>
               </view>
+              <view v-if="isCollaborative && doc.creator_nickname" class="doc-creator">
+                <view class="color-dot" :style="{ background: getCreatorColor(doc.creator_user_id) }"></view>
+                <text class="doc-creator-name">{{ doc.creator_nickname }}</text>
+              </view>
 
               <view v-if="doc.doc_type === 'document'" class="document-status-row">
                 <view class="status-badge" :class="'status-' + getDocStatus(doc.id)">
@@ -165,7 +169,7 @@
                   src="/static/icons/phosphor/regular/eye.svg"
                 />
               </view>
-              <view class="document-delete" @tap.stop="showDeleteConfirm(doc)">
+              <view v-if="canDeleteDocument(doc)" class="document-delete" @tap.stop="showDeleteConfirm(doc)">
                 <image
                   class="document-delete-icon"
                   mode="aspectFit"
@@ -376,6 +380,22 @@ export default {
     visible: {
       type: Boolean,
       default: true
+    },
+    isCollaborative: {
+      type: Boolean,
+      default: false
+    },
+    userRole: {
+      type: String,
+      default: null
+    },
+    currentUserId: {
+      type: String,
+      default: null
+    },
+    spaceMembers: {
+      type: Array,
+      default: () => []
     }
   },
   data() {
@@ -1148,6 +1168,18 @@ export default {
       if (bytes < 1024) return `${bytes} B`
       if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    },
+
+    canDeleteDocument(doc) {
+      if (!this.isCollaborative) return true
+      if (this.userRole === 'owner') return true
+      return doc?.creator_user_id === this.currentUserId
+    },
+
+    getCreatorColor(creatorUserId) {
+      if (!creatorUserId) return '#666'
+      const member = this.spaceMembers.find(m => m.user_id === creatorUserId)
+      return member ? member.color : '#666'
     }
   }
 }
@@ -1911,5 +1943,22 @@ export default {
   to {
     transform: rotate(360deg);
   }
+}
+
+.doc-creator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+.doc-creator-name {
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+}
+.color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 </style>

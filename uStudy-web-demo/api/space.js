@@ -45,9 +45,11 @@ export function generateKnowledgeGraph(spaceId, data) {
   })
 }
 
-export function getSpaceGraph(spaceId) {
+export function getSpaceGraph(spaceId, targetUserId = null) {
+  let url = `/api/spaces/${spaceId}/graph?_t=${Date.now()}`
+  if (targetUserId) url += `&target_user_id=${targetUserId}`
   return request({
-    url: `/api/spaces/${spaceId}/graph?_t=${Date.now()}`,
+    url,
     method: 'GET'
   })
 }

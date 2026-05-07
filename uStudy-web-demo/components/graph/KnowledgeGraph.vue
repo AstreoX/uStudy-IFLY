@@ -188,7 +188,9 @@ export default {
   props: {
     spaceId: { type: [String, Number], default: null },
     pathHighlight: { type: Boolean, default: false },
-    generating: { type: Boolean, default: false }
+    generating: { type: Boolean, default: false },
+    targetUserId: { type: String, default: null },
+    pathColor: { type: String, default: '#0088FF' }
   },
 
   emits: ['node-selected', 'graph-loaded', 'retry', 'quick-learn', 'note-selected'],
@@ -197,6 +199,7 @@ export default {
     return {
       loading: false,
       error: null,
+      _loadGeneration: 0,
       nodes: [],
       edges: [],
       learningPath: [],
@@ -300,6 +303,11 @@ export default {
   watch: {
     spaceId(newVal) {
       if (newVal) this.loadAndRender()
+    },
+    targetUserId(newVal, oldVal) {
+      if (newVal !== oldVal && this.spaceId) {
+        this.loadAndRender()
+      }
     },
     pathHighlight() {
       this.requestRender()
@@ -676,11 +684,13 @@ export default {
     // --- Data loading ---
     async loadAndRender() {
       if (!this.spaceId) return
+      const gen = ++this._loadGeneration
       this.loading = true
       this.error = null
 
       try {
-        const { nodes: apiNodes, edges: apiEdges } = await getSpaceGraph(this.spaceId)
+        const { nodes: apiNodes, edges: apiEdges } = await getSpaceGraph(this.spaceId, this.targetUserId)
+        if (gen !== this._loadGeneration) return // stale response, discard
 
         if (!apiNodes || apiNodes.length === 0) {
           this.nodes = []
@@ -890,7 +900,8 @@ export default {
         isPathHighlightOn: this.pathHighlight,
         visibleNodeIds: this.visibleNodeIdSetCache,
         viewportNodeIds: renderNodeIds,
-        showAdvancedEdges: true
+        showAdvancedEdges: true,
+        pathColor: this.pathColor
       })
 
       // Draw path animation edges (completed + in-progress)
@@ -898,7 +909,7 @@ export default {
         const now = Date.now()
         this.pathCompletedEdges.forEach(edge => {
           if (edge.from && edge.to) {
-            drawAnimatedPathEdge(ctx, edge.from, edge.to, 1.0)
+            drawAnimatedPathEdge(ctx, edge.from, edge.to, 1.0, this.pathColor)
           }
         })
         this.pathAnimatedEdges.forEach(edge => {
@@ -906,7 +917,7 @@ export default {
             const elapsed = now - edge.startTime
             const t = Math.min(1, elapsed / PATH_EDGE_GROW_DURATION)
             const progress = 1 - Math.pow(1 - t, 3)
-            drawAnimatedPathEdge(ctx, edge.from, edge.to, progress)
+            drawAnimatedPathEdge(ctx, edge.from, edge.to, progress, this.pathColor)
           }
         })
       }
@@ -925,7 +936,8 @@ export default {
         drawNode(ctx, node, {
           selectedNodeId: this.selectedNodeId,
           isPathHighlightOn: this.pathHighlight,
-          learningPathSet: this.learningPathSet
+          learningPathSet: this.learningPathSet,
+          pathColor: this.pathColor
         })
 
         if (savedFill) {
@@ -942,7 +954,7 @@ export default {
         if (this.pathAnimationRunning) {
           const rippleState = this.pathRippleNodes.get(node.id)
           if (rippleState) {
-            drawPathHighlightRipple(ctx, node, rippleState)
+            drawPathHighlightRipple(ctx, node, rippleState, this.pathColor)
           }
         }
       })

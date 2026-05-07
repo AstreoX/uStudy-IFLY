@@ -19,7 +19,7 @@
     <view class="study-main">
       <!-- Header Bar -->
       <view class="study-header">
-        <text class="study-header-title">{{ spaceName }}</text>
+        <text class="study-header-title">{{ spaceName }}{{ isCollaborative && userRole === 'member' ? ' (协作)' : '' }}</text>
         <view class="study-header-actions">
           <view
             class="share-space-btn"
@@ -69,6 +69,27 @@
               <view class="chrome-tabs-spacer"></view>
             </view>
 
+            <!-- Collaborative User Filter -->
+            <view v-if="isCollaborative && activeTab === 'graph'" class="collab-user-filter">
+              <view class="filter-trigger" @tap="showMemberDropdown = !showMemberDropdown">
+                <view class="color-dot" :style="{ background: selectedMemberColor }"></view>
+                <text class="filter-label">{{ selectedMemberName }}</text>
+                <text class="filter-arrow">&#9660;</text>
+              </view>
+              <view v-if="showMemberDropdown" class="member-dropdown">
+                <view
+                  v-for="m in spaceMembers"
+                  :key="m.user_id"
+                  class="member-item"
+                  :class="{ 'member-item-active': m.user_id === (selectedMemberUserId || currentUserId) }"
+                  @tap="selectMemberFilter(m)"
+                >
+                  <view class="color-dot" :style="{ background: m.color || '#0088FF' }"></view>
+                  <text class="member-name">{{ m.nickname }}{{ m.role === 'owner' ? ' (管理员)' : '' }}</text>
+                </view>
+              </view>
+            </view>
+
             <!-- Tab Content Area -->
             <view class="tab-content-area">
               <KnowledgeGraph
@@ -77,6 +98,8 @@
                 :spaceId="spaceId"
                 :pathHighlight="isPathHighlightOn"
                 :generating="graphGenerating"
+                :targetUserId="selectedMemberUserId"
+                :pathColor="selectedMemberColor"
                 @node-selected="onNodeSelected"
                 @graph-loaded="onGraphLoaded"
                 @retry="handleGraphRetry"
@@ -88,6 +111,10 @@
                 :space-id="spaceId"
                 :user-tier="currentUserTier"
                 :visible="activeTab === 'materials'"
+                :is-collaborative="isCollaborative"
+                :user-role="userRole"
+                :current-user-id="currentUserId"
+                :space-members="spaceMembers"
               />
               <QuizPanel
                 ref="quizPanel"
@@ -99,6 +126,10 @@
                 ref="notesPanel"
                 v-else-if="activeTab === 'notes'"
                 :space-id="spaceId"
+                :is-collaborative="isCollaborative"
+                :user-role="userRole"
+                :current-user-id="currentUserId"
+                :space-members="spaceMembers"
                 :key="`notes-panel-${spaceId || 'none'}`"
               />
               <template v-else-if="activeTab === 'browser'">
@@ -904,7 +935,7 @@ import UMasteryToast from '@/components/u-mastery-toast/u-mastery-toast.vue'
 import UQuizNotification from '@/components/u-quiz-notification/u-quiz-notification.vue'
 import UArtifactNotification from '@/components/u-artifact-notification/u-artifact-notification.vue'
 import { connectNotificationStream } from '@/api/notification'
-import { getSpaces, deleteSpace, getTaskStatus, generateKnowledgeGraph, getToolCatalog, updateSpace, getSpace, generateShareCode } from '@/api/space'
+import { getSpaces, deleteSpace, getTaskStatus, generateKnowledgeGraph, getToolCatalog, updateSpace, getSpace, generateShareCode, getSpaceMembers } from '@/api/space'
 import { createConversation, getSpaceConversations, getConversation, sendMessage, submitToolResult, uploadAttachment, deleteAttachment, getModels } from '@/api/chat'
 import { getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendar'
 import { useUserStore } from '@/store/user'
@@ -1154,7 +1185,15 @@ export default {
 
       // Dual-sync mode
       dualSyncEnabled: false,
-      annotations: []
+      annotations: [],
+
+      // Collaborative space state
+      isCollaborative: false,
+      userRole: null,
+      spaceMembers: [],
+      selectedMemberUserId: null,
+      showMemberDropdown: false,
+      currentUserId: null
     }
   },
   watch: {
@@ -1208,6 +1247,19 @@ export default {
     deleteSpaceModalContent() {
       const displayName = this.deleteTargetSpaceName || this.spaceName || '当前学习空间'
       return `确定要删除「${displayName}」吗？该空间内的知识图谱、资料和测试会被永久删除。`
+    },
+    selectedMemberColor() {
+      if (!this.selectedMemberUserId) {
+        const self = this.spaceMembers.find(m => m.user_id === this.currentUserId)
+        return self ? self.color : '#0088FF'
+      }
+      const member = this.spaceMembers.find(m => m.user_id === this.selectedMemberUserId)
+      return member ? member.color : '#0088FF'
+    },
+    selectedMemberName() {
+      if (!this.selectedMemberUserId || this.selectedMemberUserId === this.currentUserId) return '我'
+      const member = this.spaceMembers.find(m => m.user_id === this.selectedMemberUserId)
+      return member ? member.nickname : '我'
     }
   },
   async onLoad(options) {
@@ -1812,6 +1864,10 @@ export default {
     async loadSpaceInfo() {
       if (!this.spaceId) {
         this.spaceName = 'Study'
+        this.isCollaborative = false
+        this.userRole = null
+        this.spaceMembers = []
+        this.selectedMemberUserId = null
         return
       }
       try {
@@ -1819,9 +1875,40 @@ export default {
         const spaces = res.data || res || []
         const space = spaces.find(s => String(s.id) === String(this.spaceId))
         this.spaceName = space ? space.name : 'Study'
+        this.isCollaborative = space ? !!space.is_collaborative : false
+        this.userRole = space ? space.user_role : null
+
+        // Load current user ID
+        const userStore = useUserStore()
+        this.currentUserId = userStore.user?.id || null
+
+        // Load members for collaborative spaces
+        if (this.isCollaborative) {
+          await this.loadSpaceMembers()
+        } else {
+          this.spaceMembers = []
+          this.selectedMemberUserId = null
+        }
       } catch (error) {
         console.error('[StudyPage] Failed to load space info:', error)
       }
+    },
+
+    async loadSpaceMembers() {
+      if (!this.spaceId) return
+      try {
+        const res = await getSpaceMembers(this.spaceId)
+        this.spaceMembers = res.data || res || []
+      } catch (error) {
+        console.error('[StudyPage] Failed to load members:', error)
+        this.spaceMembers = []
+      }
+    },
+
+    selectMemberFilter(member) {
+      this.selectedMemberUserId = member.user_id
+      this.showMemberDropdown = false
+      // loadAndRender() is triggered by the targetUserId watcher in KnowledgeGraph
     },
 
     handleTabChange(tabId) {
@@ -6063,5 +6150,71 @@ textarea.chat-input-textarea {
   height: 24px;
   color: rgba(74, 222, 128, 0.8);
   filter: drop-shadow(0 0 4px rgba(74, 222, 128, 0.4));
+}
+
+/* Collaborative User Filter */
+.collab-user-filter {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 20;
+}
+.filter-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.filter-trigger:hover {
+  background: rgba(255,255,255,0.14);
+}
+.color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.filter-label {
+  font-size: 12px;
+  color: rgba(255,255,255,0.8);
+}
+.filter-arrow {
+  font-size: 10px;
+  color: rgba(255,255,255,0.5);
+}
+.member-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 160px;
+  background: #1a1a2e;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.member-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.member-item:hover {
+  background: rgba(255,255,255,0.08);
+}
+.member-item-active {
+  background: rgba(0,136,255,0.15);
+}
+.member-name {
+  font-size: 13px;
+  color: rgba(255,255,255,0.85);
 }
 </style>

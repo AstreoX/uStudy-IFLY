@@ -9,7 +9,7 @@ import {
 // --- Edge drawing ---
 
 export function drawEdges(ctx, edgeBuckets, options = {}) {
-  const { isPathHighlightOn, visibleNodeIds, viewportNodeIds } = options
+  const { isPathHighlightOn, visibleNodeIds, viewportNodeIds, pathColor = '#0088FF' } = options
   const buckets = edgeBuckets || { treeEdges: [], advancedEdges: [], pathEdges: [] }
   let renderedCount = 0
 
@@ -74,7 +74,7 @@ export function drawEdges(ctx, edgeBuckets, options = {}) {
       const toNode = edge.toNode
       if (!fromNode || !toNode) return
 
-      drawPathEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y)
+      drawPathEdge(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, pathColor)
       renderedCount++
     })
   }
@@ -82,8 +82,8 @@ export function drawEdges(ctx, edgeBuckets, options = {}) {
   return renderedCount
 }
 
-function drawPathEdge(ctx, x1, y1, x2, y2) {
-  const color = '#0088FF'
+function drawPathEdge(ctx, x1, y1, x2, y2, pathColor = '#0088FF') {
+  const color = pathColor
 
   // Line
   ctx.beginPath()
@@ -187,7 +187,7 @@ export function drawNodeLabelBlock(ctx, node, options = {}) {
 // --- Node drawing ---
 
 export function drawNode(ctx, node, options = {}) {
-  const { selectedNodeId, isPathHighlightOn, learningPathSet } = options
+  const { selectedNodeId, isPathHighlightOn, learningPathSet, pathColor = '#0088FF' } = options
   const radius = getNodeBaseRadius(node)
   const isSelected = selectedNodeId === node.id
   const isOnPath = isPathHighlightOn && learningPathSet && learningPathSet.has(node.id)
@@ -230,11 +230,11 @@ export function drawNode(ctx, node, options = {}) {
     ctx.stroke()
   }
 
-  // Path ring (blue, non-selected)
+  // Path ring (colored, non-selected)
   if (isOnPath && !isSelected) {
     ctx.beginPath()
     ctx.arc(node.x, node.y, radius + 5, 0, Math.PI * 2)
-    ctx.strokeStyle = '#0088FF'
+    ctx.strokeStyle = pathColor
     ctx.lineWidth = 2
     ctx.stroke()
   }
@@ -268,11 +268,12 @@ export const PATH_EDGE_GROW_DURATION = 600
  * @param {Object} state - { startTime }
  * @returns {boolean} true if animation is still running
  */
-export function drawPathHighlightRipple(ctx, node, state) {
+export function drawPathHighlightRipple(ctx, node, state, pathColor = '#0088FF') {
   const elapsed = Date.now() - state.startTime
   if (elapsed > PATH_RIPPLE_DURATION) return false
 
   const radius = getNodeBaseRadius(node)
+  const rippleRgb = hexToRgb(pathColor)
 
   ctx.save()
   ctx.shadowColor = 'transparent'
@@ -290,7 +291,7 @@ export function drawPathHighlightRipple(ctx, node, state) {
 
     ctx.beginPath()
     ctx.arc(node.x, node.y, ringRadius, 0, Math.PI * 2)
-    ctx.strokeStyle = `rgba(0, 136, 255, ${opacity})`
+    ctx.strokeStyle = `rgba(${rippleRgb.r}, ${rippleRgb.g}, ${rippleRgb.b}, ${opacity})`
     ctx.lineWidth = Math.max(0.5, lineWidth)
     ctx.stroke()
   }
@@ -307,7 +308,7 @@ export function drawPathHighlightRipple(ctx, node, state) {
  * @param {Object} toNode
  * @param {number} progress - 0..1
  */
-export function drawAnimatedPathEdge(ctx, fromNode, toNode, progress) {
+export function drawAnimatedPathEdge(ctx, fromNode, toNode, progress, pathColor = '#0088FF') {
   const x1 = fromNode.x
   const y1 = fromNode.y
   const x2 = x1 + (toNode.x - x1) * progress
@@ -318,7 +319,7 @@ export function drawAnimatedPathEdge(ctx, fromNode, toNode, progress) {
   ctx.shadowBlur = 0
 
   ctx.beginPath()
-  ctx.strokeStyle = '#0088FF'
+  ctx.strokeStyle = pathColor
   ctx.lineWidth = 3
   ctx.moveTo(x1, y1)
   ctx.lineTo(x2, y2)
@@ -332,7 +333,7 @@ export function drawAnimatedPathEdge(ctx, fromNode, toNode, progress) {
     const arrowSize = 8
 
     ctx.beginPath()
-    ctx.fillStyle = '#0088FF'
+    ctx.fillStyle = pathColor
     ctx.moveTo(midX + arrowSize * Math.cos(angle), midY + arrowSize * Math.sin(angle))
     ctx.lineTo(midX + arrowSize * Math.cos(angle + 2.5), midY + arrowSize * Math.sin(angle + 2.5))
     ctx.lineTo(midX + arrowSize * Math.cos(angle - 2.5), midY + arrowSize * Math.sin(angle - 2.5))
@@ -400,6 +401,17 @@ export function drawNodeHighlight(ctx, node, state) {
   }
 
   return true
+}
+
+/** Convert hex color (#RRGGBB) to {r,g,b} */
+function hexToRgb(hex) {
+  if (!hex || !hex.startsWith('#')) return { r: 0, g: 136, b: 255 }
+  const h = hex.slice(1)
+  return {
+    r: parseInt(h.slice(0, 2), 16) || 0,
+    g: parseInt(h.slice(2, 4), 16) || 136,
+    b: parseInt(h.slice(4, 6), 16) || 255
+  }
 }
 
 /** Parse hex (#RRGGBB) or rgba() to {r,g,b,a} */
