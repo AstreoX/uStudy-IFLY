@@ -554,7 +554,7 @@ class LLMOrchestrator:
         enabled_tools: list[str] | None = None,
         has_panel_screenshot: bool = False,
         is_collaborative: bool = False,
-        is_owner: bool = False,
+        can_edit_graph: bool = False,
     ) -> None:
         """
         Initialize the orchestrator.
@@ -570,6 +570,7 @@ class LLMOrchestrator:
             tool_mode: "auto" (AI按需加载) or "manual" (用户自选)
             enabled_tools: manual 模式下启用的工具名称列表
             is_collaborative: Whether this is a collaborative space
+            can_edit_graph: Whether user can modify knowledge graph structure
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
@@ -587,7 +588,7 @@ class LLMOrchestrator:
         self.prompt_builder = PromptBuilder()
 
         # 所有执行器始终初始化（自动模式下工具定义延迟加载，但执行器预先就位）
-        self.graph_tool_executor = GraphToolExecutor(space_id, user_id=user_id, is_collaborative=is_collaborative, is_owner=is_owner)
+        self.graph_tool_executor = GraphToolExecutor(space_id, user_id=user_id, is_collaborative=is_collaborative, can_edit_graph=can_edit_graph)
         self.quiz_tool_executor = QuizGenerationToolExecutor(
             user_id, conversation_id, space_id
         )

@@ -3,6 +3,7 @@
 from typing import List
 from uuid import UUID
 
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -228,6 +229,35 @@ async def remove_space_member(
     service = SpaceService(db)
     try:
         await service.remove_member(user.id, space_id, target_user_id)
+    except SpaceNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "MEMBER_NOT_FOUND", "message": "成员不存在"},
+        )
+    except SpaceAccessDeniedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "SPACE_ACCESS_DENIED", "message": str(e)},
+        )
+
+
+class UpdateMemberPermissionRequest(BaseModel):
+    can_edit_graph: bool | None = None
+
+
+@router.patch("/{space_id}/members/{target_user_id}", summary="更新成员权限")
+async def update_member_permission(
+    space_id: UUID,
+    target_user_id: UUID,
+    request: UpdateMemberPermissionRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = SpaceService(db)
+    try:
+        return await service.update_member_permission(
+            user.id, space_id, target_user_id, can_edit_graph=request.can_edit_graph
+        )
     except SpaceNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

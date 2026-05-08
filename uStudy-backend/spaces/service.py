@@ -296,6 +296,7 @@ class SpaceService:
                 "avatar_url": avatar_url,
                 "joined_at": member.joined_at.isoformat(),
                 "color": member.color,
+                "can_edit_graph": member.can_edit_graph,
             }
             for member, nickname, avatar_url in rows
         ]
@@ -327,6 +328,32 @@ class SpaceService:
 
         await self.db.delete(member)
         await self.db.commit()
+
+    async def update_member_permission(
+        self, requesting_user_id: UUID, space_id: UUID, target_user_id: UUID,
+        can_edit_graph: bool | None = None,
+    ) -> dict:
+        """Owner updates member permissions."""
+        space = await verify_space_access(self.db, space_id, requesting_user_id)
+        if space.user_id != requesting_user_id:
+            raise SpaceAccessDeniedError("只有空间所有者可以修改成员权限")
+        if target_user_id == space.user_id:
+            raise SpaceAccessDeniedError("无法修改所有者自身的权限")
+
+        member = (await self.db.execute(
+            select(SpaceMember).where(
+                SpaceMember.space_id == space_id,
+                SpaceMember.user_id == target_user_id,
+            )
+        )).scalar_one_or_none()
+        if not member:
+            raise SpaceNotFoundError("该用户不是此空间的成员")
+
+        if can_edit_graph is not None:
+            member.can_edit_graph = can_edit_graph
+        await self.db.commit()
+        await self.db.refresh(member)
+        return {"user_id": str(member.user_id), "can_edit_graph": member.can_edit_graph}
 
     def _to_response(self, space: Space, user_role: str | None = None) -> SpaceResponse:
         """Convert Space model to SpaceResponse with optional role."""

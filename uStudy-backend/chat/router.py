@@ -475,11 +475,24 @@ async def execute_space_tool(
     else:
         arguments = {}
 
+    is_owner = (space.user_id == user.id)
+    if (space.is_collaborative or False) and not is_owner:
+        from db.models import SpaceMember
+        member_result = await db.execute(
+            select(SpaceMember.can_edit_graph).where(
+                SpaceMember.space_id == space_id,
+                SpaceMember.user_id == user.id,
+            )
+        )
+        can_edit_graph = member_result.scalar_one_or_none() or False
+    else:
+        can_edit_graph = True
+
     executor = GraphToolExecutor(
         space_id,
         user_id=user.id,
         is_collaborative=space.is_collaborative or False,
-        is_owner=(space.user_id == user.id),
+        can_edit_graph=can_edit_graph,
     )
     tool_result = await executor.execute(request.function.name, arguments)
     raw_tool_output = json.dumps(tool_result.to_dict(), ensure_ascii=False)

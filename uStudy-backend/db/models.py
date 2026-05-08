@@ -1753,6 +1753,10 @@ class SpaceMember(Base):
     color: Mapped[str] = mapped_column(
         String(7), default="#0088FF", server_default="#0088FF", nullable=False
     )
+    can_edit_graph: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False,
+        comment="是否允许修改知识图谱结构"
+    )
 
     # 关系
     space: Mapped["Space"] = relationship(back_populates="members")

@@ -596,6 +596,17 @@ class ChatService:
             space_enabled_tools = getattr(space, "enabled_tools", None)
             space_is_collaborative = getattr(space, "is_collaborative", False) or False
             space_is_owner = (space.user_id == user_id)
+            if space_is_collaborative and not space_is_owner:
+                from db.models import SpaceMember
+                member_result = await db.execute(
+                    select(SpaceMember.can_edit_graph).where(
+                        SpaceMember.space_id == space_id,
+                        SpaceMember.user_id == user_id,
+                    )
+                )
+                space_can_edit_graph = member_result.scalar_one_or_none() or False
+            else:
+                space_can_edit_graph = True  # owner always can edit
             logger.info(f"[Perf] Load space info: {(time.monotonic()-t0)*1000:.0f}ms")
 
             # 6. 对话连续性：检测新对话并加载上一次对话上下文
@@ -659,7 +670,7 @@ class ChatService:
             enabled_tools=space_enabled_tools,
             has_panel_screenshot=bool(panel_screenshot),
             is_collaborative=space_is_collaborative,
-            is_owner=space_is_owner,
+            can_edit_graph=space_can_edit_graph,
         )
 
         queue: asyncio.Queue = asyncio.Queue()
