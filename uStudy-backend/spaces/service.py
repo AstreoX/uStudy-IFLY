@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -354,6 +354,136 @@ class SpaceService:
         await self.db.commit()
         await self.db.refresh(member)
         return {"user_id": str(member.user_id), "can_edit_graph": member.can_edit_graph}
+
+    async def get_space_leaderboard(self, user_id: UUID, space_id: UUID) -> list[dict]:
+        """获取协作空间排行榜数据"""
+        await verify_space_access(self.db, space_id, user_id)
+
+        from db.models import NodeUserMastery, Note, Quiz, QuizAttempt, User
+
+        # 1) Get members
+        stmt = (
+            select(SpaceMember, User.nickname, User.avatar_url)
+            .join(User, User.id == SpaceMember.user_id)
+            .where(SpaceMember.space_id == space_id)
+            .order_by(SpaceMember.joined_at)
+        )
+        result = await self.db.execute(stmt)
+        members = result.all()
+
+        if not members:
+            return []
+
+        member_ids = [m.user_id for m, _, _ in members]
+
+        # 2) Average mastery + mastered count per user
+        mastery_stmt = (
+            select(
+                NodeUserMastery.user_id,
+                func.avg(NodeUserMastery.mastery).label("avg_mastery"),
+                func.count(case((NodeUserMastery.mastery >= 80, 1))).label("mastered_count"),
+            )
+            .join(Node, Node.id == NodeUserMastery.node_id)
+            .where(Node.space_id == space_id, NodeUserMastery.user_id.in_(member_ids))
+            .group_by(NodeUserMastery.user_id)
+        )
+        mastery_result = await self.db.execute(mastery_stmt)
+        mastery_map = {
+            row.user_id: {"avg_mastery": round(float(row.avg_mastery), 1), "mastered_count": row.mastered_count}
+            for row in mastery_result
+        }
+
+        # 3) Total nodes in space
+        total_nodes = (await self.db.execute(
+            select(func.count(Node.id)).where(Node.space_id == space_id)
+        )).scalar() or 0
+
+        # 4) Quiz scores per user
+        quiz_stmt = (
+            select(
+                QuizAttempt.user_id,
+                func.avg(QuizAttempt.score * 100.0 / func.nullif(QuizAttempt.total_score, 0)).label("avg_score"),
+                func.count(QuizAttempt.id).label("quiz_count"),
+            )
+            .join(Quiz, Quiz.id == QuizAttempt.quiz_id)
+            .where(
+                Quiz.space_id == space_id,
+                QuizAttempt.user_id.in_(member_ids),
+                QuizAttempt.status == "completed",
+            )
+            .group_by(QuizAttempt.user_id)
+        )
+        quiz_result = await self.db.execute(quiz_stmt)
+        quiz_map = {
+            row.user_id: {"avg_score": round(float(row.avg_score), 1) if row.avg_score else 0, "quiz_count": row.quiz_count}
+            for row in quiz_result
+        }
+
+        # 5) Notes count per user
+        notes_stmt = (
+            select(Note.creator_user_id, func.count(Note.id).label("note_count"))
+            .where(Note.space_id == space_id, Note.creator_user_id.in_(member_ids))
+            .group_by(Note.creator_user_id)
+        )
+        notes_result = await self.db.execute(notes_stmt)
+        notes_map = {row.creator_user_id: row.note_count for row in notes_result}
+
+        # 6) Study activity count (last 30 days) per user
+        from datetime import timedelta
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+        activity_stmt = (
+            select(StudyActivityLog.user_id, func.count(StudyActivityLog.id).label("activity_count"))
+            .where(
+                StudyActivityLog.space_id == space_id,
+                StudyActivityLog.user_id.in_(member_ids),
+                StudyActivityLog.activity_time >= cutoff,
+            )
+            .group_by(StudyActivityLog.user_id)
+        )
+        activity_result = await self.db.execute(activity_stmt)
+        activity_map = {row.user_id: row.activity_count for row in activity_result}
+
+        # Build response, sorted by composite score
+        leaderboard = []
+        for member, nickname, avatar_url in members:
+            uid = member.user_id
+            m_data = mastery_map.get(uid, {"avg_mastery": 0, "mastered_count": 0})
+            q_data = quiz_map.get(uid, {"avg_score": 0, "quiz_count": 0})
+            notes_count = notes_map.get(uid, 0)
+            activity_count = activity_map.get(uid, 0)
+
+            # Composite: mastery 50% + quiz 30% + activity 20% (capped at 100)
+            activity_score = min(activity_count * 2, 100)
+            composite = round(
+                m_data["avg_mastery"] * 0.5
+                + q_data["avg_score"] * 0.3
+                + activity_score * 0.2,
+                1,
+            )
+
+            leaderboard.append({
+                "user_id": str(uid),
+                "nickname": nickname,
+                "avatar_url": avatar_url,
+                "color": member.color,
+                "role": member.role.value,
+                "avg_mastery": m_data["avg_mastery"],
+                "mastered_nodes": m_data["mastered_count"],
+                "total_nodes": total_nodes,
+                "avg_quiz_score": q_data["avg_score"],
+                "quiz_count": q_data["quiz_count"],
+                "notes_count": notes_count,
+                "activity_count": activity_count,
+                "composite_score": composite,
+            })
+
+        leaderboard.sort(key=lambda x: x["composite_score"], reverse=True)
+
+        for i, entry in enumerate(leaderboard):
+            entry["rank"] = i + 1
+
+        return leaderboard
 
     def _to_response(self, space: Space, user_role: str | None = None) -> SpaceResponse:
         """Convert Space model to SpaceResponse with optional role."""

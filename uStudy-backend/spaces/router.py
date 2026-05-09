@@ -270,6 +270,28 @@ async def update_member_permission(
         )
 
 
+@router.get("/{space_id}/leaderboard", summary="获取协作空间排行榜")
+async def get_space_leaderboard(
+    space_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """获取协作空间的学习排行榜数据"""
+    service = SpaceService(db)
+    try:
+        return await service.get_space_leaderboard(user.id, space_id)
+    except SpaceNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "SPACE_NOT_FOUND", "message": "学习空间不存在"},
+        )
+    except SpaceAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "SPACE_ACCESS_DENIED", "message": "无权访问该学习空间"},
+        )
+
+
 @router.get(
     "/{space_id}/path-events",
     response_model=list[LearningPathEventResponse],
