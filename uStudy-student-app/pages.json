@@ -286,6 +286,15 @@
 			}
 		},
 		{
+			"path": "pages/payment-result/payment-result",
+			"style": {
+				"navigationBarTitleText": "支付结果",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#0A0A12",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
 			"path": "pages/searchSettings/searchSettings",
 			"style": {
 				"navigationStyle": "custom",

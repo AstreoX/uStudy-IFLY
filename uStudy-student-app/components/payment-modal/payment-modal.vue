@@ -232,13 +232,25 @@ export default {
           product_type: this.isCreditPack ? 'credit_pack' : 'subscription',
           product_code: this.isCreditPack ? this.plan.product_code : null,
           tier: this.isCreditPack ? null : this.backendTier,
-          billing_cycle: this.isCreditPack ? null : this.billingCycle
+          billing_cycle: this.isCreditPack ? null : this.billingCycle,
+          payment_method: this.getPreferredPaymentMethod()
         })
 
         this.orderId = resp.order_id
         this.orderAmount = resp.amount_display
         this.qrCodes = resp.qr_codes || { alipay: {}, wechat: {} }
-        this.showQrCode = true
+
+        this.rememberPendingOrder(resp)
+        if (this.openOfficialAlipayPayment(resp)) {
+          return
+        }
+
+        if (this.hasLegacyQrCode(resp)) {
+          this.showQrCode = true
+          return
+        }
+
+        this.errorMsg = '支付方式暂不可用，请稍后重试或联系客服。'
       } catch (err) {
         this.errorMsg = err?.message || err?.detail || '创建订单失败，请稍后重试'
       } finally {
@@ -290,6 +302,69 @@ export default {
     },
     handleDone() {
       this.$emit('close')
+    },
+    getPreferredPaymentMethod() {
+      if (typeof window !== 'undefined') {
+        const ua = window.navigator?.userAgent || ''
+        return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ? 'wap' : 'page'
+      }
+      return 'page'
+    },
+    rememberPendingOrder(order) {
+      try {
+        uni.setStorageSync('pending_payment_order_id', order.order_id)
+        uni.setStorageSync('pending_payment_out_trade_no', order.out_trade_no)
+      } catch {
+        // Storage is best-effort only; payment status still comes from backend.
+      }
+    },
+    openOfficialAlipayPayment(order) {
+      if (order.form_html) {
+        return this.submitAlipayForm(order.form_html)
+      }
+      if (order.payment_url) {
+        return this.redirectToAlipay(order.payment_url)
+      }
+      if (order.order_string) {
+        this.errorMsg = '当前客户端暂不支持支付宝 App 支付，请使用浏览器支付或扫码支付'
+      }
+      return false
+    },
+    hasLegacyQrCode(order) {
+      const qrCodes = order?.qr_codes || {}
+      return Boolean(
+        qrCodes.alipay?.display ||
+        qrCodes.alipay?.save ||
+        qrCodes.wechat?.display ||
+        qrCodes.wechat?.save ||
+        order?.legacy_qr_available
+      )
+    },
+    submitAlipayForm(formHtml) {
+      if (typeof document === 'undefined') {
+        this.errorMsg = '当前环境无法打开支付宝页面，请使用浏览器支付或扫码支付'
+        return false
+      }
+      const container = document.createElement('div')
+      container.style.display = 'none'
+      container.innerHTML = formHtml
+      document.body.appendChild(container)
+      const form = container.querySelector('form')
+      if (!form) {
+        document.body.removeChild(container)
+        this.errorMsg = '支付宝支付表单无效，请稍后重试'
+        return false
+      }
+      form.submit()
+      return true
+    },
+    redirectToAlipay(paymentUrl) {
+      if (typeof window === 'undefined') {
+        this.errorMsg = '当前环境无法打开支付宝页面，请使用浏览器支付或扫码支付'
+        return false
+      }
+      window.location.href = paymentUrl
+      return true
     }
   }
 }
