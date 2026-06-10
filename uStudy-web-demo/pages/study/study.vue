@@ -58,7 +58,7 @@
             <!-- Chrome-style Tab Bar -->
             <view class="chrome-tabs-bar">
               <view
-                v-for="tab in tabs"
+                v-for="tab in visibleTabs"
                 :key="tab.id"
                 class="chrome-tab"
                 :class="{ 'chrome-tab-active': activeTab === tab.id }"
@@ -196,6 +196,137 @@
                 </view>
                 <!-- #endif -->
               </template>
+              <!-- Leaderboard Tab (collaborative spaces) -->
+              <view v-else-if="activeTab === 'leaderboard'" class="leaderboard-panel">
+                <view v-if="leaderboardLoading" class="leaderboard-loading">
+                  <view class="typing-indicator">
+                    <view class="typing-dot"></view>
+                    <view class="typing-dot"></view>
+                    <view class="typing-dot"></view>
+                  </view>
+                </view>
+                <view v-else-if="leaderboardData.length === 0" class="leaderboard-empty">
+                  <text class="placeholder-text">暂无排行数据</text>
+                  <text class="placeholder-sub">成员开始学习后将显示排行</text>
+                </view>
+                <scroll-view v-else class="leaderboard-scroll" scroll-y>
+                  <!-- Podium: Top 3 -->
+                  <view v-if="leaderboardData.length >= 3" class="leaderboard-podium">
+                    <!-- 2nd place -->
+                    <view class="podium-item podium-2nd">
+                      <view class="podium-avatar" :style="{ borderColor: leaderboardData[1].color || '#C0C0C0' }">
+                        <text class="podium-avatar-text">{{ (leaderboardData[1].nickname || '?')[0] }}</text>
+                      </view>
+                      <text class="podium-name">{{ leaderboardData[1].nickname }}</text>
+                      <text class="podium-score">{{ leaderboardData[1].composite_score }}</text>
+                      <view class="podium-bar podium-bar-2nd">
+                        <text class="podium-rank">2</text>
+                      </view>
+                    </view>
+                    <!-- 1st place -->
+                    <view class="podium-item podium-1st">
+                      <view class="podium-crown">&#x1F451;</view>
+                      <view class="podium-avatar podium-avatar-1st" :style="{ borderColor: leaderboardData[0].color || '#FFD700' }">
+                        <text class="podium-avatar-text">{{ (leaderboardData[0].nickname || '?')[0] }}</text>
+                      </view>
+                      <text class="podium-name podium-name-1st">{{ leaderboardData[0].nickname }}</text>
+                      <text class="podium-score podium-score-1st">{{ leaderboardData[0].composite_score }}</text>
+                      <view class="podium-bar podium-bar-1st">
+                        <text class="podium-rank">1</text>
+                      </view>
+                    </view>
+                    <!-- 3rd place -->
+                    <view class="podium-item podium-3rd">
+                      <view class="podium-avatar" :style="{ borderColor: leaderboardData[2].color || '#CD7F32' }">
+                        <text class="podium-avatar-text">{{ (leaderboardData[2].nickname || '?')[0] }}</text>
+                      </view>
+                      <text class="podium-name">{{ leaderboardData[2].nickname }}</text>
+                      <text class="podium-score">{{ leaderboardData[2].composite_score }}</text>
+                      <view class="podium-bar podium-bar-3rd">
+                        <text class="podium-rank">3</text>
+                      </view>
+                    </view>
+                  </view>
+
+                  <!-- Score breakdown header -->
+                  <view class="leaderboard-header-row">
+                    <text class="lb-header-rank">#</text>
+                    <text class="lb-header-name">成员</text>
+                    <text class="lb-header-metric">掌握度</text>
+                    <text class="lb-header-metric">测试</text>
+                    <text class="lb-header-metric">笔记</text>
+                    <text class="lb-header-metric">综合分</text>
+                  </view>
+
+                  <!-- Full list -->
+                  <view
+                    v-for="entry in leaderboardData"
+                    :key="entry.user_id"
+                    class="leaderboard-row"
+                    :class="{ 'leaderboard-row-self': entry.user_id === currentUserId }"
+                  >
+                    <view class="lb-rank-cell">
+                      <text v-if="entry.rank === 1" class="lb-rank-medal">&#x1F947;</text>
+                      <text v-else-if="entry.rank === 2" class="lb-rank-medal">&#x1F948;</text>
+                      <text v-else-if="entry.rank === 3" class="lb-rank-medal">&#x1F949;</text>
+                      <text v-else class="lb-rank-num">{{ entry.rank }}</text>
+                    </view>
+                    <view class="lb-name-cell">
+                      <view class="lb-color-dot" :style="{ background: entry.color || '#0088FF' }"></view>
+                      <text class="lb-name">{{ entry.nickname }}</text>
+                      <text v-if="entry.role === 'owner'" class="lb-owner-badge">管理员</text>
+                    </view>
+                    <view class="lb-metric-cell">
+                      <text class="lb-metric-value">{{ entry.avg_mastery }}%</text>
+                      <view class="lb-metric-bar">
+                        <view class="lb-metric-bar-fill lb-bar-mastery" :style="{ width: entry.avg_mastery + '%' }"></view>
+                      </view>
+                    </view>
+                    <view class="lb-metric-cell">
+                      <text class="lb-metric-value">{{ entry.avg_quiz_score }}%</text>
+                      <view class="lb-metric-bar">
+                        <view class="lb-metric-bar-fill lb-bar-quiz" :style="{ width: entry.avg_quiz_score + '%' }"></view>
+                      </view>
+                    </view>
+                    <view class="lb-metric-cell">
+                      <text class="lb-metric-value">{{ entry.notes_count }}</text>
+                    </view>
+                    <view class="lb-metric-cell lb-composite-cell">
+                      <text class="lb-composite-score">{{ entry.composite_score }}</text>
+                    </view>
+                  </view>
+
+                  <!-- Legend -->
+                  <view class="leaderboard-legend">
+                    <text class="leaderboard-legend-text">综合分 = 掌握度×50% + 测试×30% + 活跃度×20%</text>
+                  </view>
+                </scroll-view>
+              </view>
+              <!-- Member Management Tab (owner only) -->
+              <view v-else-if="activeTab === 'manage'" class="manage-panel">
+                <view class="manage-panel-list">
+                  <view v-for="m in spaceMembers" :key="m.user_id" class="manage-member-item">
+                    <view class="manage-member-info">
+                      <view class="manage-color-dot" :style="{ background: m.color || '#0088FF' }"></view>
+                      <text class="manage-member-name">{{ m.nickname }}</text>
+                      <text v-if="m.role === 'owner'" class="manage-owner-badge">管理员</text>
+                    </view>
+                    <view v-if="m.role !== 'owner'" class="manage-member-actions">
+                      <view class="manage-toggle-row">
+                        <text class="manage-toggle-text">可修改图谱</text>
+                        <switch
+                          :checked="m.can_edit_graph"
+                          @change="handleToggleGraphEdit(m, $event)"
+                          class="manage-toggle"
+                        />
+                      </view>
+                      <view class="manage-remove-btn" @tap="handleRemoveMember(m)">
+                        移除
+                      </view>
+                    </view>
+                  </view>
+                </view>
+              </view>
               <template v-else>
                 <view class="placeholder-wrap">
                   <text class="placeholder-text">{{ activeTabInfo.placeholder }}</text>
@@ -935,7 +1066,7 @@ import UMasteryToast from '@/components/u-mastery-toast/u-mastery-toast.vue'
 import UQuizNotification from '@/components/u-quiz-notification/u-quiz-notification.vue'
 import UArtifactNotification from '@/components/u-artifact-notification/u-artifact-notification.vue'
 import { connectNotificationStream } from '@/api/notification'
-import { getSpaces, deleteSpace, getTaskStatus, generateKnowledgeGraph, getToolCatalog, updateSpace, getSpace, generateShareCode, getSpaceMembers } from '@/api/space'
+import { getSpaces, deleteSpace, getTaskStatus, generateKnowledgeGraph, getToolCatalog, updateSpace, getSpace, generateShareCode, getSpaceMembers, removeSpaceMember, updateMemberPermission, getSpaceLeaderboard } from '@/api/space'
 import { createConversation, getSpaceConversations, getConversation, sendMessage, submitToolResult, uploadAttachment, deleteAttachment, getModels } from '@/api/chat'
 import { getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/api/calendar'
 import { useUserStore } from '@/store/user'
@@ -1193,7 +1324,9 @@ export default {
       spaceMembers: [],
       selectedMemberUserId: null,
       showMemberDropdown: false,
-      currentUserId: null
+      currentUserId: null,
+      leaderboardData: [],
+      leaderboardLoading: false
     }
   },
   watch: {
@@ -1208,7 +1341,17 @@ export default {
       return PLANNING_TOOL_TEXT
     },
     activeTabInfo() {
-      return this.tabs.find(t => t.id === this.activeTab) || this.tabs[0]
+      return this.visibleTabs.find(t => t.id === this.activeTab) || this.tabs[0]
+    },
+    visibleTabs() {
+      if (this.isCollaborative) {
+        const extra = [{ id: 'leaderboard', label: '排行榜' }]
+        if (this.userRole === 'owner') {
+          extra.push({ id: 'manage', label: '成员管理' })
+        }
+        return [...this.tabs, ...extra]
+      }
+      return this.tabs
     },
     currentUserTier() {
       const userStore = useUserStore()
@@ -1888,6 +2031,10 @@ export default {
         } else {
           this.spaceMembers = []
           this.selectedMemberUserId = null
+          this.leaderboardData = []
+          if (this.activeTab === 'manage' || this.activeTab === 'leaderboard') {
+            this.activeTab = 'graph'
+          }
         }
       } catch (error) {
         console.error('[StudyPage] Failed to load space info:', error)
@@ -1905,10 +2052,44 @@ export default {
       }
     },
 
+    async loadLeaderboard() {
+      if (!this.spaceId || this.leaderboardLoading) return
+      this.leaderboardLoading = true
+      try {
+        const res = await getSpaceLeaderboard(this.spaceId)
+        this.leaderboardData = res.data || res || []
+      } catch (e) {
+        console.error('Failed to load leaderboard:', e)
+        this.leaderboardData = []
+      } finally {
+        this.leaderboardLoading = false
+      }
+    },
+
     selectMemberFilter(member) {
       this.selectedMemberUserId = member.user_id
       this.showMemberDropdown = false
       // loadAndRender() is triggered by the targetUserId watcher in KnowledgeGraph
+    },
+
+    async handleToggleGraphEdit(member, event) {
+      const newVal = event.detail.value
+      try {
+        await updateMemberPermission(this.spaceId, member.user_id, { can_edit_graph: newVal })
+        member.can_edit_graph = newVal
+      } catch (e) {
+        member.can_edit_graph = !newVal
+      }
+    },
+
+    async handleRemoveMember(member) {
+      if (!confirm(`确定要移除 ${member.nickname} 吗？`)) return
+      try {
+        await removeSpaceMember(this.spaceId, member.user_id)
+        this.spaceMembers = this.spaceMembers.filter(m => m.user_id !== member.user_id)
+      } catch (e) {
+        console.error('Failed to remove member:', e)
+      }
     },
 
     handleTabChange(tabId) {
@@ -1923,6 +2104,9 @@ export default {
             this.$refs.knowledgeGraph.loadAndRender()
           }
         })
+      }
+      if (tabId === 'leaderboard') {
+        this.loadLeaderboard()
       }
       if (tabId === 'browser' && !this.browserInitialized) {
         this.browserInitialized = true
@@ -3783,6 +3967,395 @@ export default {
   width: 18px;
   height: 18px;
   color: #F87171;
+}
+
+/* Member Management Tab */
+.manage-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.manage-panel-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.manage-member-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  transition: background 0.12s ease;
+}
+
+.manage-member-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.manage-member-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.manage-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.manage-member-name {
+  font-size: 13px;
+  color: #CBD5E1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.manage-owner-badge {
+  font-size: 11px;
+  color: #A855F7;
+  background: rgba(168, 85, 247, 0.15);
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.manage-member-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.manage-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.manage-toggle-text {
+  font-size: 12px;
+  color: #94A3B8;
+  white-space: nowrap;
+}
+
+.manage-toggle {
+  transform: scale(0.7);
+}
+
+.manage-remove-btn {
+  font-size: 12px;
+  color: #F87171;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: background 0.12s ease;
+  white-space: nowrap;
+}
+
+.manage-remove-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+/* ---- Leaderboard Panel ---- */
+.leaderboard-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.leaderboard-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0 16px;
+}
+
+.leaderboard-panel ::-webkit-scrollbar,
+.leaderboard-scroll ::-webkit-scrollbar {
+  width: 4px;
+}
+
+.leaderboard-panel ::-webkit-scrollbar-track,
+.leaderboard-scroll ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.leaderboard-panel ::-webkit-scrollbar-thumb,
+.leaderboard-scroll ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+}
+
+.leaderboard-panel ::-webkit-scrollbar-thumb:hover,
+.leaderboard-scroll ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.leaderboard-loading,
+.leaderboard-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Podium (Top 3) */
+.leaderboard-podium {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 24px 16px 0;
+  gap: 8px;
+}
+
+.podium-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  max-width: 120px;
+}
+
+.podium-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid;
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.podium-avatar-1st {
+  width: 48px;
+  height: 48px;
+  border-width: 3px;
+}
+
+.podium-avatar-text {
+  font-size: 16px;
+  color: #E2E8F0;
+  font-weight: 600;
+}
+
+.podium-crown {
+  font-size: 20px;
+  margin-bottom: -4px;
+}
+
+.podium-name {
+  font-size: 12px;
+  color: #CBD5E1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.podium-name-1st {
+  color: #FFD700;
+  font-weight: 600;
+}
+
+.podium-score {
+  font-size: 14px;
+  color: #94A3B8;
+  font-weight: 600;
+}
+
+.podium-score-1st {
+  color: #FFD700;
+  font-size: 16px;
+}
+
+.podium-bar {
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-radius: 6px 6px 0 0;
+  margin-top: 4px;
+}
+
+.podium-rank {
+  font-size: 18px;
+  font-weight: 700;
+  padding: 8px 0;
+}
+
+.podium-bar-1st {
+  height: 80px;
+  background: linear-gradient(180deg, rgba(255, 215, 0, 0.3) 0%, rgba(255, 215, 0, 0.08) 100%);
+  color: #FFD700;
+}
+
+.podium-bar-2nd {
+  height: 60px;
+  background: linear-gradient(180deg, rgba(192, 192, 192, 0.25) 0%, rgba(192, 192, 192, 0.06) 100%);
+  color: #C0C0C0;
+}
+
+.podium-bar-3rd {
+  height: 44px;
+  background: linear-gradient(180deg, rgba(205, 127, 50, 0.25) 0%, rgba(205, 127, 50, 0.06) 100%);
+  color: #CD7F32;
+}
+
+/* List header row */
+.leaderboard-header-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 16px;
+}
+
+.lb-header-rank {
+  width: 32px;
+  font-size: 11px;
+  color: #64748B;
+}
+
+.lb-header-name {
+  flex: 1.5;
+  font-size: 11px;
+  color: #64748B;
+}
+
+.lb-header-metric {
+  flex: 1;
+  font-size: 11px;
+  color: #64748B;
+  text-align: center;
+}
+
+/* List rows */
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  transition: background 0.12s ease;
+}
+
+.leaderboard-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.leaderboard-row-self {
+  background: rgba(96, 165, 250, 0.08);
+  border-left: 2px solid #60A5FA;
+}
+
+.lb-rank-cell {
+  width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lb-rank-medal {
+  font-size: 16px;
+}
+
+.lb-rank-num {
+  font-size: 13px;
+  color: #64748B;
+  font-weight: 500;
+}
+
+.lb-name-cell {
+  flex: 1.5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lb-color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.lb-name {
+  font-size: 13px;
+  color: #CBD5E1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lb-owner-badge {
+  font-size: 10px;
+  color: #A855F7;
+  background: rgba(168, 85, 247, 0.15);
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.lb-metric-cell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.lb-metric-value {
+  font-size: 12px;
+  color: #94A3B8;
+}
+
+.lb-metric-bar {
+  width: 80%;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.lb-metric-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.lb-bar-mastery {
+  background: #60A5FA;
+}
+
+.lb-bar-quiz {
+  background: #60A5FA;
+}
+
+.lb-composite-score {
+  font-size: 15px;
+  font-weight: 700;
+  color: #E2E8F0;
+}
+
+.leaderboard-legend {
+  padding: 16px;
+  text-align: center;
+}
+
+.leaderboard-legend-text {
+  font-size: 11px;
+  color: #475569;
 }
 
 .share-space-btn {

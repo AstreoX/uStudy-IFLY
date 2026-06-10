@@ -395,3 +395,29 @@ export function removeSpaceMember(spaceId, userId) {
     method: 'DELETE'
   })
 }
+
+/**
+ * 更新成员权限
+ * @param {string} spaceId
+ * @param {string} userId
+ * @param {Object} data - { can_edit_graph?: boolean }
+ */
+export function updateMemberPermission(spaceId, userId, data) {
+  return request({
+    url: `/api/spaces/${spaceId}/members/${userId}`,
+    method: 'PATCH',
+    data
+  })
+}
+
+/**
+ * 获取协作空间排行榜
+ * @param {string} spaceId
+ * @returns {Promise<Array>}
+ */
+export function getSpaceLeaderboard(spaceId) {
+  return request({
+    url: `/api/spaces/${spaceId}/leaderboard`,
+    method: 'GET'
+  })
+}
