@@ -181,6 +181,8 @@ import {
 } from '@/utils/graph-renderer'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 
+const FOREIGN_GRAPH_PATH_EDGE_ALPHA = 0.58
+
 export default {
   components: {
     MarkdownRender
@@ -190,6 +192,7 @@ export default {
     pathHighlight: { type: Boolean, default: false },
     generating: { type: Boolean, default: false },
     targetUserId: { type: String, default: null },
+    isForeignGraphView: { type: Boolean, default: false },
     pathColor: { type: String, default: '#0088FF' }
   },
 
@@ -901,12 +904,15 @@ export default {
         visibleNodeIds: this.visibleNodeIdSetCache,
         viewportNodeIds: renderNodeIds,
         showAdvancedEdges: true,
+        isForeignGraphView: this.isForeignGraphView,
         pathColor: this.pathColor
       })
 
       // Draw path animation edges (completed + in-progress)
       if (this.pathAnimationRunning) {
         const now = Date.now()
+        ctx.save()
+        ctx.globalAlpha = this.isForeignGraphView ? FOREIGN_GRAPH_PATH_EDGE_ALPHA : 1
         this.pathCompletedEdges.forEach(edge => {
           if (edge.from && edge.to) {
             drawAnimatedPathEdge(ctx, edge.from, edge.to, 1.0, this.pathColor)
@@ -920,6 +926,7 @@ export default {
             drawAnimatedPathEdge(ctx, edge.from, edge.to, progress, this.pathColor)
           }
         })
+        ctx.restore()
       }
 
       // Draw nodes (apply highlight color override if active)
@@ -937,6 +944,7 @@ export default {
           selectedNodeId: this.selectedNodeId,
           isPathHighlightOn: this.pathHighlight,
           learningPathSet: this.learningPathSet,
+          isForeignGraphView: this.isForeignGraphView,
           pathColor: this.pathColor
         })
 
@@ -1539,7 +1547,7 @@ export default {
       // Draw path edges (highlighted)
       if (this.pathHighlight) {
         ctx.globalAlpha = 1.0
-        ctx.strokeStyle = '#0088FF'
+        ctx.strokeStyle = this.pathColor
         ctx.lineWidth = 1
         buckets.pathEdges.forEach(edge => {
           const fromNode = edge.fromNode || this.nodeMap.get(edge.from)
@@ -1564,7 +1572,7 @@ export default {
         const isDimmed = this.pathHighlight && !isOnPath
 
         ctx.globalAlpha = isDimmed ? 0.25 : 1.0
-        const dotColor = isOnPath ? '#0088FF' : (node.level === 0 ? '#9CA3AF' : '#6B7280')
+        const dotColor = isOnPath ? this.pathColor : (node.level === 0 ? '#9CA3AF' : '#6B7280')
         const dotRadius = node.level === 0 ? 3 : (node.level === 1 ? 2.5 : 2)
 
         ctx.beginPath()

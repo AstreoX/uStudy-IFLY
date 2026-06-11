@@ -6,17 +6,27 @@ import {
   getNodeBaseRadius, getLabelBoxByPosition, clamp
 } from './graph-layout'
 
+const FOREIGN_GRAPH_NODE_ALPHA = 0.56
+const FOREIGN_GRAPH_SELECTED_NODE_ALPHA = 0.70
+const FOREIGN_GRAPH_EDGE_ALPHA = 0.38
+const FOREIGN_GRAPH_PATH_EDGE_ALPHA = 0.58
+
 // --- Edge drawing ---
 
 export function drawEdges(ctx, edgeBuckets, options = {}) {
-  const { isPathHighlightOn, visibleNodeIds, viewportNodeIds, pathColor = '#0088FF' } = options
+  const {
+    isPathHighlightOn,
+    visibleNodeIds,
+    viewportNodeIds,
+    isForeignGraphView = false,
+    pathColor = '#0088FF'
+  } = options
   const buckets = edgeBuckets || { treeEdges: [], advancedEdges: [], pathEdges: [] }
   let renderedCount = 0
+  const regularEdgeAlpha = isPathHighlightOn ? 0.15 : (isForeignGraphView ? FOREIGN_GRAPH_EDGE_ALPHA : 1)
+  const pathEdgeAlpha = isForeignGraphView ? FOREIGN_GRAPH_PATH_EDGE_ALPHA : 1
 
-  // When path is highlighted, dim non-path edges
-  if (isPathHighlightOn) {
-    ctx.globalAlpha = 0.15
-  }
+  ctx.globalAlpha = regularEdgeAlpha
 
   // 1. Tree edges (gray solid)
   buckets.treeEdges.forEach(edge => {
@@ -59,13 +69,8 @@ export function drawEdges(ctx, edgeBuckets, options = {}) {
     })
   }
 
-  // Restore alpha before drawing path edges
   if (isPathHighlightOn) {
-    ctx.globalAlpha = 1.0
-  }
-
-  // 3. Learning path edges (blue solid + mid-arrow)
-  if (isPathHighlightOn) {
+    ctx.globalAlpha = pathEdgeAlpha
     buckets.pathEdges.forEach(edge => {
       if (visibleNodeIds && (!visibleNodeIds.has(edge.from) || !visibleNodeIds.has(edge.to))) return
       if (viewportNodeIds && !viewportNodeIds.has(edge.from) && !viewportNodeIds.has(edge.to)) return
@@ -79,6 +84,7 @@ export function drawEdges(ctx, edgeBuckets, options = {}) {
     })
   }
 
+  ctx.globalAlpha = 1.0
   return renderedCount
 }
 
@@ -187,13 +193,25 @@ export function drawNodeLabelBlock(ctx, node, options = {}) {
 // --- Node drawing ---
 
 export function drawNode(ctx, node, options = {}) {
-  const { selectedNodeId, isPathHighlightOn, learningPathSet, pathColor = '#0088FF' } = options
+  const {
+    selectedNodeId,
+    isPathHighlightOn,
+    learningPathSet,
+    isForeignGraphView = false,
+    pathColor = '#0088FF'
+  } = options
   const radius = getNodeBaseRadius(node)
   const isSelected = selectedNodeId === node.id
   const isOnPath = isPathHighlightOn && learningPathSet && learningPathSet.has(node.id)
   const isDimmed = isPathHighlightOn && !isOnPath && !isSelected
+  const nodeAlpha = isDimmed
+    ? 0.25
+    : (isForeignGraphView
+      ? (isSelected ? FOREIGN_GRAPH_SELECTED_NODE_ALPHA : FOREIGN_GRAPH_NODE_ALPHA)
+      : 1)
+  const pathRingAlpha = isForeignGraphView ? FOREIGN_GRAPH_PATH_EDGE_ALPHA : 1
 
-  if (isDimmed) ctx.globalAlpha = 0.25
+  ctx.globalAlpha = nodeAlpha
 
   const fillColor = node.fillColor || (node.mastery == null ? UNMASTERED_NODE_COLOR : getMasteryColor(node.mastery))
   const glowColor = node.glowColor || (node.mastery == null ? UNMASTERED_NODE_GLOW : getMasteryGlowColor(node.mastery, 0.5))
@@ -223,6 +241,7 @@ export function drawNode(ctx, node, options = {}) {
 
   // Selection ring
   if (isSelected) {
+    ctx.globalAlpha = 1.0
     ctx.beginPath()
     ctx.arc(node.x, node.y, radius + 6, 0, Math.PI * 2)
     ctx.strokeStyle = '#FFFFFF'
@@ -232,6 +251,7 @@ export function drawNode(ctx, node, options = {}) {
 
   // Path ring (colored, non-selected)
   if (isOnPath && !isSelected) {
+    ctx.globalAlpha = pathRingAlpha
     ctx.beginPath()
     ctx.arc(node.x, node.y, radius + 5, 0, Math.PI * 2)
     ctx.strokeStyle = pathColor
@@ -245,11 +265,11 @@ export function drawNode(ctx, node, options = {}) {
 
   // Badge for collapsed nodes
   if (node.collapsed && node.childCount > 0) {
+    ctx.globalAlpha = nodeAlpha
     drawBadge(ctx, node.x + radius - 2, node.y - radius + 2, node.childCount)
   }
 
-  // Restore alpha
-  if (isDimmed) ctx.globalAlpha = 1.0
+  ctx.globalAlpha = 1.0
 }
 
 // --- Learning path animation (ripple rings + edge growth) ---

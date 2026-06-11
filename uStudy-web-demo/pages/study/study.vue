@@ -99,6 +99,7 @@
                 :pathHighlight="isPathHighlightOn"
                 :generating="graphGenerating"
                 :targetUserId="selectedMemberUserId"
+                :isForeignGraphView="isForeignGraphView"
                 :pathColor="selectedMemberColor"
                 @node-selected="onNodeSelected"
                 @graph-loaded="onGraphLoaded"
@@ -1398,6 +1399,9 @@ export default {
       }
       const member = this.spaceMembers.find(m => m.user_id === this.selectedMemberUserId)
       return member ? member.color : '#0088FF'
+    },
+    isForeignGraphView() {
+      return !!this.selectedMemberUserId && String(this.selectedMemberUserId) !== String(this.currentUserId || '')
     },
     selectedMemberName() {
       if (!this.selectedMemberUserId || this.selectedMemberUserId === this.currentUserId) return '我'
