@@ -213,9 +213,11 @@ class QuizService:
         if existing_attempt.scalar_one_or_none():
             raise QuizAlreadyAttemptedError(f"该测试已经作答过: {quiz_id}")
 
-        # 调用评估服务（传递 space_id 以支持掌握分更新）
+        # 调用评估服务（传递 space_id, user_id, is_collaborative 以支持掌握分更新）
         evaluation_service = QuizEvaluationService(
             space_id=quiz.space_id,
+            user_id=user_id,
+            is_collaborative=quiz.space.is_collaborative if quiz.space else False,
         )
         evaluation_result = await evaluation_service.evaluate_quiz(
             quiz_id=quiz_id,
@@ -359,6 +361,7 @@ class QuizService:
         # 快照 space 信息
         space_id = quiz.space_id
         space_name = quiz.space.name if quiz.space else None
+        space_is_collaborative = quiz.space.is_collaborative if quiz.space else False
         quiz_topic = quiz.topic
         quiz_difficulty = quiz.difficulty.value
 
@@ -393,6 +396,7 @@ class QuizService:
                 space_name=space_name,
                 questions_snapshot=questions_snapshot,
                 user_answers=user_answers,
+                is_collaborative=space_is_collaborative,
             )
         )
         _background_tasks.add(task)
@@ -600,6 +604,7 @@ async def _run_background_evaluation(
     space_name: str | None,
     questions_snapshot: list[dict],
     user_answers: dict[str, Any],
+    is_collaborative: bool = False,
 ) -> None:
     """后台执行 AI 评估（fire-and-forget）。使用独立 DB session。"""
     from db.database import get_scoped_session
@@ -619,7 +624,11 @@ async def _run_background_evaluation(
             await session.commit()
 
         # 调用 AI 评估（与同步流程相同的服务）
-        evaluation_service = QuizEvaluationService(space_id=space_id)
+        evaluation_service = QuizEvaluationService(
+            space_id=space_id,
+            user_id=user_id,
+            is_collaborative=is_collaborative,
+        )
         evaluation_result = await evaluation_service.evaluate_quiz(
             quiz_id=quiz_id,
             quiz_topic=quiz_topic,

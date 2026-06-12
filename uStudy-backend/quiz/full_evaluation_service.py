@@ -209,14 +209,20 @@ class QuizEvaluationService:
     def __init__(
         self,
         space_id: UUID | None = None,
+        user_id: UUID | None = None,
+        is_collaborative: bool = False,
     ) -> None:
         """
         初始化评估服务
 
         Args:
             space_id: 学习空间 ID（可选，用于掌握分更新）
+            user_id: 用户 ID（用于协作空间的 per-user 掌握分更新）
+            is_collaborative: 是否为协作空间
         """
         self.space_id = space_id
+        self.user_id = user_id
+        self.is_collaborative = is_collaborative
 
     async def evaluate_quiz(
         self,
@@ -647,7 +653,11 @@ class QuizEvaluationService:
         """
         from agents.mastery_update_agent import MasteryUpdateAgent
 
-        agent = MasteryUpdateAgent(space_id=self.space_id)
+        agent = MasteryUpdateAgent(
+            space_id=self.space_id,
+            user_id=self.user_id,
+            is_collaborative=self.is_collaborative,
+        )
         return await agent.update_mastery(
             quiz_topic=quiz_topic,
             question_results=results_for_prompt,
