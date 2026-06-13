@@ -3998,7 +3998,7 @@ textarea.chat-input-textarea {
 .thinking-body {
   padding-left: 12px;
   border-left: 2px solid rgba(168, 85, 247, 0.4);
-  max-height: 800px;
+  max-height: 100000px;
   opacity: 1;
   overflow: hidden;
   transition: max-height 0.35s ease-out, opacity 0.25s ease 0.05s, margin-top 0.25s ease;
