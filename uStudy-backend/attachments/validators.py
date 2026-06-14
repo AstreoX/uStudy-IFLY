@@ -7,6 +7,11 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from PIL import Image
+from rag.parsing import (
+    DocumentFormatError,
+    get_supported_document_mime_types,
+    resolve_document_format,
+)
 
 # Prevent decompression bomb attacks
 Image.MAX_IMAGE_PIXELS = 50_000_000  # ~50 megapixels
@@ -24,9 +29,6 @@ MAGIC_BYTES = {
     b"GIF87a": "image/gif",
     b"GIF89a": "image/gif",
     b"RIFF": "image/webp",  # Needs additional check for WEBP
-    # Documents
-    b"%PDF": "application/pdf",
-    b"PK\x03\x04": "application/zip",  # Also DOCX, XLSX, PPTX
 }
 
 # Allowed MIME types
@@ -37,16 +39,7 @@ ALLOWED_IMAGE_TYPES = {
     "image/webp",
 }
 
-ALLOWED_FILE_TYPES = {
-    "application/pdf",
-    "application/msword",  # .doc
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
-    "application/vnd.ms-excel",  # .xls
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # .xlsx
-    "application/vnd.ms-powerpoint",  # .ppt
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",  # .pptx
-    "text/plain",
-}
+ALLOWED_FILE_TYPES = set(get_supported_document_mime_types())
 
 # Image processing settings
 MAX_IMAGE_WIDTH = 1920
@@ -61,12 +54,18 @@ class FileValidationError(Exception):
     pass
 
 
-def detect_file_type(file_data: bytes) -> str:
+def detect_file_type(
+    file_data: bytes,
+    filename: str | None = None,
+    claimed_mime: str | None = None,
+) -> str:
     """
-    Detect file type using magic bytes.
+    Detect file type using image magic bytes and the shared document resolver.
 
     Args:
         file_data: File binary data
+        filename: Original filename from user
+        claimed_mime: MIME type claimed by client
 
     Returns:
         MIME type string
@@ -82,22 +81,16 @@ def detect_file_type(file_data: bytes) -> str:
                     return "image/webp"
                 # Not a WebP RIFF file, skip this match
                 continue
-            # Special handling for Office files (all start with PK\x03\x04)
-            if magic == b"PK\x03\x04":
-                # Try to read as zip and check for office file markers
-                try:
-                    # This is a simplified check - real implementation would inspect zip contents
-                    if b"word/" in file_data[:1000]:
-                        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    elif b"xl/" in file_data[:1000]:
-                        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    elif b"ppt/" in file_data[:1000]:
-                        return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                except Exception:
-                    pass
             return mime_type
 
-    raise FileValidationError("无法识别的文件类型")
+    try:
+        return resolve_document_format(
+            file_bytes=file_data,
+            filename=filename,
+            claimed_mime=claimed_mime,
+        ).mime_type
+    except DocumentFormatError as exc:
+        raise FileValidationError(str(exc)) from exc
 
 
 def validate_file_size(file_data: bytes) -> None:
@@ -136,7 +129,8 @@ def validate_file_type(mime_type: str, is_image: bool) -> None:
     else:
         if mime_type not in ALLOWED_FILE_TYPES:
             raise FileValidationError(
-                f"不支持的文件格式 (支持: PDF, Word, Excel, PowerPoint, TXT)"
+                "不支持的文件格式 "
+                "(支持: PDF, Word, Excel, PowerPoint, TXT, Markdown, HTML, CSV, EPUB)"
             )
 
 
@@ -258,13 +252,14 @@ def get_file_extension(mime_type: str) -> str:
         "image/gif": "gif",
         "image/webp": "webp",
         "application/pdf": "pdf",
-        "application/msword": "doc",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-        "application/vnd.ms-excel": "xls",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
-        "application/vnd.ms-powerpoint": "ppt",
         "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
         "text/plain": "txt",
+        "text/markdown": "md",
+        "text/html": "html",
+        "text/csv": "csv",
+        "application/epub+zip": "epub",
     }
     return mime_to_ext.get(mime_type, "bin")
 

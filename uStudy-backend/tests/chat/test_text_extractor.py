@@ -52,10 +52,13 @@ async def test_extract_text_timeout():
     attachment.mime_type = "application/pdf"
 
     with patch("chat.text_extractor.asyncio.wait_for") as mock_wait_for:
-        # Simulate timeout
         import asyncio
 
-        mock_wait_for.side_effect = asyncio.TimeoutError()
+        async def fake_wait_for(coro, timeout):
+            coro.close()
+            raise asyncio.TimeoutError()
+
+        mock_wait_for.side_effect = fake_wait_for
 
         extracted_text, metadata = await extract_text_from_attachment(attachment)
 

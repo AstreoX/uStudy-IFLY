@@ -2,6 +2,7 @@
 
 import io
 import logging
+from typing import Iterator
 
 from docx import Document
 
@@ -14,7 +15,9 @@ logger = logging.getLogger(__name__)
 class DocxChunker(BaseChunker):
     """Word 文档切片器"""
 
-    def chunk(self, content: bytes | str, filename: str | None = None) -> list[Chunk]:
+    def iter_chunks(
+        self, content: bytes | str, filename: str | None = None
+    ) -> Iterator[Chunk]:
         """
         将 Word 文档切片
 
@@ -37,7 +40,7 @@ class DocxChunker(BaseChunker):
             raise ValueError(f"无法解析 Word 文档: {e}")
 
         # 提取段落和标题
-        segments_with_heading: list[tuple[str, str | None]] = []
+        segments_with_heading: list[tuple[str, str | None, int]] = []
         current_heading: str | None = None
 
         for para in doc.paragraphs:
@@ -49,19 +52,21 @@ class DocxChunker(BaseChunker):
             if para.style and para.style.name and para.style.name.startswith("Heading"):
                 current_heading = text
                 # 标题本身也作为内容保留
-                segments_with_heading.append((text, current_heading))
+                segments_with_heading.append((text, current_heading, self.count_tokens(text)))
             else:
-                segments_with_heading.append((text, current_heading))
+                segments_with_heading.append((text, current_heading, self.count_tokens(text)))
 
         # 提取表格内容
         for table in doc.tables:
             table_text = self._extract_table_text(table)
             if table_text:
-                segments_with_heading.append((table_text, current_heading))
+                segments_with_heading.append(
+                    (table_text, current_heading, self.count_tokens(table_text))
+                )
 
         if not segments_with_heading:
             logger.warning("Word 文档没有可提取的文本内容")
-            return []
+            return
 
         # 合并为切片
         chunks = self._merge_with_heading_info(segments_with_heading)
@@ -71,8 +76,7 @@ class DocxChunker(BaseChunker):
             chunk.metadata["source_type"] = "docx"
             if filename:
                 chunk.metadata["filename"] = filename
-
-        return chunks
+            yield chunk
 
     def _extract_table_text(self, table) -> str:
         """提取表格内容为 Markdown 表格格式"""
@@ -102,7 +106,7 @@ class DocxChunker(BaseChunker):
         return "\n".join(lines)
 
     def _merge_with_heading_info(
-        self, segments_with_heading: list[tuple[str, str | None]]
+        self, segments_with_heading: list[tuple[str, str | None, int]]
     ) -> list[Chunk]:
         """
         合并段落为切片，同时记录标题信息
@@ -119,8 +123,7 @@ class DocxChunker(BaseChunker):
         current_headings: set[str] = set()
         chunk_index = 0
 
-        for segment, heading in segments_with_heading:
-            segment_tokens = self.count_tokens(segment)
+        for segment, heading, segment_tokens in segments_with_heading:
 
             # 如果单个段落就超过目标大小，需要进一步分割
             if segment_tokens > self.target_size:

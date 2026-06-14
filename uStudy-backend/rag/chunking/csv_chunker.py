@@ -3,6 +3,7 @@
 import csv
 import io
 import logging
+from typing import Iterator
 
 import chardet
 
@@ -17,7 +18,9 @@ class CSVChunker(BaseChunker):
     # 大文件分段阈值
     LARGE_FILE_ROW_THRESHOLD = 500
 
-    def chunk(self, content: bytes | str, filename: str | None = None) -> list[Chunk]:
+    def iter_chunks(
+        self, content: bytes | str, filename: str | None = None
+    ) -> Iterator[Chunk]:
         # 编码检测
         if isinstance(content, bytes):
             detected = chardet.detect(content)
@@ -39,7 +42,7 @@ class CSVChunker(BaseChunker):
         text = text.strip()
         if not text:
             logger.warning("CSV 文件内容为空")
-            return []
+            return
 
         try:
             # 自动检测分隔符
@@ -49,32 +52,34 @@ class CSVChunker(BaseChunker):
             # 检测失败，默认逗号分隔
             reader = csv.reader(io.StringIO(text))
 
-        rows = list(reader)
-        if not rows:
+        header = next(reader, None)
+        if not header:
             logger.warning("CSV 文件没有数据行")
-            return []
+            return
 
-        header = rows[0]
-        data_rows = rows[1:]
-
-        if not data_rows:
-            # 只有表头
-            segments = ["| " + " | ".join(header) + " |"]
-        elif len(data_rows) > self.LARGE_FILE_ROW_THRESHOLD:
-            # 大文件分段，每段保留表头
-            segments = []
-            for i in range(0, len(data_rows), self.LARGE_FILE_ROW_THRESHOLD):
-                batch = data_rows[i:i + self.LARGE_FILE_ROW_THRESHOLD]
+        segments: list[tuple[str, int]] = []
+        batch: list[list[str]] = []
+        has_data_rows = False
+        for row in reader:
+            has_data_rows = True
+            batch.append(row)
+            if len(batch) >= self.LARGE_FILE_ROW_THRESHOLD:
                 table_md = self._rows_to_markdown(header, batch)
                 if table_md:
-                    segments.append(table_md)
-        else:
-            segments = [self._rows_to_markdown(header, data_rows)]
+                    segments.append((table_md, self.count_tokens(table_md)))
+                batch = []
 
-        segments = [s for s in segments if s]
+        if batch:
+            table_md = self._rows_to_markdown(header, batch)
+            if table_md:
+                segments.append((table_md, self.count_tokens(table_md)))
+        elif not has_data_rows:
+            header_md = self._header_to_markdown(header)
+            segments.append((header_md, self.count_tokens(header_md)))
+
         if not segments:
             logger.warning("CSV 文件没有可提取的内容")
-            return []
+            return
 
         chunks = self._merge_into_chunks(segments)
 
@@ -82,8 +87,7 @@ class CSVChunker(BaseChunker):
             chunk.metadata["source_type"] = "csv"
             if filename:
                 chunk.metadata["filename"] = filename
-
-        return chunks
+            yield chunk
 
     def _rows_to_markdown(self, header: list[str], data_rows: list[list[str]]) -> str:
         """将行数据转为 Markdown 表格"""
@@ -99,3 +103,11 @@ class CSVChunker(BaseChunker):
             lines.append("| " + " | ".join(cells) + " |")
 
         return "\n".join(lines)
+
+    def _header_to_markdown(self, header: list[str]) -> str:
+        return "\n".join(
+            [
+                "| " + " | ".join(header) + " |",
+                "| " + " | ".join("---" for _ in header) + " |",
+            ]
+        )

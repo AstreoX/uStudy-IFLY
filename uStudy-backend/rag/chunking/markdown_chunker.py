@@ -1,7 +1,8 @@
 """Markdown document chunker."""
 
-import re
 import logging
+import re
+from typing import Iterator
 
 import chardet
 
@@ -16,7 +17,9 @@ class MarkdownChunker(BaseChunker):
     # 匹配 h1-h3 标题行
     _HEADING_PATTERN = re.compile(r"^(#{1,3})\s+(.+)$", re.MULTILINE)
 
-    def chunk(self, content: bytes | str, filename: str | None = None) -> list[Chunk]:
+    def iter_chunks(
+        self, content: bytes | str, filename: str | None = None
+    ) -> Iterator[Chunk]:
         # 编码检测（复用 TextChunker 的 chardet 逻辑）
         if isinstance(content, bytes):
             detected = chardet.detect(content)
@@ -38,14 +41,14 @@ class MarkdownChunker(BaseChunker):
         text = text.strip()
         if not text:
             logger.warning("Markdown 文件内容为空")
-            return []
+            return
 
         # 按标题边界分段
         segments = self._split_by_headings(text)
 
         if not segments:
             logger.warning("Markdown 文件没有可提取的内容")
-            return []
+            return
 
         chunks = self._merge_into_chunks(segments)
 
@@ -53,8 +56,7 @@ class MarkdownChunker(BaseChunker):
             chunk.metadata["source_type"] = "markdown"
             if filename:
                 chunk.metadata["filename"] = filename
-
-        return chunks
+            yield chunk
 
     def _split_by_headings(self, text: str) -> list[str]:
         """按 h1-h3 标题边界分段，保持代码块完整"""

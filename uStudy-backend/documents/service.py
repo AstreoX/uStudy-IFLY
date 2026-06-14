@@ -15,6 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import get_settings
 from db.models import DocumentType, Space, SpaceDocument, User
 from quota.service import check_storage_quota
+from rag.parsing import (
+    DocumentFormatError,
+    get_supported_document_extensions,
+    resolve_document_format,
+)
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -71,22 +76,7 @@ async def upload_document(
 ) -> SpaceDocument:
     """上传文档"""
     await verify_space_ownership(db, space_id, user_id)
-
-    # 验证文件类型
-    if file.content_type not in settings.document_allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"不支持的文件类型: {file.content_type}。支持的类型: PDF, Word, TXT, Excel, PowerPoint, Markdown, HTML, CSV, EPUB",
-        )
-
-    # 验证文件扩展名
     original_filename = file.filename or "untitled"
-    file_ext = Path(original_filename).suffix.lower()
-    if file_ext not in settings.document_allowed_extensions:
-        raise HTTPException(
-            status_code=400,
-            detail=f"不支持的文件扩展名: {file_ext}。支持的扩展名: {', '.join(settings.document_allowed_extensions)}",
-        )
 
     # 读取文件内容
     content = await file.read()
@@ -115,12 +105,27 @@ async def upload_document(
     if user is not None:
         await check_storage_quota(db, user, space_id, len(content))
 
+    try:
+        resolved_format = await asyncio.to_thread(
+            resolve_document_format,
+            content,
+            original_filename,
+            file.content_type,
+        )
+    except DocumentFormatError as exc:
+        supported_extensions = ", ".join(get_supported_document_extensions())
+        raise HTTPException(
+            status_code=400,
+            detail=f"{exc}。支持的扩展名: {supported_extensions}",
+        ) from exc
+
     # 生成存储路径
     documents_dir = Path(settings.upload_dir) / "documents"
     documents_dir.mkdir(parents=True, exist_ok=True)
 
     # 生成唯一文件名
-    unique_filename = f"{uuid.uuid4()}{file_ext}"
+    storage_ext = Path(original_filename).suffix.lower() or resolved_format.storage_extension
+    unique_filename = f"{uuid.uuid4()}{storage_ext}"
     file_path = documents_dir / unique_filename
 
     try:
@@ -139,7 +144,7 @@ async def upload_document(
             url=file_url,
             original_filename=original_filename,
             file_size=len(content),
-            mime_type=file.content_type,
+            mime_type=resolved_format.mime_type,
         )
 
         db.add(document)

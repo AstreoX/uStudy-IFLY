@@ -2,6 +2,7 @@
 
 import io
 import logging
+from typing import Iterator
 
 import ebooklib
 from ebooklib import epub
@@ -18,7 +19,9 @@ _REMOVE_TAGS = {"script", "style", "nav", "footer", "header", "aside", "noscript
 class EPUBChunker(BaseChunker):
     """EPUB 电子书切片器（.epub）"""
 
-    def chunk(self, content: bytes | str, filename: str | None = None) -> list[Chunk]:
+    def iter_chunks(
+        self, content: bytes | str, filename: str | None = None
+    ) -> Iterator[Chunk]:
         if isinstance(content, str):
             raise ValueError("EPUB content must be bytes, not string")
 
@@ -45,7 +48,7 @@ class EPUBChunker(BaseChunker):
 
         if not segments:
             logger.warning("EPUB 文件没有可提取的文本内容")
-            return []
+            return
 
         chunks = self._merge_into_chunks(segments)
 
@@ -53,8 +56,7 @@ class EPUBChunker(BaseChunker):
             chunk.metadata["source_type"] = "epub"
             if filename:
                 chunk.metadata["filename"] = filename
-
-        return chunks
+            yield chunk
 
     def _extract_text_from_html(self, html_bytes: bytes) -> str:
         """从章节 HTML 中提取纯文本（复用 HTMLChunker 的逻辑）"""

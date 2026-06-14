@@ -1,6 +1,7 @@
 from functools import lru_cache
 
 from pydantic import ConfigDict
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -190,6 +191,28 @@ class Settings(BaseSettings):
     alipay_debug: bool = False  # True = sandbox gateway
     alipay_notify_url: str = ""  # e.g. https://api.ustudy.top/api/payment/alipay/notify
     alipay_return_url: str = ""  # e.g. https://ustudy.top/pages/activation/activation
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def parse_debug_flag(cls, value):
+        """Allow DEBUG to come from release-style environment strings."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on", "debug", "development"}:
+                return True
+            if normalized in {
+                "0",
+                "false",
+                "no",
+                "off",
+                "release",
+                "prod",
+                "production",
+            }:
+                return False
+        return value
 
 
 @lru_cache

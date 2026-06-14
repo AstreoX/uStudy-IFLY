@@ -1,6 +1,7 @@
 """Attachment Service - Business logic for attachment management"""
 
 import logging
+from pathlib import Path
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -54,6 +55,7 @@ class AttachmentService:
         user_id: UUID,
         file_data: bytes,
         original_filename: str,
+        claimed_mime: str | None = None,
     ) -> AttachmentResponse:
         """
         Upload an attachment (image or file).
@@ -79,7 +81,11 @@ class AttachmentService:
         validate_file_size(file_data)
 
         # 3. Detect file type using magic bytes
-        detected_mime_type = detect_file_type(file_data)
+        detected_mime_type = detect_file_type(
+            file_data,
+            filename=original_filename,
+            claimed_mime=claimed_mime,
+        )
         logger.info(
             "Detected MIME type: %s for file: %s", detected_mime_type, original_filename
         )
@@ -125,7 +131,8 @@ class AttachmentService:
         else:
             # Save file as-is
             unique_id = uuid4()
-            extension = get_file_extension(detected_mime_type)
+            original_suffix = Path(original_filename).suffix.lower().lstrip(".")
+            extension = original_suffix or get_file_extension(detected_mime_type)
             file_filename = f"{unique_id}.{extension}"
             file_url = await self.storage.save(
                 file_data, file_filename, subdir="attachments/files"

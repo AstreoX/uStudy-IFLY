@@ -2,6 +2,7 @@
 
 import io
 import logging
+from typing import Iterator
 
 import openpyxl
 
@@ -16,7 +17,9 @@ class ExcelChunker(BaseChunker):
     # 大 sheet 分段阈值
     LARGE_SHEET_ROW_THRESHOLD = 500
 
-    def chunk(self, content: bytes | str, filename: str | None = None) -> list[Chunk]:
+    def iter_chunks(
+        self, content: bytes | str, filename: str | None = None
+    ) -> Iterator[Chunk]:
         if isinstance(content, str):
             raise ValueError("Excel content must be bytes, not string")
 
@@ -26,43 +29,43 @@ class ExcelChunker(BaseChunker):
             logger.error("无法打开 Excel 文件: %s", e)
             raise ValueError(f"无法解析 Excel 文件: {e}")
 
-        segments: list[str] = []
+        segments: list[tuple[str, int]] = []
 
         try:
             for sheet_name in wb.sheetnames:
                 ws = wb[sheet_name]
-                rows = list(ws.iter_rows(values_only=True))
-
-                if not rows:
+                row_iter = ws.iter_rows(values_only=True)
+                header = next(row_iter, None)
+                if not header:
                     continue
 
                 # 提取表头
-                header = rows[0]
                 header_cells = [str(c) if c is not None else "" for c in header]
-                data_rows = rows[1:]
+                batch: list[tuple] = []
+                has_data_rows = False
 
-                if not data_rows:
-                    # 只有表头，作为单段
-                    segments.append(f"[Sheet: {sheet_name}]\n| " + " | ".join(header_cells) + " |")
-                    continue
-
-                # 大 sheet 分段处理，每段保留表头
-                if len(data_rows) > self.LARGE_SHEET_ROW_THRESHOLD:
-                    for i in range(0, len(data_rows), self.LARGE_SHEET_ROW_THRESHOLD):
-                        batch = data_rows[i:i + self.LARGE_SHEET_ROW_THRESHOLD]
+                for row in row_iter:
+                    has_data_rows = True
+                    batch.append(row)
+                    if len(batch) >= self.LARGE_SHEET_ROW_THRESHOLD:
                         table_md = self._rows_to_markdown(header_cells, batch, sheet_name)
                         if table_md:
-                            segments.append(table_md)
-                else:
-                    table_md = self._rows_to_markdown(header_cells, data_rows, sheet_name)
+                            segments.append((table_md, self.count_tokens(table_md)))
+                        batch = []
+
+                if batch:
+                    table_md = self._rows_to_markdown(header_cells, batch, sheet_name)
                     if table_md:
-                        segments.append(table_md)
+                        segments.append((table_md, self.count_tokens(table_md)))
+                elif not has_data_rows:
+                    header_md = self._header_to_markdown(header_cells, sheet_name)
+                    segments.append((header_md, self.count_tokens(header_md)))
         finally:
             wb.close()
 
         if not segments:
             logger.warning("Excel 文件没有可提取的内容")
-            return []
+            return
 
         chunks = self._merge_into_chunks(segments)
 
@@ -70,8 +73,7 @@ class ExcelChunker(BaseChunker):
             chunk.metadata["source_type"] = "excel"
             if filename:
                 chunk.metadata["filename"] = filename
-
-        return chunks
+            yield chunk
 
     def _rows_to_markdown(
         self, header: list[str], data_rows: list[tuple], sheet_name: str
@@ -93,3 +95,12 @@ class ExcelChunker(BaseChunker):
             lines.append("| " + " | ".join(cells) + " |")
 
         return "\n".join(lines)
+
+    def _header_to_markdown(self, header: list[str], sheet_name: str) -> str:
+        return "\n".join(
+            [
+                f"[Sheet: {sheet_name}]",
+                "| " + " | ".join(header) + " |",
+                "| " + " | ".join("---" for _ in header) + " |",
+            ]
+        )

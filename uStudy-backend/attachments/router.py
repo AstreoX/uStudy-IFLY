@@ -86,6 +86,7 @@ async def upload_attachment(
             user_id=current_user.id,
             file_data=file_data,
             original_filename=original_filename,
+            claimed_mime=file.content_type,
         )
 
         return AttachmentUploadResponse(

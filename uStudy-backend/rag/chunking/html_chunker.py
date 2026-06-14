@@ -1,6 +1,7 @@
 """HTML document chunker using BeautifulSoup."""
 
 import logging
+from typing import Iterator
 
 import chardet
 from bs4 import BeautifulSoup
@@ -16,7 +17,9 @@ _REMOVE_TAGS = {"script", "style", "nav", "footer", "header", "aside", "noscript
 class HTMLChunker(BaseChunker):
     """HTML 文档切片器（.html, .htm）"""
 
-    def chunk(self, content: bytes | str, filename: str | None = None) -> list[Chunk]:
+    def iter_chunks(
+        self, content: bytes | str, filename: str | None = None
+    ) -> Iterator[Chunk]:
         # 编码检测
         if isinstance(content, bytes):
             detected = chardet.detect(content)
@@ -46,7 +49,7 @@ class HTMLChunker(BaseChunker):
 
         if not segments:
             logger.warning("HTML 文件没有可提取的文本内容")
-            return []
+            return
 
         chunks = self._merge_into_chunks(segments)
 
@@ -54,8 +57,7 @@ class HTMLChunker(BaseChunker):
             chunk.metadata["source_type"] = "html"
             if filename:
                 chunk.metadata["filename"] = filename
-
-        return chunks
+            yield chunk
 
     def _extract_segments(self, soup: BeautifulSoup) -> list[str]:
         """从 HTML 中提取文本段落"""

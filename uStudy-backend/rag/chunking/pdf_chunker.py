@@ -2,7 +2,7 @@
 
 import io
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterator
 
 import fitz  # PyMuPDF
 
@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 class PDFChunker(BaseChunker):
     """PDF 文档切片器"""
 
-    def chunk(self, content: bytes | str, filename: str | None = None) -> list[Chunk]:
+    def iter_chunks(
+        self, content: bytes | str, filename: str | None = None
+    ) -> Iterator[Chunk]:
         """
         将 PDF 文档切片
 
@@ -65,10 +67,10 @@ class PDFChunker(BaseChunker):
 
         if not page_texts:
             logger.warning("PDF 文件没有可提取的文本内容")
-            return []
+            return
 
         # 将页面文本分割为段落，保留页码信息
-        segments_with_page: list[tuple[str, int]] = []
+        segments_with_page: list[tuple[str, int, int]] = []
         for page_num, page_text in page_texts:
             # 清理文本
             page_text = self._clean_text(page_text)
@@ -78,7 +80,7 @@ class PDFChunker(BaseChunker):
 
             for para in paragraphs:
                 if para:
-                    segments_with_page.append((para, page_num))
+                    segments_with_page.append((para, page_num, self.count_tokens(para)))
 
         # 合并为切片（带页码跟踪）
         chunks = self._merge_with_page_info(segments_with_page)
@@ -88,8 +90,7 @@ class PDFChunker(BaseChunker):
             chunk.metadata["source_type"] = "pdf"
             if filename:
                 chunk.metadata["filename"] = filename
-
-        return chunks
+            yield chunk
 
     def _extract_tables_from_page(self, page) -> list[str]:
         """使用 PyMuPDF find_tables() 检测页面表格并转为 Markdown"""
@@ -153,7 +154,7 @@ class PDFChunker(BaseChunker):
         return result
 
     def _merge_with_page_info(
-        self, segments_with_page: list[tuple[str, int]]
+        self, segments_with_page: list[tuple[str, int, int]]
     ) -> list[Chunk]:
         """
         合并段落为切片，同时记录页码信息
@@ -170,8 +171,7 @@ class PDFChunker(BaseChunker):
         current_pages: set[int] = set()
         chunk_index = 0
 
-        for segment, page_num in segments_with_page:
-            segment_tokens = self.count_tokens(segment)
+        for segment, page_num, segment_tokens in segments_with_page:
 
             if current_tokens + segment_tokens > self.target_size:
                 # 保存当前切片

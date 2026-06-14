@@ -8,6 +8,7 @@ from datetime import datetime
 
 from config import get_settings
 from rag.chunking import get_chunker
+from rag.parsing import normalize_legacy_document, resolve_document_format
 from db.models import MessageAttachment, AttachmentType
 
 logger = logging.getLogger(__name__)
@@ -58,12 +59,34 @@ async def extract_text_from_attachment(
             timeout=settings.attachment_text_timeout_seconds,
         )
 
+        resolved = await asyncio.wait_for(
+            asyncio.to_thread(
+                resolve_document_format,
+                file_data,
+                attachment.original_filename,
+                attachment.mime_type,
+            ),
+            timeout=settings.attachment_text_timeout_seconds,
+        )
+        normalized = await asyncio.wait_for(
+            asyncio.to_thread(
+                normalize_legacy_document,
+                file_data,
+                resolved,
+                attachment.original_filename,
+            ),
+            timeout=settings.attachment_text_timeout_seconds,
+        )
+
+        metadata["canonical_type"] = normalized.resolved_format.canonical_type
+        metadata["parser_backend"] = normalized.resolved_format.parser_backend
+
         # 3. 获取对应的 chunker
-        chunker = get_chunker(attachment.mime_type)
+        chunker = get_chunker(normalized.resolved_format.mime_type)
 
         # 4. 提取文本块（在线程中执行）
         chunks = await asyncio.wait_for(
-            asyncio.to_thread(chunker.chunk, file_data, attachment.original_filename),
+            asyncio.to_thread(chunker.chunk, normalized.content, normalized.filename),
             timeout=settings.attachment_text_timeout_seconds,
         )
 

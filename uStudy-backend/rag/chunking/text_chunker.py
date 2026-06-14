@@ -1,5 +1,7 @@
 """Plain text chunker."""
 
+from typing import Iterator
+
 import chardet
 
 from rag.chunking.base import BaseChunker, Chunk
@@ -8,7 +10,9 @@ from rag.chunking.base import BaseChunker, Chunk
 class TextChunker(BaseChunker):
     """纯文本切片器"""
 
-    def chunk(self, content: bytes | str, filename: str | None = None) -> list[Chunk]:
+    def iter_chunks(
+        self, content: bytes | str, filename: str | None = None
+    ) -> Iterator[Chunk]:
         """
         将纯文本切片
 
@@ -53,8 +57,7 @@ class TextChunker(BaseChunker):
             chunk.metadata["source_type"] = "text"
             if filename:
                 chunk.metadata["filename"] = filename
-
-        return chunks
+            yield chunk
 
     def _clean_text(self, text: str) -> str:
         """清理文本"""

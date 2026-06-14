@@ -1,6 +1,7 @@
 """pytest 配置和 fixtures"""
 
 import asyncio
+import os
 from typing import AsyncGenerator
 
 import pytest
@@ -9,10 +10,14 @@ from dotenv import load_dotenv
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from db.database import Base
-
 # 加载 .env 文件中的环境变量（用于 E2E 测试）
 load_dotenv()
+
+# 让单元测试与本地 .env 隔离，避免数据库和布尔配置污染导入阶段。
+os.environ.setdefault("DEBUG", "false")
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+
+from db.database import Base
 
 
 # 测试数据库 URL（使用内存 SQLite 或测试容器）

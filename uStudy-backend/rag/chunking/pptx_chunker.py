@@ -6,12 +6,13 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterator
 
 from pptx import Presentation
 
 from config import get_settings
 from rag.chunking.base import BaseChunker, Chunk
+from rag.parsing import find_office_binary
 
 if TYPE_CHECKING:
     from rag.vlm_processor import VLMProcessor, VLMTask
@@ -22,7 +23,9 @@ logger = logging.getLogger(__name__)
 class PowerPointChunker(BaseChunker):
     """PowerPoint 文档切片器（.pptx, .ppt）— 每页一个 Chunk，支持 VLM 视觉增强"""
 
-    def chunk(self, content: bytes | str, filename: str | None = None) -> list[Chunk]:
+    def iter_chunks(
+        self, content: bytes | str, filename: str | None = None
+    ) -> Iterator[Chunk]:
         """
         将 PowerPoint 文档按页切片（每页一个 Chunk）。
 
@@ -79,13 +82,14 @@ class PowerPointChunker(BaseChunker):
 
         if not chunks:
             logger.warning("PowerPoint 文件没有可提取的文本内容")
-            return []
+            return
 
         if filename:
             for chunk in chunks:
                 chunk.metadata["filename"] = filename
 
-        return chunks
+        for chunk in chunks:
+            yield chunk
 
     async def enrich(
         self, chunks: list[Chunk], content: bytes, filename: str | None = None
@@ -247,6 +251,11 @@ class PowerPointChunker(BaseChunker):
 
         tmp_dir = None
         try:
+            office_binary = find_office_binary()
+            if not office_binary:
+                logger.error("LibreOffice 未安装，无法执行 PPTX → PDF 转换")
+                return None
+
             tmp_dir = tempfile.mkdtemp(prefix="pptx2pdf_")
             tmp_path = Path(tmp_dir)
 
@@ -256,7 +265,7 @@ class PowerPointChunker(BaseChunker):
             # LibreOffice headless 转换
             proc = subprocess.Popen(
                 [
-                    "libreoffice",
+                    office_binary,
                     "--headless",
                     "--convert-to", "pdf",
                     "--outdir", str(tmp_path),
@@ -286,9 +295,6 @@ class PowerPointChunker(BaseChunker):
 
             return pdf_file.read_bytes()
 
-        except FileNotFoundError:
-            logger.error("LibreOffice 未安装，无法执行 PPTX → PDF 转换")
-            return None
         except Exception as e:
             logger.error("PPTX → PDF 转换异常: %s", e)
             return None

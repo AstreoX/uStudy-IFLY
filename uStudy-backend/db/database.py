@@ -14,15 +14,28 @@ from config import get_settings
 
 settings = get_settings()
 
+
+def _get_engine_kwargs() -> dict:
+    """Build engine kwargs compatible with the configured database backend."""
+    kwargs = {"echo": settings.debug}
+    if settings.database_url.startswith("sqlite"):
+        return kwargs
+    kwargs.update(
+        {
+            "pool_size": settings.db_pool_size,
+            "max_overflow": settings.db_max_overflow,
+            "pool_timeout": settings.db_pool_timeout_seconds,
+            "pool_recycle": settings.db_pool_recycle_seconds,
+            "pool_pre_ping": True,
+        }
+    )
+    return kwargs
+
+
 # 创建异步引擎
 engine = create_async_engine(
     settings.database_url,
-    echo=settings.debug,
-    pool_size=settings.db_pool_size,
-    max_overflow=settings.db_max_overflow,
-    pool_timeout=settings.db_pool_timeout_seconds,
-    pool_recycle=settings.db_pool_recycle_seconds,
-    pool_pre_ping=True,
+    **_get_engine_kwargs(),
 )
 
 # 创建异步 session 工厂
