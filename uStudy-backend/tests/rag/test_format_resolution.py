@@ -11,6 +11,7 @@ from rag.parsing import (
     LegacyDocumentNormalizationError,
     normalize_legacy_document,
     resolve_document_format,
+    resolve_document_format_from_path,
 )
 from rag.parsing.formats import OLE_MAGIC
 
@@ -118,6 +119,19 @@ def test_resolve_gbk_text_document():
     payload = "这是一个测试文档".encode("gbk")
     resolved = resolve_document_format(payload, "lesson.txt", "text/plain")
     assert resolved.canonical_type == "text"
+
+
+def test_resolve_document_format_from_path(tmp_path):
+    file_path = tmp_path / "notes.md"
+    file_path.write_text("# Title\n\nBody", encoding="utf-8")
+
+    resolved = resolve_document_format_from_path(
+        file_path,
+        "notes.md",
+        "application/octet-stream",
+    )
+
+    assert resolved.canonical_type == "markdown"
 
 
 def test_resolve_unknown_binary_raises():

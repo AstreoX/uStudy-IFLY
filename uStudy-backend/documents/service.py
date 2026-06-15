@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import uuid
+from contextlib import suppress
 from pathlib import Path
 from typing import Optional
 
@@ -18,7 +19,7 @@ from quota.service import check_storage_quota
 from rag.parsing import (
     DocumentFormatError,
     get_supported_document_extensions,
-    resolve_document_format,
+    resolve_document_format_from_path,
 )
 
 settings = get_settings()
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 # 保存后台任务的引用，防止被 GC
 _background_tasks: set[asyncio.Task] = set()
+UPLOAD_STREAM_CHUNK_SIZE = 1024 * 1024
 
 
 async def verify_space_ownership(
@@ -78,60 +80,57 @@ async def upload_document(
     await verify_space_ownership(db, space_id, user_id)
     original_filename = file.filename or "untitled"
 
-    # 读取文件内容
-    content = await file.read()
-
     # 确定单文件大小限制（按用户等级）
     if user is not None:
-        from quota.service import get_effective_tier, get_user_tier_limits
+        from quota.service import get_user_tier_limits
 
         limits = get_user_tier_limits(user)
         max_file_bytes = limits.max_upload_file_bytes
     else:
         max_file_bytes = settings.document_max_size_bytes
+    max_size_error = _build_file_size_limit_message(max_file_bytes, user)
 
-    # 验证文件大小
-    if len(content) > max_file_bytes:
-        max_mb = max_file_bytes // (1024 * 1024)
-        tier = get_effective_tier(user) if user is not None else None
-        tier_names = {"FREE": "免费版", "BASIC": "Plus", "PREMIUM": "Ultra", "ALPHA": "Alpha"}
-        tier_label = tier_names.get(tier.value, "") if tier else ""
-        msg = f"文件大小超过当前{tier_label}等级限制（最大 {max_mb}MB）"
-        if tier and tier.value in ("FREE", "BASIC"):
-            msg += "，升级订阅可获得更大的上传额度"
-        raise HTTPException(status_code=400, detail=msg)
-
-    # Storage quota check
-    if user is not None:
-        await check_storage_quota(db, user, space_id, len(content))
+    temp_dir = Path(settings.upload_dir) / "tmp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_path = temp_dir / f"{uuid.uuid4()}.upload"
+    file_path: Path | None = None
 
     try:
-        resolved_format = await asyncio.to_thread(
-            resolve_document_format,
-            content,
-            original_filename,
-            file.content_type,
+        file_size = await _stream_upload_to_temp_file(
+            file=file,
+            destination=temp_path,
+            max_file_bytes=max_file_bytes,
+            max_size_error=max_size_error,
         )
-    except DocumentFormatError as exc:
-        supported_extensions = ", ".join(get_supported_document_extensions())
-        raise HTTPException(
-            status_code=400,
-            detail=f"{exc}。支持的扩展名: {supported_extensions}",
-        ) from exc
 
-    # 生成存储路径
-    documents_dir = Path(settings.upload_dir) / "documents"
-    documents_dir.mkdir(parents=True, exist_ok=True)
+        # Storage quota check
+        if user is not None:
+            await check_storage_quota(db, user, space_id, file_size)
 
-    # 生成唯一文件名
-    storage_ext = Path(original_filename).suffix.lower() or resolved_format.storage_extension
-    unique_filename = f"{uuid.uuid4()}{storage_ext}"
-    file_path = documents_dir / unique_filename
+        try:
+            resolved_format = await asyncio.to_thread(
+                resolve_document_format_from_path,
+                temp_path,
+                original_filename,
+                file.content_type,
+            )
+        except DocumentFormatError as exc:
+            supported_extensions = ", ".join(get_supported_document_extensions())
+            raise HTTPException(
+                status_code=400,
+                detail=f"{exc}。支持的扩展名: {supported_extensions}",
+            ) from exc
 
-    try:
-        # 保存文件
-        async with aiofiles.open(file_path, "wb") as f:
-            await f.write(content)
+        # 生成存储路径
+        documents_dir = Path(settings.upload_dir) / "documents"
+        documents_dir.mkdir(parents=True, exist_ok=True)
+
+        # 生成唯一文件名
+        storage_ext = Path(original_filename).suffix.lower() or resolved_format.storage_extension
+        unique_filename = f"{uuid.uuid4()}{storage_ext}"
+        file_path = documents_dir / unique_filename
+
+        await asyncio.to_thread(os.replace, temp_path, file_path)
 
         # 生成可访问的 URL
         file_url = f"/uploads/documents/{unique_filename}"
@@ -143,7 +142,7 @@ async def upload_document(
             title=Path(original_filename).stem,  # 使用不含扩展名的文件名作为标题
             url=file_url,
             original_filename=original_filename,
-            file_size=len(content),
+            file_size=file_size,
             mime_type=resolved_format.mime_type,
         )
 
@@ -157,9 +156,14 @@ async def upload_document(
         return document
     except Exception:
         # 数据库操作失败时清理已上传的文件
-        if file_path.exists():
+        if file_path and file_path.exists():
             os.remove(file_path)
+        if temp_path.exists():
+            os.remove(temp_path)
         raise
+    finally:
+        with suppress(Exception):
+            await file.close()
 
 
 async def get_space_documents(
@@ -269,3 +273,49 @@ def schedule_document_processing(document_id: uuid.UUID) -> None:
     except RuntimeError:
         # 没有运行中的事件循环
         logger.warning("无法调度文档处理任务：没有运行中的事件循环")
+
+
+def _build_file_size_limit_message(max_file_bytes: int, user: User | None) -> str:
+    max_mb = max(1, (max_file_bytes + 1024 * 1024 - 1) // (1024 * 1024))
+    tier = None
+    if user is not None:
+        from quota.service import get_effective_tier
+
+        tier = get_effective_tier(user)
+
+    tier_names = {
+        "FREE": "免费版",
+        "BASIC": "Plus",
+        "PREMIUM": "Premium",
+        "ALPHA": "Alpha",
+        "ULTRA": "Ultra",
+    }
+    tier_label = tier_names.get(tier.value, "") if tier else ""
+    msg = f"文件大小超过当前{tier_label}等级限制（最大 {max_mb}MB）"
+    if tier and tier.value in ("FREE", "BASIC"):
+        msg += "，升级订阅可获得更大的上传额度"
+    return msg
+
+
+async def _stream_upload_to_temp_file(
+    *,
+    file: UploadFile,
+    destination: Path,
+    max_file_bytes: int,
+    max_size_error: str,
+) -> int:
+    total = 0
+
+    async with aiofiles.open(destination, "wb") as handle:
+        while True:
+            chunk = await file.read(UPLOAD_STREAM_CHUNK_SIZE)
+            if not chunk:
+                break
+
+            total += len(chunk)
+            if total > max_file_bytes:
+                raise HTTPException(status_code=400, detail=max_size_error)
+
+            await handle.write(chunk)
+
+    return total

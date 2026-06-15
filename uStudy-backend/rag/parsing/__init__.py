@@ -12,6 +12,7 @@ from rag.parsing.formats import (
     get_supported_document_mime_types,
     normalize_legacy_document,
     resolve_document_format,
+    resolve_document_format_from_path,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "get_supported_document_mime_types",
     "normalize_legacy_document",
     "resolve_document_format",
+    "resolve_document_format_from_path",
 ]

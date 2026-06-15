@@ -203,6 +203,66 @@ def resolve_document_format(
     raise DocumentFormatError("不支持的文件类型")
 
 
+def resolve_document_format_from_path(
+    file_path: str | Path,
+    filename: str | None = None,
+    claimed_mime: str | None = None,
+) -> ResolvedDocumentFormat:
+    """Resolve a file on disk into a canonical document format."""
+    path = Path(file_path)
+    suffix = Path(filename or path.name).suffix.lower()
+    claimed = (claimed_mime or "").split(";")[0].strip().lower()
+    header = _read_file_prefix(path)
+
+    if header.startswith(PDF_MAGIC):
+        return _build_resolved("pdf", suffix or ".pdf")
+
+    if header.startswith(ZIP_MAGIC):
+        ooxml_type = _detect_zip_document_type_from_path(path, suffix)
+        if ooxml_type:
+            return _build_resolved(ooxml_type, suffix or CANONICAL_TYPE_TO_EXTENSION[ooxml_type])
+
+    if header.startswith(OLE_MAGIC):
+        legacy_type = _detect_legacy_office_type(suffix, claimed)
+        if legacy_type:
+            return _build_resolved(
+                LEGACY_EXTENSION_TO_TARGET[f".{legacy_type}"],
+                suffix or f".{legacy_type}",
+                needs_normalization=True,
+                legacy_source_type=legacy_type,
+            )
+
+    if suffix == ".epub" or claimed == CANONICAL_TYPE_TO_MIME["epub"]:
+        if _looks_like_epub_path(path):
+            return _build_resolved("epub", suffix or ".epub")
+
+    text_type = _detect_text_document_type(header, suffix, claimed)
+    if text_type:
+        source_extension = suffix or CANONICAL_TYPE_TO_EXTENSION[text_type]
+        return _build_resolved(text_type, source_extension)
+
+    if claimed in CANONICAL_MIME_TO_TYPE:
+        canonical_type = CANONICAL_MIME_TO_TYPE[claimed]
+        if canonical_type == "epub" and not _looks_like_epub_path(path):
+            raise DocumentFormatError("无法解析 EPUB 文件")
+        return _build_resolved(canonical_type, suffix or CANONICAL_TYPE_TO_EXTENSION[canonical_type])
+
+    if claimed in LEGACY_MIME_TO_TARGET:
+        legacy_type = {
+            "application/msword": "doc",
+            "application/vnd.ms-excel": "xls",
+            "application/vnd.ms-powerpoint": "ppt",
+        }[claimed]
+        return _build_resolved(
+            LEGACY_MIME_TO_TARGET[claimed],
+            suffix or f".{legacy_type}",
+            needs_normalization=True,
+            legacy_source_type=legacy_type,
+        )
+
+    raise DocumentFormatError("不支持的文件类型")
+
+
 def normalize_legacy_document(
     file_bytes: bytes,
     resolved: ResolvedDocumentFormat,
@@ -286,26 +346,45 @@ def _build_resolved(
 def _detect_zip_document_type(file_bytes: bytes, suffix: str) -> str | None:
     try:
         with zipfile.ZipFile(io.BytesIO(file_bytes)) as archive:
-            names = set(archive.namelist())
-            if "mimetype" in names:
-                try:
-                    mimetype = archive.read("mimetype").decode("utf-8", errors="ignore").strip()
-                except Exception:
-                    mimetype = ""
-                if mimetype == CANONICAL_TYPE_TO_MIME["epub"]:
-                    return "epub"
-
-            if any(name.startswith("word/") for name in names):
-                return "docx"
-            if any(name.startswith("xl/") for name in names):
-                return "xlsx"
-            if any(name.startswith("ppt/") for name in names):
-                return "pptx"
-
-            if suffix == ".epub" and {"META-INF/container.xml", "mimetype"} <= names:
-                return "epub"
+            return _detect_zip_document_type_from_archive(archive, suffix)
     except zipfile.BadZipFile:
         return None
+
+    return None
+
+
+def _detect_zip_document_type_from_path(file_path: Path, suffix: str) -> str | None:
+    try:
+        with zipfile.ZipFile(file_path) as archive:
+            return _detect_zip_document_type_from_archive(archive, suffix)
+    except zipfile.BadZipFile:
+        return None
+
+    return None
+
+
+def _detect_zip_document_type_from_archive(
+    archive: zipfile.ZipFile,
+    suffix: str,
+) -> str | None:
+    names = set(archive.namelist())
+    if "mimetype" in names:
+        try:
+            mimetype = archive.read("mimetype").decode("utf-8", errors="ignore").strip()
+        except Exception:
+            mimetype = ""
+        if mimetype == CANONICAL_TYPE_TO_MIME["epub"]:
+            return "epub"
+
+    if any(name.startswith("word/") for name in names):
+        return "docx"
+    if any(name.startswith("xl/") for name in names):
+        return "xlsx"
+    if any(name.startswith("ppt/") for name in names):
+        return "pptx"
+
+    if suffix == ".epub" and {"META-INF/container.xml", "mimetype"} <= names:
+        return "epub"
 
     return None
 
@@ -363,6 +442,15 @@ def _looks_like_text(file_bytes: bytes) -> bool:
 
 def _looks_like_epub(file_bytes: bytes) -> bool:
     return _detect_zip_document_type(file_bytes, ".epub") == "epub"
+
+
+def _looks_like_epub_path(file_path: Path) -> bool:
+    return _detect_zip_document_type_from_path(file_path, ".epub") == "epub"
+
+
+def _read_file_prefix(file_path: Path, size: int = 8192) -> bytes:
+    with open(file_path, "rb") as handle:
+        return handle.read(size)
 
 
 def _convert_with_libreoffice(

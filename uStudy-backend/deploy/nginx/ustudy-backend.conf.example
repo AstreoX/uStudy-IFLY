@@ -1,0 +1,33 @@
+server {
+    listen 80;
+    server_name api.ustudy.top;
+
+    access_log /var/log/nginx/ustudy-access.log;
+    error_log /var/log/nginx/ustudy-error.log;
+
+    # Keep proxy ingress above the largest business-tier upload limit.
+    client_max_body_size 220M;
+    client_body_timeout 300s;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Large multipart uploads should stream through to FastAPI so the app
+        # can enforce per-tier limits and return JSON errors instead of nginx 413s.
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    location /health {
+        proxy_pass http://127.0.0.1:8000/health;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+}
