@@ -501,7 +501,7 @@
             </svg>
           </view>
           <!-- Send button -->
-          <view v-else class="chat-send-btn" :class="{ 'chat-send-btn-disabled': !canSend }" @tap="handleSend">
+          <view v-else class="chat-send-btn" :class="{ 'chat-send-btn-disabled': !canSend }" @tap="queueSendMessage">
             <svg viewBox="0 0 256 256" class="send-icon">
               <rect width="256" height="256" fill="none"/>
               <line x1="108" y1="148" x2="160" y2="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
@@ -623,6 +623,7 @@ export default {
       messages: [],
       conversationId: null,
       inputText: '',
+      latestInputValue: '',
       chatInputHeight: 36,
       chatInputLineHeight: 20,
       chatInputVerticalPadding: 14,
@@ -663,6 +664,8 @@ export default {
       taskNavigated: {},
       taskSidebarSyncPhases: {},
       lastChatEnterMeta: null,
+      isPendingSendFlush: false,
+      chatInputResizeFrame: null,
 
       // Thinking model state
       thinkingStartTime: null,
@@ -679,7 +682,7 @@ export default {
   },
   computed: {
     canSend() {
-      return this.inputText.trim().length > 0 && !this.isSending
+      return this.getCurrentInputValue().trim().length > 0 && !this.isSending && !this.isPendingSendFlush
     },
     chatInputMaxHeight() {
       const base = this.chatInputLineHeight * this.chatInputMaxLines + this.chatInputVerticalPadding
@@ -716,6 +719,7 @@ export default {
   },
   mounted() {
     this.loadModels()
+    this.latestInputValue = this.inputText
     const inputEl = this.getChatInputElement()
     if (inputEl && typeof inputEl.addEventListener === 'function') {
       inputEl.addEventListener('paste', this.handlePaste)
@@ -726,6 +730,7 @@ export default {
     })
   },
   beforeUnmount() {
+    this.clearPendingChatInputResize()
     const inputEl = this.getChatInputElement()
     if (inputEl && typeof inputEl.removeEventListener === 'function') {
       inputEl.removeEventListener('paste', this.handlePaste)
@@ -819,12 +824,66 @@ export default {
       return host
     },
 
-    handleChatInput(event) {
-      const value = event?.detail?.value
-      if (typeof value === 'string' && value !== this.inputText) {
-        this.inputText = value
+    getCurrentInputValue() {
+      return typeof this.latestInputValue === 'string'
+        ? this.latestInputValue
+        : (typeof this.inputText === 'string' ? this.inputText : '')
+    },
+
+    syncTextareaValueFromDom() {
+      const inputEl = this.getChatInputElement()
+      const domValue = inputEl && typeof inputEl.value === 'string'
+        ? inputEl.value
+        : null
+      const nextValue = typeof domValue === 'string'
+        ? domValue
+        : (typeof this.inputText === 'string' ? this.inputText : '')
+      if (nextValue !== this.inputText) {
+        this.inputText = nextValue
       }
-      if (!this.inputText) {
+      this.latestInputValue = nextValue
+      return nextValue
+    },
+
+    clearPendingChatInputResize() {
+      if (
+        this.chatInputResizeFrame &&
+        typeof window !== 'undefined' &&
+        typeof window.cancelAnimationFrame === 'function'
+      ) {
+        window.cancelAnimationFrame(this.chatInputResizeFrame)
+      }
+      this.chatInputResizeFrame = null
+    },
+
+    scheduleChatInputHeightUpdate() {
+      this.clearPendingChatInputResize()
+      if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+        this.$nextTick(() => this.recalcChatInputHeight())
+        return
+      }
+      this.chatInputResizeFrame = window.requestAnimationFrame(() => {
+        this.chatInputResizeFrame = null
+        this.recalcChatInputHeight()
+      })
+    },
+
+    applyResolvedChatInputHeight(height, force = false) {
+      const nextHeight = Math.max(this.chatInputMinHeight, Math.min(height, this.chatInputMaxHeight))
+      if (!force && this.chatInputHeight === nextHeight) {
+        return
+      }
+      this.chatInputHeight = nextHeight
+      this.applyChatInputDomStyle(nextHeight)
+    },
+
+    handleChatInput(event) {
+      const nextValue = typeof event?.detail?.value === 'string' ? event.detail.value : ''
+      if (nextValue !== this.inputText) {
+        this.inputText = nextValue
+      }
+      this.latestInputValue = nextValue
+      if (!nextValue) {
         this.resetChatInputHeight()
       }
     },
@@ -832,7 +891,7 @@ export default {
     handleChatLineChange(event) {
       const rawLineCount = Number(event?.detail?.lineCount)
       if (!Number.isFinite(rawLineCount)) {
-        this.recalcChatInputHeight()
+        this.scheduleChatInputHeightUpdate()
         return
       }
       const lineCount = Math.max(1, Math.floor(rawLineCount))
@@ -857,9 +916,7 @@ export default {
         const measuredNeeded = Math.ceil(inputEl.scrollHeight) + structuralPadding + this.chatInputMultiLineCompensation
         nextHeight = Math.max(nextHeight, measuredNeeded)
       }
-      nextHeight = Math.max(this.chatInputMinHeight, Math.min(this.chatInputMaxHeight, nextHeight))
-      this.chatInputHeight = nextHeight
-      this.applyChatInputDomStyle(nextHeight)
+      this.applyResolvedChatInputHeight(nextHeight)
     },
 
     handleNativeChatKeydown(event) {
@@ -892,12 +949,12 @@ export default {
 
       if (typeof event.preventDefault === 'function') event.preventDefault()
       if (typeof event.stopPropagation === 'function') event.stopPropagation()
-      this.handleSend()
+      this.queueSendMessage()
     },
 
     insertChatNewlineAtCursor() {
       const inputEl = this.getChatInputElement()
-      const currentValue = typeof this.inputText === 'string' ? this.inputText : ''
+      const currentValue = this.syncTextareaValueFromDom()
       let start = currentValue.length
       let end = currentValue.length
       if (inputEl && typeof inputEl.selectionStart === 'number' && typeof inputEl.selectionEnd === 'number') {
@@ -905,7 +962,9 @@ export default {
         end = inputEl.selectionEnd
       }
 
-      this.inputText = `${currentValue.slice(0, start)}\n${currentValue.slice(end)}`
+      const nextValue = `${currentValue.slice(0, start)}\n${currentValue.slice(end)}`
+      this.inputText = nextValue
+      this.latestInputValue = nextValue
       this.$nextTick(() => {
         const latestInput = this.getChatInputElement()
         if (latestInput) {
@@ -915,7 +974,7 @@ export default {
             latestInput.setSelectionRange(cursor, cursor)
           }
         }
-        this.recalcChatInputHeight()
+        this.scheduleChatInputHeightUpdate()
       })
     },
 
@@ -933,7 +992,7 @@ export default {
         }
         return
       }
-      this.handleSend()
+      this.queueSendMessage()
     },
 
     handleChatKeydown(event) {
@@ -944,18 +1003,17 @@ export default {
     },
 
     recalcChatInputHeight() {
+      this.clearPendingChatInputResize()
       const minHeight = this.chatInputMinHeight
       const maxHeight = this.chatInputMaxHeight
-      if (!this.inputText) {
-        this.chatInputHeight = minHeight
-        this.applyChatInputDomStyle(minHeight)
+      if (!this.getCurrentInputValue()) {
+        this.applyResolvedChatInputHeight(minHeight)
         return
       }
 
       const inputEl = this.getChatInputElement()
       if (!inputEl || typeof inputEl.scrollHeight !== 'number') {
-        this.chatInputHeight = minHeight
-        this.applyChatInputDomStyle(minHeight)
+        this.applyResolvedChatInputHeight(minHeight)
         return
       }
 
@@ -966,14 +1024,11 @@ export default {
       const measuredHeight = Math.max(minHeight, measured + structuralPadding + this.chatInputMultiLineCompensation)
       const wrapTriggerHeight = minHeight + this.chatInputLineHeight * 0.7
       if (measuredHeight <= wrapTriggerHeight) {
-        this.chatInputHeight = minHeight
-        this.applyChatInputDomStyle(minHeight)
+        this.applyResolvedChatInputHeight(minHeight)
         return
       }
 
-      const nextHeight = Math.min(maxHeight, measuredHeight)
-      this.chatInputHeight = nextHeight
-      this.applyChatInputDomStyle(nextHeight)
+      this.applyResolvedChatInputHeight(Math.min(maxHeight, measuredHeight))
     },
 
     applyChatInputDomStyle(height) {
@@ -1000,12 +1055,38 @@ export default {
     },
 
     resetChatInputHeight() {
-      this.chatInputHeight = this.chatInputMinHeight
-      this.applyChatInputDomStyle(this.chatInputMinHeight)
+      this.clearPendingChatInputResize()
+      this.applyResolvedChatInputHeight(this.chatInputMinHeight)
     },
 
-    async handleSend() {
-      const text = this.inputText.trim()
+    async queueSendMessage(event) {
+      if (typeof event?.preventDefault === 'function') {
+        event.preventDefault()
+      }
+      if (typeof event?.stopPropagation === 'function') {
+        event.stopPropagation()
+      }
+      if (this.isPendingSendFlush || this.isSending) return
+
+      this.isPendingSendFlush = true
+      try {
+        await new Promise(resolve => this.$nextTick(resolve))
+        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+          await new Promise(resolve => window.requestAnimationFrame(() => resolve()))
+        }
+        this.syncTextareaValueFromDom()
+        await this.performSendMessage()
+      } finally {
+        this.isPendingSendFlush = false
+      }
+    },
+
+    async handleSend(event) {
+      return this.queueSendMessage(event)
+    },
+
+    async performSendMessage() {
+      const text = this.getCurrentInputValue().trim()
       if (!text || this.isSending) return
 
       if (this.pendingAttachments.some(a => a.uploading)) {
@@ -1016,6 +1097,7 @@ export default {
       this.isSending = true
       this.isAutoScrollEnabled = true
       this.inputText = ''
+      this.latestInputValue = ''
       this.resetChatInputHeight()
 
       // Collect attachment IDs and clear pending
@@ -2411,6 +2493,7 @@ export default {
       this.conversationId = null
       this.nextId = 1
       this.inputText = ''
+      this.latestInputValue = ''
       this.resetChatInputHeight()
 
       // Re-add welcome message
@@ -2584,6 +2667,8 @@ export default {
   flex-direction: row;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   overflow: hidden;
   position: relative;
   background: var(--color-bg);
@@ -2662,6 +2747,8 @@ export default {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   position: relative;
   z-index: 1;
 }
@@ -2726,6 +2813,7 @@ export default {
   width: 95%;
   margin: 0 auto;
   min-height: 0;
+  overflow: hidden;
   padding: 0 28px 28px;
   box-sizing: border-box;
 }
@@ -2733,6 +2821,7 @@ export default {
 /* Chat Messages List */
 .chat-messages-list {
   flex: 1;
+  height: 0;
   min-height: 0;
   padding: 16px 0;
   overflow-y: auto;
