@@ -4,6 +4,11 @@ FULL_QUIZ_EVALUATION_SYSTEM_PROMPT = """# 整卷评估专家
 
 你是一位教育评估专家，负责对学生的测试卷进行简明扼要的评估总结。
 
+## 输入格式说明
+
+- **正确的题目**：只显示题干，无需详细分析
+- **错误/部分正确的题目**：显示完整选项、正确答案和学生答案，需重点分析
+
 ## 输出要求
 
 **极简风格**：每条只写核心要点，不超过15个字，不要详细解释或分析。
@@ -35,6 +40,7 @@ FULL_QUIZ_EVALUATION_SYSTEM_PROMPT = """# 整卷评估专家
 2. **条数**：每项1-3条即可
 3. **全对**：缺点写"暂无明显不足"
 4. **全错**：优点找闪光点，建议要鼓励
+5. **重点分析错题**：根据错误题目的详情分析薄弱点
 """
 
 FULL_QUIZ_EVALUATION_USER_TEMPLATE = """请对以下测试答卷进行综合评估：
@@ -56,16 +62,19 @@ FULL_QUIZ_EVALUATION_USER_TEMPLATE = """请对以下测试答卷进行综合评�
 输出必须是合法的 JSON 格式。
 """
 
+# 错误/部分正确题目的详细模板
 QUESTION_DETAIL_TEMPLATE = """
-### 第 {order} 题（{question_type_cn}，{max_score}分）
+#### 第 {order} 题（{question_type_cn}，{max_score}分）→ 得{score}分
 **题干**：{question_stem}
 {options_section}
 **正确答案**：{correct_answer_display}
 **学生答案**：{user_answer_display}
-**得分**：{score}/{max_score}
 **判定**：{status}
 {ai_comment_section}
 """
+
+# 正确题目的精简模板
+CORRECT_QUESTION_BRIEF = "- 第{order}题（{question_type_cn}）：{stem_preview}\n"
 
 QUESTION_TYPE_CN_MAP = {
     "single_choice": "单选题",
@@ -164,43 +173,40 @@ def _format_answer(
     return str(answer) if answer else "（未作答）"
 
 
-def build_full_quiz_evaluation_prompt(
-    quiz_topic: str,
-    difficulty_level: str,
-    total_score: int,
-    actual_score: int,
-    question_results: list[dict],
-) -> list[dict[str, str]]:
-    """
-    构建整卷评估 Prompt
+def _truncate_stem(stem: str, max_len: int = 60) -> str:
+    """截断题干，保留前 max_len 个字符"""
+    if len(stem) <= max_len:
+        return stem
+    return stem[:max_len] + "..."
 
-    Args:
-        quiz_topic: 测试主题
-        difficulty_level: 难度级别（easy/medium/hard）
-        total_score: 总分
-        actual_score: 实际得分
-        question_results: 逐题结果列表，每项包含:
-            - order: 题目序号
-            - question_type: 题型
-            - question_stem: 题干
-            - options: 选项列表（选择题）
-            - correct_answer: 正确答案
-            - user_answer: 用户答案
-            - score: 得分
-            - max_score: 满分
-            - status: correct/wrong/partial
-            - ai_evaluation: 简答题AI评语（可选）
 
-    Returns:
-        消息列表，用于 LLM API 调用
-    """
-    difficulty_cn = {"easy": "简单", "medium": "中等", "hard": "困难"}.get(
-        difficulty_level, difficulty_level
-    )
-    score_percentage = round(actual_score / total_score * 100, 1) if total_score else 0
+def _format_correct_questions(correct_items: list[dict]) -> str:
+    """格式化正确题目列表（精简格式：只保留题干）"""
+    if not correct_items:
+        return ""
 
-    questions_detail_parts = []
-    for item in question_results:
+    lines = [f"### 正确的题目（共{len(correct_items)}题）\n"]
+    for item in correct_items:
+        question_type = item["question_type"]
+        type_cn = QUESTION_TYPE_CN_MAP.get(question_type, question_type)
+        stem_preview = _truncate_stem(item["question_stem"])
+        lines.append(
+            CORRECT_QUESTION_BRIEF.format(
+                order=item["order"],
+                question_type_cn=type_cn,
+                stem_preview=stem_preview,
+            )
+        )
+    return "".join(lines)
+
+
+def _format_wrong_questions(wrong_items: list[dict]) -> str:
+    """格式化错误/部分正确题目列表（详细格式：包含选项和答案）"""
+    if not wrong_items:
+        return ""
+
+    parts = [f"### 错误/部分正确的题目（共{len(wrong_items)}题，需重点分析）\n"]
+    for item in wrong_items:
         question_type = item["question_type"]
         options = item.get("options")
 
@@ -228,9 +234,59 @@ def build_full_quiz_evaluation_prompt(
             status=STATUS_CN_MAP.get(item["status"], item["status"]),
             ai_comment_section=ai_comment_section,
         )
-        questions_detail_parts.append(detail)
+        parts.append(detail)
 
-    questions_detail = "\n".join(questions_detail_parts)
+    return "".join(parts)
+
+
+def build_full_quiz_evaluation_prompt(
+    quiz_topic: str,
+    difficulty_level: str,
+    total_score: int,
+    actual_score: int,
+    question_results: list[dict],
+) -> list[dict[str, str]]:
+    """
+    构建整卷评估 Prompt
+
+    优化策略：
+    - 正确题目：只保留题干摘要，减少 token 消耗
+    - 错误/部分正确题目：保留完整详情，便于 LLM 分析
+
+    Args:
+        quiz_topic: 测试主题
+        difficulty_level: 难度级别（easy/medium/hard）
+        total_score: 总分
+        actual_score: 实际得分
+        question_results: 逐题结果列表，每项包含:
+            - order: 题目序号
+            - question_type: 题型
+            - question_stem: 题干
+            - options: 选项列表（选择题）
+            - correct_answer: 正确答案
+            - user_answer: 用户答案
+            - score: 得分
+            - max_score: 满分
+            - status: correct/wrong/partial
+            - ai_evaluation: 简答题AI评语（可选）
+
+    Returns:
+        消息列表，用于 LLM API 调用
+    """
+    difficulty_cn = {"easy": "简单", "medium": "中等", "hard": "困难"}.get(
+        difficulty_level, difficulty_level
+    )
+    score_percentage = round(actual_score / total_score * 100, 1) if total_score else 0
+
+    # 分离正确和错误/部分正确的题目
+    correct_items = [q for q in question_results if q["status"] == "correct"]
+    wrong_items = [q for q in question_results if q["status"] != "correct"]
+
+    # 构建题目详情：正确题目精简，错误题目详细
+    correct_section = _format_correct_questions(correct_items)
+    wrong_section = _format_wrong_questions(wrong_items)
+
+    questions_detail = correct_section + "\n" + wrong_section
 
     user_content = FULL_QUIZ_EVALUATION_USER_TEMPLATE.format(
         quiz_topic=quiz_topic,

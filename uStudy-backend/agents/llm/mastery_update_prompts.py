@@ -8,6 +8,11 @@ MASTERY_UPDATE_SYSTEM_PROMPT = """# 知识图谱掌握分更新专家
 
 分析学生的答题结果，判断哪些知识点节点需要更新掌握分，并给出具体的更新值。
 
+## 输入格式说明
+
+- **正确的题目**：只显示题干摘要
+- **错误/部分正确的题目**：显示完整题干，需重点分析并降低相关节点掌握分
+
 ## 更新策略
 
 | 答题结果 | 掌握分变化 | 说明 |
@@ -22,6 +27,7 @@ MASTERY_UPDATE_SYSTEM_PROMPT = """# 知识图谱掌握分更新专家
 2. **谨慎关联**：只更新与题目内容**明确相关**的节点，不要过度关联
 3. **无关节点不动**：如果知识图谱中的节点与本次测试题目无关，不要包含在更新列表中
 4. **增量更新**：基于当前掌握分进行增减，不是直接设置新值
+5. **重点关注错题**：错误题目是掌握分下降的主要依据
 
 ## 输出格式
 
@@ -67,15 +73,26 @@ MASTERY_UPDATE_USER_TEMPLATE = """请根据以下答题情况更新知识图谱�
 输出必须是合法的 JSON 格式。
 """
 
-QUESTION_RESULT_TEMPLATE = """### 第 {order} 题（{status_cn}，得分：{score}/{max_score}）
+# 错误/部分正确题目的详细模板
+QUESTION_RESULT_TEMPLATE = """#### 第 {order} 题（{status_cn}，得分：{score}/{max_score}）
 **题干**：{question_stem}
 """
+
+# 正确题目的精简模板
+CORRECT_QUESTION_BRIEF = "- 第{order}题：{stem_preview}\n"
 
 STATUS_CN_MAP = {
     "correct": "正确",
     "wrong": "错误",
     "partial": "部分正确",
 }
+
+
+def _truncate_stem(stem: str, max_len: int = 60) -> str:
+    """截断题干，保留前 max_len 个字符"""
+    if len(stem) <= max_len:
+        return stem
+    return stem[:max_len] + "..."
 
 
 def build_mastery_update_prompt(
@@ -85,6 +102,10 @@ def build_mastery_update_prompt(
 ) -> list[dict[str, str]]:
     """
     构建掌握分更新 Prompt
+
+    优化策略：
+    - 正确题目：只保留题干摘要，减少 token 消耗
+    - 错误/部分正确题目：保留完整题干，便于 LLM 分析关联节点
 
     Args:
         quiz_topic: 测试主题
@@ -111,20 +132,37 @@ def build_mastery_update_prompt(
         nodes_lines.append(f"- {node['label']}（当前掌握分：{mastery_display}）")
     nodes_list = "\n".join(nodes_lines) if nodes_lines else "（暂无节点）"
 
-    # 格式化答题结果
-    results_parts = []
-    for item in question_results:
-        status = item.get("status", "wrong")
-        status_cn = STATUS_CN_MAP.get(status, status)
-        detail = QUESTION_RESULT_TEMPLATE.format(
-            order=item.get("order", "?"),
-            status_cn=status_cn,
-            score=item.get("score", 0),
-            max_score=item.get("max_score", 0),
-            question_stem=item.get("question_stem", ""),
-        )
-        results_parts.append(detail)
-    question_results_text = "\n".join(results_parts)
+    # 分离正确和错误/部分正确的题目
+    correct_items = [q for q in question_results if q.get("status") == "correct"]
+    wrong_items = [q for q in question_results if q.get("status") != "correct"]
+
+    # 格式化正确题目（精简）
+    correct_section = ""
+    if correct_items:
+        correct_section = f"### 正确的题目（共{len(correct_items)}题，掌握分可适当提升）\n"
+        for item in correct_items:
+            stem_preview = _truncate_stem(item.get("question_stem", ""))
+            correct_section += CORRECT_QUESTION_BRIEF.format(
+                order=item.get("order", "?"),
+                stem_preview=stem_preview,
+            )
+
+    # 格式化错误/部分正确题目（详细）
+    wrong_section = ""
+    if wrong_items:
+        wrong_section = f"### 错误/部分正确的题目（共{len(wrong_items)}题，需降低相关节点掌握分）\n"
+        for item in wrong_items:
+            status = item.get("status", "wrong")
+            status_cn = STATUS_CN_MAP.get(status, status)
+            wrong_section += QUESTION_RESULT_TEMPLATE.format(
+                order=item.get("order", "?"),
+                status_cn=status_cn,
+                score=item.get("score", 0),
+                max_score=item.get("max_score", 0),
+                question_stem=item.get("question_stem", ""),
+            )
+
+    question_results_text = correct_section + "\n" + wrong_section
 
     user_content = MASTERY_UPDATE_USER_TEMPLATE.format(
         quiz_topic=quiz_topic,
