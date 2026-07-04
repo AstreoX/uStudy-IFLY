@@ -47,6 +47,9 @@ python-alipay-sdk>=3.3.0
 # 定时任务
 apscheduler>=3.10.0
 
+# Redis (流式缓存)
+redis>=5.0.0
+
 # 测试
 pytest>=8.0.0
 pytest-asyncio>=0.23.0

@@ -57,6 +57,11 @@ from graph.service import GraphService
 from db.database import get_scoped_session
 from db.models import LongTermMemory
 from config import get_settings
+from chat.streaming_cache import (
+    init_streaming_cache,
+    update_streaming_cache,
+    clear_streaming_cache,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +193,9 @@ class QuickChatOrchestrator:
         """
         t_orch_start = time.monotonic()
 
+        # Initialize streaming cache for resume support
+        await init_streaming_cache(str(self.conversation_id))
+
         # Parallel: load long-term memory + count due reviews across all spaces
         t0 = time.monotonic()
         long_term_memory, reviews_count = await asyncio.gather(
@@ -269,6 +277,11 @@ class QuickChatOrchestrator:
                             "event": SSEEventType.THINKING_DELTA,
                             "data": {"content": event["content"]},
                         }
+                        # Update streaming cache for resume support
+                        await update_streaming_cache(
+                            str(self.conversation_id),
+                            thinking_delta=event["content"],
+                        )
 
                     # Emit text content immediately
                     elif event_type == "content":
@@ -283,6 +296,11 @@ class QuickChatOrchestrator:
                             "event": SSEEventType.TEXT_DELTA,
                             "data": {"content": content},
                         }
+                        # Update streaming cache for resume support
+                        await update_streaming_cache(
+                            str(self.conversation_id),
+                            content_delta=content,
+                        )
 
                     # Stream finished
                     elif event_type == "done":
@@ -506,6 +524,9 @@ class QuickChatOrchestrator:
             )
         else:
             logger.warning("[QuickChat] No usage to record - tokens are 0")
+
+        # Mark streaming cache as complete
+        await update_streaming_cache(str(self.conversation_id), is_complete=True)
 
         yield {
             "event": SSEEventType.DONE,
@@ -752,6 +773,9 @@ class LLMOrchestrator:
         """
         t_orch_start = time.monotonic()
 
+        # Initialize streaming cache for resume support
+        await init_streaming_cache(str(self.conversation_id))
+
         # 1. 提取用户消息文本用于语义检索
         if isinstance(user_message, str):
             message_text = user_message
@@ -858,6 +882,11 @@ class LLMOrchestrator:
                             "event": SSEEventType.THINKING_DELTA,
                             "data": {"content": event["content"]},
                         }
+                        # Update streaming cache for resume support
+                        await update_streaming_cache(
+                            str(self.conversation_id),
+                            thinking_delta=event["content"],
+                        )
 
                     # Immediately emit text content as it arrives
                     elif event_type == "content":
@@ -872,6 +901,11 @@ class LLMOrchestrator:
                             "event": SSEEventType.TEXT_DELTA,
                             "data": {"content": content},
                         }
+                        # Update streaming cache for resume support
+                        await update_streaming_cache(
+                            str(self.conversation_id),
+                            content_delta=content,
+                        )
 
                     # Tool call started - emit running status
                     elif event_type == "tool_call_start":
@@ -1188,6 +1222,9 @@ class LLMOrchestrator:
                 space_id=self.space_id,
                 conversation_id=self.conversation_id,
             )
+
+        # Mark streaming cache as complete
+        await update_streaming_cache(str(self.conversation_id), is_complete=True)
 
         # Emit done event with LLM context
         yield {

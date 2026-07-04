@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     db_pool_timeout_seconds: int = 15
     db_pool_recycle_seconds: int = 1800
 
+    # Redis (用于流式缓存)
+    redis_url: str = "redis://localhost:6379/0"
+    streaming_cache_ttl_seconds: int = 300  # 流式缓存 TTL: 5 分钟
+
     # 应用
     app_env: str = "development"
     debug: bool = True

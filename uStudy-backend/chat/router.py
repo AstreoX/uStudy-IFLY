@@ -42,6 +42,7 @@ from chat.service import (
 from chat.tools.graph_tools import GraphToolExecutor
 from chat.tools.learning_space_executor import LearningSpaceToolExecutor
 from chat.tools.learning_space_tools import get_allowed_tool_names
+from chat.streaming_cache import get_streaming_state
 from db.database import get_db, get_scoped_session
 from db.models import Conversation, Message, MessageRole, User
 from quota.service import check_daily_message_quota, check_model_access, get_effective_tier
@@ -195,6 +196,148 @@ async def check_reply_status(
         preview = (row[0] or "")[:80]
         return {"has_reply": True, "preview": preview}
     return {"has_reply": False, "preview": ""}
+
+
+@router.get(
+    "/conversations/{conversation_id}/streaming-status",
+    summary="查询流式传输状态",
+    description="查询对话是否有正在进行的AI流式回复，用于断连后恢复",
+)
+async def get_streaming_status(
+    conversation_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Check if there's an active streaming response for this conversation.
+
+    Returns:
+        - is_streaming: True if AI is currently generating a response
+        - partial_content: Content generated so far (if streaming)
+        - partial_thinking: Thinking content generated so far (if streaming)
+        - tool_calls: Tool calls made so far
+        - updated_at: Last update timestamp
+    """
+    # Validate ownership
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conversation_id)
+    )
+    conv = result.scalar_one_or_none()
+    if not conv or conv.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
+        )
+
+    # Get streaming state from Redis cache
+    state = await get_streaming_state(str(conversation_id))
+
+    if state is None:
+        return {
+            "is_streaming": False,
+            "partial_content": None,
+            "partial_thinking": None,
+            "tool_calls": [],
+            "updated_at": None,
+        }
+
+    return {
+        "is_streaming": not state.is_complete,
+        "partial_content": state.content or None,
+        "partial_thinking": state.thinking or None,
+        "tool_calls": state.tool_calls,
+        "updated_at": state.updated_at,
+    }
+
+
+@router.get(
+    "/conversations/{conversation_id}/resume-stream",
+    summary="断点续传流式响应",
+    description="""
+    从断点继续接收流式内容。
+
+    ## 使用场景
+
+    当客户端在接收流式响应过程中断连后：
+    1. 先调用 `/streaming-status` 检查是否仍在流式传输
+    2. 如果 `is_streaming=true`，调用此端点从断点继续
+
+    ## 参数
+
+    - `offset`: 已接收的字符数，从此位置继续
+
+    ## SSE 事件类型
+
+    与 `/messages` 端点相同
+    """,
+)
+async def resume_stream(
+    conversation_id: UUID,
+    offset: int = Query(0, ge=0, description="已接收的字符数"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Resume streaming from a specific offset after disconnection."""
+    # Validate ownership
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conversation_id)
+    )
+    conv = result.scalar_one_or_none()
+    if not conv or conv.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
+        )
+
+    async def resume_generator():
+        last_content_len = offset
+        max_iterations = 1800  # Max 3 minutes at 100ms interval
+
+        for _ in range(max_iterations):
+            state = await get_streaming_state(str(conversation_id))
+
+            if state is None:
+                # Cache expired or doesn't exist - stream is done
+                yield {
+                    "event": "done",
+                    "data": {"content": "", "resumed": True, "cache_expired": True},
+                }
+                break
+
+            # Send incremental content if available
+            if len(state.content) > last_content_len:
+                delta = state.content[last_content_len:]
+                yield {
+                    "event": "text_delta",
+                    "data": {"content": delta},
+                }
+                last_content_len = len(state.content)
+
+            if state.is_complete:
+                yield {
+                    "event": "done",
+                    "data": {"content": state.content, "resumed": True},
+                }
+                break
+
+            # Wait for next update
+            await asyncio.sleep(0.1)
+        else:
+            # Timeout - should not normally happen
+            yield {
+                "event": "error",
+                "data": {"message": "Resume timeout"},
+            }
+
+    return StreamingResponse(
+        sse_generator(resume_generator()),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post(

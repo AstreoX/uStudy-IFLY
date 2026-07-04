@@ -25,6 +25,7 @@ from db.models import (
 from rag.chunking import Chunk, get_chunker
 from rag.embedding import EmbeddingClient
 from rag.parsing import NormalizedDocument, normalize_legacy_document, resolve_document_format
+from rag.utils import has_visual_content
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -144,11 +145,15 @@ class DocumentProcessingService:
             and chunker is not None
             and settings.vlm_processing_enabled
         ):
-            await self._run_enrichment_stage(
-                document=document,
-                normalized_document=normalized_document,
-                chunker=chunker,
-            )
+            # 快速预检测：跳过纯文本文档的 VLM 增强阶段
+            if has_visual_content(normalized_document.content, document.mime_type):
+                await self._run_enrichment_stage(
+                    document=document,
+                    normalized_document=normalized_document,
+                    chunker=chunker,
+                )
+            else:
+                logger.info("文档无视觉内容，跳过 VLM 增强: %s", document.title)
 
     async def _resolve_and_normalize_document(
         self,
