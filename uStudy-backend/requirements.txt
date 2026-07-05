@@ -28,6 +28,11 @@ aiofiles>=23.0.0
 # 联网搜索
 ddgs>=9.0.0
 
+# URL 内容获取
+trafilatura>=2.0.0        # 网页正文提取
+youtube-transcript-api>=1.0.0  # YouTube 字幕获取
+yt-dlp>=2024.1.0          # 通用视频字幕/音频提取
+
 # RAG 系统
 PyMuPDF>=1.23.0           # PDF 解析
 python-docx>=1.0.0        # DOCX 解析

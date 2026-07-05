@@ -105,6 +105,13 @@ class Settings(BaseSettings):
     web_search_timeout_seconds: int = 30
     web_fetch_max_length: int = 3000
 
+    # URL 内容获取配置
+    url_fetch_timeout_seconds: int = 30
+    video_transcript_timeout_seconds: int = 60
+    whisper_timeout_seconds: int = 300
+    whisper_max_audio_bytes: int = 25 * 1024 * 1024  # 25MB (OpenAI Whisper API limit)
+    openai_api_key: str = ""  # for Whisper API
+
     # 多渠道搜索配置
     semantic_scholar_timeout: int = 15
     wikipedia_timeout: int = 10

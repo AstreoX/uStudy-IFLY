@@ -66,6 +66,9 @@ async def create_link(
     await db.commit()
     await db.refresh(document)
 
+    # Trigger async RAG processing (same as file upload)
+    schedule_document_processing(document.id)
+
     return document
 
 

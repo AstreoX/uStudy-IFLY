@@ -19,6 +19,7 @@ from config import get_settings
 from db.models import (
     DocumentChunk,
     DocumentProcessingTask,
+    DocumentType,
     ProcessingStatus,
     SpaceDocument,
 )
@@ -92,6 +93,11 @@ class DocumentProcessingService:
             error_message=None,
         )
 
+        # Link documents have no local file — handle separately
+        if document.doc_type == DocumentType.LINK:
+            await self._process_link_document(document, task)
+            return
+
         normalized_document: NormalizedDocument | None = None
         chunker = None
         base_chunk_count = 0
@@ -154,6 +160,107 @@ class DocumentProcessingService:
                 )
             else:
                 logger.info("文档无视觉内容，跳过 VLM 增强: %s", document.title)
+
+    async def _process_link_document(
+        self,
+        document: SpaceDocument,
+        task: DocumentProcessingTask,
+    ) -> None:
+        """Process a LINK-type document: fetch URL content, chunk, embed, store."""
+        from rag.url_fetcher import URLContentFetcher, URLFetchError
+
+        try:
+            fetcher = URLContentFetcher()
+            result = await fetcher.fetch(document.url)
+
+            logger.info(
+                "URL 内容获取成功: %s (%s, %d chars)",
+                document.url,
+                result.content_type,
+                len(result.content),
+            )
+
+            # Update document title if it was generic
+            if result.title and document.title in (document.url, ""):
+                document.title = result.title
+
+            # Choose chunker based on content type
+            mime_hint = "text/markdown" if result.content_type == "webpage" else "text/plain"
+            chunker = get_chunker(mime_hint)
+            content_bytes = result.content.encode("utf-8")
+
+            await self._delete_document_chunks_no_commit(document.id)
+
+            chunk_count = 0
+            total_embedding_tokens = 0
+            batch_size = max(1, self.embedding_client.batch_size)
+
+            async for chunk_batch in self._iter_chunk_batches(
+                chunker=chunker,
+                content=content_bytes,
+                filename=None,
+                batch_size=batch_size,
+            ):
+                if not chunk_batch:
+                    continue
+
+                # Annotate with link-specific metadata
+                for chunk in chunk_batch:
+                    chunk.metadata["source_type"] = result.content_type
+                    chunk.metadata["source_url"] = result.source_url
+                    chunk.metadata["stage"] = "base"
+                    if result.metadata:
+                        chunk.metadata.update(result.metadata)
+
+                chunk_texts = [chunk.content for chunk in chunk_batch]
+                embedding_result = await self.embedding_client.embed_batch(chunk_texts)
+                total_embedding_tokens += embedding_result.token_count
+
+                await self._insert_chunk_batch(
+                    document_id=document.id,
+                    space_id=document.space_id,
+                    chunks=chunk_batch,
+                    embeddings=embedding_result.embeddings,
+                )
+                chunk_count += len(chunk_batch)
+
+            if chunk_count == 0:
+                raise ValueError("切片结果为空")
+
+            await self.db.commit()
+            await self._update_task_status(
+                task.id,
+                ProcessingStatus.COMPLETED,
+                chunk_count=chunk_count,
+                completed_at=datetime.utcnow(),
+            )
+            logger.info(
+                "链接文档处理完成: %s (%d chunks, %d embedding tokens)",
+                document.title,
+                chunk_count,
+                total_embedding_tokens,
+            )
+
+        except URLFetchError as exc:
+            await self.db.rollback()
+            logger.error("URL 内容获取失败: %s - %s", document.url, str(exc))
+            await self._update_task_status(
+                task.id,
+                ProcessingStatus.FAILED,
+                error_message=str(exc),
+                completed_at=datetime.utcnow(),
+            )
+            raise
+        except Exception as exc:
+            await self.db.rollback()
+            logger.error("链接文档处理失败: %s - %s", document.id, str(exc), exc_info=True)
+            await self._update_task_status(
+                task.id,
+                ProcessingStatus.FAILED,
+                error_message=str(exc),
+                completed_at=datetime.utcnow(),
+            )
+            raise
 
     async def _resolve_and_normalize_document(
         self,
