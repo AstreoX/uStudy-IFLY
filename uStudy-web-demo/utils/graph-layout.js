@@ -209,6 +209,26 @@ export function buildTreeFromEdges(apiNodes, apiEdges) {
     childrenMap.get(e.from_node_id).push(e.to_node_id)
   })
 
+  // Detect and break cycles in parent chain (defense in depth)
+  const detectCycle = (nodeId, visited = new Set()) => {
+    if (visited.has(nodeId)) return true
+    visited.add(nodeId)
+    const parentId = parentMap.get(nodeId)
+    if (parentId) return detectCycle(parentId, visited)
+    return false
+  }
+
+  const nodesToFix = []
+  apiNodes.forEach(n => {
+    if (parentMap.has(n.id) && detectCycle(n.id)) {
+      nodesToFix.push(n.id)
+    }
+  })
+  nodesToFix.forEach(id => {
+    console.warn(`[graph-layout] Breaking cycle for node: ${id}`)
+    parentMap.delete(id)
+  })
+
   // BFS to assign levels
   const roots = apiNodes.filter(n => !parentMap.has(n.id))
   const levels = new Map()

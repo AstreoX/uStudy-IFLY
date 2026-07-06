@@ -206,6 +206,7 @@ export default {
       nodes: [],
       edges: [],
       learningPath: [],
+      childrenMap: new Map(),
 
       // Viewport
       scale: 1,
@@ -460,7 +461,8 @@ export default {
       const existingIds = new Set(this.nodes.map(n => n.id))
 
       const { nodes: rawNodes, edges: rawEdges } = newGraphData
-      const { nodes: processedNodes, edges: processedEdges, learningPath } = buildTreeFromEdges(rawNodes, rawEdges)
+      const { nodes: processedNodes, edges: processedEdges, learningPath, childrenMap } = buildTreeFromEdges(rawNodes, rawEdges)
+      this.childrenMap = childrenMap
 
       // 识别新节点
       const addedNodes = processedNodes.filter(n => !existingIds.has(n.id))
@@ -702,10 +704,11 @@ export default {
           return
         }
 
-        const { nodes, edges, learningPath } = buildTreeFromEdges(apiNodes, apiEdges)
+        const { nodes, edges, learningPath, childrenMap } = buildTreeFromEdges(apiNodes, apiEdges)
         this.nodes = nodes
         this.edges = edges
         this.learningPath = learningPath
+        this.childrenMap = childrenMap
 
         // Compute layout
         computeLayout(this.nodes, this.canvasWidth, this.canvasHeight)
@@ -771,16 +774,21 @@ export default {
         }
       })
 
-      // Child count cache
+      // Child count cache (iterative approach using childrenMap to avoid stack overflow)
       this.childCountCache = new Map()
-      this.nodes.forEach(n => {
+      const countDescendants = (nodeId) => {
         let count = 0
-        const countChildren = (parentId) => {
-          this.nodes.forEach(c => {
-            if (c.parent === parentId) { count++; countChildren(c.id) }
-          })
+        const stack = [...(this.childrenMap.get(nodeId) || [])]
+        while (stack.length > 0) {
+          const childId = stack.pop()
+          count++
+          const grandchildren = this.childrenMap.get(childId)
+          if (grandchildren) stack.push(...grandchildren)
         }
-        countChildren(n.id)
+        return count
+      }
+      this.nodes.forEach(n => {
+        const count = countDescendants(n.id)
         n.childCount = count
         this.childCountCache.set(n.id, count)
       })
@@ -790,11 +798,20 @@ export default {
     },
 
     updateVisibleNodesCache() {
+      const MAX_DEPTH = 100  // Safety limit to prevent stack overflow from cycles
       this.visibleNodesCache = this.nodes.filter(node => {
         let parent = node.parent ? this.nodeMap.get(node.parent) : null
-        while (parent) {
+        const visited = new Set()
+        let depth = 0
+        while (parent && depth < MAX_DEPTH) {
+          if (visited.has(parent.id)) {
+            console.warn(`[KnowledgeGraph] Cycle detected in parent chain: ${node.id} -> ${parent.id}`)
+            return true  // Show node if cycle detected (fail-safe)
+          }
+          visited.add(parent.id)
           if (parent.collapsed) return false
           parent = parent.parent ? this.nodeMap.get(parent.parent) : null
+          depth++
         }
         return true
       })
