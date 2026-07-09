@@ -104,6 +104,40 @@ class ConversationListResponse(BaseModel):
     total: int
 
 
+class MessageSnippet(BaseModel):
+    """A message with a snippet of matching context"""
+
+    id: UUID
+    role: str
+    snippet: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationSearchItem(BaseModel):
+    """A conversation result in a search response"""
+
+    id: UUID
+    title: str
+    space_id: Optional[UUID]
+    updated_at: datetime
+    created_at: datetime
+    matching_messages: list[MessageSnippet]
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationSearchResponse(BaseModel):
+    """Response for conversation search"""
+
+    items: list[ConversationSearchItem]
+    total: int
+    page: int
+    page_size: int
+    query: str
+
+
 class ToolCallExecuteResponse(BaseModel):
     """Response for executing a tool call"""
 

@@ -20,6 +20,7 @@ from chat.schemas import (
     ConversationResponse,
     ConversationDetailResponse,
     ConversationListResponse,
+    ConversationSearchResponse,
     ToolCallRequest,
     ToolCallExecuteResponse,
     ToolConfirmRequest,
@@ -576,6 +577,52 @@ async def list_conversations(
         )
 
 
+@router.get(
+    "/spaces/{space_id}/conversations/search",
+    response_model=ConversationSearchResponse,
+    summary="搜索空间对话历史",
+    description="""
+    在指定学习空间内搜索对话历史。
+
+    ## 搜索范围
+
+    - `scope=title`：仅搜索对话标题
+    - `scope=content`：仅搜索消息正文
+    - `scope=all`（默认）：标题 OR 消息正文均匹配
+
+    ## 返回
+
+    每条对话包含 `matching_messages`（最多 3 条匹配消息片段），片段保留关键词上下文（最多 200 字符）。
+    """,
+)
+async def search_conversations(
+    space_id: UUID,
+    q: str = Query(..., min_length=1, max_length=200, description="搜索关键词"),
+    scope: str = Query("all", pattern="^(title|content|all)$", description="搜索范围: title | content | all"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=50, description="每页条数（最大 50）"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ConversationSearchResponse:
+    """Search conversations within a learning space by title and/or message content."""
+    service = ChatService(db)
+
+    try:
+        return await service.search_conversations(
+            user.id, space_id, q, scope=scope, page=page, page_size=page_size
+        )
+    except SpaceNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "SPACE_NOT_FOUND", "message": "学习空间不存在"},
+        )
+    except SpaceAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "ACCESS_DENIED", "message": "无权访问该学习空间"},
+        )
+
+
 @router.post(
     "/spaces/{space_id}/tools/execute",
     response_model=ToolCallExecuteResponse,
@@ -746,6 +793,27 @@ async def list_quick_chat_conversations(
     """List quick chat conversations (no space binding)"""
     service = ChatService(db)
     return await service.list_quick_chat_conversations(user.id)
+
+
+@router.get(
+    "/quick-chat/conversations/search",
+    response_model=ConversationSearchResponse,
+    summary="搜索快速对话历史",
+    description="在快速对话（不绑定学习空间）中搜索对话历史，支持按标题、消息内容或全部范围搜索。",
+)
+async def search_quick_chat_conversations(
+    q: str = Query(..., min_length=1, max_length=200, description="搜索关键词"),
+    scope: str = Query("all", pattern="^(title|content|all)$", description="搜索范围: title | content | all"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=50, description="每页条数（最大 50）"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ConversationSearchResponse:
+    """Search quick chat conversations by title and/or message content."""
+    service = ChatService(db)
+    return await service.search_quick_chat_conversations(
+        user.id, q, scope=scope, page=page, page_size=page_size
+    )
 
 
 @router.post(

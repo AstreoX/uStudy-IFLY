@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, AsyncGenerator
 from uuid import UUID
 
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,6 +22,9 @@ from chat.schemas import (
     ConversationDetailResponse,
     ConversationResponse,
     ConversationListResponse,
+    ConversationSearchResponse,
+    ConversationSearchItem,
+    MessageSnippet,
     UpdateConversationRequest,
 )
 from config import get_settings
@@ -29,6 +32,21 @@ from db.database import get_scoped_session
 from db.models import Conversation, Message, MessageRole, Space, MessageAttachment, AttachmentType
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_snippet(content: str, query: str, max_len: int = 200) -> str:
+    """Extract a context snippet around the first occurrence of query in content."""
+    idx = content.lower().find(query.lower())
+    if idx == -1:
+        return content[:max_len]
+    start = max(0, idx - 60)
+    end = min(len(content), idx + len(query) + 60)
+    snippet = content[start:end]
+    if start > 0:
+        snippet = "\u2026" + snippet
+    if end < len(content):
+        snippet = snippet + "\u2026"
+    return snippet
 
 
 def _extract_tool_calls_from_context(llm_context: dict | None) -> list[dict] | None:
@@ -901,6 +919,127 @@ class ChatService:
             total=len(conversations),
         )
 
+    async def search_conversations(
+        self,
+        user_id: UUID,
+        space_id: UUID,
+        q: str,
+        scope: str = "all",
+        page: int = 1,
+        page_size: int = 20,
+    ) -> ConversationSearchResponse:
+        """
+        Search conversations within a learning space.
+
+        Args:
+            user_id: Current user ID
+            space_id: Learning space ID (results are scoped to this space)
+            q: Search query
+            scope: "title" | "content" | "all"
+            page: Page number (1-based)
+            page_size: Results per page (max 50)
+
+        Returns:
+            ConversationSearchResponse
+
+        Raises:
+            SpaceNotFoundError: If space not found
+            SpaceAccessDeniedError: If user doesn't own the space
+        """
+        await self._get_space_with_check(user_id, space_id)
+
+        page_size = min(page_size, 50)
+        pattern = f"%{q}%"
+
+        # Build base query scoped to space + user
+        base_query = (
+            select(Conversation)
+            .distinct()
+            .where(
+                Conversation.space_id == space_id,
+                Conversation.user_id == user_id,
+            )
+        )
+
+        if scope == "title":
+            base_query = base_query.where(Conversation.title.ilike(pattern))
+        elif scope == "content":
+            base_query = (
+                base_query
+                .outerjoin(Message, Message.conversation_id == Conversation.id)
+                .where(Message.content.ilike(pattern))
+            )
+        else:  # "all"
+            base_query = (
+                base_query
+                .outerjoin(Message, Message.conversation_id == Conversation.id)
+                .where(
+                    or_(
+                        Conversation.title.ilike(pattern),
+                        Message.content.ilike(pattern),
+                    )
+                )
+            )
+
+        # Count total matching conversations
+        count_result = await self.db.scalar(
+            select(func.count()).select_from(base_query.subquery())
+        )
+        total = count_result or 0
+
+        # Fetch paginated conversations
+        paginated = base_query.order_by(Conversation.updated_at.desc()).offset(
+            (page - 1) * page_size
+        ).limit(page_size)
+
+        conv_result = await self.db.execute(paginated)
+        conversations = conv_result.scalars().all()
+
+        # For each conversation, fetch up to 3 matching messages (skip for title-only scope)
+        items = []
+        for conv in conversations:
+            if scope == "title":
+                matching_messages = []
+            else:
+                msg_result = await self.db.execute(
+                    select(Message)
+                    .where(
+                        Message.conversation_id == conv.id,
+                        Message.content.ilike(pattern),
+                    )
+                    .order_by(Message.created_at.asc())
+                    .limit(3)
+                )
+                msgs = msg_result.scalars().all()
+                matching_messages = [
+                    MessageSnippet(
+                        id=m.id,
+                        role=m.role.value,
+                        snippet=_extract_snippet(m.content, q),
+                        created_at=m.created_at,
+                    )
+                    for m in msgs
+                ]
+
+            items.append(
+                ConversationSearchItem(
+                    id=conv.id,
+                    title=conv.title,
+                    space_id=conv.space_id,
+                    updated_at=conv.updated_at,
+                    created_at=conv.created_at,
+                    matching_messages=matching_messages,
+                )
+            )
+
+        return ConversationSearchResponse(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            query=q,
+        )
+
     async def delete_conversation(
         self,
         user_id: UUID,
@@ -1028,6 +1167,115 @@ class ChatService:
         return ConversationListResponse(
             conversations=[ConversationResponse.model_validate(c) for c in conversations],
             total=len(conversations),
+        )
+
+    async def search_quick_chat_conversations(
+        self,
+        user_id: UUID,
+        q: str,
+        scope: str = "all",
+        page: int = 1,
+        page_size: int = 20,
+    ) -> ConversationSearchResponse:
+        """
+        Search quick chat conversations (space_id IS NULL) by title and/or message content.
+
+        Args:
+            user_id: Current user ID
+            q: Search query
+            scope: "title" | "content" | "all"
+            page: Page number (1-based)
+            page_size: Results per page (max 50)
+
+        Returns:
+            ConversationSearchResponse
+        """
+        page_size = min(page_size, 50)
+        pattern = f"%{q}%"
+
+        base_query = (
+            select(Conversation)
+            .distinct()
+            .where(
+                Conversation.user_id == user_id,
+                Conversation.space_id.is_(None),
+            )
+        )
+
+        if scope == "title":
+            base_query = base_query.where(Conversation.title.ilike(pattern))
+        elif scope == "content":
+            base_query = (
+                base_query
+                .outerjoin(Message, Message.conversation_id == Conversation.id)
+                .where(Message.content.ilike(pattern))
+            )
+        else:  # "all"
+            base_query = (
+                base_query
+                .outerjoin(Message, Message.conversation_id == Conversation.id)
+                .where(
+                    or_(
+                        Conversation.title.ilike(pattern),
+                        Message.content.ilike(pattern),
+                    )
+                )
+            )
+
+        count_result = await self.db.scalar(
+            select(func.count()).select_from(base_query.subquery())
+        )
+        total = count_result or 0
+
+        paginated = base_query.order_by(Conversation.updated_at.desc()).offset(
+            (page - 1) * page_size
+        ).limit(page_size)
+
+        conv_result = await self.db.execute(paginated)
+        conversations = conv_result.scalars().all()
+
+        items = []
+        for conv in conversations:
+            if scope == "title":
+                matching_messages = []
+            else:
+                msg_result = await self.db.execute(
+                    select(Message)
+                    .where(
+                        Message.conversation_id == conv.id,
+                        Message.content.ilike(pattern),
+                    )
+                    .order_by(Message.created_at.asc())
+                    .limit(3)
+                )
+                msgs = msg_result.scalars().all()
+                matching_messages = [
+                    MessageSnippet(
+                        id=m.id,
+                        role=m.role.value,
+                        snippet=_extract_snippet(m.content, q),
+                        created_at=m.created_at,
+                    )
+                    for m in msgs
+                ]
+
+            items.append(
+                ConversationSearchItem(
+                    id=conv.id,
+                    title=conv.title,
+                    space_id=conv.space_id,
+                    updated_at=conv.updated_at,
+                    created_at=conv.created_at,
+                    matching_messages=matching_messages,
+                )
+            )
+
+        return ConversationSearchResponse(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            query=q,
         )
 
     async def update_conversation(
