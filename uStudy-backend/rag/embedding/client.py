@@ -1,6 +1,8 @@
 """OpenRouter Embedding 异步客户端"""
 
 import asyncio
+import hashlib
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -208,7 +210,9 @@ class EmbeddingClient:
 
     async def embed_query(self, query: str) -> list[float]:
         """
-        对搜索查询进行 embedding（别名方法，语义更清晰）
+        对搜索查询进行 embedding（别名方法，语义更清晰）。
+
+        支持 Redis 缓存：相同查询在 TTL 内直接返回缓存结果，避免重复 API 调用。
 
         Args:
             query: 搜索查询文本
@@ -216,4 +220,38 @@ class EmbeddingClient:
         Returns:
             embedding 向量
         """
-        return await self.embed(query)
+        settings = get_settings()
+        if not settings.embedding_cache_enabled:
+            return await self.embed(query)
+
+        # 计算缓存 key
+        cache_key = f"emb:{hashlib.sha256(query.encode()).hexdigest()[:16]}"
+
+        try:
+            from db.redis import get_redis
+
+            r = await get_redis()
+            cached = await r.get(cache_key)
+            if cached is not None:
+                logger.debug("Embedding cache hit: %s", cache_key)
+                return json.loads(cached)
+        except Exception as e:
+            logger.debug("Embedding cache read failed (will compute): %s", e)
+
+        # 缓存未命中，调用 API
+        embedding = await self.embed(query)
+
+        # 异步写入缓存（不阻塞返回）
+        try:
+            from db.redis import get_redis
+
+            r = await get_redis()
+            await r.set(
+                cache_key,
+                json.dumps(embedding),
+                ex=settings.embedding_cache_ttl_seconds,
+            )
+        except Exception as e:
+            logger.debug("Embedding cache write failed: %s", e)
+
+        return embedding

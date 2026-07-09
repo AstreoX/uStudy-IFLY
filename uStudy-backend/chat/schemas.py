@@ -200,3 +200,9 @@ class QuickChatToolTaskBindResponse(BaseModel):
     success: bool = Field(..., description="绑定是否成功")
     data: Optional[dict[str, Any]] = Field(None, description="绑定结果数据")
     message: str = Field(..., description="结果消息")
+
+
+class RollbackResponse(BaseModel):
+    """Response for rolling back the last user message round"""
+
+    deleted_count: int = Field(..., description="删除的消息数量")

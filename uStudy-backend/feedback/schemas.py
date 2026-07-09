@@ -40,6 +40,11 @@ class FeedbackRequest(BaseModel):
         max_length=200,
         description="Learning space name if in space_chat mode",
     )
+    feedback_type: Optional[str] = Field(
+        None,
+        pattern="^(positive|negative|report)$",
+        description="Feedback type: positive (like), negative (dislike), report (manual report)",
+    )
     feedback_content: str = Field(
         ...,
         min_length=1,

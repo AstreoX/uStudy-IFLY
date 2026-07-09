@@ -419,6 +419,20 @@ class PromptBuilder:
 画一个方框圈住相关区域并附上批注文字。坐标使用百分比。
 """
 
+    # 自动 RAG 预检索上下文段落模板
+    RAG_CONTEXT_SECTION = """
+# 相关文档内容（自动检索）
+
+以下是根据用户消息自动从学习资料中检索到的相关内容片段：
+
+{rag_context}
+
+**使用原则**：
+- 这些内容来自用户上传的文档，可作为回答的参考依据
+- 如需更详细的文档信息，可使用 search_documents 工具做补充搜索
+- 引用文档内容时请注明来源
+"""
+
     # 旧版长期记忆段落模板（QuickChat 暂时保留）
     LONG_TERM_MEMORY_SECTION = """
 # 长期记忆
@@ -441,6 +455,7 @@ class PromptBuilder:
         reviews_count: int = 0,
         tool_catalog: Optional[str] = None,
         has_panel_screenshot: bool = False,
+        rag_context: Optional[str] = None,
     ) -> str:
         """
         Build system prompt for learning space mode.
@@ -452,6 +467,8 @@ class PromptBuilder:
             previous_conversation_context: Formatted previous conversation context (optional)
             reviews_count: Number of due/overdue review items in this space
             tool_catalog: Tool catalog text for auto mode (optional, None for manual mode)
+            has_panel_screenshot: Whether the user has a panel screenshot open
+            rag_context: Auto-retrieved RAG document context (optional)
 
         Returns:
             Formatted system prompt string
@@ -468,6 +485,11 @@ class PromptBuilder:
 
         if has_panel_screenshot:
             base_prompt = base_prompt + "\n" + self.DUAL_SYNC_SECTION
+
+        # 如果有自动 RAG 预检索结果，注入到提示词
+        if rag_context:
+            rag_section = self.RAG_CONTEXT_SECTION.format(rag_context=rag_context)
+            base_prompt = base_prompt + "\n" + rag_section
 
         # 如果有上一次对话上下文（新对话时加载），拼接到提示词
         if previous_conversation_context:

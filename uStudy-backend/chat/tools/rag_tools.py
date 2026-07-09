@@ -1,6 +1,5 @@
 """RAG Tools - Document Search and Retrieval"""
 
-import asyncio
 import logging
 from typing import Any
 from uuid import UUID
@@ -8,7 +7,7 @@ from uuid import UUID
 from chat.tools.base import ToolResult
 from config import get_settings
 from db.database import get_scoped_session
-from rag.retrieval.reranker import rerank_results
+from rag.retrieval.hybrid_search import HybridSearchService
 from rag.retrieval.vector_search import VectorSearchService
 
 logger = logging.getLogger(__name__)
@@ -100,14 +99,16 @@ class RAGToolExecutor:
         top_k = min(max(top_k, MIN_TOP_K), MAX_TOP_K)
 
         try:
-            # Use a short-lived session for the vector search
+            # Use a short-lived session for the search
             async with get_scoped_session() as db:
-                vector_search = VectorSearchService(db)
-                # 1. 向量搜索
-                results = await vector_search.search(
+                if settings.hybrid_search_enabled:
+                    search_service = HybridSearchService(db)
+                else:
+                    search_service = VectorSearchService(db)
+                results = await search_service.search(
                     query=query,
                     space_id=self.space_id,
-                    top_k=settings.retrieval_top_k,
+                    top_k=top_k,
                     score_threshold=0.3,
                 )
 
@@ -118,32 +119,14 @@ class RAGToolExecutor:
                     message="未找到相关文档内容",
                 )
 
-            # 2. 重排序（可选）
-            formatted_results = []
-            if settings.rerank_enabled:
-                try:
-                    ranked = await asyncio.to_thread(
-                        rerank_results, query, results, top_k
-                    )
-                    for item in ranked:
-                        result = item.result
-                        formatted_results.append({
-                            "content": result.content,
-                            "source": result.document_title or result.document_filename,
-                            "score": round(item.rerank_score, 3),
-                        })
-                except Exception as rerank_error:
-                    logger.warning(f"Reranker failed, falling back to vector search results: {rerank_error}")
-                    formatted_results = []  # 清空，下面会重新填充
-
-            # 如果未启用 rerank 或 rerank 失败，使用向量搜索结果
-            if not formatted_results:
-                for result in results[:top_k]:
-                    formatted_results.append({
-                        "content": result.content,
-                        "source": result.document_title or result.document_filename,
-                        "score": round(result.score, 3),
-                    })
+            formatted_results = [
+                {
+                    "content": result.content,
+                    "source": result.document_title or result.document_filename,
+                    "score": round(result.score, 3),
+                }
+                for result in results
+            ]
 
             return ToolResult(
                 success=True,

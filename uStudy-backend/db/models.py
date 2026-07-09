@@ -19,7 +19,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import ENUM, JSON, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ENUM, JSON, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 try:
@@ -912,6 +912,7 @@ class DocumentChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[Optional[list]] = mapped_column(Vector(2000), nullable=True)
+    content_tsv = mapped_column(TSVECTOR, nullable=True)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

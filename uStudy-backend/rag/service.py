@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import AsyncIterator, Iterable, Optional
 
 import aiofiles
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
@@ -26,6 +26,7 @@ from db.models import (
 from rag.chunking import Chunk, get_chunker
 from rag.embedding import EmbeddingClient
 from rag.parsing import NormalizedDocument, normalize_legacy_document, resolve_document_format
+from rag.retrieval.text_segmentation import segment_for_search
 from rag.utils import has_visual_content
 
 logger = logging.getLogger(__name__)
@@ -499,6 +500,7 @@ class DocumentProcessingService:
                 "token_count": chunk.token_count,
                 "chunk_metadata": chunk.metadata,
                 "embedding": embedding,
+                "content_tsv": func.to_tsvector("simple", segment_for_search(chunk.content)),
             }
             for chunk, embedding in zip(chunks, embeddings)
         ]

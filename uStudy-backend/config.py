@@ -130,9 +130,22 @@ class Settings(BaseSettings):
 
     # 检索配置
     retrieval_top_k: int = 10  # 向量搜索返回数量
-    rerank_enabled: bool = False  # 是否启用重排序（需要访问 HuggingFace）
-    rerank_top_k: int = 5  # 重排序后返回数量
-    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+    # 混合搜索配置
+    hybrid_search_enabled: bool = True       # 默认开启混合搜索
+    hybrid_vector_weight: float = 0.7        # RRF 中向量权重
+    hybrid_text_weight: float = 0.3          # RRF 中全文权重
+    hybrid_rrf_k: int = 60                   # RRF 常数
+    hybrid_fetch_k: int = 20                 # 每路搜索的候选数量
+
+    # 自动 RAG 预注入配置
+    rag_auto_inject_enabled: bool = True     # 默认开启
+    rag_auto_inject_top_k: int = 3           # 预注入结果数（小值，节省 token）
+    rag_auto_inject_threshold: float = 0.5   # 最低相似度（高于工具搜索的 0.3）
+
+    # 嵌入缓存配置
+    embedding_cache_enabled: bool = True
+    embedding_cache_ttl_seconds: int = 3600
 
     # VLM 视觉处理配置
     vlm_processing_enabled: bool = True

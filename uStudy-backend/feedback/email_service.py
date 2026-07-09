@@ -214,10 +214,18 @@ def _build_feedback_email_html(
     conversation_history: list[dict[str, Any]],
     system_prompt: str | None = None,
     llm_context: dict[str, Any] | None = None,
+    feedback_type: str = "report",
 ) -> str:
     """Build HTML email content for feedback notification."""
     mode_display = "Learning Space" if chat_mode == "space_chat" else "Quick Chat"
     space_info = f" ({html.escape(space_name)})" if space_name else ""
+
+    # Feedback type styling
+    type_config = {
+        "positive": {"title": "\U0001f44d Positive Feedback", "color": "#27ae60", "border_color": "#2ecc71"},
+        "negative": {"title": "\U0001f44e Negative Feedback", "color": "#e74c3c", "border_color": "#e74c3c"},
+    }
+    ft = type_config.get(feedback_type, {"title": "User Feedback Report", "color": "#333", "border_color": "#ffc107"})
 
     # LLM Context section (priority over legacy system_prompt)
     llm_context_section = ""
@@ -259,8 +267,8 @@ def _build_feedback_email_html(
             <!-- Header -->
             <div style="text-align: center; margin-bottom: 24px; padding-bottom: 16px;
                         border-bottom: 1px solid #eee;">
-                <h1 style="color: #333; font-size: 24px; margin: 0;">
-                    User Feedback Report
+                <h1 style="color: {ft['color']}; font-size: 24px; margin: 0;">
+                    {ft['title']}
                 </h1>
                 <p style="color: #666; margin: 8px 0 0;">uStudy AI Assistant</p>
             </div>
@@ -283,6 +291,12 @@ def _build_feedback_email_html(
                         <td style="padding: 4px 0; color: #333;">{mode_display}{space_info}</td>
                     </tr>
                     <tr>
+                        <td style="padding: 4px 0; color: #666;">Feedback Type:</td>
+                        <td style="padding: 4px 0; color: {ft['color']}; font-weight: bold;">
+                            {html.escape(feedback_type.capitalize())}
+                        </td>
+                    </tr>
+                    <tr>
                         <td style="padding: 4px 0; color: #666;">Submitted:</td>
                         <td style="padding: 4px 0; color: #333;">
                             {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -295,7 +309,7 @@ def _build_feedback_email_html(
             <div style="margin-bottom: 24px;">
                 <h3 style="color: #333; margin-bottom: 12px;">Feedback Content</h3>
                 <div style="background: #fff3cd; padding: 16px; border-radius: 8px;
-                            border-left: 4px solid #ffc107;">
+                            border-left: 4px solid {ft['border_color']};">
                     <p style="margin: 0; font-size: 14px; color: #333; white-space: pre-wrap;">
 {html.escape(feedback_content)}
                     </p>
@@ -342,6 +356,7 @@ class FeedbackEmailService:
         conversation_history: list[dict[str, Any]],
         system_prompt: str | None = None,
         llm_context: dict[str, Any] | None = None,
+        feedback_type: str = "report",
     ) -> bool:
         """Send feedback notification email.
 
@@ -358,9 +373,11 @@ class FeedbackEmailService:
                 conversation_history=conversation_history,
                 system_prompt=system_prompt,
                 llm_context=llm_context,
+                feedback_type=feedback_type,
             )
 
-            subject = f"[uStudy Feedback] {user_nickname} - {chat_mode}"
+            type_label = {"positive": "\U0001f44d Positive", "negative": "\U0001f44e Negative"}.get(feedback_type, "\U0001f4cb Report")
+            subject = f"[uStudy Feedback] {type_label} - {user_nickname} - {chat_mode}"
 
             if self.settings.email_provider == "resend":
                 return await self._send_via_resend(subject, html_content)

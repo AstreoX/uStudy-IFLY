@@ -38,6 +38,8 @@ from chat.tools.memory_executor import MemoryToolExecutor, format_memory_for_pro
 from chat.tools.quiz_generation_tools import QUIZ_GENERATION_TOOLS, QuizGenerationToolExecutor
 from chat.tools.quiz_result_tools import QUIZ_RESULT_TOOLS, QUIZ_RESULT_TOOL_NAMES, QuizResultToolExecutor
 from chat.tools.rag_tools import RAG_TOOLS, RAGToolExecutor
+from rag.retrieval.hybrid_search import HybridSearchService
+from rag.retrieval.vector_search import VectorSearchService
 from chat.tools.base import ToolResult
 from chat.tools.client_tool_bridge import create_pending_request, wait_for_result
 from chat.tools.schedule_tools import SCHEDULE_TOOLS
@@ -752,6 +754,39 @@ class LLMOrchestrator:
             result["node_label"] = node_label
         return result
 
+    async def _pre_retrieve_rag_context(self, query: str) -> str | None:
+        """自动 RAG 预检索，返回格式化的文档上下文（或 None）。
+
+        在 process_message 中与记忆检索并发执行，不增加延迟。
+        失败时静默降级，不影响正常对话。
+        """
+        settings = get_settings()
+        if not settings.rag_auto_inject_enabled:
+            return None
+
+        try:
+            async with get_scoped_session() as db:
+                if settings.hybrid_search_enabled:
+                    search_service = HybridSearchService(db)
+                else:
+                    search_service = VectorSearchService(db)
+                results = await search_service.search(
+                    query=query,
+                    space_id=self.space_id,
+                    top_k=settings.rag_auto_inject_top_k,
+                    score_threshold=settings.rag_auto_inject_threshold,
+                )
+            if not results:
+                return None
+            lines = []
+            for r in results:
+                source = r.document_title or r.document_filename or "未知文档"
+                lines.append(f"【{source}】\n{r.content}")
+            return "\n\n---\n\n".join(lines)
+        except Exception as e:
+            logger.warning(f"RAG auto-inject failed: {e}")
+            return None
+
     async def process_message(
         self,
         user_message: str | dict[str, Any],
@@ -789,17 +824,18 @@ class LLMOrchestrator:
             else:
                 message_text = str(content)
 
-        # 2. 并行：语义检索记忆 + 查询到期复习项数量
+        # 2. 并行：语义检索记忆 + 查询到期复习项数量 + RAG 预检索
         t0 = time.monotonic()
-        relevant_memories, reviews_count = await asyncio.gather(
+        relevant_memories, reviews_count, rag_context = await asyncio.gather(
             self.memory_retriever.get_relevant_memories(
                 user_message=message_text,
                 max_long_term=5,
                 max_space=5,
             ),
             get_due_reviews_count_by_space(self.user_id, self.space_id),
+            self._pre_retrieve_rag_context(message_text),
         )
-        logger.info(f"[Perf] Memory + reviews retrieval: {(time.monotonic()-t0)*1000:.0f}ms")
+        logger.info(f"[Perf] Memory + reviews + RAG retrieval: {(time.monotonic()-t0)*1000:.0f}ms")
 
         # 3. 格式化记忆用于 prompt 注入（标注本空间/共享来源）
         formatted_memories = format_memories_for_prompt(
@@ -816,6 +852,7 @@ class LLMOrchestrator:
             reviews_count=reviews_count,
             tool_catalog=self._tool_catalog_text,
             has_panel_screenshot=self._has_panel_screenshot,
+            rag_context=rag_context,
         )
         logger.info(f"[Perf] Build prompt ({len(system_prompt)} chars): {(time.monotonic()-t0)*1000:.0f}ms")
 

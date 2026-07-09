@@ -8,15 +8,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import get_current_user
+from config import get_settings
 from db.database import get_db
 from db.models import DocumentProcessingTask, Space, SpaceDocument, User
-from rag.retrieval import VectorSearchService, rerank_results
+from rag.retrieval import HybridSearchService, VectorSearchService
 from rag.schemas import (
     ProcessingStatusResponse,
     SearchRequest,
     SearchResponse,
     SearchResultItem,
 )
+
+settings = get_settings()
 
 logger = logging.getLogger(__name__)
 
@@ -53,50 +56,33 @@ async def search_documents(
     """
     await verify_space_access(db, space_id, current_user.id)
 
-    # 向量搜索
-    search_service = VectorSearchService(db)
+    # 选择搜索服务
+    if settings.hybrid_search_enabled:
+        search_service = HybridSearchService(db)
+    else:
+        search_service = VectorSearchService(db)
+
     search_results = await search_service.search(
         query=request.query,
         space_id=space_id,
-        top_k=request.top_k if not request.rerank else request.top_k * 2,  # 重排序时多取一些
+        top_k=request.top_k,
     )
 
     if not search_results:
         return SearchResponse(results=[], total=0, query=request.query)
 
-    # 重排序（如果启用）
-    if request.rerank and search_results:
-        ranked_results = rerank_results(
-            query=request.query,
-            results=search_results,
-            top_k=request.top_k,
+    results = [
+        SearchResultItem(
+            chunk_id=r.chunk_id,
+            document_id=r.document_id,
+            content=r.content,
+            score=r.score,
+            document_title=r.document_title,
+            document_filename=r.document_filename,
+            metadata=r.metadata,
         )
-        results = [
-            SearchResultItem(
-                chunk_id=r.result.chunk_id,
-                document_id=r.result.document_id,
-                content=r.result.content,
-                score=r.result.score,
-                rerank_score=r.rerank_score,
-                document_title=r.result.document_title,
-                document_filename=r.result.document_filename,
-                metadata=r.result.metadata,
-            )
-            for r in ranked_results
-        ]
-    else:
-        results = [
-            SearchResultItem(
-                chunk_id=r.chunk_id,
-                document_id=r.document_id,
-                content=r.content,
-                score=r.score,
-                document_title=r.document_title,
-                document_filename=r.document_filename,
-                metadata=r.metadata,
-            )
-            for r in search_results[:request.top_k]
-        ]
+        for r in search_results
+    ]
 
     return SearchResponse(
         results=results,

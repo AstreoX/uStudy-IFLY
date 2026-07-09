@@ -1064,6 +1064,61 @@ class ChatService:
 
         logger.info(f"Deleted conversation {conversation_id}")
 
+    async def rollback_last_message(
+        self,
+        user_id: UUID,
+        conversation_id: UUID,
+    ) -> int:
+        """
+        Roll back the last user message and all subsequent messages.
+
+        Finds the most recent user message in the conversation and deletes
+        it along with any AI replies that followed.
+
+        Args:
+            user_id: Current user ID
+            conversation_id: Conversation ID
+
+        Returns:
+            Number of deleted messages
+
+        Raises:
+            ConversationNotFoundError: If conversation not found
+            ConversationAccessDeniedError: If user doesn't own the conversation
+        """
+        await self._get_conversation_with_check(user_id, conversation_id)
+
+        # Find the last user message
+        result = await self.db.execute(
+            select(Message)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.role == MessageRole.USER,
+            )
+            .order_by(Message.created_at.desc())
+            .limit(1)
+        )
+        last_user_msg = result.scalar_one_or_none()
+
+        if not last_user_msg:
+            return 0
+
+        # Delete that message and all messages after it
+        result = await self.db.execute(
+            delete(Message).where(
+                Message.conversation_id == conversation_id,
+                Message.created_at >= last_user_msg.created_at,
+            )
+        )
+        deleted_count = result.rowcount
+        await self.db.commit()
+
+        logger.info(
+            f"Rolled back conversation {conversation_id}: "
+            f"deleted {deleted_count} messages"
+        )
+        return deleted_count
+
     async def _get_space_with_check(
         self,
         user_id: UUID,

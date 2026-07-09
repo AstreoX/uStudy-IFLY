@@ -30,6 +30,7 @@ from chat.schemas import (
     QuickChatToolTaskBindResponse,
     ClientToolResultRequest,
     ClientToolResultResponse,
+    RollbackResponse,
 )
 from chat.models_config import get_available_models, validate_model_id
 from chat.service import (
@@ -748,6 +749,35 @@ async def delete_conversation(
 
     try:
         await service.delete_conversation(user.id, conversation_id)
+    except ConversationNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
+        )
+    except ConversationAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "ACCESS_DENIED", "message": "无权访问该对话"},
+        )
+
+
+@router.post(
+    "/conversations/{conversation_id}/rollback",
+    response_model=RollbackResponse,
+    summary="回滚最后一轮对话",
+    description="删除对话中最后一条用户消息及其后续的所有AI回复，用于消息编辑功能。",
+)
+async def rollback_last_message(
+    conversation_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RollbackResponse:
+    """Roll back the last user message round for editing."""
+    service = ChatService(db)
+
+    try:
+        deleted_count = await service.rollback_last_message(user.id, conversation_id)
+        return RollbackResponse(deleted_count=deleted_count)
     except ConversationNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

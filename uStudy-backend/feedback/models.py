@@ -62,6 +62,13 @@ class Feedback(Base):
         nullable=True,
         comment="Learning space name if space_chat mode",
     )
+    feedback_type: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        default="report",
+        server_default="report",
+        comment="Feedback type: positive, negative, report",
+    )
     feedback_content: Mapped[str] = mapped_column(
         Text,
         nullable=False,
