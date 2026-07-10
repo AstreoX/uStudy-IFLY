@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 
 # revision identifiers, used by Alembic.
 revision: str = "hybrid_search_v1"
-down_revision: Union[str, None] = "collab_v5"
+down_revision: Union[str, None] = "feedback_v1"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
