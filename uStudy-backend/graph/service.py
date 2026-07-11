@@ -171,6 +171,70 @@ class GraphService:
         logger.info(f"Created node: {node.id} ({label}) in space {space_id}")
         return node
 
+    async def create_node_with_edge(
+        self,
+        space_id: UUID,
+        label: str,
+        from_node_id: UUID,
+        mastery: Optional[int] = None,
+    ) -> tuple[Node, Edge]:
+        """
+        Atomically create a new node and an edge from an existing node to it.
+
+        Args:
+            space_id: Learning space ID
+            label: Node label/name (max 200 characters)
+            from_node_id: Existing source node ID
+            mastery: Mastery score (0-100) or None for unknown
+
+        Returns:
+            Tuple of (created Node, created Edge)
+
+        Raises:
+            NodeNotFoundError: If from_node_id not found
+            DuplicateNodeError: If node with same label exists in space
+            ValueError: If label is empty or too long
+        """
+        # Validate label
+        if not label or not label.strip():
+            raise ValueError("节点名称不能为空")
+        label = label.strip()
+        if len(label) > 200:
+            raise ValueError("节点名称过长（最多200字符）")
+
+        # Validate from_node exists
+        await self._get_node(space_id, from_node_id)
+
+        node = Node(space_id=space_id, label=label, mastery=mastery)
+        try:
+            self.db.add(node)
+            await self.db.flush()  # Get node.id without committing
+
+            edge = Edge(
+                space_id=space_id,
+                from_node_id=from_node_id,
+                to_node_id=node.id,
+                type=EdgeType.KNOWLEDGE_TREE,
+            )
+            self.db.add(edge)
+            await self.db.commit()
+            await self.db.refresh(node)
+            await self.db.refresh(edge)
+        except IntegrityError as e:
+            await self.db.rollback()
+            error_msg = str(e.orig).lower() if e.orig else ""
+            if "uq_nodes_space_label" in error_msg or "duplicate key" in error_msg:
+                raise DuplicateNodeError(
+                    f"Node '{label}' already exists in this space"
+                )
+            raise
+
+        logger.info(
+            f"Created node {node.id} ({label}) with edge from {from_node_id} "
+            f"in space {space_id}"
+        )
+        return node, edge
+
     async def delete_node(self, space_id: UUID, node_id: UUID) -> None:
         """
         Delete a node and all its related edges.

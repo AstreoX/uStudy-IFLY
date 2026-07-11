@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import Space, Node, Edge, EdgeType
 from chat.tools.graph_tools import GraphToolExecutor, GRAPH_TOOLS
 from graph.service import GraphService
+from graph.exceptions import DuplicateNodeError
 
 
 class TestGraphToolExecutorBasic:
@@ -90,76 +91,106 @@ class TestGetGraphOverview:
 
 
 class TestAddNode:
-    """add_node 工具测试"""
+    """add_node 工具测试（原子化：创建节点 + 建边）"""
 
     @pytest_asyncio.fixture
-    async def executor(
+    async def executor_with_root(
         self, db_session: AsyncSession, graph_test_space: Space
-    ) -> GraphToolExecutor:
-        return GraphToolExecutor(graph_test_space.id)
+    ) -> tuple[GraphToolExecutor, Node]:
+        """创建执行器并预建一个根节点"""
+        executor = GraphToolExecutor(graph_test_space.id)
+        service = GraphService(db_session)
+        root = await service.create_node(graph_test_space.id, "根节点")
+        return executor, root
 
     @pytest.mark.asyncio
-    async def test_add_node_success(self, executor: GraphToolExecutor):
-        """正常添加节点"""
-        result = await executor.execute("add_node", {"label": "新节点"})
+    async def test_add_node_success(self, executor_with_root):
+        """正常添加节点并自动建边"""
+        executor, _ = executor_with_root
+        result = await executor.execute("add_node", {"label": "新节点", "from_node": "根节点"})
 
         assert result.success is True
         assert result.data["label"] == "新节点"
-        assert "成功创建节点" in result.message
+        assert result.data["edge"]["from_node"] == "根节点"
+        assert result.data["edge"]["to_node"] == "新节点"
+        assert result.data["edge"]["type"] == "knowledge_tree"
+        assert "成功创建节点并连接" in result.message
 
     @pytest.mark.asyncio
-    async def test_add_node_with_mastery(self, executor: GraphToolExecutor):
-        """添加带掌握分的节点"""
-        result = await executor.execute(
-            "add_node", {"label": "带分数节点", "mastery": 75}
-        )
+    async def test_add_node_with_mastery_suffix(self, executor_with_root):
+        """label[mastery] 后缀解析"""
+        executor, _ = executor_with_root
+        result = await executor.execute("add_node", {"label": "微积分[85]", "from_node": "根节点"})
 
         assert result.success is True
-        assert result.data["mastery"] == 75
+        assert result.data["label"] == "微积分"
+        assert result.data["mastery"] == 85
 
     @pytest.mark.asyncio
-    async def test_add_node_mastery_minus_one(self, executor: GraphToolExecutor):
-        """-1 表示未学习，转换为 None"""
-        result = await executor.execute(
-            "add_node", {"label": "未学习", "mastery": -1}
-        )
+    async def test_add_node_mastery_out_of_range(self, executor_with_root):
+        """mastery 超出范围应忽略掌握度"""
+        executor, _ = executor_with_root
+        result = await executor.execute("add_node", {"label": "节点[150]", "from_node": "根节点"})
 
         assert result.success is True
+        assert result.data["label"] == "节点"
         assert result.data["mastery"] is None
 
     @pytest.mark.asyncio
-    async def test_add_node_empty_label(self, executor: GraphToolExecutor):
+    async def test_add_node_no_from_node(self, executor_with_root):
+        """不传 from_node 应失败"""
+        executor, _ = executor_with_root
+        result = await executor.execute("add_node", {"label": "节点"})
+
+        assert result.success is False
+        assert "from_node" in result.message
+
+    @pytest.mark.asyncio
+    async def test_add_node_from_node_not_found(self, executor_with_root):
+        """from_node 不存在应失败"""
+        executor, _ = executor_with_root
+        result = await executor.execute("add_node", {"label": "新节点", "from_node": "不存在的节点"})
+
+        assert result.success is False
+        assert "父节点不存在" in result.message
+
+    @pytest.mark.asyncio
+    async def test_add_node_empty_label(self, executor_with_root):
         """空标签应失败"""
-        result = await executor.execute("add_node", {"label": ""})
+        executor, _ = executor_with_root
+        result = await executor.execute("add_node", {"label": "", "from_node": "根节点"})
 
         assert result.success is False
         assert "不能为空" in result.message
 
     @pytest.mark.asyncio
-    async def test_add_node_missing_label(self, executor: GraphToolExecutor):
-        """缺少标签应失败"""
-        result = await executor.execute("add_node", {})
+    async def test_add_node_duplicate_label(self, executor_with_root):
+        """重复节点名应报已存在"""
+        executor, _ = executor_with_root
+        await executor.execute("add_node", {"label": "唯一节点", "from_node": "根节点"})
+        result = await executor.execute("add_node", {"label": "唯一节点", "from_node": "根节点"})
 
         assert result.success is False
+        assert "节点已存在" in result.message
 
 
 class TestAddEdge:
     """add_edge 工具测试"""
 
     @pytest_asyncio.fixture
-    async def executor(
+    async def executor_with_nodes(
         self, db_session: AsyncSession, graph_test_space: Space
     ) -> GraphToolExecutor:
+        """创建执行器并预建节点（通过 service 直接创建，不依赖 add_node 工具）"""
+        service = GraphService(db_session)
+        for label in ["源节点", "目标节点", "N1", "N2", "N3", "N4"]:
+            await service.create_node(graph_test_space.id, label)
         return GraphToolExecutor(graph_test_space.id)
 
     @pytest.mark.asyncio
-    async def test_add_edge_success(self, executor: GraphToolExecutor):
+    async def test_add_edge_success(self, executor_with_nodes: GraphToolExecutor):
         """正常添加边"""
-        # 先创建两个节点
-        await executor.execute("add_node", {"label": "源节点"})
-        await executor.execute("add_node", {"label": "目标节点"})
-
-        result = await executor.execute("add_edge", {
+        result = await executor_with_nodes.execute("add_edge", {
             "from_node": "源节点",
             "to_node": "目标节点",
         })
@@ -168,15 +199,10 @@ class TestAddEdge:
         assert "成功创建边" in result.message
 
     @pytest.mark.asyncio
-    async def test_add_edge_all_types(self, executor: GraphToolExecutor):
+    async def test_add_edge_all_types(self, executor_with_nodes: GraphToolExecutor):
         """测试所有边类型"""
-        await executor.execute("add_node", {"label": "N1"})
-        await executor.execute("add_node", {"label": "N2"})
-        await executor.execute("add_node", {"label": "N3"})
-        await executor.execute("add_node", {"label": "N4"})
-
         # knowledge_tree
-        r1 = await executor.execute("add_edge", {
+        r1 = await executor_with_nodes.execute("add_edge", {
             "from_node": "N1",
             "to_node": "N2",
             "edge_type": "knowledge_tree",
@@ -184,7 +210,7 @@ class TestAddEdge:
         assert r1.data["type"] == "knowledge_tree"
 
         # learning_path
-        r2 = await executor.execute("add_edge", {
+        r2 = await executor_with_nodes.execute("add_edge", {
             "from_node": "N2",
             "to_node": "N3",
             "edge_type": "learning_path",
@@ -192,7 +218,7 @@ class TestAddEdge:
         assert r2.data["type"] == "learning_path"
 
         # advanced
-        r3 = await executor.execute("add_edge", {
+        r3 = await executor_with_nodes.execute("add_edge", {
             "from_node": "N3",
             "to_node": "N4",
             "edge_type": "advanced",
@@ -200,8 +226,11 @@ class TestAddEdge:
         assert r3.data["type"] == "advanced"
 
     @pytest.mark.asyncio
-    async def test_add_edge_node_not_found(self, executor: GraphToolExecutor):
+    async def test_add_edge_node_not_found(
+        self, db_session: AsyncSession, graph_test_space: Space
+    ):
         """节点不存在"""
+        executor = GraphToolExecutor(graph_test_space.id)
         result = await executor.execute("add_edge", {
             "from_node": "不存在的节点1",
             "to_node": "不存在的节点2",
@@ -211,8 +240,11 @@ class TestAddEdge:
         assert "节点不存在" in result.message
 
     @pytest.mark.asyncio
-    async def test_add_edge_missing_params(self, executor: GraphToolExecutor):
+    async def test_add_edge_missing_params(
+        self, db_session: AsyncSession, graph_test_space: Space
+    ):
         """缺少必选参数"""
+        executor = GraphToolExecutor(graph_test_space.id)
         result = await executor.execute("add_edge", {})
 
         assert result.success is False
@@ -633,10 +665,12 @@ class TestToolExceptionHandling:
         self, db_session: AsyncSession, graph_test_space: Space
     ):
         """重复节点错误"""
+        service = GraphService(db_session)
+        await service.create_node(graph_test_space.id, "根")
         executor = GraphToolExecutor(graph_test_space.id)
 
-        await executor.execute("add_node", {"label": "唯一节点"})
-        result = await executor.execute("add_node", {"label": "唯一节点"})
+        await executor.execute("add_node", {"label": "唯一节点", "from_node": "根"})
+        result = await executor.execute("add_node", {"label": "唯一节点", "from_node": "根"})
 
         assert result.success is False
         assert "节点已存在" in result.message

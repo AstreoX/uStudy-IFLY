@@ -171,6 +171,54 @@ class TestGraphServiceNode:
         )
         assert node.label == "带空白的标签"
 
+    # ==================== create_node_with_edge 测试 ====================
+
+    @pytest.mark.asyncio
+    async def test_create_node_with_edge_success(
+        self, service: GraphService, graph_test_space: Space
+    ):
+        """原子创建节点 + 边"""
+        parent = await service.create_node(graph_test_space.id, "父节点")
+        node, edge = await service.create_node_with_edge(
+            space_id=graph_test_space.id,
+            label="子节点",
+            from_node_id=parent.id,
+            mastery=75,
+        )
+
+        assert node.label == "子节点"
+        assert node.mastery == 75
+        assert edge.from_node_id == parent.id
+        assert edge.to_node_id == node.id
+        assert edge.type == EdgeType.KNOWLEDGE_TREE
+
+    @pytest.mark.asyncio
+    async def test_create_node_with_edge_from_node_not_found(
+        self, service: GraphService, graph_test_space: Space
+    ):
+        """from_node 不存在应抛 NodeNotFoundError"""
+        fake_id = uuid4()
+        with pytest.raises(NodeNotFoundError):
+            await service.create_node_with_edge(
+                space_id=graph_test_space.id,
+                label="子节点",
+                from_node_id=fake_id,
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_node_with_edge_duplicate_label(
+        self, service: GraphService, graph_test_space: Space
+    ):
+        """重复节点名应抛 DuplicateNodeError"""
+        parent = await service.create_node(graph_test_space.id, "根")
+        await service.create_node_with_edge(
+            graph_test_space.id, "子", parent.id,
+        )
+        with pytest.raises(DuplicateNodeError):
+            await service.create_node_with_edge(
+                graph_test_space.id, "子", parent.id,
+            )
+
     # ==================== 删除节点测试 ====================
 
     @pytest.mark.asyncio

@@ -72,7 +72,7 @@ class ToolCatalogEntry:
 TOOL_CATALOG: list[ToolCatalogEntry] = [
     # ── 知识图谱 (15) ──
     ToolCatalogEntry("get_graph_overview", "知识图谱", "获取知识图谱概览（节点、边、掌握度）"),
-    ToolCatalogEntry("add_node", "知识图谱", "添加知识点节点"),
+    ToolCatalogEntry("add_node", "知识图谱", "从已有节点出发添加新知识点（自动建边）"),
     ToolCatalogEntry("add_edge", "知识图谱", "添加节点关系边"),
     ToolCatalogEntry("delete_node", "知识图谱", "删除知识点节点"),
     ToolCatalogEntry("delete_edge", "知识图谱", "删除关系边"),

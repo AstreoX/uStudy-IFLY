@@ -1,6 +1,7 @@
 """Knowledge Graph Tools - Definitions and Executor"""
 
 import logging
+import re
 from typing import Any
 from uuid import UUID
 
@@ -20,6 +21,8 @@ from graph.exceptions import (
 logger = logging.getLogger(__name__)
 
 _NODE_NOT_FOUND_HINT = "节点名称必须与知识图谱中已有节点完全匹配，请先调用 get_graph_overview 查看所有节点。"
+
+_LABEL_MASTERY_RE = re.compile(r"^(.+?)\[(\d{1,3})]$")
 
 
 # ============ 15 Knowledge Graph Tools (OpenAI Function Calling Format) ============
@@ -44,21 +47,21 @@ GRAPH_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "add_node",
-            "description": "添加新的知识点节点到知识图谱",
+            "description": "从已有节点出发，添加新的知识点节点。自动创建 from_node -> 新节点 的边。"
+                           "可在节点名称后加 [分数] 设置掌握度，如 '线性代数[90]'。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "label": {
                         "type": "string",
-                        "description": "知识点名称",
+                        "description": "知识点名称，可选后缀 [0-100] 设置掌握度，如 '微积分[85]'",
                     },
-                    "mastery": {
-                        "type": "integer",
-                        "description": "初始掌握分（0-100），-1 表示未学习",
-                        "default": -1,
+                    "from_node": {
+                        "type": "string",
+                        "description": "父节点名称（已存在于知识图谱中）",
                     },
                 },
-                "required": ["label"],
+                "required": ["label", "from_node"],
             },
         },
     },
@@ -625,20 +628,40 @@ class GraphToolExecutor:
         )
 
     async def _add_node(self, args: dict, graph_service: GraphService) -> ToolResult:
-        """Add a new node"""
-        label = args.get("label", "")
-        if not label:
+        """Add a new node with an edge from an existing node (atomic)"""
+        raw_label = args.get("label", "").strip()
+        if not raw_label:
+            return ToolResult(success=False, data=None, message="节点名称不能为空")
+
+        from_node_name = args.get("from_node", "").strip()
+        if not from_node_name:
+            return ToolResult(success=False, data=None, message="必须指定父节点 (from_node)")
+
+        # Parse label[mastery] format
+        mastery_value = None
+        match = _LABEL_MASTERY_RE.match(raw_label)
+        if match:
+            label = match.group(1).strip()
+            mastery_int = int(match.group(2))
+            if 0 <= mastery_int <= 100:
+                mastery_value = mastery_int
+            if not label:
+                return ToolResult(success=False, data=None, message="节点名称不能为空")
+        else:
+            label = raw_label
+
+        # Resolve parent node by name
+        from_node_obj = await graph_service.get_node_by_label(self.space_id, from_node_name)
+        if not from_node_obj:
             return ToolResult(
-                success=False, data=None, message="节点名称不能为空"
+                success=False, data=None,
+                message=f"父节点不存在: {from_node_name}。{_NODE_NOT_FOUND_HINT}",
             )
 
-        mastery = args.get("mastery", -1)
-        # -1 means not learned, convert to None for database
-        mastery_value = None if mastery == -1 else mastery
-
-        node = await graph_service.create_node(
+        node, edge = await graph_service.create_node_with_edge(
             space_id=self.space_id,
             label=label,
+            from_node_id=from_node_obj.id,
             mastery=mastery_value,
         )
 
@@ -648,8 +671,14 @@ class GraphToolExecutor:
                 "id": str(node.id),
                 "label": node.label,
                 "mastery": node.mastery,
+                "edge": {
+                    "id": str(edge.id),
+                    "from_node": from_node_name,
+                    "to_node": label,
+                    "type": edge.type.value,
+                },
             },
-            message=f"成功创建节点: {label}。提示：请使用 add_edge 工具将此节点与知识图谱中的相关节点建立连接。",
+            message=f"成功创建节点并连接: {from_node_name} -> {label}",
         )
 
     async def _add_edge(self, args: dict, graph_service: GraphService) -> ToolResult:
