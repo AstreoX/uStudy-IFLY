@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from chat.tools.base import ToolResult
 from db.database import get_scoped_session
-from quizzes.models import Quiz
+from db.models import Quiz
 from quizzes.service import (
     QuizAccessDeniedError,
     QuizAttemptNotFoundError,
