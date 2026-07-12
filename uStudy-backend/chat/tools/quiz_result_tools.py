@@ -4,11 +4,8 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
-
 from chat.tools.base import ToolResult
 from db.database import get_scoped_session
-from db.models import Quiz
 from quizzes.service import (
     QuizAccessDeniedError,
     QuizAttemptNotFoundError,
@@ -105,7 +102,6 @@ class QuizResultToolExecutor:
                 "score": q.attempt_score,
                 "total_score": q.attempt_total_score,
                 "has_attempt": q.has_attempt,
-                "attempt_status": q.attempt_status,
                 "created_at": q.created_at.strftime("%Y-%m-%d"),
             }
             for q in quizzes
@@ -136,9 +132,6 @@ class QuizResultToolExecutor:
         async with get_scoped_session() as db:
             service = QuizService(db)
             attempt = await service.get_quiz_attempt(self.user_id, quiz_id)
-            # Fetch quiz title for frontend display
-            quiz_row = await db.execute(select(Quiz.title).where(Quiz.id == quiz_id))
-            quiz_title = quiz_row.scalar_one_or_none() or ""
 
         questions_detail = [
             {
@@ -164,7 +157,6 @@ class QuizResultToolExecutor:
         return ToolResult(
             success=True,
             data={
-                "quiz_title": quiz_title,
                 "score": attempt.score,
                 "total_score": attempt.total_score,
                 "percentage": percentage,
