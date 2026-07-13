@@ -105,6 +105,12 @@ class AgentTaskResultResponse(BaseModel):
     # 测试生成任务结果
     quiz_id: UUID | None = Field(None, description="测试 ID")
     question_count: int | None = Field(None, description="创建的题目数")
+    # Artifact 任务结果
+    note_id: UUID | None = Field(None, description="交互演示笔记 ID")
+    artifact_title: str | None = Field(None, description="交互演示标题")
+    artifact_progress_status: str | None = Field(None, description="Artifact 生成进度状态")
+    code_snapshot: str | None = Field(None, description="当前代码快照")
+    html_size: int | None = Field(None, description="最终 HTML 大小（字节）")
     # 调试日志
     debug_logs: list[dict[str, Any]] | None = Field(None, description="调试日志（LLM 原始回复）")
     created_at: datetime = Field(..., description="创建时间")

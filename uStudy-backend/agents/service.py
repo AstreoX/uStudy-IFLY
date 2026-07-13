@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -17,6 +18,10 @@ from agents.exceptions import (
     TaskNotFoundError,
 )
 from agents.artifact_agent import ArtifactGenerationAgent
+from agents.artifact_stream_cache import (
+    get_artifact_stream_state,
+    set_artifact_stream_state,
+)
 from agents.knowledge_graph_agent import KnowledgeGraphAgent
 from agents.node_expand_agent import NodeExpandAgent
 from agents.schemas import (
@@ -34,6 +39,8 @@ logger = logging.getLogger(__name__)
 
 # 调试数据存储的大小限制
 MAX_DEBUG_OUTPUT_SIZE = 50000  # 50KB（支持更多 LLM 输出）
+ARTIFACT_STREAM_EMIT_INTERVAL_SECONDS = 0.3
+ARTIFACT_STREAM_EMIT_CHARS = 512
 
 
 def _truncate_debug_logs(debug_logs: list[dict[str, Any]], max_size: int = MAX_DEBUG_OUTPUT_SIZE) -> list[dict[str, Any]]:
@@ -681,66 +688,136 @@ class AgentService:
         existing_html: str | None = None,
     ) -> None:
         """后台执行 Artifact HTML 生成任务"""
+        raw_output = ""
+        artifact_title = "交互演示"
+
         async with AsyncSessionLocal() as session:
             try:
+                note_result = await session.execute(
+                    select(Note).where(Note.id == note_id)
+                )
+                note = note_result.scalar_one_or_none()
+                if not note:
+                    raise ValueError("演示笔记不存在")
+
+                artifact_title = note.title or artifact_title
+                initial_output_data = {
+                    "note_id": str(note_id),
+                    "artifact_title": artifact_title,
+                    "artifact_progress_status": "streaming",
+                    "code_snapshot": "",
+                    "chars_total": 0,
+                }
                 await session.execute(
                     update(AgentTask)
                     .where(AgentTask.id == task_id)
                     .values(
                         status=AgentTaskStatus.RUNNING,
                         started_at=datetime.now(timezone.utc),
+                        output_data=initial_output_data,
                     )
                 )
                 await session.commit()
+                await set_artifact_stream_state(
+                    task_id=str(task_id),
+                    note_id=str(note_id),
+                    title=artifact_title,
+                    status="streaming",
+                    code_snapshot="",
+                )
 
                 logger.info("开始执行 Artifact 生成任务: task_id=%s", task_id)
 
                 agent = ArtifactGenerationAgent()
-                html = await agent.generate(
+                pending_delta = ""
+                last_emit_at = time.monotonic()
+
+                async for chunk in agent.stream_generate(
                     description=description,
                     libraries=libraries,
                     existing_html=existing_html,
-                )
+                ):
+                    if not chunk:
+                        continue
+                    raw_output += chunk
+                    pending_delta += chunk
+                    now = time.monotonic()
+                    if (
+                        len(pending_delta) >= ARTIFACT_STREAM_EMIT_CHARS
+                        or now - last_emit_at >= ARTIFACT_STREAM_EMIT_INTERVAL_SECONDS
+                    ):
+                        await self._flush_artifact_stream_progress(
+                            task_id=task_id,
+                            user_id=user_id,
+                            space_id=space_id,
+                            conversation_id=conversation_id,
+                            note_id=note_id,
+                            title=artifact_title,
+                            delta=pending_delta,
+                            code_snapshot=raw_output,
+                        )
+                        pending_delta = ""
+                        last_emit_at = now
 
-                # 更新 Note 内容
-                result = await session.execute(
-                    select(Note).where(Note.id == note_id)
-                )
-                note = result.scalar_one_or_none()
-                if note:
-                    note.content = html
-                    note.metadata_ = {**(note.metadata_ or {}), "generating": False}
-                    await session.commit()
+                if pending_delta:
+                    await self._flush_artifact_stream_progress(
+                        task_id=task_id,
+                        user_id=user_id,
+                        space_id=space_id,
+                        conversation_id=conversation_id,
+                        note_id=note_id,
+                        title=artifact_title,
+                        delta=pending_delta,
+                        code_snapshot=raw_output,
+                    )
 
-                # 更新 task 状态
+                html = agent.finalize_output(raw_output)
+                html_size = len(html.encode("utf-8"))
+                note.content = html
+                note_metadata = {**(note.metadata_ or {}), "generating": False}
+                note_metadata.pop("error", None)
+                note.metadata_ = note_metadata
+
+                final_output_data = {
+                    "note_id": str(note_id),
+                    "artifact_title": artifact_title,
+                    "artifact_progress_status": "done",
+                    "code_snapshot": html,
+                    "chars_total": len(html),
+                    "html_size": html_size,
+                }
                 await session.execute(
                     update(AgentTask)
                     .where(AgentTask.id == task_id)
                     .values(
                         status=AgentTaskStatus.DONE,
                         completed_at=datetime.now(timezone.utc),
-                        output_data={
-                            "note_id": str(note_id),
-                            "html_size": len(html.encode("utf-8")),
-                        },
+                        output_data=final_output_data,
                     )
                 )
                 await session.commit()
+                await set_artifact_stream_state(
+                    task_id=str(task_id),
+                    note_id=str(note_id),
+                    title=artifact_title,
+                    status="done",
+                    code_snapshot=html,
+                )
 
                 logger.info("Artifact 生成任务完成: task_id=%s, note_id=%s", task_id, note_id)
 
-                # 推送通知
-                from notifications.queue import push_notification
-                await push_notification(user_id, {
-                    "type": "artifact_ready",
-                    "data": {
+                await self._push_artifact_notification(
+                    user_id=user_id,
+                    event_type="artifact_ready",
+                    data={
                         "note_id": str(note_id),
                         "conversation_id": str(conversation_id),
                         "space_id": str(space_id),
-                        "title": note.title if note else "",
+                        "task_id": str(task_id),
+                        "title": artifact_title,
                         "status": "done",
                     },
-                })
+                )
 
             except Exception as e:
                 logger.error("Artifact 生成任务失败: task_id=%s, error=%s", task_id, e)
@@ -751,22 +828,30 @@ class AgentService:
                 if isinstance(e, ValueError):
                     user_error = str(e)  # ValueError messages are user-facing
 
-                # 更新 Note metadata
                 try:
-                    result = await session.execute(
+                    note_result = await session.execute(
                         select(Note).where(Note.id == note_id)
                     )
-                    note = result.scalar_one_or_none()
+                    note = note_result.scalar_one_or_none()
                     if note:
                         note.metadata_ = {
                             **(note.metadata_ or {}),
                             "generating": False,
                             "error": user_error,
                         }
-                        await session.commit()
                 except Exception:
                     await session.rollback()
 
+                failure_output_data = {
+                    "note_id": str(note_id),
+                    "artifact_title": artifact_title,
+                    "artifact_progress_status": "failed",
+                    "code_snapshot": raw_output,
+                    "chars_total": len(raw_output),
+                    "user_error_message": user_error,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                }
                 await session.execute(
                     update(AgentTask)
                     .where(AgentTask.id == task_id)
@@ -774,26 +859,80 @@ class AgentService:
                         status=AgentTaskStatus.FAILED,
                         completed_at=datetime.now(timezone.utc),
                         error_message=str(e),  # internal log only
-                        output_data={
-                            "error_type": type(e).__name__,
-                            "error_message": str(e),
-                        },
+                        output_data=failure_output_data,
                     )
                 )
                 await session.commit()
+                await set_artifact_stream_state(
+                    task_id=str(task_id),
+                    note_id=str(note_id),
+                    title=artifact_title,
+                    status="failed",
+                    code_snapshot=raw_output,
+                )
 
-                # 推送失败通知 (user-safe message only)
-                from notifications.queue import push_notification
-                await push_notification(user_id, {
-                    "type": "artifact_ready",
-                    "data": {
+                await self._push_artifact_notification(
+                    user_id=user_id,
+                    event_type="artifact_ready",
+                    data={
                         "note_id": str(note_id),
                         "conversation_id": str(conversation_id),
                         "space_id": str(space_id),
+                        "task_id": str(task_id),
+                        "title": artifact_title,
                         "status": "failed",
                         "error_message": user_error,
                     },
-                })
+                )
+
+    async def _flush_artifact_stream_progress(
+        self,
+        task_id: UUID,
+        user_id: UUID,
+        space_id: UUID,
+        conversation_id: UUID,
+        note_id: UUID,
+        title: str,
+        delta: str,
+        code_snapshot: str,
+    ) -> None:
+        if not delta:
+            return
+
+        await set_artifact_stream_state(
+            task_id=str(task_id),
+            note_id=str(note_id),
+            title=title,
+            status="streaming",
+            code_snapshot=code_snapshot,
+        )
+        await self._push_artifact_notification(
+            user_id=user_id,
+            event_type="artifact_stream",
+            data={
+                "conversation_id": str(conversation_id),
+                "space_id": str(space_id),
+                "task_id": str(task_id),
+                "note_id": str(note_id),
+                "title": title,
+                "status": "streaming",
+                "delta": delta,
+                "chars_total": len(code_snapshot),
+            },
+        )
+
+    async def _push_artifact_notification(
+        self,
+        user_id: UUID,
+        event_type: str,
+        data: dict[str, Any],
+    ) -> None:
+        from notifications.queue import push_notification
+
+        await push_notification(user_id, {
+            "type": event_type,
+            "data": data,
+        })
 
     async def get_task_status(
         self,
@@ -831,6 +970,12 @@ class AgentService:
         quiz_id = None
         question_count = None
         debug_logs = None
+        note_id = None
+        artifact_title = None
+        artifact_progress_status = None
+        code_snapshot = None
+        html_size = None
+        response_error_message = task.error_message
 
         if task.output_data:
             space_id_str = task.output_data.get("space_id")
@@ -843,17 +988,67 @@ class AgentService:
                 quiz_id = UUID(quiz_id_str)
             question_count = task.output_data.get("question_count")
             debug_logs = task.output_data.get("debug_logs")
+            note_id_str = task.output_data.get("note_id")
+            if note_id_str:
+                note_id = UUID(note_id_str)
+            artifact_title = task.output_data.get("artifact_title")
+            artifact_progress_status = task.output_data.get("artifact_progress_status")
+            code_snapshot = task.output_data.get("code_snapshot")
+            html_size = task.output_data.get("html_size")
+
+        if task.task_type == AgentTaskType.GENERATE_ARTIFACT:
+            input_data = task.input_data or {}
+            if note_id is None and input_data.get("note_id"):
+                note_id = UUID(input_data["note_id"])
+
+            snapshot = await get_artifact_stream_state(str(task.id))
+            if snapshot:
+                if note_id is None and snapshot.note_id:
+                    note_id = UUID(snapshot.note_id)
+                artifact_title = artifact_title or snapshot.title
+                artifact_progress_status = snapshot.status
+                code_snapshot = snapshot.code_snapshot
+
+            if artifact_progress_status is None:
+                if task.status in {AgentTaskStatus.PENDING, AgentTaskStatus.RUNNING}:
+                    artifact_progress_status = "streaming"
+                elif task.status == AgentTaskStatus.FAILED:
+                    artifact_progress_status = "failed"
+                elif task.status == AgentTaskStatus.DONE:
+                    artifact_progress_status = "done"
+
+            if note_id and (artifact_title is None or (code_snapshot is None and task.status == AgentTaskStatus.DONE)):
+                note_result = await self.db.execute(
+                    select(Note).where(Note.id == note_id)
+                )
+                note = note_result.scalar_one_or_none()
+                if note:
+                    artifact_title = artifact_title or note.title
+                    if code_snapshot is None and task.status == AgentTaskStatus.DONE:
+                        code_snapshot = note.content or ""
+                        html_size = html_size or len(code_snapshot.encode("utf-8"))
+
+            if html_size is None and code_snapshot is not None:
+                html_size = len(code_snapshot.encode("utf-8"))
+
+            if task.output_data and task.output_data.get("user_error_message"):
+                response_error_message = task.output_data["user_error_message"]
 
         return AgentTaskResultResponse(
             task_id=task.id,
             status=AgentTaskStatusEnum(task.status.value),
             task_type=task.task_type.value,
             space_id=space_id,
-            error_message=task.error_message,
+            error_message=response_error_message,
             node_count=node_count,
             edge_count=edge_count,
             quiz_id=quiz_id,
             question_count=question_count,
+            note_id=note_id,
+            artifact_title=artifact_title,
+            artifact_progress_status=artifact_progress_status,
+            code_snapshot=code_snapshot,
+            html_size=html_size,
             debug_logs=debug_logs,
             created_at=task.created_at,
             started_at=task.started_at,

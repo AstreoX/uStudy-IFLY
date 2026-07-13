@@ -2,6 +2,7 @@
 
 import logging
 import re
+from collections.abc import AsyncGenerator
 
 from agents.llm.client import OpenRouterClient
 from config import get_settings
@@ -185,6 +186,40 @@ class ArtifactGenerationAgent:
             model_override=settings.artifact_model
         )
 
+    @staticmethod
+    def _build_messages(
+        description: str,
+        libraries: list[str] | None = None,
+        existing_html: str | None = None,
+    ) -> list[dict[str, str]]:
+        if existing_html:
+            system_prompt = UPDATE_PROMPT.format(
+                existing_html=existing_html[:50000]
+            )
+        else:
+            library_list = _build_library_list(libraries)
+            system_prompt = SYSTEM_PROMPT.format(library_list=library_list)
+
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": description},
+        ]
+
+    @staticmethod
+    def finalize_output(raw_output: str) -> str:
+        """对原始模型输出做 HTML 提取、补全与校验。"""
+        html = _extract_html(raw_output)
+
+        if not _validate_html(html):
+            raise ValueError("生成的内容不是有效的 HTML 文档")
+
+        html = _ensure_csp(html)
+
+        if len(html.encode("utf-8")) > MAX_HTML_SIZE:
+            raise ValueError(f"生成的 HTML 超出大小限制 ({MAX_HTML_SIZE // 1024}KB)")
+
+        return html
+
     async def generate(
         self,
         description: str,
@@ -205,18 +240,11 @@ class ArtifactGenerationAgent:
         Raises:
             ValueError: HTML 校验失败或超出大小限制
         """
-        if existing_html:
-            system_prompt = UPDATE_PROMPT.format(
-                existing_html=existing_html[:50000]  # 截断避免过长
-            )
-        else:
-            library_list = _build_library_list(libraries)
-            system_prompt = SYSTEM_PROMPT.format(library_list=library_list)
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": description},
-        ]
+        messages = self._build_messages(
+            description=description,
+            libraries=libraries,
+            existing_html=existing_html,
+        )
 
         logger.info("Artifact generation starting: desc=%s, libs=%s, update=%s",
                      description[:100], libraries, existing_html is not None)
@@ -227,16 +255,34 @@ class ArtifactGenerationAgent:
             max_tokens=16384,
         )
 
-        html = _extract_html(raw_output)
-
-        if not _validate_html(html):
-            raise ValueError("生成的内容不是有效的 HTML 文档")
-
-        # Enforce CSP — inject if LLM omitted it
-        html = _ensure_csp(html)
-
-        if len(html.encode("utf-8")) > MAX_HTML_SIZE:
-            raise ValueError(f"生成的 HTML 超出大小限制 ({MAX_HTML_SIZE // 1024}KB)")
+        html = self.finalize_output(raw_output)
 
         logger.info("Artifact generation complete: size=%d bytes", len(html.encode("utf-8")))
         return html
+
+    async def stream_generate(
+        self,
+        description: str,
+        libraries: list[str] | None = None,
+        existing_html: str | None = None,
+    ) -> AsyncGenerator[str, None]:
+        """流式生成原始 HTML/JS 代码。"""
+        messages = self._build_messages(
+            description=description,
+            libraries=libraries,
+            existing_html=existing_html,
+        )
+
+        logger.info(
+            "Artifact stream generation starting: desc=%s, libs=%s, update=%s",
+            description[:100],
+            libraries,
+            existing_html is not None,
+        )
+
+        async for chunk in self.llm_client.stream_complete(
+            messages=messages,
+            temperature=0.7,
+            max_tokens=16384,
+        ):
+            yield chunk
