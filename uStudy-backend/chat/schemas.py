@@ -72,6 +72,7 @@ class MessageResponse(BaseModel):
     content: str
     attachments: list[AttachmentResponse] = []
     tool_calls: Optional[list[dict[str, Any]]] = None
+    citations: Optional[list[dict[str, Any]]] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

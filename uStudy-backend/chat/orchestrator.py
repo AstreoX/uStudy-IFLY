@@ -637,6 +637,9 @@ class LLMOrchestrator:
         self.vector_memory_executor = VectorMemoryExecutor(user_id, space_id)
         self.memory_retriever = MemoryRetriever(user_id, space_id)
 
+        # Citation registry for source attribution
+        self._citation_registry: list[dict] = []
+
         # Search channels: default all enabled
         self._search_channels = search_channels or {
             "web_search_enabled": True,
@@ -754,15 +757,15 @@ class LLMOrchestrator:
             result["node_label"] = node_label
         return result
 
-    async def _pre_retrieve_rag_context(self, query: str) -> str | None:
-        """自动 RAG 预检索，返回格式化的文档上下文（或 None）。
+    async def _pre_retrieve_rag_context(self, query: str) -> tuple[str | None, list[dict]]:
+        """自动 RAG 预检索，返回 (格式化的文档上下文, citations列表)。
 
         在 process_message 中与记忆检索并发执行，不增加延迟。
         失败时静默降级，不影响正常对话。
         """
         settings = get_settings()
         if not settings.rag_auto_inject_enabled:
-            return None
+            return None, []
 
         try:
             async with get_scoped_session() as db:
@@ -777,15 +780,63 @@ class LLMOrchestrator:
                     score_threshold=settings.rag_auto_inject_threshold,
                 )
             if not results:
-                return None
+                return None, []
             lines = []
-            for r in results:
+            citations = []
+            for i, r in enumerate(results, start=1):
                 source = r.document_title or r.document_filename or "未知文档"
-                lines.append(f"【{source}】\n{r.content}")
-            return "\n\n---\n\n".join(lines)
+                page_number = (r.metadata or {}).get("page_number")
+                page_info = f"(第{page_number}页)" if page_number else ""
+                lines.append(f"[{i}] 《{source}》{page_info}\n{r.content}")
+                citations.append({
+                    "index": i,
+                    "source_type": "document",
+                    "document_id": str(r.document_id),
+                    "chunk_id": str(r.chunk_id),
+                    "title": source,
+                    "url": None,
+                    "page_number": page_number,
+                    "snippet": r.content[:100],
+                    "score": round(r.score, 3),
+                })
+            return "\n\n---\n\n".join(lines), citations
         except Exception as e:
             logger.warning(f"RAG auto-inject failed: {e}")
-            return None
+            return None, []
+
+    _CITABLE_TOOLS = {"search_documents", "web_search", "academic_search", "encyclopedia_search"}
+
+    @staticmethod
+    def _get_source_type(tool_name: str) -> str:
+        return {
+            "search_documents": "document",
+            "web_search": "web",
+            "academic_search": "academic",
+            "encyclopedia_search": "encyclopedia",
+        }.get(tool_name, "unknown")
+
+    def _register_tool_citations(self, tool_call: ToolCall, tool_result: ToolResult) -> None:
+        """Register citations from citable tool results."""
+        if tool_call.name not in self._CITABLE_TOOLS:
+            return
+        if not tool_result.success or not tool_result.data:
+            return
+        results = tool_result.data.get("results", [])
+        for r in results:
+            idx = len(self._citation_registry) + 1
+            citation = {
+                "index": idx,
+                "source_type": self._get_source_type(tool_call.name),
+                "title": r.get("title") or r.get("source", ""),
+                "url": r.get("url"),
+                "snippet": (r.get("content") or r.get("snippet", ""))[:100],
+                "score": r.get("score"),
+                "document_id": r.get("document_id"),
+                "chunk_id": r.get("chunk_id"),
+                "page_number": r.get("page_number"),
+            }
+            self._citation_registry.append(citation)
+            r["citation_index"] = idx
 
     async def process_message(
         self,
@@ -826,7 +877,7 @@ class LLMOrchestrator:
 
         # 2. 并行：语义检索记忆 + 查询到期复习项数量 + RAG 预检索
         t0 = time.monotonic()
-        relevant_memories, reviews_count, rag_context = await asyncio.gather(
+        relevant_memories, reviews_count, rag_result = await asyncio.gather(
             self.memory_retriever.get_relevant_memories(
                 user_message=message_text,
                 max_long_term=5,
@@ -835,6 +886,8 @@ class LLMOrchestrator:
             get_due_reviews_count_by_space(self.user_id, self.space_id),
             self._pre_retrieve_rag_context(message_text),
         )
+        rag_context, rag_citations = rag_result
+        self._citation_registry = rag_citations
         logger.info(f"[Perf] Memory + reviews + RAG retrieval: {(time.monotonic()-t0)*1000:.0f}ms")
 
         # 3. 格式化记忆用于 prompt 注入（标注本空间/共享来源）
@@ -1151,6 +1204,9 @@ class LLMOrchestrator:
                     # Store result for context
                     tool_results_for_context.append((tool_call, tool_result))
 
+                    # Register citations from citable tool results
+                    self._register_tool_citations(tool_call, tool_result)
+
                     # Collect tool result for LLM context
                     if current_iteration.tool_results is None:
                         current_iteration.tool_results = []
@@ -1263,12 +1319,13 @@ class LLMOrchestrator:
         # Mark streaming cache as complete
         await update_streaming_cache(str(self.conversation_id), is_complete=True)
 
-        # Emit done event with LLM context
+        # Emit done event with LLM context and citations
         yield {
             "event": SSEEventType.DONE,
             "data": {
                 "content": full_response,
                 "llm_context": context_collector.to_dict(),
+                "citations": self._citation_registry if self._citation_registry else None,
             },
         }
 

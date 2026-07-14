@@ -697,6 +697,7 @@ class ChatService:
             """Background task: runs orchestrator to completion, then saves result."""
             full_response = ""
             llm_context = None
+            citations = None
             try:
                 try:
                     async for event in orchestrator.process_message(
@@ -707,8 +708,15 @@ class ChatService:
                         elif event["event"] == "done":
                             full_response = event["data"].get("content", full_response)
                             llm_context = event["data"].get("llm_context")
-                            # Strip llm_context from SSE payload
-                            event = {"event": "done", "data": {"content": full_response}}
+                            citations = event["data"].get("citations")
+                            # Strip llm_context from SSE payload, keep citations for frontend
+                            event = {
+                                "event": "done",
+                                "data": {
+                                    "content": full_response,
+                                    "citations": citations,
+                                },
+                            }
                         await queue.put(event)
                 except Exception as e:
                     logger.error(f"Orchestrator error: {e}", exc_info=True)
@@ -724,6 +732,7 @@ class ChatService:
                                 content=full_response,
                                 llm_context=llm_context,
                                 tool_calls=_extract_tool_calls_from_context(llm_context),
+                                citations=citations,
                             )
                             save_db.add(assistant_message)
                             await save_db.commit()

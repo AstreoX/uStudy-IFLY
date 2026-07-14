@@ -393,6 +393,11 @@ class Message(Base):
         nullable=True,
         comment="Extracted tool call data for frontend rendering",
     )
+    citations: Mapped[Optional[list]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Structured citation metadata for source attribution",
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=func.now(), nullable=False
     )

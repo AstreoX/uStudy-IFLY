@@ -124,6 +124,9 @@ class RAGToolExecutor:
                     "content": result.content,
                     "source": result.document_title or result.document_filename,
                     "score": round(result.score, 3),
+                    "document_id": str(result.document_id),
+                    "chunk_id": str(result.chunk_id),
+                    "page_number": (result.metadata or {}).get("page_number"),
                 }
                 for result in results
             ]
