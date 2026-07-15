@@ -796,6 +796,7 @@ class LLMOrchestrator:
                     "title": source,
                     "url": None,
                     "page_number": page_number,
+                    "content": r.content,
                     "snippet": r.content[:100],
                     "score": round(r.score, 3),
                 })
@@ -821,22 +822,31 @@ class LLMOrchestrator:
             return
         if not tool_result.success or not tool_result.data:
             return
+        # Build set of existing chunk_ids for deduplication
+        existing_chunk_ids = {
+            c.get("chunk_id") for c in self._citation_registry if c.get("chunk_id")
+        }
         results = tool_result.data.get("results", [])
         for r in results:
+            chunk_id = r.get("chunk_id")
+            if chunk_id and chunk_id in existing_chunk_ids:
+                continue
             idx = len(self._citation_registry) + 1
             citation = {
                 "index": idx,
                 "source_type": self._get_source_type(tool_call.name),
-                "title": r.get("title") or r.get("source", ""),
+                "title": r.get("title") or r.get("source") or "未知来源",
                 "url": r.get("url"),
+                "content": r.get("content") or r.get("snippet", ""),
                 "snippet": (r.get("content") or r.get("snippet", ""))[:100],
                 "score": r.get("score"),
                 "document_id": r.get("document_id"),
-                "chunk_id": r.get("chunk_id"),
+                "chunk_id": chunk_id,
                 "page_number": r.get("page_number"),
             }
             self._citation_registry.append(citation)
-            r["citation_index"] = idx
+            if chunk_id:
+                existing_chunk_ids.add(chunk_id)
 
     async def process_message(
         self,
