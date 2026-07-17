@@ -238,13 +238,13 @@ class HybridSearchService:
         # 按 RRF 分数降序排列
         scored.sort(key=lambda x: x[1], reverse=True)
 
-        # 返回结果，将 RRF 分数写入 score 字段
+        # 返回结果，保留原始分数（向量相似度）用于展示，RRF 仅用于排序
         return [
             SearchResult(
                 chunk_id=r.chunk_id,
                 document_id=r.document_id,
                 content=r.content,
-                score=rrf_score,
+                score=r.score,
                 metadata=r.metadata,
                 document_title=r.document_title,
                 document_filename=r.document_filename,
