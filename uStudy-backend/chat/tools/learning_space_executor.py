@@ -22,8 +22,11 @@ from db.models import (
     QuickChatToolTaskStage,
     QuickChatToolTaskStatus,
     Space,
+    SpaceMember,
+    SpaceMemberRole,
     User,
 )
+from spaces.colors import get_next_color
 from quota.exceptions import SpaceCountQuotaExceeded
 from quota.service import check_space_count_quota
 
@@ -576,6 +579,15 @@ class LearningSpaceToolExecutor:
         )
         db.add(space)
         await db.flush()
+
+        # Create SpaceMember (OWNER) so the space shows up in homepage queries
+        owner_member = SpaceMember(
+            space_id=space.id,
+            user_id=self.user_id,
+            role=SpaceMemberRole.OWNER,
+            color=get_next_color(0),
+        )
+        db.add(owner_member)
 
         task = QuickChatToolTask(
             user_id=self.user_id,
