@@ -1914,10 +1914,11 @@ export default {
       let nextHeight = lineBasedHeight
       const inputEl = this.getChatInputElement()
       if (inputEl && typeof inputEl.scrollHeight === 'number') {
-        inputEl.style.height = 'auto'
+        inputEl.style.setProperty('height', 'auto', 'important')
         const hostEl = this.getChatInputHostElement()
         const structuralPadding = inputEl !== hostEl ? this.chatInputVerticalPadding : 0
         const measuredNeeded = Math.ceil(inputEl.scrollHeight) + structuralPadding + this.chatInputMultiLineCompensation
+        inputEl.style.removeProperty('height')
         nextHeight = Math.max(nextHeight, measuredNeeded)
       }
       this.applyResolvedChatInputHeight(nextHeight)
@@ -2021,8 +2022,9 @@ export default {
         return
       }
 
-      inputEl.style.height = 'auto'
+      inputEl.style.setProperty('height', 'auto', 'important')
       const measured = Math.ceil(inputEl.scrollHeight || minHeight)
+      inputEl.style.removeProperty('height')
       const hostEl = this.getChatInputHostElement()
       const structuralPadding = inputEl !== hostEl ? this.chatInputVerticalPadding : 0
       const measuredHeight = Math.max(minHeight, measured + structuralPadding + this.chatInputMultiLineCompensation)
@@ -2048,9 +2050,7 @@ export default {
       frameEl.style.overflowY = height >= maxHeight ? 'auto' : 'hidden'
 
       if (inputEl && inputEl !== frameEl && inputEl.style) {
-        inputEl.style.height = '100%'
-        inputEl.style.maxHeight = '100%'
-        inputEl.style.overflowY = height >= maxHeight ? 'auto' : 'hidden'
+        inputEl.style.setProperty('overflow-y', height >= maxHeight ? 'auto' : 'hidden', 'important')
       }
 
       if (inputEl && typeof inputEl.scrollTop === 'number' && height < maxHeight) {
@@ -2908,10 +2908,24 @@ export default {
           finalized = true
           this.flushThinkingBuffer()
           this.flushTypewriter()
-          uni.showToast({ title: info.message || '配额已达上限', icon: 'none', duration: 3000 })
+          const isDaily = info.code === 'DAILY_MESSAGE_QUOTA_EXCEEDED'
+          const shortText = isDaily ? '今日消息已用完' : '配额已达上限'
+          uni.showModal({
+            title: '配额已达上限',
+            content: isDaily
+              ? '今日消息次数已用完，明日自动重置。升级后可无限对话'
+              : (info.message || '当前套餐不支持此功能，升级后可使用'),
+            confirmText: '去升级',
+            cancelText: '知道了',
+            success: (res) => {
+              if (res.confirm) {
+                uni.navigateTo({ url: '/pages/activation/activation' })
+              }
+            }
+          })
           const aiMsg = this.messages.find(m => m.id === aiMsgId)
           if (aiMsg) {
-            aiMsg.content = info.message || '配额已达上限'
+            aiMsg.content = shortText
             aiMsg.isWaitingOutput = false
             aiMsg.isStreaming = false
             aiMsg.isError = true
@@ -5664,7 +5678,7 @@ textarea.chat-input-textarea {
 .chat-input-textarea :deep(.uni-textarea-wrapper),
 .chat-input-textarea :deep(.uni-textarea-placeholder) {
   width: 100%;
-  height: 100%;
+  height: 100% !important;
   box-sizing: border-box;
   padding: 0;
   margin: 0;
@@ -5673,7 +5687,7 @@ textarea.chat-input-textarea {
 .chat-input-textarea :deep(textarea),
 .chat-input-textarea :deep(.uni-textarea-textarea) {
   width: 100%;
-  height: 100%;
+  height: 100% !important;
   box-sizing: border-box;
   padding: 0;
   margin: 0;
