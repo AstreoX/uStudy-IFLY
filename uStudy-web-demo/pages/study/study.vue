@@ -2469,6 +2469,25 @@ export default {
     },
 
     togglePathHighlight() {
+      // 没有学习路径时，弹窗引导生成
+      const graphRef = this.$refs.knowledgeGraph
+      const hasPath = graphRef && graphRef.learningPath && graphRef.learningPath.length > 0
+      if (!this.isPathHighlightOn && !hasPath) {
+        uni.showModal({
+          title: '提示',
+          content: '暂无学习路径，是否需要生成学习路径？',
+          confirmText: '确认',
+          cancelText: '取消',
+          success: (res) => {
+            if (res.confirm) {
+              this.inputText = '结合我的学习资料，学习偏好，以及学习目标，为我规划一条符合我需求的学习路径'
+              this.latestInputValue = this.inputText
+              this.$nextTick(() => this.queueSendMessage())
+            }
+          }
+        })
+        return
+      }
       this.isPathHighlightOn = !this.isPathHighlightOn
     },
 
