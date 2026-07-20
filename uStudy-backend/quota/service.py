@@ -57,8 +57,9 @@ def get_user_tier_limits(user: User) -> TierLimits:
 
 async def get_daily_message_count(db: AsyncSession, user_id: UUID) -> int:
     """Count user messages sent today (UTC)."""
-    today_start = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
+    now_utc = datetime.now(timezone.utc)
+    today_start = now_utc.replace(
+        hour=0, minute=0, second=0, microsecond=0, tzinfo=None
     )
     result = await db.execute(
         select(func.count())
