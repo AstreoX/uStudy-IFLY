@@ -1,6 +1,6 @@
 """Activation code business logic."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -56,8 +56,8 @@ async def activate_code(
     if user.subscription_tier == SubscriptionTier.ALPHA:
         raise UserAlreadyActivatedError()
 
-    # 4. 计算过期时间（使用 naive datetime，与数据库字段一致）
-    now = datetime.utcnow()
+    # 4. 计算过期时间
+    now = datetime.now(timezone.utc)
     expires_at = now + timedelta(days=activation_code.validity_days)
 
     # 5. 更新用户等级

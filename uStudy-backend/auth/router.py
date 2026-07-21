@@ -55,6 +55,7 @@ from core.jwt import create_access_token, create_refresh_token, decode_token
 from db.database import get_db
 from db.models import User
 from jose import JWTError
+from quota.service import get_effective_tier
 from uuid import UUID
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -313,7 +314,15 @@ async def get_me(
 
     需要在 Authorization header 中提供有效的 Bearer token
     """
-    return UserProfile.model_validate(user)
+    effective_tier = get_effective_tier(user)
+    return UserProfile(
+        id=user.id,
+        email=user.email,
+        nickname=user.nickname,
+        avatar_url=user.avatar_url,
+        subscription_tier=effective_tier,
+        subscription_expires_at=user.subscription_expires_at,
+    )
 
 
 @router.patch(
