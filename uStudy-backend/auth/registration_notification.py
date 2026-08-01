@@ -136,6 +136,7 @@ def _build_activation_html(
     user_nickname: str,
     activation_code: str,
     expires_at: datetime,
+    tier_name: str = "Alpha",
 ) -> str:
     """Build HTML content for activation notification email."""
     import html
@@ -153,7 +154,7 @@ def _build_activation_html(
                     box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
             <div style="text-align: center; margin-bottom: 24px; padding-bottom: 16px;
                         border-bottom: 1px solid #eee;">
-                <h1 style="color: #2e7d32; font-size: 24px; margin: 0;">Alpha Activated</h1>
+                <h1 style="color: #2e7d32; font-size: 24px; margin: 0;">{html.escape(tier_name)} Activated</h1>
                 <p style="color: #666; margin: 8px 0 0;">uStudy</p>
             </div>
             <div style="padding: 16px; background: #f8f9fa; border-radius: 8px;">
@@ -165,6 +166,10 @@ def _build_activation_html(
                     <tr>
                         <td style="padding: 6px 0; color: #666;">Nickname:</td>
                         <td style="padding: 6px 0; color: #333;">{html.escape(user_nickname)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 0; color: #666;">Tier:</td>
+                        <td style="padding: 6px 0; color: #333;">{html.escape(tier_name)}</td>
                     </tr>
                     <tr>
                         <td style="padding: 6px 0; color: #666;">Activation Code:</td>
@@ -198,15 +203,17 @@ async def send_activation_notification(
     user_nickname: str,
     activation_code: str,
     expires_at: datetime,
+    tier_name: str = "Alpha",
 ) -> bool:
-    """Send a notification email when a user activates Alpha via activation code.
+    """Send a notification email when a user activates a subscription via activation code.
 
     Args:
         settings: App settings with email configuration.
         user_email: The activated user's email address.
         user_nickname: The activated user's nickname.
         activation_code: The code that was used.
-        expires_at: When the Alpha subscription expires.
+        expires_at: When the subscription expires.
+        tier_name: Display name of the activated tier.
 
     Returns:
         True if sent successfully, False otherwise.
@@ -218,8 +225,9 @@ async def send_activation_notification(
             user_nickname=user_nickname,
             activation_code=activation_code,
             expires_at=expires_at,
+            tier_name=tier_name,
         )
-        subject = f"[uStudy] Alpha Activated: {user_nickname}"
+        subject = f"[uStudy] {tier_name} Activated: {user_nickname}"
 
         if settings.email_provider == "resend":
             ok = await _send_via_resend(settings, subject, html_content)

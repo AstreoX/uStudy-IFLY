@@ -7,8 +7,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import ActivationCode, SubscriptionTier, User
+from quota.service import get_effective_tier
 
-from .exceptions import CodeAlreadyUsedError, InvalidCodeError, UserAlreadyActivatedError
+from .exceptions import CodeAlreadyUsedError, InvalidCodeError, TierDowngradeError
+
+# Tier rank for upgrade/downgrade comparison
+_TIER_RANK = {
+    SubscriptionTier.FREE: 0,
+    SubscriptionTier.BASIC: 1,
+    SubscriptionTier.PREMIUM: 2,
+    SubscriptionTier.ALPHA: 3,
+    SubscriptionTier.ULTRA: 3,
+}
 
 
 async def activate_code(
@@ -17,7 +27,7 @@ async def activate_code(
     code: str,
 ) -> User:
     """
-    验证并使用激活码。
+    验证并使用激活码，支持多等级激活。
 
     Args:
         db: 数据库会话
@@ -30,7 +40,7 @@ async def activate_code(
     Raises:
         InvalidCodeError: 激活码不存在
         CodeAlreadyUsedError: 激活码已被使用
-        UserAlreadyActivatedError: 用户已经是 Alpha
+        TierDowngradeError: 激活码等级低于当前订阅等级
     """
     # 1. 查找激活码
     code_upper = code.upper().strip()
@@ -53,18 +63,35 @@ async def activate_code(
     if not user:
         raise InvalidCodeError("用户不存在")
 
-    if user.subscription_tier == SubscriptionTier.ALPHA:
-        raise UserAlreadyActivatedError()
+    # 4. 比较等级
+    effective_tier = get_effective_tier(user)
+    target_rank = _TIER_RANK.get(activation_code.target_tier, 0)
+    current_rank = _TIER_RANK.get(effective_tier, 0)
 
-    # 4. 计算过期时间
+    if target_rank < current_rank:
+        raise TierDowngradeError()
+
+    # 5. 计算过期时间
     now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(days=activation_code.validity_days)
 
-    # 5. 更新用户等级
-    user.subscription_tier = SubscriptionTier.ALPHA
+    if (
+        target_rank == current_rank
+        and user.subscription_expires_at is not None
+        and user.subscription_expires_at > now
+    ):
+        # 同等级且未过期：从当前到期时间延长
+        base = user.subscription_expires_at
+    else:
+        # 升级或无有效订阅：从现在开始
+        base = now
+
+    expires_at = base + timedelta(days=activation_code.validity_days)
+
+    # 6. 更新用户等级
+    user.subscription_tier = activation_code.target_tier
     user.subscription_expires_at = expires_at
 
-    # 6. 标记激活码为已使用
+    # 7. 标记激活码为已使用
     activation_code.used_by = user_id
     activation_code.used_at = now
 

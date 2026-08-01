@@ -1074,6 +1074,10 @@ class ActivationCode(Base):
     used_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    target_tier: Mapped["SubscriptionTier"] = mapped_column(
+        Enum(SubscriptionTier), nullable=False, server_default="ALPHA",
+        comment="目标订阅等级"
+    )
     validity_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), nullable=False

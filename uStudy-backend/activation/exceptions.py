@@ -24,8 +24,8 @@ class CodeAlreadyUsedError(ActivationError):
         super().__init__(message, "CODE_ALREADY_USED")
 
 
-class UserAlreadyActivatedError(ActivationError):
-    """User already has Alpha status."""
+class TierDowngradeError(ActivationError):
+    """Code tier is lower than user's current tier."""
 
-    def __init__(self, message: str = "您已经是 Alpha 用户"):
-        super().__init__(message, "ALREADY_ACTIVATED")
+    def __init__(self, message: str = "您当前的订阅等级高于此激活码，无法降级使用"):
+        super().__init__(message, "TIER_DOWNGRADE")

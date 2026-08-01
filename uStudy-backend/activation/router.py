@@ -17,6 +17,14 @@ from .service import activate_code
 
 router = APIRouter(prefix="/api/auth", tags=["activation"])
 
+_TIER_LABELS = {
+    "FREE": "Free",
+    "BASIC": "Plus",
+    "PREMIUM": "Ultra",
+    "ALPHA": "Alpha 内测",
+    "ULTRA": "Ultra",
+}
+
 
 @router.post("/activate", response_model=ActivateCodeResponse)
 async def activate_endpoint(
@@ -25,17 +33,21 @@ async def activate_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    使用激活码激活 Alpha 内测资格。
+    使用激活码开通订阅。
 
     - 激活码为一次性使用
-    - 激活后用户等级变为 ALPHA
-    - ALPHA 用户享受 30 天有效期
+    - 支持不同订阅等级和有效期
+    - 同等级叠加时长，升级时旧时间作废
     """
     try:
         user = await activate_code(
             db=db,
             user_id=current_user.id,
             code=request.code,
+        )
+
+        tier_label = _TIER_LABELS.get(
+            user.subscription_tier.value, user.subscription_tier.value
         )
 
         asyncio.create_task(
@@ -45,6 +57,7 @@ async def activate_endpoint(
                 user_nickname=user.nickname or user.email,
                 activation_code=request.code.upper().strip(),
                 expires_at=user.subscription_expires_at,
+                tier_name=tier_label,
             )
         )
 
@@ -52,7 +65,7 @@ async def activate_endpoint(
             success=True,
             subscription_tier=user.subscription_tier.value,
             subscription_expires_at=user.subscription_expires_at,
-            message="激活成功！欢迎加入 Alpha 内测",
+            message=f"激活成功！已开通 {tier_label} 会员",
         )
 
     except ActivationError as e:
