@@ -145,10 +145,12 @@ PROD_ORIGINS = [
     "https://ustudy.top",
     "https://www.ustudy.top",
     "https://api.ustudy.top",
+    "https://app.ustudy.top",
     # HTTP fallback during DNS/SSL cutover
     "http://ustudy.top",
     "http://www.ustudy.top",
     "http://api.ustudy.top",
+    "http://app.ustudy.top",
     # 本地开发
     "http://localhost:5173",
     "http://localhost:5174",
