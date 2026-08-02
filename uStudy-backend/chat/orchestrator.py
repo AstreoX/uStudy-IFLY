@@ -355,6 +355,20 @@ class QuickChatOrchestrator:
                 }
                 return
 
+            # Handle truncation: finish_reason="length" means max_tokens was hit
+            if finish_reason == "length" and not pending_tool_calls and iteration_content:
+                logger.warning(
+                    "[QuickChat] LLM response truncated (finish_reason=length), retrying. "
+                    "iteration=%d, content_len=%d",
+                    iteration + 1, len(iteration_content),
+                )
+                messages.append({"role": "assistant", "content": iteration_content})
+                messages.append({
+                    "role": "user",
+                    "content": "[系统提示] 你的回复被截断了。请直接调用工具，不要用文字描述你将要做什么。",
+                })
+                continue
+
             # No tool calls - we're done
             if not pending_tool_calls:
                 break
@@ -1304,6 +1318,22 @@ class LLMOrchestrator:
                     "LLM indicated tool_calls but no tool_call_end events received. "
                     "This may indicate a streaming format issue."
                 )
+
+            # Handle truncation: finish_reason="length" means max_tokens was hit
+            # The model may have intended to call tools but got cut off
+            if finish_reason == "length" and not pending_tool_calls and iteration_content:
+                logger.warning(
+                    "LLM response truncated (finish_reason=length), retrying with tool call hint. "
+                    "iteration=%d, content_len=%d",
+                    iteration + 1, len(iteration_content),
+                )
+                messages.append({"role": "assistant", "content": iteration_content})
+                messages.append({
+                    "role": "user",
+                    "content": "[系统提示] 你的回复被截断了。请直接调用工具，不要用文字描述你将要做什么。",
+                })
+                continue
+
             if finish_reason == "stop" or not pending_tool_calls:
                 # Append final iteration (no tool calls)
                 if current_iteration.content:

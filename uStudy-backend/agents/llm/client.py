@@ -190,7 +190,7 @@ class OpenRouterClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ) -> CompletionWithToolsResult:
         """
         带工具调用的补全请求
@@ -218,6 +218,7 @@ class OpenRouterClient:
                         "model": self.model,
                         "messages": messages,
                         "tools": tools,
+                        "tool_choice": "auto",
                         "temperature": temperature,
                         "max_tokens": max_tokens,
                     },
@@ -367,7 +368,7 @@ class OpenRouterClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         流式带工具调用的补全请求（带重试机制）
@@ -406,6 +407,7 @@ class OpenRouterClient:
                         "model": self.model,
                         "messages": messages,
                         "tools": tools,
+                        "tool_choice": "auto",
                         "temperature": temperature,
                         "max_tokens": max_tokens,
                         "stream": True,
