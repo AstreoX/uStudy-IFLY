@@ -13,7 +13,7 @@ from sqlalchemy import select, delete, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from chat.models_config import get_openrouter_model
+from chat.models_config import get_max_output_tokens, get_openrouter_model
 from chat.orchestrator import LLMOrchestrator, QuickChatOrchestrator
 from chat.title_generator import generate_title, fallback_title
 from memory.extractor import MemoryExtractor
@@ -674,7 +674,8 @@ class ChatService:
         # and always executes Phase 3 (save).
         # Resolve model_id to OpenRouter model string
         openrouter_model = get_openrouter_model(model_id)
-        logger.info(f"[ModelSelection] study model_id={model_id!r} -> openrouter_model={openrouter_model!r}")
+        max_output_tokens = get_max_output_tokens(model_id)
+        logger.info(f"[ModelSelection] study model_id={model_id!r} -> openrouter_model={openrouter_model!r}, max_output_tokens={max_output_tokens}")
 
         orchestrator = LLMOrchestrator(
             user_id=user_id,
@@ -689,6 +690,7 @@ class ChatService:
             has_panel_screenshot=bool(panel_screenshot),
             is_collaborative=space_is_collaborative,
             can_edit_graph=space_can_edit_graph,
+            max_output_tokens=max_output_tokens,
         )
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -1537,7 +1539,8 @@ class ChatService:
         # === Phase 2: Stream via Queue + Background Task ===
         # Resolve model_id to OpenRouter model string
         openrouter_model = get_openrouter_model(model_id)
-        logger.info(f"[ModelSelection] quick_chat model_id={model_id!r} -> openrouter_model={openrouter_model!r}")
+        max_output_tokens = get_max_output_tokens(model_id)
+        logger.info(f"[ModelSelection] quick_chat model_id={model_id!r} -> openrouter_model={openrouter_model!r}, max_output_tokens={max_output_tokens}")
 
         orchestrator = QuickChatOrchestrator(
             user_id=user_id,
@@ -1545,6 +1548,7 @@ class ChatService:
             previous_conversation_context=previous_conversation_context,
             openrouter_model=openrouter_model,
             search_channels=enabled_channels,
+            max_output_tokens=max_output_tokens,
         )
 
         queue: asyncio.Queue = asyncio.Queue()

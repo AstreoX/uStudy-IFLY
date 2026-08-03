@@ -102,6 +102,7 @@ class QuickChatOrchestrator:
         previous_conversation_context: str | None = None,
         openrouter_model: str | None = None,
         search_channels: dict[str, bool] | None = None,
+        max_output_tokens: int = 65536,
     ) -> None:
         """
         Initialize the quick chat orchestrator.
@@ -112,10 +113,12 @@ class QuickChatOrchestrator:
             previous_conversation_context: Previous conversation context for continuity (optional)
             openrouter_model: OpenRouter model ID override (resolved from model_id)
             search_channels: User's search channel settings (channel_name -> enabled)
+            max_output_tokens: Maximum output tokens for LLM calls
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
         self.previous_conversation_context = previous_conversation_context
+        self.max_output_tokens = max_output_tokens
 
         self.settings = get_settings()
         self.llm_client = OpenRouterClient(
@@ -241,7 +244,7 @@ class QuickChatOrchestrator:
             initial_messages=copy.deepcopy(messages),
             tools=copy.deepcopy(self.available_tools),
             temperature=0.7,
-            max_tokens=4096,
+            max_tokens=self.max_output_tokens,
         )
 
         full_response = ""
@@ -266,6 +269,7 @@ class QuickChatOrchestrator:
                     messages=messages,
                     tools=self.available_tools,
                     temperature=0.7,
+                    max_tokens=self.max_output_tokens,
                 ):
                     event_type = event.get("type")
 
@@ -592,6 +596,7 @@ class LLMOrchestrator:
         has_panel_screenshot: bool = False,
         is_collaborative: bool = False,
         can_edit_graph: bool = False,
+        max_output_tokens: int = 65536,
     ) -> None:
         """
         Initialize the orchestrator.
@@ -608,12 +613,14 @@ class LLMOrchestrator:
             enabled_tools: manual 模式下启用的工具名称列表
             is_collaborative: Whether this is a collaborative space
             can_edit_graph: Whether user can modify knowledge graph structure
+            max_output_tokens: Maximum output tokens for LLM calls
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
         self.space_id = space_id
         self.space_name = space_name
         self.previous_conversation_context = previous_conversation_context
+        self.max_output_tokens = max_output_tokens
         self.tool_mode = tool_mode
         self.is_collaborative = is_collaborative
 
@@ -958,7 +965,7 @@ class LLMOrchestrator:
             initial_messages=copy.deepcopy(messages),
             tools=copy.deepcopy(self.available_tools),
             temperature=0.7,
-            max_tokens=4096,
+            max_tokens=self.max_output_tokens,
         )
 
         # 4. Multi-turn tool calling loop with streaming
@@ -983,6 +990,7 @@ class LLMOrchestrator:
                     messages=messages,
                     tools=self.available_tools,
                     temperature=0.7,
+                    max_tokens=self.max_output_tokens,
                 ):
                     event_type = event.get("type")
 

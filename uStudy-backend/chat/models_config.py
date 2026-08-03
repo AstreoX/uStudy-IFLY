@@ -13,20 +13,20 @@ ALLOWED_MODELS: dict[str, dict[str, Any]] = {
         "display_name": "Qwen 3.5",
         "description": "快速响应，适合日常对话",
         "is_default": True,
-        "max_output_tokens": 8192,
+        "max_output_tokens": 65536,
     },
     "kimi-k2.5": {
         "openrouter_id": "moonshotai/kimi-k2.5",
         "display_name": "Kimi K2.5",
         "description": "更强推理能力，适合复杂问题",
-        "max_output_tokens": 8192,
+        "max_output_tokens": 65535,
     },
     "gemini-3.1-pro": {
         "openrouter_id": "google/gemini-3.1-pro-preview",
         "display_name": "Gemini 3.1 Pro",
         "description": "Google 最新模型，综合能力强",
         "use_bridge": True,
-        "max_output_tokens": 8192,
+        "max_output_tokens": 65536,
     },
 }
 
@@ -44,10 +44,10 @@ def get_openrouter_model(model_id: str | None) -> str:
 
 
 def get_max_output_tokens(model_id: str | None) -> int:
-    """Return max_output_tokens for a model, defaulting to 8192."""
+    """Return max_output_tokens for a model, defaulting to 65536."""
     if model_id and model_id in ALLOWED_MODELS:
-        return ALLOWED_MODELS[model_id].get("max_output_tokens", 8192)
-    return ALLOWED_MODELS[DEFAULT_MODEL_ID].get("max_output_tokens", 8192)
+        return ALLOWED_MODELS[model_id].get("max_output_tokens", 65536)
+    return ALLOWED_MODELS[DEFAULT_MODEL_ID].get("max_output_tokens", 65536)
 
 
 def validate_model_id(model_id: str) -> bool:
