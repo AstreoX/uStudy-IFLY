@@ -195,7 +195,7 @@ export default {
 
   methods: {
     onInput(e) {
-      this.inputCode = e.detail.value
+      this.inputCode = e.detail?.value ?? e.target?.value ?? ''
       this.errorMessage = ''
     },
 
