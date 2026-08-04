@@ -42,7 +42,7 @@
         <!-- Success Text -->
         <view class="success-text-container">
           <text class="success-title">激活成功</text>
-          <text class="success-subtitle">欢迎加入 Alpha 内测计划</text>
+          <text class="success-subtitle">{{ successSubtitle }}</text>
         </view>
 
         <!-- Benefits List -->
@@ -53,11 +53,11 @@
           </view>
           <view class="benefit-item">
             <view class="benefit-icon">✓</view>
-            <text class="benefit-text">每空间 500MB 资料存储</text>
+            <text class="benefit-text">无限每日对话次数</text>
           </view>
           <view class="benefit-item">
             <view class="benefit-icon">✓</view>
-            <text class="benefit-text">优先体验新功能</text>
+            <text class="benefit-text">更多 AI 模型可选</text>
           </view>
         </view>
 
@@ -72,14 +72,14 @@
         <!-- Header with icon -->
         <view class="modal-header">
           <view class="alpha-badge">
-            <text class="alpha-text">Alpha</text>
+            <text class="alpha-text">会员</text>
           </view>
         </view>
 
         <!-- Title -->
         <view class="modal-title">
-          <text class="title-main">内测资格验证</text>
-          <text class="title-sub">输入激活码以解锁全部功能</text>
+          <text class="title-main">激活码验证</text>
+          <text class="title-sub">输入激活码以开通订阅权益</text>
         </view>
 
         <!-- Input Field -->
@@ -87,9 +87,9 @@
           <input
             class="code-input"
             type="text"
-            :value="displayCode"
-            placeholder="ALPHA-XXXX-XXXX"
-            :maxlength="15"
+            :value="inputCode"
+            placeholder="请输入激活码"
+            :maxlength="24"
             :focus="animationVisible && !loading && !showSuccess"
             :disabled="loading"
             placeholder-class="input-placeholder"
@@ -149,18 +149,25 @@ export default {
       inputCode: '',
       errorMessage: '',
       loading: false,
-      showSuccess: false
+      showSuccess: false,
+      activatedTier: ''
     }
   },
 
   computed: {
-    displayCode() {
-      return this.formatCode(this.inputCode)
-    },
-    // ALPHA-XXXX-XXXX = 5 + 4 + 4 = 13 字符（不含连字符）
     isValid() {
-      const code = this.inputCode.replace(/-/g, '')
-      return code.length === 13 && code.toUpperCase().startsWith('ALPHA')
+      const code = this.inputCode.replace(/[-\s]/g, '').trim()
+      return code.length >= 10
+    },
+    successSubtitle() {
+      const labels = {
+        BASIC: 'Plus',
+        PREMIUM: 'Ultra',
+        ALPHA: 'Alpha 内测',
+        ULTRA: 'Ultra'
+      }
+      const label = labels[this.activatedTier] || this.activatedTier || '会员'
+      return `已开通 ${label} 权益`
     }
   },
 
@@ -173,6 +180,7 @@ export default {
           this.errorMessage = ''
           this.loading = false
           this.showSuccess = false
+          this.activatedTier = ''
           this.$nextTick(() => {
             setTimeout(() => {
               this.animationVisible = true
@@ -186,24 +194,8 @@ export default {
   },
 
   methods: {
-    formatCode(code) {
-      // 格式化为 ALPHA-XXXX-XXXX
-      const cleaned = code.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
-      if (cleaned.length <= 5) {
-        return cleaned
-      } else if (cleaned.length <= 9) {
-        return `${cleaned.slice(0, 5)}-${cleaned.slice(5)}`
-      } else {
-        // 5 + 4 + 4 = 13 字符
-        return `${cleaned.slice(0, 5)}-${cleaned.slice(5, 9)}-${cleaned.slice(9, 13)}`
-      }
-    },
-
     onInput(e) {
-      const value = e.detail.value
-      const cleaned = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
-      // ALPHA(5) + XXXX(4) + XXXX(4) = 13 字符
-      this.inputCode = cleaned.slice(0, 13)
+      this.inputCode = e.detail.value
       this.errorMessage = ''
     },
 
@@ -229,8 +221,8 @@ export default {
       this.errorMessage = ''
 
       try {
-        const formattedCode = this.displayCode
-        const response = await activateCode(formattedCode)
+        const code = this.inputCode.trim()
+        const response = await activateCode(code)
 
         if (response.success) {
           const userStore = useUserStore()
@@ -240,6 +232,7 @@ export default {
           )
 
           // 显示成功界面
+          this.activatedTier = response.subscription_tier
           this.showSuccess = true
           this.$emit('success', response)
         }
