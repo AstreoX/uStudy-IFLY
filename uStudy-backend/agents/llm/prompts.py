@@ -212,6 +212,8 @@ NODE_EXPAND_SYSTEM_PROMPT = """# Node_Expand_Agent System Prompt
 - 当前节点 (NODE): {{NODE}}
 - 父节点 (PARENT, 可选): {{PARENT}}
 - 已有子节点 (EXISTING_CHILDREN): {{EXISTING_CHILDREN}}
+- 当前知识图谱结构:
+{{KNOWLEDGE_TREE}}
 
 ## 输出格式
 
@@ -232,6 +234,7 @@ NODE_EXPAND_SYSTEM_PROMPT = """# Node_Expand_Agent System Prompt
 3. 使用与节点名称相同的语言
 4. 聚焦于最核心、最有代表性的子概念
 5. 名称简洁，不超过 20 个字
+6. 参考当前知识图谱结构，避免生成图谱中已有的节点名称，除非该概念确实是当前节点的直接子概念
 """
 
 
@@ -239,6 +242,7 @@ def build_node_expand_prompt(
     node_label: str,
     parent_label: str | None,
     existing_children: list[str],
+    knowledge_tree_text: str = "",
 ) -> list[dict]:
     """
     构建节点扩展 Prompt
@@ -247,6 +251,7 @@ def build_node_expand_prompt(
         node_label: 当前节点名称
         parent_label: 父节点名称（可选）
         existing_children: 已有子节点名称列表
+        knowledge_tree_text: 当前知识图谱的文本结构（由 build_knowledge_tree_text 生成）
 
     Returns:
         消息列表，用于 LLM API 调用
@@ -257,6 +262,9 @@ def build_node_expand_prompt(
     )
     existing_str = "、".join(existing_children) if existing_children else "无"
     system_content = system_content.replace("{{EXISTING_CHILDREN}}", existing_str)
+    system_content = system_content.replace(
+        "{{KNOWLEDGE_TREE}}", knowledge_tree_text if knowledge_tree_text else "（空）"
+    )
 
     user_content = f"请为「{node_label}」生成子节点。"
     if existing_children:

@@ -5,7 +5,7 @@ import re
 from uuid import UUID
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.exceptions import (
@@ -15,7 +15,9 @@ from agents.exceptions import (
 )
 from agents.llm.client import OpenRouterClient
 from agents.llm.prompts import build_node_expand_prompt
+from chat.tools.graph_tools import build_knowledge_tree_text
 from db.models import Edge, EdgeType, Node
+from graph.service import GraphService
 
 logger = logging.getLogger(__name__)
 
@@ -91,11 +93,17 @@ class NodeExpandAgent:
         # 3. 获取父节点（用于 prompt 上下文）
         parent_label = await self._get_parent_label(space_id, node_id)
 
+        # 3.5 获取完整知识图谱结构（供 LLM 参考避免重复）
+        graph_service = GraphService(self.db)
+        graph_data = await graph_service.get_graph(space_id)
+        knowledge_tree_text = build_knowledge_tree_text(graph_data["nodes"], graph_data["edges"])
+
         # 4. 调用 LLM 生成子节点（带重试）
         new_labels = await self._call_llm_with_retry(
             node_label=node.label,
             parent_label=parent_label,
             existing_children=existing_labels,
+            knowledge_tree_text=knowledge_tree_text,
         )
 
         if not new_labels:
@@ -183,12 +191,14 @@ class NodeExpandAgent:
         node_label: str,
         parent_label: str | None,
         existing_children: list[str],
+        knowledge_tree_text: str = "",
     ) -> list[str]:
         """调用 LLM 并重试，返回解析出的子节点名称列表"""
         messages = build_node_expand_prompt(
             node_label=node_label,
             parent_label=parent_label,
             existing_children=existing_children,
+            knowledge_tree_text=knowledge_tree_text,
         )
 
         last_error: Exception | None = None
@@ -223,24 +233,49 @@ class NodeExpandAgent:
         parent_node_id: UUID,
         child_labels: list[str],
     ) -> tuple[int, int]:
-        """创建子节点和知识树边，返回 (node_count, edge_count)"""
+        """创建子节点和知识树边，返回 (node_count, edge_count)。
+
+        对于 space 中已存在同名节点的情况，复用已有节点只创建 edge。
+        """
         node_count = 0
         edge_count = 0
 
         for label in child_labels:
-            node = Node(space_id=space_id, label=label, mastery=None)
-            self.db.add(node)
-            await self.db.flush()
-
-            edge = Edge(
-                space_id=space_id,
-                from_node_id=parent_node_id,
-                to_node_id=node.id,
-                type=EdgeType.KNOWLEDGE_TREE,
+            # 查询 space 中是否已有同名节点（不区分大小写）
+            existing = await self.db.execute(
+                select(Node).where(
+                    Node.space_id == space_id,
+                    func.lower(Node.label) == label.strip().lower(),
+                )
             )
-            self.db.add(edge)
-            node_count += 1
-            edge_count += 1
+            existing_node = existing.scalar_one_or_none()
+
+            if existing_node:
+                target_node = existing_node
+            else:
+                target_node = Node(space_id=space_id, label=label, mastery=None)
+                self.db.add(target_node)
+                await self.db.flush()
+                node_count += 1
+
+            # 检查 edge 是否已存在
+            existing_edge = await self.db.execute(
+                select(Edge).where(
+                    Edge.space_id == space_id,
+                    Edge.from_node_id == parent_node_id,
+                    Edge.to_node_id == target_node.id,
+                    Edge.type == EdgeType.KNOWLEDGE_TREE,
+                )
+            )
+            if not existing_edge.scalar_one_or_none():
+                edge = Edge(
+                    space_id=space_id,
+                    from_node_id=parent_node_id,
+                    to_node_id=target_node.id,
+                    type=EdgeType.KNOWLEDGE_TREE,
+                )
+                self.db.add(edge)
+                edge_count += 1
 
         await self.db.commit()
         return node_count, edge_count
