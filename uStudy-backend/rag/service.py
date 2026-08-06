@@ -74,6 +74,13 @@ class DocumentProcessingService:
         1. 基础阶段：detect -> normalize -> iter_chunks -> embedding -> insert
         2. 增强阶段：OCR/VLM 追加 enriched chunks
         """
+        try:
+            await self._process_document_inner(document_id)
+        finally:
+            # 关闭持久化 HTTP 连接
+            await self.embedding_client.aclose()
+
+    async def _process_document_inner(self, document_id: uuid.UUID) -> None:
         result = await self.db.execute(
             select(SpaceDocument).where(SpaceDocument.id == document_id)
         )
@@ -195,6 +202,9 @@ class DocumentProcessingService:
             chunk_count = 0
             total_embedding_tokens = 0
             batch_size = max(1, self.embedding_client.batch_size)
+            concurrent_limit = max(1, self.embedding_client.max_concurrent)
+
+            pending_batches: list[list[Chunk]] = []
 
             async for chunk_batch in self._iter_chunk_batches(
                 chunker=chunker,
@@ -213,17 +223,23 @@ class DocumentProcessingService:
                     if result.metadata:
                         chunk.metadata.update(result.metadata)
 
-                chunk_texts = [chunk.content for chunk in chunk_batch]
-                embedding_result = await self.embedding_client.embed_batch(chunk_texts)
-                total_embedding_tokens += embedding_result.token_count
+                pending_batches.append(chunk_batch)
 
-                await self._insert_chunk_batch(
-                    document_id=document.id,
-                    space_id=document.space_id,
-                    chunks=chunk_batch,
-                    embeddings=embedding_result.embeddings,
+                if len(pending_batches) >= concurrent_limit:
+                    embedded = await self._embed_and_insert_group(
+                        pending_batches, document
+                    )
+                    chunk_count += embedded[0]
+                    total_embedding_tokens += embedded[1]
+                    pending_batches = []
+
+            # 处理剩余批次
+            if pending_batches:
+                embedded = await self._embed_and_insert_group(
+                    pending_batches, document
                 )
-                chunk_count += len(chunk_batch)
+                chunk_count += embedded[0]
+                total_embedding_tokens += embedded[1]
 
             if chunk_count == 0:
                 raise ValueError("切片结果为空")
@@ -290,10 +306,18 @@ class DocumentProcessingService:
         normalized_document: NormalizedDocument,
         chunker,
     ) -> int:
-        """Process and insert base chunks in streaming batches."""
+        """Process and insert base chunks with concurrent embedding.
+
+        Collects chunk batches into groups, then embeds each group concurrently
+        using asyncio.gather with semaphore-based throttling.
+        """
         total_chunks = 0
         total_embedding_tokens = 0
         batch_size = max(1, self.embedding_client.batch_size)
+        concurrent_limit = max(1, self.embedding_client.max_concurrent)
+
+        # 收集一组 batch，然后并发 embedding + 写入
+        pending_batches: list[list[Chunk]] = []
 
         async for chunk_batch in self._iter_chunk_batches(
             chunker=chunker,
@@ -309,17 +333,23 @@ class DocumentProcessingService:
                 normalized_document=normalized_document,
                 stage="base",
             )
-            chunk_texts = [chunk.content for chunk in chunk_batch]
-            embedding_result = await self.embedding_client.embed_batch(chunk_texts)
-            total_embedding_tokens += embedding_result.token_count
+            pending_batches.append(chunk_batch)
 
-            await self._insert_chunk_batch(
-                document_id=document.id,
-                space_id=document.space_id,
-                chunks=chunk_batch,
-                embeddings=embedding_result.embeddings,
+            if len(pending_batches) >= concurrent_limit:
+                embedded = await self._embed_and_insert_group(
+                    pending_batches, document
+                )
+                total_chunks += embedded[0]
+                total_embedding_tokens += embedded[1]
+                pending_batches = []
+
+        # 处理剩余批次
+        if pending_batches:
+            embedded = await self._embed_and_insert_group(
+                pending_batches, document
             )
-            total_chunks += len(chunk_batch)
+            total_chunks += embedded[0]
+            total_embedding_tokens += embedded[1]
 
         logger.info(
             "基础切片与向量化完成: document=%s chunks=%d embedding_tokens=%d",
@@ -328,6 +358,48 @@ class DocumentProcessingService:
             total_embedding_tokens,
         )
         return total_chunks
+
+    async def _embed_and_insert_group(
+        self,
+        batch_group: list[list[Chunk]],
+        document: SpaceDocument,
+    ) -> tuple[int, int]:
+        """Embed a group of chunk batches concurrently and insert into DB.
+
+        Uses return_exceptions=True to prevent partial result loss:
+        if any batch fails, the error is raised after all tasks complete.
+
+        Returns:
+            (chunk_count, embedding_token_count)
+        """
+        # 并发发送所有 embedding 请求
+        embed_tasks = [
+            self.embedding_client.embed_batch([c.content for c in batch])
+            for batch in batch_group
+        ]
+        embedding_results = await asyncio.gather(
+            *embed_tasks, return_exceptions=True
+        )
+
+        # 检查是否有失败的批次
+        errors = [r for r in embedding_results if isinstance(r, BaseException)]
+        if errors:
+            raise errors[0]
+
+        # 顺序写入 DB（共享同一个 session）
+        chunk_count = 0
+        token_count = 0
+        for chunks, emb_result in zip(batch_group, embedding_results):
+            await self._insert_chunk_batch(
+                document_id=document.id,
+                space_id=document.space_id,
+                chunks=chunks,
+                embeddings=emb_result.embeddings,
+            )
+            chunk_count += len(chunks)
+            token_count += emb_result.token_count
+
+        return chunk_count, token_count
 
     async def _run_enrichment_stage(
         self,

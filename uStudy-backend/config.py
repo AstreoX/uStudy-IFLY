@@ -122,6 +122,7 @@ class Settings(BaseSettings):
     embedding_model: str = "qwen/qwen3-embedding-8b"
     embedding_dimension: int = 2000  # HNSW 索引最大支持 2000 维
     embedding_batch_size: int = 20  # 每批处理的文本数量
+    embedding_max_concurrent: int = 3  # embedding 并发批次数
 
     # 切片配置
     chunk_size_tokens: int = 600  # 目标切片大小（tokens）

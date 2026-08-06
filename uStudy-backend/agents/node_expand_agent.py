@@ -15,7 +15,6 @@ from agents.exceptions import (
 )
 from agents.llm.client import OpenRouterClient
 from agents.llm.prompts import build_node_expand_prompt
-from chat.tools.graph_tools import build_knowledge_tree_text
 from db.models import Edge, EdgeType, Node
 from graph.service import GraphService
 
@@ -94,6 +93,9 @@ class NodeExpandAgent:
         parent_label = await self._get_parent_label(space_id, node_id)
 
         # 3.5 获取完整知识图谱结构（供 LLM 参考避免重复）
+        # 延迟导入避免循环依赖: agents → chat.tools → agents
+        from chat.tools.graph_tools import build_knowledge_tree_text
+
         graph_service = GraphService(self.db)
         graph_data = await graph_service.get_graph(space_id)
         knowledge_tree_text = build_knowledge_tree_text(graph_data["nodes"], graph_data["edges"])
