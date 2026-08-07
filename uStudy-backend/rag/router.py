@@ -18,6 +18,11 @@ from rag.schemas import (
     SearchResponse,
     SearchResultItem,
 )
+from spaces.authorization import (
+    SpaceAccessDeniedError,
+    SpaceNotFoundError,
+    verify_space_access as _verify_space_access,
+)
 
 settings = get_settings()
 
@@ -29,17 +34,13 @@ router = APIRouter(prefix="/api/rag", tags=["RAG"])
 async def verify_space_access(
     db: AsyncSession, space_id: UUID, user_id: UUID
 ) -> Space:
-    """验证用户是否有权访问该空间"""
-    result = await db.execute(select(Space).where(Space.id == space_id))
-    space = result.scalar_one_or_none()
-
-    if not space:
+    """验证用户是否有权访问该空间（owner 或 member）"""
+    try:
+        return await _verify_space_access(db, space_id, user_id)
+    except SpaceNotFoundError:
         raise HTTPException(status_code=404, detail="学习空间不存在")
-
-    if space.user_id != user_id:
+    except SpaceAccessDeniedError:
         raise HTTPException(status_code=403, detail="无权访问该学习空间")
-
-    return space
 
 
 @router.post("/spaces/{space_id}/search", response_model=SearchResponse)
