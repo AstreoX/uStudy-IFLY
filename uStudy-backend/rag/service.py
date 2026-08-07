@@ -130,6 +130,7 @@ class DocumentProcessingService:
                 document=document,
                 normalized_document=normalized_document,
                 chunker=chunker,
+                task_id=task.id,
             )
             if base_chunk_count == 0:
                 raise ValueError("切片结果为空")
@@ -232,6 +233,7 @@ class DocumentProcessingService:
                     chunk_count += embedded[0]
                     total_embedding_tokens += embedded[1]
                     pending_batches = []
+                    await self._update_processed_chunks(task.id, chunk_count)
 
             # 处理剩余批次
             if pending_batches:
@@ -240,6 +242,7 @@ class DocumentProcessingService:
                 )
                 chunk_count += embedded[0]
                 total_embedding_tokens += embedded[1]
+                await self._update_processed_chunks(task.id, chunk_count)
 
             if chunk_count == 0:
                 raise ValueError("切片结果为空")
@@ -305,6 +308,7 @@ class DocumentProcessingService:
         document: SpaceDocument,
         normalized_document: NormalizedDocument,
         chunker,
+        task_id: uuid.UUID | None = None,
     ) -> int:
         """Process and insert base chunks with concurrent embedding.
 
@@ -343,6 +347,10 @@ class DocumentProcessingService:
                 total_embedding_tokens += embedded[1]
                 pending_batches = []
 
+                # 更新处理进度
+                if task_id:
+                    await self._update_processed_chunks(task_id, total_chunks)
+
         # 处理剩余批次
         if pending_batches:
             embedded = await self._embed_and_insert_group(
@@ -350,6 +358,9 @@ class DocumentProcessingService:
             )
             total_chunks += embedded[0]
             total_embedding_tokens += embedded[1]
+
+            if task_id:
+                await self._update_processed_chunks(task_id, total_chunks)
 
         logger.info(
             "基础切片与向量化完成: document=%s chunks=%d embedding_tokens=%d",
@@ -631,6 +642,17 @@ class DocumentProcessingService:
             update(DocumentProcessingTask)
             .where(DocumentProcessingTask.id == task_id)
             .values(**values)
+        )
+        await self.db.commit()
+
+    async def _update_processed_chunks(
+        self, task_id: uuid.UUID, processed_chunks: int
+    ) -> None:
+        """更新已处理切片数（轻量级，不 commit 主事务）。"""
+        await self.db.execute(
+            update(DocumentProcessingTask)
+            .where(DocumentProcessingTask.id == task_id)
+            .values(processed_chunks=processed_chunks)
         )
         await self.db.commit()
 

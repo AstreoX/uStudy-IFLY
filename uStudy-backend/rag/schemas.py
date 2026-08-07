@@ -42,6 +42,7 @@ class ProcessingStatusResponse(BaseModel):
     document_id: UUID
     status: str
     chunk_count: Optional[int]
+    processed_chunks: int
     error_message: Optional[str]
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
