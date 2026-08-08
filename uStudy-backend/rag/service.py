@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import queue
 import threading
@@ -228,21 +229,21 @@ class DocumentProcessingService:
 
                 if len(pending_batches) >= concurrent_limit:
                     embedded = await self._embed_and_insert_group(
-                        pending_batches, document
+                        pending_batches, document,
+                        task_id=task.id, current_total=chunk_count,
                     )
                     chunk_count += embedded[0]
                     total_embedding_tokens += embedded[1]
                     pending_batches = []
-                    await self._update_processed_chunks(task.id, chunk_count)
 
             # 处理剩余批次
             if pending_batches:
                 embedded = await self._embed_and_insert_group(
-                    pending_batches, document
+                    pending_batches, document,
+                    task_id=task.id, current_total=chunk_count,
                 )
                 chunk_count += embedded[0]
                 total_embedding_tokens += embedded[1]
-                await self._update_processed_chunks(task.id, chunk_count)
 
             if chunk_count == 0:
                 raise ValueError("切片结果为空")
@@ -341,26 +342,21 @@ class DocumentProcessingService:
 
             if len(pending_batches) >= concurrent_limit:
                 embedded = await self._embed_and_insert_group(
-                    pending_batches, document
+                    pending_batches, document,
+                    task_id=task_id, current_total=total_chunks,
                 )
                 total_chunks += embedded[0]
                 total_embedding_tokens += embedded[1]
                 pending_batches = []
 
-                # 更新处理进度
-                if task_id:
-                    await self._update_processed_chunks(task_id, total_chunks)
-
         # 处理剩余批次
         if pending_batches:
             embedded = await self._embed_and_insert_group(
-                pending_batches, document
+                pending_batches, document,
+                task_id=task_id, current_total=total_chunks,
             )
             total_chunks += embedded[0]
             total_embedding_tokens += embedded[1]
-
-            if task_id:
-                await self._update_processed_chunks(task_id, total_chunks)
 
         logger.info(
             "基础切片与向量化完成: document=%s chunks=%d embedding_tokens=%d",
@@ -374,11 +370,13 @@ class DocumentProcessingService:
         self,
         batch_group: list[list[Chunk]],
         document: SpaceDocument,
+        *,
+        task_id: uuid.UUID | None = None,
+        current_total: int = 0,
     ) -> tuple[int, int]:
         """Embed a group of chunk batches concurrently and insert into DB.
 
-        Uses return_exceptions=True to prevent partial result loss:
-        if any batch fails, the error is raised after all tasks complete.
+        Updates processed_chunks after each batch insert for real-time progress.
 
         Returns:
             (chunk_count, embedding_token_count)
@@ -397,7 +395,7 @@ class DocumentProcessingService:
         if errors:
             raise errors[0]
 
-        # 顺序写入 DB（共享同一个 session）
+        # 顺序写入 DB，每个 batch 后更新进度
         chunk_count = 0
         token_count = 0
         for chunks, emb_result in zip(batch_group, embedding_results):
@@ -409,6 +407,11 @@ class DocumentProcessingService:
             )
             chunk_count += len(chunks)
             token_count += emb_result.token_count
+
+            if task_id:
+                await self._update_processed_chunks(
+                    task_id, current_total + chunk_count
+                )
 
         return chunk_count, token_count
 
@@ -572,23 +575,42 @@ class DocumentProcessingService:
         chunks: list[Chunk],
         embeddings: list[list[float]],
     ) -> None:
-        """使用 executemany 批量写入 chunk 与 embedding。"""
+        """使用 raw SQL 批量写入 chunk 与 embedding。
+
+        注意：asyncpg 的 executemany 不支持 SQLAlchemy func 对象作为参数值，
+        因此 to_tsvector 必须写在 SQL 文本中，而非作为 Python 对象传递。
+        """
+        if not chunks:
+            return
+
+        from sqlalchemy import text
+
+        stmt = text("""
+            INSERT INTO document_chunks
+                (id, document_id, space_id, chunk_index, content,
+                 token_count, chunk_metadata, embedding, content_tsv)
+            VALUES
+                (:id, :document_id, :space_id, :chunk_index, :content,
+                 :token_count, :chunk_metadata, :embedding,
+                 to_tsvector('simple', :search_text))
+        """)
+
         rows = [
             {
-                "id": uuid.uuid4(),
-                "document_id": document_id,
-                "space_id": space_id,
+                "id": str(uuid.uuid4()),
+                "document_id": str(document_id),
+                "space_id": str(space_id),
                 "chunk_index": chunk.index,
                 "content": chunk.content,
                 "token_count": chunk.token_count,
-                "chunk_metadata": chunk.metadata,
-                "embedding": embedding,
-                "content_tsv": func.to_tsvector("simple", segment_for_search(chunk.content)),
+                "chunk_metadata": json.dumps(chunk.metadata),
+                "embedding": str(embedding),
+                "search_text": segment_for_search(chunk.content),
             }
             for chunk, embedding in zip(chunks, embeddings)
         ]
-        if rows:
-            await self.db.execute(DocumentChunk.__table__.insert(), rows)
+        for row in rows:
+            await self.db.execute(stmt, row)
 
     async def _load_chunks(self, document_id: uuid.UUID) -> list[Chunk]:
         """Load already stored chunks back into chunk objects."""
