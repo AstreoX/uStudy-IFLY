@@ -204,9 +204,6 @@ class DocumentProcessingService:
             chunk_count = 0
             total_embedding_tokens = 0
             batch_size = max(1, self.embedding_client.batch_size)
-            concurrent_limit = max(1, self.embedding_client.max_concurrent)
-
-            pending_batches: list[list[Chunk]] = []
 
             async for chunk_batch in self._iter_chunk_batches(
                 chunker=chunker,
@@ -225,25 +222,18 @@ class DocumentProcessingService:
                     if result.metadata:
                         chunk.metadata.update(result.metadata)
 
-                pending_batches.append(chunk_batch)
+                chunk_texts = [c.content for c in chunk_batch]
+                emb_result = await self.embedding_client.embed_batch(chunk_texts)
 
-                if len(pending_batches) >= concurrent_limit:
-                    embedded = await self._embed_and_insert_group(
-                        pending_batches, document,
-                        task_id=task.id, current_total=chunk_count,
-                    )
-                    chunk_count += embedded[0]
-                    total_embedding_tokens += embedded[1]
-                    pending_batches = []
-
-            # 处理剩余批次
-            if pending_batches:
-                embedded = await self._embed_and_insert_group(
-                    pending_batches, document,
-                    task_id=task.id, current_total=chunk_count,
+                await self._insert_chunk_batch(
+                    document_id=document.id,
+                    space_id=document.space_id,
+                    chunks=chunk_batch,
+                    embeddings=emb_result.embeddings,
                 )
-                chunk_count += embedded[0]
-                total_embedding_tokens += embedded[1]
+                chunk_count += len(chunk_batch)
+                total_embedding_tokens += emb_result.token_count
+                await self._update_processed_chunks(task.id, chunk_count)
 
             if chunk_count == 0:
                 raise ValueError("切片结果为空")
@@ -311,60 +301,71 @@ class DocumentProcessingService:
         chunker,
         task_id: uuid.UUID | None = None,
     ) -> int:
-        """Process and insert base chunks with concurrent embedding.
+        """Process base chunks in two phases for visible progress.
 
-        Collects chunk batches into groups, then embeds each group concurrently
-        using asyncio.gather with semaphore-based throttling.
+        Phase 1: Collect all chunks (PDF parsing / text extraction).
+        Phase 2: Embed + insert batch by batch, updating progress after each.
         """
-        total_chunks = 0
-        total_embedding_tokens = 0
         batch_size = max(1, self.embedding_client.batch_size)
-        concurrent_limit = max(1, self.embedding_client.max_concurrent)
 
-        # 收集一组 batch，然后并发 embedding + 写入
-        pending_batches: list[list[Chunk]] = []
-
+        # Phase 1: 收集所有 chunks（解析阶段，耗时最长）
+        all_chunks: list[Chunk] = []
         async for chunk_batch in self._iter_chunk_batches(
             chunker=chunker,
             content=normalized_document.content,
             filename=normalized_document.filename,
             batch_size=batch_size,
         ):
-            if not chunk_batch:
-                continue
-
-            self._annotate_chunks(
-                chunk_batch,
-                normalized_document=normalized_document,
-                stage="base",
-            )
-            pending_batches.append(chunk_batch)
-
-            if len(pending_batches) >= concurrent_limit:
-                embedded = await self._embed_and_insert_group(
-                    pending_batches, document,
-                    task_id=task_id, current_total=total_chunks,
+            if chunk_batch:
+                self._annotate_chunks(
+                    chunk_batch,
+                    normalized_document=normalized_document,
+                    stage="base",
                 )
-                total_chunks += embedded[0]
-                total_embedding_tokens += embedded[1]
-                pending_batches = []
+                all_chunks.extend(chunk_batch)
 
-        # 处理剩余批次
-        if pending_batches:
-            embedded = await self._embed_and_insert_group(
-                pending_batches, document,
-                task_id=task_id, current_total=total_chunks,
+        if not all_chunks:
+            return 0
+
+        total_to_process = len(all_chunks)
+
+        # 提前写入 chunk_count，前端可以显示 "X / Y 块"
+        if task_id:
+            await self.db.execute(
+                update(DocumentProcessingTask)
+                .where(DocumentProcessingTask.id == task_id)
+                .values(chunk_count=total_to_process)
             )
-            total_chunks += embedded[0]
-            total_embedding_tokens += embedded[1]
+            await self.db.commit()
+
+        # Phase 2: 逐 batch embedding + 插入，每 batch 更新进度
+        processed = 0
+        total_embedding_tokens = 0
+
+        for i in range(0, total_to_process, batch_size):
+            batch = all_chunks[i : i + batch_size]
+            chunk_texts = [c.content for c in batch]
+            emb_result = await self.embedding_client.embed_batch(chunk_texts)
+
+            await self._insert_chunk_batch(
+                document_id=document.id,
+                space_id=document.space_id,
+                chunks=batch,
+                embeddings=emb_result.embeddings,
+            )
+            processed += len(batch)
+            total_embedding_tokens += emb_result.token_count
+
+            if task_id:
+                await self._update_processed_chunks(task_id, processed)
 
         logger.info(
             "基础切片与向量化完成: document=%s chunks=%d embedding_tokens=%d",
             document.id,
-            total_chunks,
+            processed,
             total_embedding_tokens,
         )
-        return total_chunks
+        return processed
 
     async def _embed_and_insert_group(
         self,
