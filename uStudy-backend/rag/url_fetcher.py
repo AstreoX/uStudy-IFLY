@@ -1,7 +1,7 @@
 """URL content fetcher for link-type documents.
 
 Supports:
-- Webpage text extraction (via trafilatura)
+- Webpage text extraction (via ContentRouter: trafilatura → Crawl4AI → Jina)
 - YouTube transcript extraction (via youtube-transcript-api)
 - Bilibili / other platform subtitle extraction (via yt-dlp)
 - Whisper API fallback for videos without subtitles
@@ -10,27 +10,22 @@ Supports:
 from __future__ import annotations
 
 import asyncio
-import html as html_module
 import logging
 import re
 import shutil
 import tempfile
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-import httpx
-import trafilatura
-
 from chat.tools.web_tools import _is_safe_url
 from config import get_settings
+from crawler.router import ContentRouter
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-_MAX_HTML_BYTES = 5 * 1024 * 1024  # 5MB
 _SUBTITLE_EXTENSIONS = {".vtt", ".srt", ".ass", ".ssa", ".ttml"}
 
 _VIDEO_HOST_PATTERNS = [
@@ -64,6 +59,9 @@ class URLFetchError(Exception):
 class URLContentFetcher:
     """Fetch and extract content from URLs for RAG processing."""
 
+    def __init__(self) -> None:
+        self._content_router = ContentRouter()
+
     async def fetch(self, url: str) -> URLContentResult:
         """Main entry point: dispatch to the appropriate handler based on URL type."""
         # _is_safe_url calls blocking socket.gethostbyname — run in thread
@@ -84,85 +82,24 @@ class URLContentFetcher:
     # ── Webpage extraction ──────────────────────────────────────────
 
     async def _fetch_webpage(self, url: str) -> URLContentResult:
-        """Fetch and extract main content from a webpage using trafilatura."""
-        timeout = settings.url_fetch_timeout_seconds
-        try:
-            async with httpx.AsyncClient(
-                timeout=timeout,
-                follow_redirects=True,
-                max_redirects=5,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; uStudyBot/1.0)"},
-            ) as client:
-                response = await client.get(url)
-                response.raise_for_status()
+        """Fetch and extract main content from a webpage using ContentRouter.
 
-                # Validate final URL after redirects (SSRF: redirect to internal IP)
-                final_url = str(response.url)
-                if final_url != url:
-                    is_safe, error = await asyncio.to_thread(_is_safe_url, final_url)
-                    if not is_safe:
-                        raise URLFetchError(f"重定向目标安全检查失败: {error}")
-
-                # Stream response to enforce size limit without OOM
-                html = await self._read_response_with_limit(response)
-
-        except URLFetchError:
-            raise
-        except httpx.HTTPStatusError as exc:
-            raise URLFetchError(f"HTTP {exc.response.status_code}: 无法访问 {url}") from exc
-        except httpx.RequestError as exc:
-            raise URLFetchError(f"网络请求失败: {exc}") from exc
-
-        extracted = await asyncio.to_thread(
-            trafilatura.extract,
-            html,
-            include_comments=False,
-            include_tables=True,
-            output_format="txt",
-        )
-
-        if not extracted or not extracted.strip():
-            raise URLFetchError("无法从页面提取有效文本内容")
-
-        xml_output = await asyncio.to_thread(
-            trafilatura.extract,
-            html,
-            output_format="xml",
-            include_comments=False,
-        )
-        page_title = ""
-        if xml_output:
-            try:
-                root = ET.fromstring(xml_output)
-                page_title = root.attrib.get("title", "")
-            except ET.ParseError:
-                pass
-
-        if not page_title:
-            page_title = _extract_title_from_html(html)
+        ContentRouter fallback chain: trafilatura → Crawl4AI → Jina Reader.
+        """
+        result = await self._content_router.extract(url)
+        if not result:
+            raise URLFetchError("无法从页面提取有效文本内容（所有提取方式均失败）")
 
         return URLContentResult(
-            content=extracted,
-            title=page_title or url,
-            content_type="webpage",
+            content=result.content,
+            title=result.title,
+            content_type=result.content_type,
             source_url=url,
-            metadata={"content_length": len(extracted)},
+            metadata={
+                "content_length": len(result.content),
+                "extraction_method": result.extraction_method,
+            },
         )
-
-    async def _read_response_with_limit(self, response: httpx.Response) -> str:
-        """Read response text, enforcing _MAX_HTML_BYTES to prevent OOM.
-
-        Note: httpx AsyncClient.get() already downloads the full body for non-streaming
-        requests, so this is a post-download guard. For true streaming protection,
-        use client.stream() — but trafilatura needs the full HTML anyway.
-        """
-        content = response.content
-        if len(content) > _MAX_HTML_BYTES:
-            raise URLFetchError(
-                f"页面过大 ({len(content) / 1024 / 1024:.1f}MB)，"
-                f"超过 {_MAX_HTML_BYTES // 1024 // 1024}MB 限制"
-            )
-        return response.text
 
     # ── Video transcript extraction ─────────────────────────────────
 
@@ -411,14 +348,6 @@ class URLContentFetcher:
             source_url=url,
             metadata={"platform": "whisper", "method": "audio_transcription"},
         )
-
-
-def _extract_title_from_html(raw_html: str) -> str:
-    """Extract <title> from HTML as fallback."""
-    match = re.search(r"<title[^>]*>(.*?)</title>", raw_html, re.IGNORECASE | re.DOTALL)
-    if match:
-        return html_module.unescape(match.group(1)).strip()
-    return ""
 
 
 def _clean_subtitle_text(raw: str) -> str:

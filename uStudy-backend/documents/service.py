@@ -278,6 +278,62 @@ def schedule_document_processing(document_id: uuid.UUID) -> None:
         logger.warning("无法调度文档处理任务：没有运行中的事件循环")
 
 
+async def crawl_and_import(
+    db: AsyncSession,
+    space_id: uuid.UUID,
+    user_id: uuid.UUID,
+    url: str,
+    max_pages: int = 5,
+    url_pattern: str | None = None,
+) -> tuple[list[str], list[uuid.UUID]]:
+    """Crawl a website and import discovered URLs as link documents.
+
+    Uses DeepCrawler to discover sub-pages, then creates a SpaceDocument
+    (LINK type) for each URL via create_link(), which triggers RAG processing.
+
+    Returns:
+        Tuple of (discovered_urls, created_document_ids)
+    """
+    from crawler.deep_crawler import DeepCrawler
+
+    await verify_space_ownership(db, space_id, user_id)
+
+    crawler = DeepCrawler()
+    discovered = await crawler.discover_urls(
+        url,
+        max_pages=max_pages,
+        url_pattern=url_pattern,
+    )
+
+    if not discovered:
+        return [], []
+
+    document_ids: list[uuid.UUID] = []
+    for page_url in discovered:
+        try:
+            # Derive title from URL path as placeholder (RAG processing will update it)
+            from urllib.parse import urlparse
+            path = urlparse(page_url).path.strip("/")
+            title = path.split("/")[-1].replace("-", " ").replace("_", " ") if path else page_url
+
+            doc = await create_link(
+                db=db,
+                space_id=space_id,
+                user_id=user_id,
+                title=title,
+                url=page_url,
+            )
+            document_ids.append(doc.id)
+        except Exception as exc:
+            logger.warning("Failed to create link for %s: %s", page_url[:80], exc)
+
+    logger.info(
+        "Crawl import: %d URLs discovered, %d documents created for space %s",
+        len(discovered), len(document_ids), space_id,
+    )
+    return discovered, document_ids
+
+
 def _build_file_size_limit_message(max_file_bytes: int, user: User | None) -> str:
     max_mb = max(1, (max_file_bytes + 1024 * 1024 - 1) // (1024 * 1024))
     tier = None

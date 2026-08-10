@@ -1,10 +1,14 @@
-"""Web Search Tools - Definitions and Executor"""
+"""Web Search Tools - Definitions and Executor
+
+Enhanced with:
+- ContentRouter fallback chain (trafilatura → Crawl4AI → Jina Reader)
+- SearXNG meta-search (→ DuckDuckGo backup)
+- Deep crawl for multi-page extraction
+"""
 
 import asyncio
-import html
 import ipaddress
 import logging
-import re
 import socket
 from typing import Any
 from urllib.parse import urlparse
@@ -14,6 +18,9 @@ from ddgs import DDGS
 
 from chat.tools.base import ToolResult
 from config import get_settings
+from crawler.router import ContentRouter
+from crawler.searxng_client import SearXNGSearchClient
+from crawler.deep_crawler import DeepCrawler
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +48,7 @@ BLOCKED_IP_RANGES = [
 ]
 
 
-# ============ 2 Web Search Tools (OpenAI Function Calling Format) ============
+# ============ 3 Web Tools (OpenAI Function Calling Format) ============
 
 
 WEB_TOOLS: list[dict[str, Any]] = [
@@ -50,7 +57,7 @@ WEB_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "使用搜索引擎查询关键词，返回与学习主题相关的网页搜索结果",
+            "description": "使用搜索引擎查询关键词，返回与学习主题相关的网页搜索结果（聚合多个搜索引擎）",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -73,7 +80,7 @@ WEB_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "web_fetch",
-            "description": "抓取指定 URL 的网页内容，提取主要文本供学习参考",
+            "description": "抓取指定 URL 的网页内容，智能提取主要文本（支持静态页面和 JS 渲染页面）",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -85,6 +92,38 @@ WEB_TOOLS: list[dict[str, Any]] = [
                         "type": "integer",
                         "description": "最大内容长度（字符数），默认为 3000",
                         "default": 3000,
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    # 3. web_crawl
+    {
+        "type": "function",
+        "function": {
+            "name": "web_crawl",
+            "description": "深度爬取网站的多个页面内容，适用于文档站点、教程系列等。从起始 URL 出发，跟随同域链接 BFS 抓取。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "起始 URL",
+                    },
+                    "max_pages": {
+                        "type": "integer",
+                        "description": "最大爬取页面数（1-20），默认为 5",
+                        "default": 5,
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "description": "最大链接跟随深度（1-3），默认为 2",
+                        "default": 2,
+                    },
+                    "url_pattern": {
+                        "type": "string",
+                        "description": "URL 过滤正则表达式（可选），仅爬取匹配的 URL",
                     },
                 },
                 "required": ["url"],
@@ -152,6 +191,9 @@ class WebToolExecutor:
         settings = get_settings()
         self.timeout = settings.web_search_timeout_seconds
         self.default_max_length = settings.web_fetch_max_length
+        self._content_router = ContentRouter()
+        self._searxng_client = SearXNGSearchClient()
+        self._deep_crawler = DeepCrawler()
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> ToolResult:
         """
@@ -167,6 +209,7 @@ class WebToolExecutor:
         method_map = {
             "web_search": self._web_search,
             "web_fetch": self._web_fetch,
+            "web_crawl": self._web_crawl,
         }
 
         handler = method_map.get(tool_name)
@@ -202,7 +245,7 @@ class WebToolExecutor:
             )
 
     async def _web_search(self, args: dict) -> ToolResult:
-        """Execute web search using DuckDuckGo"""
+        """Execute web search: SearXNG first, DuckDuckGo backup."""
         query = args.get("query", "").strip()
         max_results = min(max(args.get("max_results", 5), 1), 10)
 
@@ -213,7 +256,6 @@ class WebToolExecutor:
                 message="搜索关键词不能为空",
             )
 
-        # Query length validation
         if len(query) > MAX_QUERY_LENGTH:
             return ToolResult(
                 success=False,
@@ -223,7 +265,27 @@ class WebToolExecutor:
 
         logger.info(f"Web search: query={query[:50]}..., max_results={max_results}")
 
-        # DuckDuckGo search is synchronous, use asyncio.to_thread
+        # Try SearXNG first
+        searxng_results = await self._searxng_client.search(query, max_results=max_results)
+        if searxng_results:
+            formatted = [
+                {
+                    "title": r.title,
+                    "url": r.url,
+                    "snippet": r.snippet,
+                    "source": "web",
+                }
+                for r in searxng_results
+            ]
+            logger.info(f"SearXNG search completed: {len(formatted)} results")
+            return ToolResult(
+                success=True,
+                data={"results": formatted, "query": query, "channel": "web", "engine": "searxng"},
+                message=f"找到 {len(formatted)} 条搜索结果",
+            )
+
+        # Fallback to DuckDuckGo
+        logger.info("SearXNG unavailable, falling back to DuckDuckGo")
         try:
             results = await asyncio.to_thread(
                 lambda: list(DDGS().text(query, max_results=max_results))
@@ -236,7 +298,6 @@ class WebToolExecutor:
                 message="搜索服务暂时不可用，请稍后重试",
             )
 
-        # Format results
         formatted = [
             {
                 "title": r.get("title", ""),
@@ -247,16 +308,16 @@ class WebToolExecutor:
             for r in results
         ]
 
-        logger.info(f"Web search completed: {len(formatted)} results")
+        logger.info(f"DuckDuckGo search completed: {len(formatted)} results")
 
         return ToolResult(
             success=True,
-            data={"results": formatted, "query": query, "channel": "web"},
+            data={"results": formatted, "query": query, "channel": "web", "engine": "duckduckgo"},
             message=f"找到 {len(formatted)} 条搜索结果",
         )
 
     async def _web_fetch(self, args: dict) -> ToolResult:
-        """Fetch and extract content from URL"""
+        """Fetch and extract content from URL using ContentRouter."""
         url = args.get("url", "").strip()
         max_length = min(max(args.get("max_length", self.default_max_length), 500), 10000)
 
@@ -278,173 +339,100 @@ class WebToolExecutor:
 
         logger.info(f"Web fetch: url={url[:100]}, max_length={max_length}")
 
-        async with httpx.AsyncClient(
-            timeout=self.timeout,
-            follow_redirects=True,
-            max_redirects=5,
-        ) as client:
-            # Use streaming to check size before loading entirely
-            async with client.stream(
-                "GET",
-                url,
-                headers={
-                    "User-Agent": (
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/120.0.0.0 Safari/537.36"
-                    ),
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                },
-            ) as response:
-                response.raise_for_status()
+        result = await self._content_router.extract(url, max_length=max_length)
+        if not result:
+            return ToolResult(
+                success=False,
+                data=None,
+                message="无法提取网页内容（所有提取方式均失败）",
+            )
 
-                # Check content type
-                content_type = response.headers.get("content-type", "")
-                if "text/html" not in content_type and "text/plain" not in content_type:
-                    return ToolResult(
-                        success=False,
-                        data=None,
-                        message=f"不支持的内容类型: {content_type.split(';')[0]}",
-                    )
-
-                # Check content-length header if present
-                content_length = response.headers.get("content-length")
-                if content_length and int(content_length) > MAX_RESPONSE_SIZE:
-                    return ToolResult(
-                        success=False,
-                        data=None,
-                        message="网页内容过大，无法获取",
-                    )
-
-                # Read with size limit
-                chunks = []
-                total_size = 0
-                async for chunk in response.aiter_bytes():
-                    total_size += len(chunk)
-                    if total_size > MAX_RESPONSE_SIZE:
-                        return ToolResult(
-                            success=False,
-                            data=None,
-                            message="网页内容超过大小限制",
-                        )
-                    chunks.append(chunk)
-
-                html_content = b"".join(chunks).decode("utf-8", errors="replace")
-
-        title = self._extract_title(html_content)
-        content = self._extract_text(html_content, max_length)
-
-        logger.info(f"Web fetch completed: {len(content)} chars")
+        logger.info(
+            f"Web fetch completed via {result.extraction_method}: {len(result.content)} chars"
+        )
 
         return ToolResult(
             success=True,
             data={
                 "url": url,
-                "title": title,
-                "content": content,
-                "length": len(content),
+                "title": result.title,
+                "content": result.content,
+                "length": len(result.content),
+                "extraction_method": result.extraction_method,
             },
-            message=f"成功获取网页内容，共 {len(content)} 字符",
+            message=f"成功获取网页内容，共 {len(result.content)} 字符（via {result.extraction_method}）",
         )
 
-    def _extract_title(self, html_content: str) -> str:
-        """
-        Extract title from HTML.
+    async def _web_crawl(self, args: dict) -> ToolResult:
+        """Deep crawl: BFS multi-page extraction."""
+        url = args.get("url", "").strip()
+        max_pages = min(max(args.get("max_pages", 5), 1), 20)
+        max_depth = min(max(args.get("max_depth", 2), 1), 3)
+        url_pattern = args.get("url_pattern")
 
-        Args:
-            html_content: Raw HTML content
-
-        Returns:
-            Page title or empty string if not found
-        """
-        match = re.search(r"<title[^>]*>([^<]+)</title>", html_content, re.IGNORECASE)
-        if match:
-            return html.unescape(match.group(1).strip())
-        return ""
-
-    def _extract_text(self, html_content: str, max_length: int) -> str:
-        """
-        Extract main text from HTML using regex.
-
-        Strategy:
-        1. Remove script and style tags with their content
-        2. Remove HTML comments
-        3. Remove non-content sections (head, nav, header, footer)
-        4. Remove HTML tags, keep text
-        5. Decode HTML entities
-        6. Clean up whitespace
-        7. Truncate to max_length
-
-        Args:
-            html_content: Raw HTML content
-            max_length: Maximum length of extracted text
-
-        Returns:
-            Extracted and cleaned text content
-        """
-        text = html_content
-
-        # Remove script tags and content
-        text = re.sub(
-            r"<script[^>]*>[\s\S]*?</script>",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        )
-
-        # Remove style tags and content
-        text = re.sub(
-            r"<style[^>]*>[\s\S]*?</style>",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        )
-
-        # Remove HTML comments
-        text = re.sub(r"<!--[\s\S]*?-->", "", text)
-
-        # Remove head section
-        text = re.sub(
-            r"<head[^>]*>[\s\S]*?</head>",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        )
-
-        # Remove nav, header, footer sections (common non-content areas)
-        for tag in ["nav", "header", "footer", "aside", "noscript"]:
-            text = re.sub(
-                rf"<{tag}[^>]*>[\s\S]*?</{tag}>",
-                "",
-                text,
-                flags=re.IGNORECASE,
+        if not url:
+            return ToolResult(
+                success=False,
+                data=None,
+                message="URL 不能为空",
             )
 
-        # Replace block elements with newlines
-        text = re.sub(r"<(p|div|br|h[1-6]|li|tr)[^>]*>", "\n", text, flags=re.IGNORECASE)
+        # SSRF protection
+        is_safe, error_msg = _is_safe_url(url)
+        if not is_safe:
+            return ToolResult(
+                success=False,
+                data=None,
+                message=error_msg,
+            )
 
-        # Remove all remaining HTML tags
-        text = re.sub(r"<[^>]+>", "", text)
+        settings = get_settings()
+        if not settings.deep_crawl_enabled:
+            return ToolResult(
+                success=False,
+                data=None,
+                message="深度爬取功能未启用",
+            )
 
-        # Decode HTML entities (handles all entities including &nbsp;, &amp;, etc.)
-        text = html.unescape(text)
+        logger.info(
+            f"Web crawl: url={url[:100]}, max_pages={max_pages}, "
+            f"max_depth={max_depth}, pattern={url_pattern}"
+        )
 
-        # Clean up whitespace
-        text = re.sub(r"[ \t]+", " ", text)  # Multiple spaces to single
-        text = re.sub(r"\n\s*\n", "\n\n", text)  # Multiple newlines to double
-        text = text.strip()
+        results = await self._deep_crawler.crawl(
+            url,
+            max_pages=max_pages,
+            max_depth=max_depth,
+            url_pattern=url_pattern,
+        )
 
-        # Truncate to max_length
-        if len(text) > max_length:
-            # Try to cut at sentence boundary
-            truncated = text[:max_length]
-            last_period = truncated.rfind("。")
-            last_newline = truncated.rfind("\n")
-            cut_point = max(last_period, last_newline)
-            if cut_point > max_length * 0.7:
-                text = text[: cut_point + 1] + "..."
-            else:
-                text = truncated + "..."
+        if not results:
+            return ToolResult(
+                success=False,
+                data=None,
+                message="深度爬取未获取到任何页面内容",
+            )
 
-        return text
+        # Format results for LLM consumption
+        pages = []
+        for r in results:
+            # Truncate each page to reasonable length
+            content = r.content[:3000] + "..." if len(r.content) > 3000 else r.content
+            pages.append({
+                "url": r.url,
+                "title": r.title,
+                "content": content,
+                "extraction_method": r.extraction_method,
+            })
+
+        logger.info(f"Web crawl completed: {len(pages)} pages from {url[:80]}")
+
+        return ToolResult(
+            success=True,
+            data={
+                "start_url": url,
+                "pages": pages,
+                "total_pages": len(pages),
+            },
+            message=f"成功爬取 {len(pages)} 个页面",
+        )

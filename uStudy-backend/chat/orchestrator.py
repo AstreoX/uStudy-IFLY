@@ -169,7 +169,7 @@ class QuickChatOrchestrator:
         # Initialize executors for web and search tools
         any_web_enabled = channels.get("web_search_enabled", True)
         self.web_tool_executor = WebToolExecutor() if any_web_enabled else None
-        self._web_tool_names = {"web_search", "web_fetch"}
+        self._web_tool_names = {"web_search", "web_fetch", "web_crawl"}
 
         any_search_enabled = any(
             channels.get(k, True) for k in channel_to_tool
@@ -684,7 +684,7 @@ class LLMOrchestrator:
         # Tool name to executor mapping (used for dispatch regardless of mode)
         self._quiz_tool_names = {"generate_test"}
         self._quiz_result_tool_names = QUIZ_RESULT_TOOL_NAMES
-        self._web_tool_names = {"web_search", "web_fetch"}
+        self._web_tool_names = {"web_search", "web_fetch", "web_crawl"}
         self._schedule_tool_names = {"get_schedule", "add_schedule", "delete_schedule", "update_schedule"}
         self._rag_tool_names = {"search_documents"}
         self._vector_memory_tool_names = VECTOR_MEMORY_TOOL_NAMES
@@ -826,13 +826,14 @@ class LLMOrchestrator:
             logger.warning(f"RAG auto-inject failed: {e}")
             return None, []
 
-    _CITABLE_TOOLS = {"search_documents", "web_search", "academic_search", "encyclopedia_search"}
+    _CITABLE_TOOLS = {"search_documents", "web_search", "web_crawl", "academic_search", "encyclopedia_search"}
 
     @staticmethod
     def _get_source_type(tool_name: str) -> str:
         return {
             "search_documents": "document",
             "web_search": "web",
+            "web_crawl": "web",
             "academic_search": "academic",
             "encyclopedia_search": "encyclopedia",
         }.get(tool_name, "unknown")

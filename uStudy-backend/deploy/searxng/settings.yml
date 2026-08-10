@@ -1,0 +1,71 @@
+# SearXNG configuration for uStudy backend
+# Deployed on Tokyo server for unrestricted access to international search engines
+
+use_default_settings: true
+
+general:
+  instance_name: "uStudy Search"
+  debug: false
+
+server:
+  # Bind to all interfaces inside Docker; access is restricted by Docker port mapping
+  bind_address: "0.0.0.0"
+  port: 8080
+  secret_key: "change-me-to-a-random-string"
+  # Disable public UI since this is API-only
+  limiter: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "auto"
+  formats:
+    - html
+    - json
+
+ui:
+  static_use_hash: true
+
+engines:
+  # === Enabled engines ===
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: false
+
+  - name: bing
+    engine: bing
+    shortcut: b
+    disabled: false
+
+  - name: brave
+    engine: brave
+    shortcut: br
+    disabled: false
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+
+  - name: baidu
+    engine: xpath
+    shortcut: bd
+    disabled: false
+    url: https://www.baidu.com/s?wd={query}
+    url_xpath: '//h3/a/@href'
+    title_xpath: '//h3/a'
+    content_xpath: '//div[@class="c-abstract"]'
+
+  # === Wikipedia for reference ===
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    disabled: false
+
+outgoing:
+  request_timeout: 10.0
+  max_request_timeout: 15.0
+  useragent_suffix: ""
+  pool_connections: 100
+  pool_maxsize: 20

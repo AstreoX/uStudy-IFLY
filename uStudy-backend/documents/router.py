@@ -9,8 +9,20 @@ from auth.dependencies import get_current_user
 from db.database import get_db
 from db.models import User
 
-from .schemas import DocumentListResponse, DocumentResponse, LinkCreate
-from .service import create_link, delete_document, get_space_documents, upload_document
+from .schemas import (
+    CrawlImportRequest,
+    CrawlImportResponse,
+    DocumentListResponse,
+    DocumentResponse,
+    LinkCreate,
+)
+from .service import (
+    crawl_and_import,
+    create_link,
+    delete_document,
+    get_space_documents,
+    upload_document,
+)
 
 router = APIRouter(prefix="/api/spaces", tags=["documents"])
 
@@ -66,6 +78,29 @@ async def list_documents(
     return DocumentListResponse(
         documents=[DocumentResponse.model_validate(doc) for doc in documents],
         total=len(documents),
+    )
+
+
+@router.post("/{space_id}/documents/crawl", response_model=CrawlImportResponse)
+async def crawl_import(
+    space_id: UUID,
+    data: CrawlImportRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """深度爬取网站并批量导入为链接文档"""
+    discovered_urls, document_ids = await crawl_and_import(
+        db=db,
+        space_id=space_id,
+        user_id=current_user.id,
+        url=str(data.url),
+        max_pages=data.max_pages,
+        url_pattern=data.url_pattern,
+    )
+    return CrawlImportResponse(
+        discovered_urls=discovered_urls,
+        document_ids=document_ids,
+        total=len(document_ids),
     )
 
 

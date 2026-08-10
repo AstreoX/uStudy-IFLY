@@ -92,9 +92,10 @@ TOOL_CATALOG: list[ToolCatalogEntry] = [
     ToolCatalogEntry("view_quiz_results", "测验", "查看测验成绩列表"),
     ToolCatalogEntry("view_quiz_attempt_detail", "测验", "查看测验详细分析"),
 
-    # ── 网络搜索 (2) ──
-    ToolCatalogEntry("web_search", "网络搜索", "DuckDuckGo 网络搜索"),
-    ToolCatalogEntry("web_fetch", "网络搜索", "抓取网页内容"),
+    # ── 网络搜索 (3) ──
+    ToolCatalogEntry("web_search", "网络搜索", "聚合搜索引擎网络搜索（SearXNG + DuckDuckGo）"),
+    ToolCatalogEntry("web_fetch", "网络搜索", "智能抓取网页内容（支持 JS 渲染页面）"),
+    ToolCatalogEntry("web_crawl", "网络搜索", "深度爬取网站多页内容（文档站点、教程系列）"),
 
     # ── 学术搜索 (3) ──
     ToolCatalogEntry("academic_search", "学术搜索", "Semantic Scholar 学术论文搜索"),
@@ -182,7 +183,7 @@ _SEARCH_CHANNEL_TOOL_MAP: dict[str, str] = {
 }
 
 # web_search 和 web_fetch 都受 web_search_enabled 控制
-_WEB_TOOL_NAMES = {"web_search", "web_fetch"}
+_WEB_TOOL_NAMES = {"web_search", "web_fetch", "web_crawl"}
 _SEARCH_TOOL_NAMES = {"academic_search", "encyclopedia_search", "course_search"}
 
 

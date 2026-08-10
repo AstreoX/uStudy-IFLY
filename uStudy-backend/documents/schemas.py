@@ -35,3 +35,19 @@ class DocumentListResponse(BaseModel):
 
     documents: list[DocumentResponse]
     total: int
+
+
+class CrawlImportRequest(BaseModel):
+    """深度爬取导入请求"""
+
+    url: HttpUrl
+    max_pages: int = Field(default=5, ge=1, le=20)
+    url_pattern: Optional[str] = Field(default=None, description="URL 过滤正则表达式")
+
+
+class CrawlImportResponse(BaseModel):
+    """深度爬取导入响应"""
+
+    discovered_urls: list[str]
+    document_ids: list[UUID]
+    total: int

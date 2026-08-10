@@ -97,6 +97,31 @@ services:
       - ./certs:/app/certs:ro
     ports:
       - "8000:8000"
+    networks:
+      - default
+      - crawl4ai_net
+
+  # Crawl4AI - Headless browser for JS-rendered page extraction
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: ustudy-crawl4ai
+    restart: unless-stopped
+    environment:
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-}
+      MAX_CONCURRENT_TASKS: 3
+    ports:
+      - "127.0.0.1:9222:11235"
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+    networks:
+      - crawl4ai_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11235/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   pgdata:
@@ -107,3 +132,7 @@ volumes:
     driver: local
   payment_static:
     driver: local
+
+networks:
+  crawl4ai_net:
+    driver: bridge

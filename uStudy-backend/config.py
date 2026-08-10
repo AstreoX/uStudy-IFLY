@@ -112,6 +112,28 @@ class Settings(BaseSettings):
     whisper_max_audio_bytes: int = 25 * 1024 * 1024  # 25MB (OpenAI Whisper API limit)
     openai_api_key: str = ""  # for Whisper API
 
+    # Crawl4AI (Docker service for JS rendering)
+    crawl4ai_api_url: str = ""  # Docker 内部: http://crawl4ai:11235
+    crawl4ai_api_token: str = ""  # Optional API token for Crawl4AI
+    crawl4ai_timeout_seconds: int = 60
+    crawl4ai_enabled: bool = False  # 部署后开启
+
+    # Jina Reader (external API backup)
+    jina_api_key: str = ""
+    jina_reader_timeout_seconds: int = 30
+    jina_reader_enabled: bool = True  # 默认开启（无需部署）
+
+    # SearXNG (self-hosted meta-search engine)
+    searxng_base_url: str = ""  # http://8.211.149.4:8888
+    searxng_timeout_seconds: int = 15
+    searxng_enabled: bool = False  # 部署后开启
+
+    # Deep Crawl (multi-page BFS crawling)
+    deep_crawl_max_pages: int = 20
+    deep_crawl_max_depth: int = 3
+    deep_crawl_timeout_seconds: int = 300
+    deep_crawl_enabled: bool = False  # 部署后开启
+
     # 多渠道搜索配置
     semantic_scholar_timeout: int = 15
     wikipedia_timeout: int = 10
