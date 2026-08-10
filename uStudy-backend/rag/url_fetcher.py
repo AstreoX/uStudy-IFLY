@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-from chat.tools.web_tools import _is_safe_url
+from crawler.ssrf import is_safe_url as _is_safe_url
 from config import get_settings
 from crawler.router import ContentRouter
 

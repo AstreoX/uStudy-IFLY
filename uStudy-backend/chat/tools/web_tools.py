@@ -7,17 +7,15 @@ Enhanced with:
 """
 
 import asyncio
-import ipaddress
 import logging
-import socket
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
 from ddgs import DDGS
 
 from chat.tools.base import ToolResult
 from config import get_settings
+from crawler.ssrf import is_safe_url as _is_safe_url
 from crawler.router import ContentRouter
 from crawler.searxng_client import SearXNGSearchClient
 from crawler.deep_crawler import DeepCrawler
@@ -28,24 +26,6 @@ logger = logging.getLogger(__name__)
 # ============ Constants ============
 
 MAX_QUERY_LENGTH = 500
-MAX_RESPONSE_SIZE = 5 * 1024 * 1024  # 5MB
-
-# SSRF protection - blocked hosts and IP ranges
-BLOCKED_HOSTS = {
-    "localhost",
-    "127.0.0.1",
-    "0.0.0.0",
-    "::1",
-    "[::1]",
-}
-
-BLOCKED_IP_RANGES = [
-    ipaddress.ip_network("10.0.0.0/8"),       # Private
-    ipaddress.ip_network("172.16.0.0/12"),    # Private
-    ipaddress.ip_network("192.168.0.0/16"),   # Private
-    ipaddress.ip_network("169.254.0.0/16"),   # Link-local / Cloud metadata
-    ipaddress.ip_network("127.0.0.0/8"),      # Loopback
-]
 
 
 # ============ 3 Web Tools (OpenAI Function Calling Format) ============
@@ -131,54 +111,6 @@ WEB_TOOLS: list[dict[str, Any]] = [
         },
     },
 ]
-
-
-# ============ URL Safety Validation (SSRF Protection) ============
-
-
-def _is_safe_url(url: str) -> tuple[bool, str]:
-    """
-    Validate URL is safe to fetch (SSRF prevention).
-
-    Args:
-        url: The URL to validate
-
-    Returns:
-        Tuple of (is_safe, error_message)
-    """
-    try:
-        parsed = urlparse(url)
-
-        # Check scheme
-        if parsed.scheme not in ("http", "https"):
-            return False, "URL 必须使用 http 或 https 协议"
-
-        # Check host exists
-        hostname = parsed.hostname
-        if not hostname:
-            return False, "URL 格式无效：缺少主机名"
-
-        # Check against blocked hosts
-        if hostname.lower() in BLOCKED_HOSTS:
-            return False, "不允许访问内部主机"
-
-        # Resolve hostname and check IP ranges
-        try:
-            resolved_ip = socket.gethostbyname(hostname)
-            ip = ipaddress.ip_address(resolved_ip)
-            for blocked_range in BLOCKED_IP_RANGES:
-                if ip in blocked_range:
-                    return False, "不允许访问内部 IP 地址段"
-        except socket.gaierror:
-            return False, "无法解析主机名"
-        except ValueError:
-            # Not a valid IP address format, but hostname resolved
-            pass
-
-        return True, ""
-
-    except Exception as e:
-        return False, f"URL 格式无效: {str(e)}"
 
 
 # ============ Web Tool Executor ============

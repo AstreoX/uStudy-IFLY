@@ -12,7 +12,7 @@ import re
 from collections import deque
 from urllib.parse import urljoin, urlparse
 
-from chat.tools.web_tools import _is_safe_url
+from crawler.ssrf import is_safe_url as _is_safe_url
 from crawler.base import ContentResult
 from crawler.router import ContentRouter
 from config import get_settings
