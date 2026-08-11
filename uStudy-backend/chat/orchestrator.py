@@ -52,6 +52,7 @@ from chat.tools.artifact_tools import ARTIFACT_TOOL_NAMES, ArtifactToolExecutor
 from chat.tools.image_tools import IMAGE_TOOLS, IMAGE_TOOL_NAMES, ImageToolExecutor
 from chat.tools.code_sandbox_tools import CODE_SANDBOX_TOOLS, CODE_SANDBOX_TOOL_NAMES, CodeSandboxExecutor
 from chat.tools.annotation_tools import ANNOTATION_TOOLS, ANNOTATION_TOOL_NAMES, AnnotationToolExecutor
+from chat.tools.kb_tools import KB_TOOL_NAMES, KBToolExecutor
 from review.service import get_due_reviews_count_by_space, get_due_reviews_total
 from notes.service import NoteService
 from notes.schemas import NoteCreate
@@ -694,6 +695,8 @@ class LLMOrchestrator:
         self._artifact_tool_names = ARTIFACT_TOOL_NAMES
         self._image_tool_names = IMAGE_TOOL_NAMES
         self._code_sandbox_tool_names = CODE_SANDBOX_TOOL_NAMES
+        self._kb_tool_names = KB_TOOL_NAMES
+        self.kb_tool_executor = KBToolExecutor(user_id, space_id)
 
         # Annotation tool (dual-sync mode)
         self._has_panel_screenshot = has_panel_screenshot
@@ -1223,6 +1226,11 @@ class LLMOrchestrator:
                                 tool_call.name,
                                 tool_call.arguments,
                             )
+                    elif tool_call.name in self._kb_tool_names:
+                        tool_result = await self.kb_tool_executor.execute(
+                            tool_call.name,
+                            tool_call.arguments,
+                        )
                     elif tool_call.name in self._annotation_tool_names:
                         tool_result = await self.annotation_executor.execute(
                             tool_call.name,

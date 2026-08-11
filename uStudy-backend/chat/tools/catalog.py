@@ -24,6 +24,7 @@ from chat.tools.artifact_tools import ARTIFACT_TOOLS
 from chat.tools.image_tools import IMAGE_TOOLS
 from chat.tools.annotation_tools import ANNOTATION_TOOLS
 from chat.tools.code_sandbox_tools import CODE_SANDBOX_TOOLS
+from chat.tools.kb_tools import KB_TOOLS
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ def _build_registry() -> dict[str, dict]:
         ARTIFACT_TOOLS,
         ANNOTATION_TOOLS,
         CODE_SANDBOX_TOOLS,
+        KB_TOOLS,
     ]
     for tool_list in all_tool_lists:
         for tool_def in tool_list:
@@ -143,6 +145,9 @@ TOOL_CATALOG: list[ToolCatalogEntry] = [
 
     # ── 代码执行 (1) ──
     ToolCatalogEntry("run_python_code", "代码执行", "执行 Python 代码（支持 numpy/pandas/matplotlib/sympy/sklearn/seaborn 等）"),
+
+    # ── 知识库管理 (1) ──
+    ToolCatalogEntry("save_to_knowledge_base", "知识库管理", "将网页保存到学习空间知识库（自动 RAG 索引）"),
 ]
 
 # 按分类组织的目录（用于 API 返回和前端展示）
