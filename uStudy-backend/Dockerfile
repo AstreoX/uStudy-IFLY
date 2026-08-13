@@ -11,6 +11,7 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debia
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
+    ffmpeg \
     libreoffice-writer \
     libreoffice-calc \
     libreoffice-impress \

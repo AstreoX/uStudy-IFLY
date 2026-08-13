@@ -3,8 +3,10 @@
 Supports:
 - Webpage text extraction (via ContentRouter: trafilatura → Crawl4AI → Jina)
 - YouTube transcript extraction (via youtube-transcript-api)
-- Bilibili / other platform subtitle extraction (via yt-dlp)
+- Bilibili subtitle extraction (via Bilibili API → yt-dlp fallback)
+- Other platform subtitle extraction (via yt-dlp)
 - Whisper API fallback for videos without subtitles
+- Webpage content fallback when all transcript methods fail
 """
 
 from __future__ import annotations
@@ -14,10 +16,13 @@ import logging
 import re
 import shutil
 import tempfile
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
+
+import httpx
 
 from crawler.ssrf import is_safe_url as _is_safe_url
 from config import get_settings
@@ -36,9 +41,14 @@ _VIDEO_HOST_PATTERNS = [
     re.compile(r"(?:[a-z]+\.)?vimeo\.com"),
 ]
 
+_SHORT_URL_HOSTS = {"b23.tv"}
+
 _YOUTUBE_VIDEO_ID_RE = re.compile(
     r"(?:youtube\.com/watch\?.*v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})"
 )
+
+_BILIBILI_BVID_RE = re.compile(r"bilibili\.com/video/(BV[a-zA-Z0-9]+)")
+_BILIBILI_AVID_RE = re.compile(r"bilibili\.com/video/av(\d+)")
 
 
 @dataclass
@@ -64,20 +74,69 @@ class URLContentFetcher:
 
     async def fetch(self, url: str) -> URLContentResult:
         """Main entry point: dispatch to the appropriate handler based on URL type."""
-        # _is_safe_url calls blocking socket.gethostbyname — run in thread
-        is_safe, error = await asyncio.to_thread(_is_safe_url, url)
+        # Step 0: resolve short URLs (b23.tv → bilibili.com)
+        resolved_url = await self._resolve_short_url(url)
+
+        # Step 1: SSRF check on the resolved URL
+        is_safe, error = await asyncio.to_thread(_is_safe_url, resolved_url)
         if not is_safe:
             raise URLFetchError(f"URL 安全检查失败: {error}")
 
-        if self._is_video_url(url):
-            return await self._fetch_video_transcript(url)
-        return await self._fetch_webpage(url)
+        # Step 2: dispatch
+        if self._is_video_url(resolved_url):
+            return await self._fetch_video_transcript(resolved_url)
+        return await self._fetch_webpage(resolved_url)
+
+    # ── Short URL resolution ─────────────────────────────────────
+
+    async def _resolve_short_url(self, url: str) -> str:
+        """Resolve short URLs (e.g. b23.tv) to their final destination.
+
+        Returns the resolved URL, or the original if resolution fails.
+        """
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").lower()
+        if hostname not in _SHORT_URL_HOSTS:
+            return url
+
+        # _SHORT_URL_HOSTS is a small allowlist of known public short-URL
+        # services (currently only b23.tv).  The HEAD request targets that
+        # public host; the *resolved* URL is SSRF-checked afterward in fetch().
+        try:
+            async with httpx.AsyncClient(
+                timeout=10,
+                follow_redirects=True,
+                max_redirects=5,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                },
+            ) as client:
+                resp = await client.head(url)
+                resolved = str(resp.url)
+                if resolved != url:
+                    logger.info("短链接已解析: %s → %s", url, resolved)
+                return resolved
+        except (httpx.TooManyRedirects, httpx.RequestError, httpx.HTTPStatusError) as exc:
+            logger.warning("短链接解析失败，使用原始 URL: %s — %s", url, exc)
+            return url
+
+    # ── URL type detection ───────────────────────────────────────
 
     def _is_video_url(self, url: str) -> bool:
         """Check if URL belongs to a known video platform."""
         parsed = urlparse(url)
         hostname = (parsed.hostname or "").lower()
         return any(pattern.fullmatch(hostname) for pattern in _VIDEO_HOST_PATTERNS)
+
+    def _is_bilibili_url(self, url: str) -> bool:
+        """Check if URL is a Bilibili video page."""
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").lower()
+        return hostname == "bilibili.com" or hostname.endswith(".bilibili.com")
 
     # ── Webpage extraction ──────────────────────────────────────────
 
@@ -104,7 +163,16 @@ class URLContentFetcher:
     # ── Video transcript extraction ─────────────────────────────────
 
     async def _fetch_video_transcript(self, url: str) -> URLContentResult:
-        """Extract transcript from a video URL."""
+        """Extract transcript from a video URL.
+
+        Fallback chain:
+        1. YouTube Transcript API (YouTube only)
+        2. Bilibili Subtitle API (Bilibili only)
+        3. yt-dlp subtitles (all platforms)
+        4. Whisper API (if OPENAI_API_KEY configured)
+        5. Webpage content fallback
+        """
+        # Tier 1: YouTube Transcript API
         video_id = self._extract_youtube_video_id(url)
         if video_id:
             try:
@@ -112,29 +180,66 @@ class URLContentFetcher:
             except URLFetchError:
                 raise
             except asyncio.TimeoutError:
-                logger.warning("YouTube transcript API 超时, 尝试 yt-dlp: %s", url)
+                logger.warning("YouTube transcript API 超时, 尝试下一层: %s", url)
             except Exception as exc:
                 logger.warning(
-                    "YouTube transcript API 失败, 尝试 yt-dlp: %s", exc, exc_info=True
+                    "YouTube transcript API 失败, 尝试下一层: %s", exc, exc_info=True
                 )
 
-        # Fallback: yt-dlp for subtitles
+        # Tier 2: Bilibili Subtitle API (direct API, more reliable than yt-dlp)
+        if self._is_bilibili_url(url):
+            try:
+                return await self._fetch_bilibili_subtitle(url)
+            except URLFetchError:
+                pass  # fall through to yt-dlp
+            except asyncio.TimeoutError:
+                logger.warning("Bilibili 字幕 API 超时, 尝试 yt-dlp: %s", url)
+            except Exception as exc:
+                logger.warning(
+                    "Bilibili 字幕 API 失败, 尝试 yt-dlp: %s", exc, exc_info=True
+                )
+
+        # Tier 3: yt-dlp for subtitles
         try:
             return await self._fetch_subtitles_via_ytdlp(url)
         except URLFetchError:
-            raise
+            pass  # fall through to Whisper / webpage
         except asyncio.TimeoutError:
             logger.warning("yt-dlp 字幕提取超时: %s", url)
         except Exception as exc:
             logger.warning("yt-dlp 字幕提取失败: %s", exc, exc_info=True)
 
-        # Final fallback: download audio + Whisper
+        # Tier 4: download audio + Whisper
         if settings.openai_api_key:
-            return await self._fetch_via_whisper(url)
+            try:
+                return await self._fetch_via_whisper(url)
+            except URLFetchError:
+                pass  # fall through to webpage
+            except asyncio.TimeoutError:
+                logger.warning("Whisper 语音转录超时: %s", url)
+            except Exception as exc:
+                logger.warning("Whisper 语音转录失败: %s", exc, exc_info=True)
 
-        raise URLFetchError(
-            "无法获取视频字幕。视频没有可用字幕，且未配置 Whisper API (OPENAI_API_KEY) 进行语音转录。"
-        )
+        # Tier 5: webpage content fallback (title, description, etc.)
+        logger.info("所有视频字幕提取方式均失败，尝试提取网页内容: %s", url)
+        try:
+            result = await self._fetch_webpage(url)
+            return URLContentResult(
+                content=result.content,
+                title=result.title,
+                content_type=result.content_type,
+                source_url=result.source_url,
+                metadata={
+                    **result.metadata,
+                    "video_fallback": True,
+                    "note": "视频字幕不可用，已提取页面文本内容",
+                },
+            )
+        except URLFetchError:
+            raise URLFetchError(
+                "无法获取视频内容。视频字幕提取失败，网页内容提取也失败了。"
+                "可能原因：视频没有字幕、网页需要登录、或网络问题。"
+            )
 
     def _extract_youtube_video_id(self, url: str) -> Optional[str]:
         match = _YOUTUBE_VIDEO_ID_RE.search(url)
@@ -189,6 +294,134 @@ class URLContentFetcher:
                 "language": language,
             },
         )
+
+    # ── Bilibili subtitle extraction ────────────────────────────────
+
+    async def _fetch_bilibili_subtitle(self, url: str) -> URLContentResult:
+        """Fetch Bilibili subtitles via player API.
+
+        Uses Bilibili's web API to get subtitle data directly, which is
+        more reliable than yt-dlp for Bilibili auto-generated subtitles.
+        """
+        # Extract BV/AV ID
+        bv_match = _BILIBILI_BVID_RE.search(url)
+        av_match = _BILIBILI_AVID_RE.search(url)
+        if not bv_match and not av_match:
+            raise URLFetchError("无法从 URL 提取 Bilibili 视频 ID")
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Referer": "https://www.bilibili.com",
+        }
+        cookies = {"buvid3": str(uuid.uuid4()) + "infoc"}
+
+        async with httpx.AsyncClient(
+            timeout=15, headers=headers, cookies=cookies
+        ) as client:
+            # Step 1: get video info (cid, title) via /x/web-interface/view
+            params: dict[str, str | int] = {}
+            if bv_match:
+                params["bvid"] = bv_match.group(1)
+            elif av_match:
+                params["aid"] = int(av_match.group(1))
+            else:
+                raise URLFetchError("无法从 URL 提取 Bilibili 视频 ID")
+
+            view_resp = await client.get(
+                "https://api.bilibili.com/x/web-interface/view", params=params
+            )
+            view_resp.raise_for_status()
+            view_data = view_resp.json()
+
+            if view_data.get("code") != 0:
+                raise URLFetchError(
+                    f"Bilibili 视频信息获取失败: {view_data.get('message')}"
+                )
+
+            video_info = view_data["data"]
+            title = video_info.get("title", url)
+            cid = video_info["cid"]
+            aid = video_info["aid"]
+
+            # Step 2: get subtitle list via /x/player/wbi/v2
+            player_resp = await client.get(
+                "https://api.bilibili.com/x/player/wbi/v2",
+                params={"aid": aid, "cid": cid},
+            )
+            player_resp.raise_for_status()
+            player_data = player_resp.json()
+
+            subtitle_info = player_data.get("data", {}).get("subtitle", {})
+            subtitle_list = subtitle_info.get("subtitles", [])
+
+            if not subtitle_list:
+                raise URLFetchError("Bilibili 视频没有可用字幕")
+
+            # Step 3: pick best language
+            preferred_order = ["zh-CN", "zh-Hans", "zh", "ai-zh", "en", "ai-en"]
+            chosen = None
+            for pref in preferred_order:
+                for sub in subtitle_list:
+                    if sub.get("lan", "") == pref:
+                        chosen = sub
+                        break
+                if chosen:
+                    break
+            if not chosen:
+                chosen = subtitle_list[0]
+
+            # Step 4: download subtitle JSON (with SSRF + domain validation)
+            sub_url = chosen.get("subtitle_url") or ""
+            if not sub_url:
+                raise URLFetchError("Bilibili 字幕 URL 为空")
+            if sub_url.startswith("//"):
+                sub_url = "https:" + sub_url
+
+            parsed_sub = urlparse(sub_url)
+            sub_host = (parsed_sub.hostname or "").lower()
+            if not (sub_host.endswith(".bilibili.com") or sub_host.endswith(".bilivideo.com")):
+                raise URLFetchError(f"Bilibili 字幕 URL 指向非 Bilibili 域名: {sub_host}")
+
+            is_safe, err = _is_safe_url(sub_url)
+            if not is_safe:
+                raise URLFetchError(f"Bilibili 字幕 URL 安全检查失败: {err}")
+
+            sub_resp = await client.get(sub_url)
+            sub_resp.raise_for_status()
+            sub_data = sub_resp.json()
+
+            # Step 5: extract text from subtitle body
+            lines = [item["content"] for item in sub_data.get("body", [])]
+            text = "\n".join(lines)
+
+        if not text.strip():
+            raise URLFetchError("Bilibili 字幕内容为空")
+
+        logger.info(
+            "Bilibili 字幕提取成功: %s, 语言: %s, %d 行",
+            title,
+            chosen.get("lan", "unknown"),
+            len(lines),
+        )
+
+        return URLContentResult(
+            content=text,
+            title=title,
+            content_type="video_transcript",
+            source_url=url,
+            metadata={
+                "platform": "bilibili",
+                "language": chosen.get("lan", "unknown"),
+                "aid": aid,
+                "cid": cid,
+            },
+        )
+
+    # ── yt-dlp subtitle extraction ──────────────────────────────────
 
     async def _fetch_subtitles_via_ytdlp(self, url: str) -> URLContentResult:
         """Extract subtitles using yt-dlp (Bilibili, Vimeo, etc.)."""
@@ -271,6 +504,8 @@ class URLContentFetcher:
             source_url=url,
             metadata={"platform": "yt-dlp", "language": language},
         )
+
+    # ── Whisper audio transcription ─────────────────────────────────
 
     async def _fetch_via_whisper(self, url: str) -> URLContentResult:
         """Download audio via yt-dlp and transcribe with OpenAI Whisper API."""
