@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_bridge_url: str = ""  # JP bridge for region-restricted models (Gemini etc.)
-    openrouter_model: str = "qwen/qwen3.5-397b-a17b"
+    openrouter_model: str = "bytedance-seed/seed-1.6"
     gemini_model: str = "z-ai/glm-4.7-flash"
     llm_timeout_seconds: int = 300  # 5分钟
     llm_max_retries: int = 3

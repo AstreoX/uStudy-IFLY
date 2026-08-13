@@ -8,9 +8,9 @@ if TYPE_CHECKING:
     from db.models import SubscriptionTier
 
 ALLOWED_MODELS: dict[str, dict[str, Any]] = {
-    "qwen3.5-397b": {
-        "openrouter_id": "qwen/qwen3.5-397b-a17b",
-        "display_name": "Qwen 3.5",
+    "seed-1.6": {
+        "openrouter_id": "bytedance-seed/seed-1.6",
+        "display_name": "Seed 1.6",
         "description": "快速响应，适合日常对话",
         "is_default": True,
         "max_output_tokens": 65536,
@@ -30,7 +30,7 @@ ALLOWED_MODELS: dict[str, dict[str, Any]] = {
     },
 }
 
-DEFAULT_MODEL_ID = "qwen3.5-397b"
+DEFAULT_MODEL_ID = "seed-1.6"
 
 
 def get_openrouter_model(model_id: str | None) -> str:
