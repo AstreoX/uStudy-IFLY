@@ -170,49 +170,65 @@ export function deleteSpaceDocument(spaceId, documentId) {
 }
 
 /**
- * H5 上传文档到学习空间
+ * H5 上传文档到学习空间（XMLHttpRequest，支持上传进度）
  * @param {string|number} spaceId
  * @param {File} file
- * @param {string} [accessToken]
+ * @param {function} [onProgress] - 进度回调，参数为 0-100 的整数
  * @returns {Promise<Object>}
  */
-export async function uploadSpaceDocumentH5(spaceId, file, accessToken) {
-  const tokens = getTokens()
-  const token = accessToken || tokens?.access_token
+export function uploadSpaceDocumentH5(spaceId, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const tokens = getTokens()
+    const token = tokens?.access_token
 
-  if (!token) {
-    throw new Error('登录已过期，请重新登录')
-  }
-
-  const formData = new FormData()
-  formData.append('file', file)
-
-  const response = await fetch(`${config.API_BASE_URL}/api/spaces/${spaceId}/documents/upload`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`
-    },
-    body: formData
-  })
-
-  if (!response.ok) {
-    let message = '上传失败'
-    try {
-      const errorData = await response.json()
-      if (typeof errorData?.detail === 'string') {
-        message = errorData.detail
-      } else if (errorData?.detail?.message) {
-        message = errorData.detail.message
-      } else if (errorData?.message) {
-        message = errorData.message
-      }
-    } catch (error) {
-      message = response.statusText || message
+    if (!token) {
+      reject(new Error('登录已过期，请重新登录'))
+      return
     }
-    throw new Error(message)
-  }
 
-  return response.json()
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const xhr = new XMLHttpRequest()
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText)) }
+        catch { resolve({}) }
+      } else {
+        let message = '上传失败'
+        try {
+          const errorData = JSON.parse(xhr.responseText)
+          message = errorData?.detail?.message || errorData?.detail || errorData?.message || message
+        } catch { message = xhr.statusText || message }
+        reject(new Error(message))
+      }
+    }
+
+    xhr.onerror = () => reject(new Error('网络错误'))
+
+    xhr.open('POST', `${config.API_BASE_URL}/api/spaces/${spaceId}/documents/upload`)
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.send(formData)
+  })
+}
+
+/**
+ * 重新处理失败的文档
+ * @param {string|number} spaceId
+ * @param {string} documentId
+ */
+export function reprocessDocument(spaceId, documentId) {
+  return request({
+    url: `/api/rag/spaces/${spaceId}/documents/${documentId}/reprocess`,
+    method: 'POST'
+  })
 }
 
 /**

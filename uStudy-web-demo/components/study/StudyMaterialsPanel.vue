@@ -83,7 +83,11 @@
     <view v-if="isUploading" class="upload-overlay">
       <view class="upload-content">
         <view class="upload-spinner"></view>
-        <text class="upload-text">正在上传...</text>
+        <text class="upload-filename">{{ uploadFileName }}</text>
+        <view class="upload-progress-track">
+          <view class="upload-progress-bar" :style="{ width: uploadProgress + '%' }"></view>
+        </view>
+        <text class="upload-text">正在上传... {{ uploadProgress }}%</text>
       </view>
     </view>
 
@@ -134,7 +138,7 @@
                 <text class="doc-creator-name">{{ doc.creator_nickname }}</text>
               </view>
 
-              <view v-if="doc.doc_type === 'document'" class="document-status-row">
+              <view v-if="doc.doc_type === 'document' || doc.doc_type === 'link'" class="document-status-row">
                 <view class="status-badge" :class="'status-' + getDocStatus(doc.id)">
                   <view class="status-dot" :style="{ backgroundColor: getStatusColor(getDocStatus(doc.id)) }"></view>
                   <text class="status-text" :style="{ color: getStatusColor(getDocStatus(doc.id)) }">
@@ -153,6 +157,14 @@
                   @tap.stop="showErrorDetail(doc.id)"
                 >
                   <text class="error-badge-text">查看错误</text>
+                </view>
+                <view
+                  v-if="getDocStatus(doc.id) === 'failed'"
+                  class="retry-badge"
+                  :class="{ 'retry-badge-disabled': retryingDocIds[doc.id] }"
+                  @tap.stop="retryProcessing(doc.id)"
+                >
+                  <text class="retry-badge-text">{{ retryingDocIds[doc.id] ? '重试中...' : '重试' }}</text>
                 </view>
               </view>
             </view>
@@ -346,6 +358,7 @@ import {
   deleteSpaceDocument,
   getDocumentProcessingStatus,
   getSpaceDocuments,
+  reprocessDocument,
   uploadSpaceDocumentH5
 } from '@/api/space'
 import config from '@/config'
@@ -410,6 +423,9 @@ export default {
       linkUrl: '',
       isAddingLink: false,
       isUploading: false,
+      uploadProgress: 0,
+      uploadFileName: '',
+      retryingDocIds: {},
       showDeleteModal: false,
       docToDelete: null,
       isDeleting: false,
@@ -653,7 +669,7 @@ export default {
       }
     },
     async loadProcessingStatuses() {
-      const fileDocuments = this.documents.filter((d) => d.doc_type === 'document')
+      const fileDocuments = this.documents.filter((d) => d.doc_type === 'document' || d.doc_type === 'link')
       if (fileDocuments.length === 0) {
         this.processingStatuses = {}
         this.stopStatusPolling()
@@ -711,7 +727,7 @@ export default {
       }
     },
     shouldContinuePolling(doc) {
-      if (doc.doc_type !== 'document') return false
+      if (doc.doc_type !== 'document' && doc.doc_type !== 'link') return false
       const status = this.getDocStatus(doc.id)
       if (status === 'pending' || status === 'processing') return true
       if (status !== 'not_started') return false
@@ -769,14 +785,38 @@ export default {
     },
     async uploadFileH5(file) {
       this.isUploading = true
+      this.uploadProgress = 0
+      this.uploadFileName = file.name
       try {
-        await uploadSpaceDocumentH5(this.normalizedSpaceId, file)
+        await uploadSpaceDocumentH5(this.normalizedSpaceId, file, (progress) => {
+          this.uploadProgress = progress
+        })
         this.showCustomToast('上传成功', 'success')
         await this.loadDocuments()
       } catch (error) {
         this.showCustomToast(this.extractErrorMessage(error, '上传失败'), 'error')
       } finally {
         this.isUploading = false
+        this.uploadProgress = 0
+        this.uploadFileName = ''
+      }
+    },
+    async retryProcessing(docId) {
+      if (this.retryingDocIds[docId]) return
+      this.retryingDocIds = { ...this.retryingDocIds, [docId]: true }
+      try {
+        await reprocessDocument(this.normalizedSpaceId, docId)
+        this.processingStatuses = {
+          ...this.processingStatuses,
+          [docId]: { ...this.processingStatuses[docId], status: 'pending', error_message: null }
+        }
+        this.refreshPollingState()
+        this.showCustomToast('已重新提交处理', 'success')
+      } catch (error) {
+        this.showCustomToast(this.extractErrorMessage(error, '重试失败'), 'error')
+      } finally {
+        const { [docId]: _, ...rest } = this.retryingDocIds
+        this.retryingDocIds = rest
       }
     },
     handleAddLink() {
@@ -1442,6 +1482,28 @@ export default {
   color: #fca5a5;
 }
 
+.retry-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.retry-badge:hover {
+  background: rgba(59, 130, 246, 0.22);
+}
+.retry-badge-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.retry-badge-text {
+  font-size: 11px;
+  color: #60a5fa;
+}
+
 .document-actions {
   display: inline-flex;
   align-items: center;
@@ -1916,13 +1978,15 @@ export default {
 }
 
 .upload-content {
-  padding: 14px 18px;
+  padding: 20px 24px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(16, 16, 26, 0.95);
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 10px;
+  min-width: 220px;
 }
 
 .upload-spinner {
@@ -1932,6 +1996,30 @@ export default {
   border-top-color: #60a5fa;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+.upload-filename {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-progress-track {
+  width: 200px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.upload-progress-bar {
+  height: 100%;
+  background: #60a5fa;
+  border-radius: 2px;
+  transition: width 0.3s ease;
 }
 
 .upload-text {

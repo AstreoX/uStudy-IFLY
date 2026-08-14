@@ -197,7 +197,7 @@ export default {
       showActivationModal: false,
       showPaymentModal: false,
       selectedPlan: null,
-      billingCycle: 'semester',
+      billingCycle: 'monthly',
       billingCycles: [
         { id: 'monthly', label: '月付' },
         { id: 'semester', label: '学期包（4个月）', tag: '省 25%' },
