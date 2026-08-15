@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.exceptions import (
+    DocumentNotReadyError,
     SpaceAccessDeniedError,
     SpaceNotFoundError,
     TaskNotFoundError,
@@ -14,6 +15,7 @@ from agents.exceptions import (
 from agents.schemas import (
     AgentTaskResponse,
     AgentTaskResultResponse,
+    DocumentKnowledgeGraphGenerateRequest,
     KnowledgeGraphGenerateRequest,
     QuizGenerateRequest,
 )
@@ -190,4 +192,60 @@ async def expand_node(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "NODE_NOT_FOUND", "message": str(e)},
+        )
+
+
+@router.post(
+    "/knowledge-graph-from-documents",
+    response_model=AgentTaskResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="从文档生成知识图谱（异步）",
+    description="从已上传并处理完成的文档中提取知识关系，生成知识图谱。",
+)
+async def generate_knowledge_graph_from_documents(
+    request: DocumentKnowledgeGraphGenerateRequest,
+    space_id: Annotated[UUID, Query(description="学习空间 ID")],
+    conversation_id: Annotated[
+        UUID | None, Query(description="关联对话 ID（可选）")
+    ] = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AgentTaskResponse:
+    """
+    从文档生成知识图谱
+
+    - **space_id**: 学习空间 ID
+    - **document_ids**: 文档 ID 列表（必须已处理完成）
+    - **user_preference**: 用户偏好（可选）
+
+    返回 202 Accepted，包含任务 ID。
+    """
+    service = AgentService(db)
+
+    try:
+        return await service.create_document_knowledge_graph_task(
+            user_id=user.id,
+            space_id=space_id,
+            request=request,
+            conversation_id=conversation_id,
+        )
+    except SpaceNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "SPACE_NOT_FOUND", "message": "学习空间不存在"},
+        )
+    except SpaceAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "SPACE_ACCESS_DENIED", "message": "无权访问该学习空间"},
+        )
+    except DocumentNotReadyError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "DOCUMENTS_NOT_READY", "message": str(e)},
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_DOCUMENTS", "message": str(e)},
         )

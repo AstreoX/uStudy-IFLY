@@ -312,3 +312,195 @@ def build_test_generation_prompt(
         {"role": "system", "content": system_content},
         {"role": "user", "content": user_content},
     ]
+
+
+# ============ 文档知识图谱 Prompt ============
+
+
+DOCUMENT_CONCEPT_EXTRACTION_SYSTEM_PROMPT = """# Document_Concept_Extraction_Agent System Prompt
+
+你是知识概念提取专家。你的任务是从给定的文档片段中提取核心知识概念以及概念之间的关系。
+
+## 输入信息
+
+- 文档标题: {{DOCUMENT_TITLE}}
+- 片段序号: {{CHUNK_INDEX}}
+- 片段内容:
+{{CHUNK_CONTENT}}
+
+## 输出格式
+
+使用以下标签包裹输出：
+
+```
+<concepts>
+- 概念名称1
+- 概念名称2
+- 概念名称3
+</concepts>
+<relationships>
+概念名称1 -> 概念名称2: prerequisite
+概念名称1 -> 概念名称3: contains
+</relationships>
+```
+
+## 关系类型
+
+仅使用以下三种关系类型：
+- `prerequisite`: A 是 B 的前置知识/基础
+- `contains`: A 包含/由 B 组成
+- `related`: A 和 B 相关联
+
+## 要求
+
+1. **只提取**该片段中实际出现、明确提及的知识概念，不要凭空添加
+2. 概念名称简洁（不超过 20 字），使用与文档相同的语言
+3. 优先提取核心概念，忽略过于琐碎的细节
+4. 关系必须基于片段内容的实际描述，不要臆造
+5. 如果片段内容太短或无实质知识点（如目录、参考文献、版权声明），返回空结果：
+   ```
+   <concepts>
+   </concepts>
+   <relationships>
+   </relationships>
+   ```
+6. 每个片段通常提取 3-10 个概念，不要超过 15 个
+"""
+
+
+def build_document_concept_extraction_prompt(
+    chunk_content: str,
+    document_title: str,
+    chunk_index: int,
+) -> list[dict[str, str]]:
+    """
+    构建文档概念提取的 Prompt (Phase 1: Map)
+
+    Args:
+        chunk_content: 文档切片内容
+        document_title: 文档标题
+        chunk_index: 切片序号
+
+    Returns:
+        消息列表，用于 LLM API 调用
+    """
+    system_content = DOCUMENT_CONCEPT_EXTRACTION_SYSTEM_PROMPT.replace(
+        "{{DOCUMENT_TITLE}}", document_title
+    )
+    system_content = system_content.replace(
+        "{{CHUNK_INDEX}}", str(chunk_index)
+    )
+    system_content = system_content.replace(
+        "{{CHUNK_CONTENT}}", chunk_content
+    )
+
+    user_content = (
+        f"请从上述「{document_title}」的第 {chunk_index} 个片段中提取知识概念和关系。"
+    )
+
+    return [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": user_content},
+    ]
+
+
+DOCUMENT_KNOWLEDGE_GRAPH_SYSTEM_PROMPT = """# Document_Knowledge_Graph_Consolidation_Agent System Prompt
+
+你是知识图谱生成专家。你的任务是将从文档中提取的概念列表和关系列表，整合为一个结构化的知识图谱。
+
+## 输入信息
+
+- 文档来源: {{DOCUMENT_TITLES}}
+- 用户偏好 (可选): {{USER_PREFERENCE}}
+
+### 提取到的概念列表（按出现频率排序）
+{{CONCEPT_LIST}}
+
+### 提取到的关系列表
+{{RELATIONSHIP_LIST}}
+
+## 输出格式
+
+使用与标准知识图谱相同的格式，用 `<knowledge_graph>` 标签包裹：
+
+### /basic_knowledge_tree
+- 使用 `*` 表示层级（`*` 一级，`**` 二级，以此类推）
+- 每个节点后用 `[-1]` 标注掌握分数（-1表示未知）
+- 将概念组织为合理的层级树结构
+
+### /advanced_knowledge_connections
+- 使用 `->` 表示知识点之间的跨分支关联
+- 重点表示非显而易见的联系
+
+## 示例
+
+```
+<knowledge_graph>
+/basic_knowledge_tree
+* 机器学习基础 [-1]
+** 监督学习 [-1]
+*** 线性回归 [-1]
+*** 逻辑回归 [-1]
+** 无监督学习 [-1]
+*** 聚类算法 [-1]
+*** 降维 [-1]
+/advanced_knowledge_connections
+线性回归->逻辑回归
+聚类算法->降维
+</knowledge_graph>
+```
+
+## 要求
+
+1. 将平坦的概念列表组织为 **层级树结构**（通常 2-4 层深）
+2. 参考提取到的关系列表来确定层级和关联
+3. 使用与概念相同的语言
+4. 合并含义相同但表述不同的概念（取更规范的名称）
+5. 根节点应是最能概括文档内容的主题
+6. 每个一级分支下应有 2-5 个子节点
+7. 如果提供了用户偏好，根据偏好调整图谱的重点和深度
+"""
+
+
+def build_document_knowledge_graph_prompt(
+    document_titles: list[str],
+    concept_summary: str,
+    relationship_summary: str,
+    user_preference: str | None = None,
+) -> list[dict[str, str]]:
+    """
+    构建文档知识图谱整合的 Prompt (Phase 2: Reduce)
+
+    Args:
+        document_titles: 文档标题列表
+        concept_summary: 汇总后的概念列表文本
+        relationship_summary: 汇总后的关系列表文本
+        user_preference: 用户偏好（可选）
+
+    Returns:
+        消息列表，用于 LLM API 调用
+    """
+    titles_str = "、".join(document_titles)
+
+    system_content = DOCUMENT_KNOWLEDGE_GRAPH_SYSTEM_PROMPT.replace(
+        "{{DOCUMENT_TITLES}}", titles_str
+    )
+    system_content = system_content.replace(
+        "{{USER_PREFERENCE}}",
+        user_preference if user_preference else "无",
+    )
+    system_content = system_content.replace(
+        "{{CONCEPT_LIST}}", concept_summary
+    )
+    system_content = system_content.replace(
+        "{{RELATIONSHIP_LIST}}", relationship_summary
+    )
+
+    user_content = f"请将从「{titles_str}」中提取的概念整合为知识图谱。"
+    if user_preference:
+        user_content += f"\n\n我的偏好：{user_preference}"
+
+    return [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": user_content},
+    ]

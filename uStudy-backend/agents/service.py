@@ -12,6 +12,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.exceptions import (
+    DocumentNotReadyError,
     LLMParsingErrorWithOutput,
     SpaceAccessDeniedError,
     SpaceNotFoundError,
@@ -22,12 +23,14 @@ from agents.artifact_stream_cache import (
     get_artifact_stream_state,
     set_artifact_stream_state,
 )
+from agents.document_knowledge_graph_agent import DocumentKnowledgeGraphAgent
 from agents.knowledge_graph_agent import KnowledgeGraphAgent
 from agents.node_expand_agent import NodeExpandAgent
 from agents.schemas import (
     AgentTaskResponse,
     AgentTaskResultResponse,
     AgentTaskStatusEnum,
+    DocumentKnowledgeGraphGenerateRequest,
     KnowledgeGraphGenerateRequest,
     QuizGenerateRequest,
 )
@@ -129,6 +132,76 @@ class AgentService:
             name=f"kg_task_{task.id}",
         )
         # 添加异常回调以防止静默失败
+        background_task.add_done_callback(self._handle_task_exception)
+
+        return AgentTaskResponse(
+            task_id=task.id,
+            status=AgentTaskStatusEnum(task.status.value),
+            task_type=task.task_type.value,
+            created_at=task.created_at,
+        )
+
+    async def create_document_knowledge_graph_task(
+        self,
+        user_id: UUID,
+        space_id: UUID,
+        request: DocumentKnowledgeGraphGenerateRequest,
+        conversation_id: UUID | None = None,
+    ) -> AgentTaskResponse:
+        """
+        创建从文档生成知识图谱的任务
+
+        Args:
+            user_id: 用户 ID
+            space_id: 学习空间 ID
+            request: 生成请求（包含 document_ids）
+            conversation_id: 关联对话 ID（可选）
+
+        Returns:
+            任务创建响应
+
+        Raises:
+            SpaceNotFoundError: 学习空间不存在
+            SpaceAccessDeniedError: 无权访问
+            ValueError: 文档验证失败
+        """
+        # 1. 验证 space 权限
+        await self._verify_space_ownership(space_id, user_id)
+
+        # 2. 创建任务记录
+        task = AgentTask(
+            user_id=user_id,
+            space_id=space_id,
+            conversation_id=conversation_id,
+            task_type=AgentTaskType.GENERATE_KNOWLEDGE_GRAPH_FROM_DOCUMENTS,
+            status=AgentTaskStatus.PENDING,
+            input_data={
+                "document_ids": [str(d) for d in request.document_ids],
+                "user_preference": request.user_preference,
+            },
+        )
+        self.db.add(task)
+        await self.db.commit()
+        await self.db.refresh(task)
+
+        logger.info(
+            "创建文档知识图谱生成任务: task_id=%s, space_id=%s, docs=%d",
+            task.id,
+            space_id,
+            len(request.document_ids),
+        )
+
+        # 3. 启动后台任务
+        background_task = asyncio.create_task(
+            self._run_document_knowledge_graph_task(
+                task_id=task.id,
+                user_id=user_id,
+                space_id=space_id,
+                document_ids=request.document_ids,
+                user_preference=request.user_preference,
+            ),
+            name=f"doc_kg_task_{task.id}",
+        )
         background_task.add_done_callback(self._handle_task_exception)
 
         return AgentTaskResponse(
@@ -333,6 +406,114 @@ class AgentService:
 
                 # TODO: 发送 SSE 错误通知
                 # await self._emit_task_error_event(task_id, str(e))
+
+    async def _run_document_knowledge_graph_task(
+        self,
+        task_id: UUID,
+        user_id: UUID,
+        space_id: UUID,
+        document_ids: list[UUID],
+        user_preference: str | None,
+    ) -> None:
+        """后台执行从文档生成知识图谱任务，在独立的 AsyncSession 中运行"""
+        async with AsyncSessionLocal() as session:
+            try:
+                # 更新状态为 running
+                await session.execute(
+                    update(AgentTask)
+                    .where(AgentTask.id == task_id)
+                    .values(
+                        status=AgentTaskStatus.RUNNING,
+                        started_at=datetime.now(timezone.utc),
+                        output_data={
+                            "document_count": len(document_ids),
+                            "status_note": "extracting_concepts",
+                        },
+                    )
+                )
+                await session.commit()
+
+                logger.info("开始执行文档知识图谱生成任务: task_id=%s", task_id)
+
+                # 进度回调
+                async def on_progress(progress_data: dict) -> None:
+                    await session.execute(
+                        update(AgentTask)
+                        .where(AgentTask.id == task_id)
+                        .values(
+                            output_data={
+                                "document_count": len(document_ids),
+                                "status_note": "extracting_concepts",
+                                **progress_data,
+                            }
+                        )
+                    )
+                    await session.commit()
+
+                # 执行 Agent
+                agent = DocumentKnowledgeGraphAgent(session)
+                result_space_id, node_count, edge_count = await agent.generate(
+                    user_id=user_id,
+                    space_id=space_id,
+                    document_ids=document_ids,
+                    user_preference=user_preference,
+                    on_progress=on_progress,
+                )
+
+                # 更新状态为 done
+                await session.execute(
+                    update(AgentTask)
+                    .where(AgentTask.id == task_id)
+                    .values(
+                        status=AgentTaskStatus.DONE,
+                        completed_at=datetime.now(timezone.utc),
+                        output_data={
+                            "space_id": str(result_space_id),
+                            "node_count": node_count,
+                            "edge_count": edge_count,
+                            "document_count": len(document_ids),
+                        },
+                    )
+                )
+                await session.commit()
+
+                logger.info(
+                    "文档知识图谱任务完成: task_id=%s, nodes=%d, edges=%d",
+                    task_id,
+                    node_count,
+                    edge_count,
+                )
+
+            except Exception as e:
+                logger.error(
+                    "文档知识图谱任务失败: task_id=%s, error=%s", task_id, e
+                )
+                await session.rollback()
+
+                debug_data: dict = {
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "document_count": len(document_ids),
+                }
+                if isinstance(e, LLMParsingErrorWithOutput):
+                    raw_output = e.llm_output
+                    debug_data["llm_raw_output"] = (
+                        raw_output[:MAX_DEBUG_OUTPUT_SIZE]
+                        if len(raw_output) > MAX_DEBUG_OUTPUT_SIZE
+                        else raw_output
+                    )
+
+                await session.execute(
+                    update(AgentTask)
+                    .where(AgentTask.id == task_id)
+                    .values(
+                        status=AgentTaskStatus.FAILED,
+                        completed_at=datetime.now(timezone.utc),
+                        error_message=str(e),
+                        output_data=debug_data,
+                    )
+                )
+                await session.commit()
 
     async def _run_quiz_task(
         self,

@@ -195,6 +195,10 @@ class Settings(BaseSettings):
     # 知识图谱生成配置
     knowledge_graph_model: str = "z-ai/glm-4.7-flash"  # 空则使用默认模型
 
+    # 文档知识图谱提取配置
+    document_kg_max_concurrent_extractions: int = 5  # Phase 1 并发 LLM 调用数
+    document_kg_max_chunks: int = 200  # 单次任务最大处理 chunk 数
+
     # 整卷综合评估配置
     quiz_evaluation_model: str = "z-ai/glm-4.7-flash"  # 空则使用默认模型
 

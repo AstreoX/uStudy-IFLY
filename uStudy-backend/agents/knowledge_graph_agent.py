@@ -15,13 +15,14 @@ from agents.exceptions import (
 )
 from agents.llm.client import OpenRouterClient
 from agents.llm.prompts import build_knowledge_graph_prompt
+from agents.graph_persistence import persist_graph
 from agents.parsers.knowledge_graph import (
     KnowledgeGraphParser,
     ParsedKnowledgeGraph,
 )
 from agents.schemas import KnowledgeGraphGenerateRequest
 from config import get_settings
-from db.models import Edge, EdgeType, Node, Space
+from db.models import Space
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ class KnowledgeGraphAgent:
         parsed_graph = self._parse_output(llm_output, request.topic)
 
         # 4. 持久化到数据库
-        node_count, edge_count = await self._persist_graph(space.id, parsed_graph)
+        node_count, edge_count = await persist_graph(self.db, space.id, parsed_graph)
 
         logger.info(
             "知识图谱生成完成: space_id=%s, nodes=%d, edges=%d",
@@ -174,65 +175,3 @@ class KnowledgeGraphAgent:
         """解析 LLM 输出"""
         return self.parser.parse(llm_output, root_label=topic)
 
-    async def _persist_graph(
-        self,
-        space_id: UUID,
-        parsed_graph: ParsedKnowledgeGraph,
-    ) -> tuple[int, int]:
-        """
-        将解析后的图谱持久化到数据库
-
-        Returns:
-            (node_count, edge_count)
-        """
-        # label -> node_id 映射
-        label_to_id: dict[str, UUID] = {}
-
-        # 1. 创建所有节点（跳过重复的 label）
-        for parsed_node in parsed_graph.nodes:
-            # 如果 label 已存在，跳过创建
-            if parsed_node.label in label_to_id:
-                logger.debug("跳过重复节点: %s", parsed_node.label)
-                continue
-
-            node = Node(
-                space_id=space_id,
-                label=parsed_node.label,
-                mastery=parsed_node.mastery,
-            )
-            self.db.add(node)
-            await self.db.flush()
-            label_to_id[parsed_node.label] = node.id
-
-        # 2. 创建所有边
-        edge_count = 0
-        for parsed_edge in parsed_graph.edges:
-            source_id = label_to_id.get(parsed_edge.source_label)
-            target_id = label_to_id.get(parsed_edge.target_label)
-
-            if source_id and target_id:
-                # 映射 edge_type
-                edge_type = self._map_edge_type(parsed_edge.edge_type)
-
-                edge = Edge(
-                    space_id=space_id,
-                    from_node_id=source_id,
-                    to_node_id=target_id,
-                    type=edge_type,
-                )
-                self.db.add(edge)
-                edge_count += 1
-
-        await self.db.commit()
-
-        return len(label_to_id), edge_count
-
-    def _map_edge_type(self, edge_type_str: str) -> EdgeType:
-        """映射边类型字符串到枚举"""
-        if edge_type_str == "knowledge_tree":
-            return EdgeType.KNOWLEDGE_TREE
-        elif edge_type_str == "advanced":
-            return EdgeType.ADVANCED
-        else:
-            # 默认使用 KNOWLEDGE_TREE
-            return EdgeType.KNOWLEDGE_TREE

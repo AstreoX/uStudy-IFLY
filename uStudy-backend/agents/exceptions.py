@@ -43,3 +43,11 @@ class SpaceAccessDeniedError(AgentError):
     """学习空间访问被拒绝（不属于当前用户）"""
 
     pass
+
+
+class DocumentNotReadyError(AgentError):
+    """文档尚未处理完成"""
+
+    def __init__(self, message: str, pending_count: int = 0) -> None:
+        super().__init__(message)
+        self.pending_count = pending_count

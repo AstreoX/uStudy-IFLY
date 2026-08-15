@@ -46,6 +46,17 @@ class KnowledgeGraphGenerateRequest(BaseModel):
     )
 
 
+class DocumentKnowledgeGraphGenerateRequest(BaseModel):
+    """从文档生成知识图谱请求"""
+
+    document_ids: list[UUID] = Field(
+        ..., min_length=1, max_length=20, description="要从中提取知识图谱的文档 ID 列表"
+    )
+    user_preference: str | None = Field(
+        None, max_length=1000, description="用户偏好（可选）"
+    )
+
+
 class TestStructItem(BaseModel):
     """测试结构项"""
 
