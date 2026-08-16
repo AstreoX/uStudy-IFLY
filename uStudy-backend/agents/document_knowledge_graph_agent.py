@@ -1,8 +1,11 @@
 """从文档生成知识图谱 Agent（Map-Reduce 策略）"""
 
 import asyncio
+import io
 import logging
 from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, AsyncGenerator, Callable
 from uuid import UUID
 
@@ -40,6 +43,19 @@ logger = logging.getLogger(__name__)
 
 MAX_CONCEPTS = 200
 MAX_RELATIONSHIPS = 500
+# 直接从文件提取文本时，每段的目标字符数
+SEGMENT_TARGET_CHARS = 1500
+SEGMENT_MIN_CHARS = 200
+SEGMENT_MAX_CHARS = 3000
+
+
+@dataclass
+class TextSegment:
+    """从文件直接提取的文本段（兼容 DocumentChunk 接口）"""
+
+    content: str
+    chunk_index: int
+    document_id: UUID | None = None
 
 
 class DocumentKnowledgeGraphAgent:
@@ -149,13 +165,15 @@ class DocumentKnowledgeGraphAgent:
         self,
         space_id: UUID,
         document_ids: list[UUID],
-    ) -> tuple[list[SpaceDocument], list[DocumentChunk]]:
+    ) -> tuple[list[SpaceDocument], list]:
         """
-        加载并验证文档及其 chunks
+        加载文档内容用于 KG 生成。
 
-        Raises:
-            ValueError: 文档不属于该 space / 无 chunks
-            DocumentNotReadyError: 文档尚未处理完成
+        优先从已处理的 DocumentChunk 加载；如果 RAG 未完成，
+        直接从上传文件提取文本段（不等待向量化）。
+
+        Returns:
+            (documents, chunks_or_segments)
         """
         # 验证文档属于该 space
         result = await self.db.execute(
@@ -173,27 +191,7 @@ class DocumentKnowledgeGraphAgent:
                 f"以下文档不存在或不属于该学习空间: {missing_ids}"
             )
 
-        # 验证所有文档已处理完成
-        result = await self.db.execute(
-            select(DocumentProcessingTask).where(
-                DocumentProcessingTask.document_id.in_(document_ids)
-            )
-        )
-        tasks = {t.document_id: t for t in result.scalars().all()}
-
-        not_ready_count = 0
-        for doc_id in document_ids:
-            task = tasks.get(doc_id)
-            if not task or task.status != ProcessingStatus.COMPLETED:
-                not_ready_count += 1
-
-        if not_ready_count:
-            raise DocumentNotReadyError(
-                f"有 {not_ready_count} 份文档尚未处理完成，请稍后重试",
-                pending_count=not_ready_count,
-            )
-
-        # 加载 chunks
+        # 尝试加载已有 chunks（RAG 已完成的情况）
         result = await self.db.execute(
             select(DocumentChunk)
             .where(DocumentChunk.document_id.in_(document_ids))
@@ -201,20 +199,133 @@ class DocumentKnowledgeGraphAgent:
         )
         chunks = list(result.scalars().all())
 
-        if not chunks:
-            raise ValueError("文档中没有可用的内容切片")
+        if chunks:
+            logger.info("使用已处理的 %d 个 chunks", len(chunks))
+            # 限制 chunk 数量
+            if len(chunks) > self.max_chunks:
+                logger.warning(
+                    "Chunk 数量 %d 超过限制 %d，进行均匀采样",
+                    len(chunks),
+                    self.max_chunks,
+                )
+                step = len(chunks) / self.max_chunks
+                chunks = [chunks[int(i * step)] for i in range(self.max_chunks)]
+            return documents, chunks
 
-        # 限制 chunk 数量
-        if len(chunks) > self.max_chunks:
-            logger.warning(
-                "Chunk 数量 %d 超过限制 %d，进行均匀采样",
-                len(chunks),
-                self.max_chunks,
-            )
-            step = len(chunks) / self.max_chunks
-            chunks = [chunks[int(i * step)] for i in range(self.max_chunks)]
+        # RAG 未完成：直接从上传文件提取文本段
+        logger.info("RAG 未完成，直接从文件提取文本段")
+        all_segments: list[TextSegment] = []
+        for doc in documents:
+            segments = await self._load_text_segments_from_file(doc)
+            all_segments.extend(segments)
 
-        return documents, chunks
+        if not all_segments:
+            raise ValueError("文档中没有可用的文本内容")
+
+        # 限制段数量
+        if len(all_segments) > self.max_chunks:
+            step = len(all_segments) / self.max_chunks
+            all_segments = [all_segments[int(i * step)] for i in range(self.max_chunks)]
+
+        logger.info("从文件提取了 %d 个文本段", len(all_segments))
+        return documents, all_segments
+
+    async def _load_text_segments_from_file(
+        self, document: SpaceDocument
+    ) -> list[TextSegment]:
+        """
+        直接从上传的文件提取文本段，不依赖 RAG 处理完成。
+
+        支持 PDF 格式（主要场景），其他格式尝试纯文本读取。
+        """
+        settings = get_settings()
+        # document.url 格式: /uploads/documents/xxx.pdf
+        relative_path = document.url.lstrip("/uploads/")
+        file_path = Path(settings.upload_dir) / relative_path
+
+        if not file_path.exists():
+            logger.warning("文件不存在: %s", file_path)
+            return []
+
+        file_ext = file_path.suffix.lower()
+        content = await asyncio.to_thread(file_path.read_bytes)
+
+        if file_ext == ".pdf":
+            return await self._extract_pdf_segments(content, document.id)
+        else:
+            # 其他格式：尝试纯文本
+            try:
+                text = content.decode("utf-8", errors="ignore")
+            except Exception:
+                logger.warning("无法读取文件文本: %s", file_path)
+                return []
+            return self._split_text_into_segments(text, document.id)
+
+    async def _extract_pdf_segments(
+        self, content: bytes, document_id: UUID
+    ) -> list[TextSegment]:
+        """从 PDF 按页提取文本，然后归一化为合适大小的段"""
+        import fitz  # PyMuPDF
+
+        def _extract():
+            doc = fitz.open(stream=io.BytesIO(content), filetype="pdf")
+            page_texts = []
+            for page_num in range(len(doc)):
+                text = doc[page_num].get_text("text").strip()
+                if text and len(text) > 30:
+                    page_texts.append(text)
+            doc.close()
+            return page_texts
+
+        page_texts = await asyncio.to_thread(_extract)
+
+        if not page_texts:
+            return []
+
+        # 合并所有页面文本，然后按目标大小分段
+        full_text = "\n\n".join(page_texts)
+        return self._split_text_into_segments(full_text, document_id)
+
+    def _split_text_into_segments(
+        self, text: str, document_id: UUID
+    ) -> list[TextSegment]:
+        """将长文本按段落边界拆分为合适大小的段"""
+        if not text.strip():
+            return []
+
+        # 按段落分割
+        paragraphs = text.split("\n\n")
+        segments: list[TextSegment] = []
+        current_buf = ""
+        seg_idx = 0
+
+        for para in paragraphs:
+            para = para.strip()
+            if not para:
+                continue
+
+            if len(current_buf) + len(para) + 2 > SEGMENT_MAX_CHARS and current_buf:
+                # 当前缓冲区已满，输出为一个段
+                if len(current_buf) >= SEGMENT_MIN_CHARS:
+                    segments.append(TextSegment(
+                        content=current_buf,
+                        chunk_index=seg_idx,
+                        document_id=document_id,
+                    ))
+                    seg_idx += 1
+                current_buf = para
+            else:
+                current_buf = current_buf + "\n\n" + para if current_buf else para
+
+        # 最后的缓冲区
+        if current_buf and len(current_buf) >= SEGMENT_MIN_CHARS:
+            segments.append(TextSegment(
+                content=current_buf,
+                chunk_index=seg_idx,
+                document_id=document_id,
+            ))
+
+        return segments
 
     async def _phase1_extract_concepts(
         self,
