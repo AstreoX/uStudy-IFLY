@@ -281,3 +281,39 @@ class KnowledgeGraphParser:
         )
 
         return edges
+
+    # ===== 增量解析方法（用于流式生成场景） =====
+
+    _INCR_NODE_RE = re.compile(r"^(\*+)\s*(.+?)\s*\[(-?\d+(?:\.\d+)?)\]\s*$")
+    _INCR_EDGE_RE = re.compile(r"^(.+?)\s*->\s*(.+?)\s*$")
+
+    @staticmethod
+    def parse_incremental_node(line: str) -> dict | None:
+        """
+        尝试从单行解析节点: '** 概念名 [-1]'
+
+        Returns:
+            {"label": str, "level": int} 或 None
+        """
+        m = KnowledgeGraphParser._INCR_NODE_RE.match(line.strip())
+        if m:
+            return {"label": m.group(2).strip(), "level": len(m.group(1))}
+        return None
+
+    @staticmethod
+    def parse_incremental_edge(line: str) -> dict | None:
+        """
+        尝试从单行解析边: '概念A->概念B'
+
+        Returns:
+            {"source": str, "target": str, "type": "advanced"} 或 None
+        """
+        m = KnowledgeGraphParser._INCR_EDGE_RE.match(line.strip())
+        if m:
+            src = m.group(1).strip()
+            tgt = m.group(2).strip()
+            # 排除明显不是边的行（如 section 标记）
+            if src.startswith("/") or src.startswith("*"):
+                return None
+            return {"source": src, "target": tgt, "type": "advanced"}
+        return None

@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from collections import Counter
-from typing import Any, Callable
+from typing import Any, AsyncGenerator, Callable
 from uuid import UUID
 
 import httpx
@@ -400,3 +400,148 @@ class DocumentKnowledgeGraphAgent:
         if last_llm_output and isinstance(last_error, LLMParsingError):
             raise LLMParsingErrorWithOutput(str(last_error), llm_output=last_llm_output)
         raise last_error or LLMClientError("Phase 2 LLM 调用失败")
+
+    # ===== 流式生成（SSE 场景） =====
+
+    async def _extract_one_chunk(
+        self,
+        chunk: DocumentChunk,
+        doc_title: str,
+    ) -> ChunkExtractionResult | None:
+        """对单个 chunk 提取概念（用于流式顺序调用）"""
+        try:
+            messages = build_document_concept_extraction_prompt(
+                chunk_content=chunk.content,
+                document_title=doc_title,
+                chunk_index=chunk.chunk_index,
+            )
+            llm_output = await self.llm_client.complete(messages)
+            return self.concept_parser.parse(llm_output)
+        except Exception as e:
+            logger.warning("Chunk %d 概念提取失败: %s", chunk.chunk_index, e)
+            return None
+
+    async def stream_generate(
+        self,
+        user_id: UUID,
+        space_id: UUID,
+        document_ids: list[UUID],
+        user_preference: str | None = None,
+    ) -> AsyncGenerator[dict, None]:
+        """
+        流式生成知识图谱，yield SSE 事件字典
+
+        Phase 1 顺序执行（逐个汇报进度），Phase 2 流式生成 XML
+        """
+        # 1. 验证
+        await self._verify_space(space_id, user_id)
+        documents, chunks = await self._load_document_chunks(space_id, document_ids)
+        document_titles = [doc.title for doc in documents]
+        doc_title_map = {doc.id: doc.title for doc in documents}
+
+        total_chunks = len(chunks)
+        logger.info(
+            "流式文档知识图谱生成: space_id=%s, docs=%d, chunks=%d",
+            space_id, len(documents), total_chunks,
+        )
+
+        # 2. Phase 1: 顺序提取概念
+        yield {"event": "phase", "data": {"phase": "extraction", "total_chunks": total_chunks}}
+
+        all_results: list[ChunkExtractionResult] = []
+        for i, chunk in enumerate(chunks):
+            doc_title = doc_title_map.get(chunk.document_id, "未知文档")
+            result = await self._extract_one_chunk(chunk, doc_title)
+            if result and (result.concepts or result.relationships):
+                all_results.append(result)
+            yield {"event": "progress", "data": {"completed": i + 1, "total": total_chunks}}
+
+        if not all_results:
+            yield {"event": "error", "data": {"message": "文档中未提取到有效概念"}}
+            return
+
+        # 3. 汇总
+        concept_summary, relationship_summary = self._aggregate_results(all_results)
+
+        # 4. Phase 2: 流式生成知识图谱
+        yield {"event": "phase", "data": {"phase": "consolidation"}}
+
+        messages = build_document_knowledge_graph_prompt(
+            document_titles=document_titles,
+            concept_summary=concept_summary,
+            relationship_summary=relationship_summary,
+            user_preference=user_preference,
+        )
+
+        full_output = ""
+        # 跟踪已发送的行数，避免重复发送节点/边
+        last_processed_line_count = 0
+        # 跟踪层级栈，为节点确定 parent
+        parent_stack: list[str] = []
+        # 标记是否进入 /advanced_knowledge_connections 区域
+        in_advanced_section = False
+
+        async for text_delta in self.llm_client.stream_complete(messages):
+            full_output += text_delta
+            yield {"event": "kg_delta", "data": {"content": text_delta}}
+
+            # 尝试从已完成的行中解析节点和边
+            lines = full_output.split("\n")
+            # 最后一行可能不完整，不处理
+            complete_lines = lines[:-1] if not full_output.endswith("\n") else lines
+
+            for line_idx in range(last_processed_line_count, len(complete_lines)):
+                line = complete_lines[line_idx]
+                stripped = line.strip()
+
+                # 检查 section 切换
+                if stripped.startswith("/advanced_knowledge_connections"):
+                    in_advanced_section = True
+                    continue
+                if stripped.startswith("/basic_knowledge_tree"):
+                    in_advanced_section = False
+                    continue
+
+                if not in_advanced_section:
+                    # 尝试解析节点
+                    node_data = KnowledgeGraphParser.parse_incremental_node(stripped)
+                    if node_data:
+                        level = node_data["level"]
+                        label = node_data["label"]
+                        # 确定 parent
+                        parent = None
+                        if level > 1 and len(parent_stack) >= level - 1:
+                            parent = parent_stack[level - 2]
+                        # 更新栈
+                        while len(parent_stack) >= level:
+                            parent_stack.pop()
+                        parent_stack.append(label)
+                        yield {
+                            "event": "kg_node",
+                            "data": {"label": label, "level": level, "parent": parent},
+                        }
+                else:
+                    # 尝试解析边
+                    edge_data = KnowledgeGraphParser.parse_incremental_edge(stripped)
+                    if edge_data:
+                        yield {"event": "kg_edge", "data": edge_data}
+
+            last_processed_line_count = len(complete_lines)
+
+        # 5. 最终完整解析 + 持久化
+        try:
+            root_label = document_titles[0] if len(document_titles) == 1 else None
+            parsed_graph = self.kg_parser.parse(full_output, root_label=root_label)
+            node_count, edge_count = await persist_graph(self.db, space_id, parsed_graph)
+
+            logger.info(
+                "流式文档知识图谱生成完成: space_id=%s, nodes=%d, edges=%d",
+                space_id, node_count, edge_count,
+            )
+            yield {
+                "event": "done",
+                "data": {"node_count": node_count, "edge_count": edge_count},
+            }
+        except Exception as e:
+            logger.error("知识图谱持久化失败: %s", e)
+            yield {"event": "error", "data": {"message": f"图谱保存失败: {e}"}}
