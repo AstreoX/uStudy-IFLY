@@ -178,15 +178,22 @@ class KnowledgeGraphParser:
 
         # 2. 创建新节点列表 (不变异原节点)
         # 将所有节点的 level +1，并将原一级节点的 parent 指向根节点
-        updated_nodes = [
-            ParsedNode(
-                label=node.label,
-                mastery=node.mastery,
-                level=node.level + 1,
-                parent_label=root_label if node.level == 1 else node.parent_label,
+        # 跳过与 root_label 同名的一级节点（AI 重复生成了根节点）
+        updated_nodes = []
+        for node in nodes:
+            if node.level == 1 and node.label == root_label:
+                # AI 生成了与空间同名的一级节点，跳过以避免自环
+                # 其子节点的 parent_label 已经是 root_label，会正确连到根
+                logger.info("跳过与根节点同名的一级节点: %s", root_label)
+                continue
+            updated_nodes.append(
+                ParsedNode(
+                    label=node.label,
+                    mastery=node.mastery,
+                    level=node.level + 1,
+                    parent_label=root_label if node.level == 1 else node.parent_label,
+                )
             )
-            for node in nodes
-        ]
 
         # 3. 返回新列表（根节点在最前面）
         return [root_node] + updated_nodes
@@ -207,11 +214,11 @@ class KnowledgeGraphParser:
         return min(100, max(0, int(score * 100)))
 
     def _build_tree_edges(self, nodes: list[ParsedNode]) -> list[ParsedEdge]:
-        """根据父子关系构建树形边"""
+        """根据父子关系构建树形边（过滤自环）"""
         edges: list[ParsedEdge] = []
 
         for node in nodes:
-            if node.parent_label:
+            if node.parent_label and node.parent_label != node.label:
                 edges.append(
                     ParsedEdge(
                         source_label=node.parent_label,
@@ -248,7 +255,7 @@ class KnowledgeGraphParser:
             source_exists = source in node_labels
             target_exists = target in node_labels
 
-            if source_exists and target_exists:
+            if source_exists and target_exists and source != target:
                 edges.append(
                     ParsedEdge(
                         source_label=source,

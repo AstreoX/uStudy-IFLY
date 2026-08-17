@@ -61,7 +61,7 @@ async def persist_graph(
         source_id = label_to_id.get(parsed_edge.source_label)
         target_id = label_to_id.get(parsed_edge.target_label)
 
-        if source_id and target_id:
+        if source_id and target_id and source_id != target_id:
             edge_type = map_edge_type(parsed_edge.edge_type)
             edge = Edge(
                 space_id=space_id,

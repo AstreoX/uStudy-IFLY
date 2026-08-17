@@ -283,6 +283,10 @@ class GraphService:
             NodeNotFoundError: If either node not found
             DuplicateEdgeError: If edge already exists
         """
+        # Reject self-loops
+        if from_node_id == to_node_id:
+            raise ValueError("Self-loop edges are not allowed")
+
         # Validate nodes exist
         await self._get_node(space_id, from_node_id)
         await self._get_node(space_id, to_node_id)
