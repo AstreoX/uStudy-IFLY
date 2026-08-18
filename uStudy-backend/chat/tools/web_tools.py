@@ -220,7 +220,7 @@ class WebToolExecutor:
         logger.info("SearXNG unavailable, falling back to DuckDuckGo")
         try:
             results = await asyncio.to_thread(
-                lambda: list(DDGS().text(query, max_results=max_results))
+                lambda: list(DDGS().text(query, max_results=max_results, safesearch="on"))
             )
         except Exception as e:
             logger.error(f"DuckDuckGo search failed: {e}")

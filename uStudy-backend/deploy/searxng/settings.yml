@@ -16,7 +16,7 @@ server:
   limiter: false
 
 search:
-  safe_search: 0
+  safe_search: 2
   autocomplete: ""
   default_lang: "auto"
   formats:

@@ -403,7 +403,7 @@ class SearchToolExecutor:
         site_query = f"site:bilibili.com {query}"
         try:
             results = await asyncio.to_thread(
-                lambda: list(DDGS().text(site_query, max_results=max_results))
+                lambda: list(DDGS().text(site_query, max_results=max_results, safesearch="on"))
             )
         except Exception as e:
             logger.error(f"DuckDuckGo fallback also failed: {e}")

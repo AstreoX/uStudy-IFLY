@@ -57,6 +57,7 @@ class SearXNGSearchClient:
             "categories": "general",
             "language": language,
             "pageno": 1,
+            "safesearch": 2,
         }
 
         try:
