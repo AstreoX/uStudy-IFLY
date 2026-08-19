@@ -90,6 +90,22 @@ def _register_jobs(sched: AsyncIOScheduler) -> None:
     )
     logger.info("Registered expire_stale_payment_orders job (every 5 min)")
 
+    # Daily review quiz generation & email at 08:00 Beijing time
+    from scheduler.jobs.daily_review_processor import process_daily_reviews
+
+    sched.add_job(
+        process_daily_reviews,
+        trigger=CronTrigger(
+            hour=8,
+            minute=0,
+            timezone="Asia/Shanghai",
+        ),
+        id="daily_review_processor",
+        name="Daily Review Quiz Generation & Email",
+        replace_existing=True,
+    )
+    logger.info("Registered daily_review_processor job for 08:00 Asia/Shanghai")
+
 
 @asynccontextmanager
 async def get_scheduler_lifespan() -> AsyncGenerator[None, None]:

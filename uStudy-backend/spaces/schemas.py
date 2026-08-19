@@ -56,6 +56,12 @@ class SpaceUpdate(BaseModel):
     enabled_tools: Optional[list[str]] = Field(
         None, description="manual 模式下启用的工具名称数组"
     )
+    review_mode: Optional[int] = Field(
+        None,
+        ge=0,
+        le=3,
+        description="复习模式: 0=disabled, 1=suggestions, 2=quiz_no_email, 3=full",
+    )
 
     @field_validator("tool_mode")
     @classmethod
@@ -78,6 +84,7 @@ class SpaceResponse(BaseModel):
     tool_mode: str = "auto"
     enabled_tools: Optional[list[str]] = None
     is_collaborative: bool = False
+    review_mode: int = 3
     user_role: Optional[str] = None
     created_at: datetime
     updated_at: datetime

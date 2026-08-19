@@ -16,6 +16,10 @@ class ReviewScheduleItem(BaseModel):
     status: str
     completed_at: datetime | None = None
     study_depth: str | None = None
+    ease_factor: float = 2.5
+    interval_days: int = 1
+    quality_score: int | None = None
+    review_quiz_id: UUID | None = None
 
     model_config = {"from_attributes": True}
 

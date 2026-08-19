@@ -173,11 +173,13 @@ class ArtifactToolExecutor:
                     note_id = existing_note.id
                 else:
                     note_id = await self._create_note_record(
-                        db, conv, title, libraries, node_id
+                        db, conv, title, libraries, node_id,
+                        user_id=self.user_id,
                     )
             else:
                 note_id = await self._create_note_record(
-                    db, conv, title, libraries, node_id
+                    db, conv, title, libraries, node_id,
+                    user_id=self.user_id,
                 )
 
             # Create agent task in the SAME session to ensure atomicity
@@ -206,6 +208,7 @@ class ArtifactToolExecutor:
     @staticmethod
     async def _create_note_record(
         db, conv, title: str, libraries: list, node_id: UUID | None = None,
+        *, user_id: UUID | None = None,
     ) -> UUID:
         """Create a new Note and link it to the conversation. Returns note_id."""
         note = Note(
@@ -215,6 +218,7 @@ class ArtifactToolExecutor:
             content="",
             note_type="interactive_html",
             metadata_={"generating": True, "libraries": libraries, "version": 1},
+            creator_user_id=user_id,
         )
         db.add(note)
         await db.flush()

@@ -121,6 +121,8 @@ class SpaceService:
             space.description = request.description
         if request.color is not None:
             space.color = request.color
+        if request.review_mode is not None:
+            space.review_mode = request.review_mode
 
         await self.db.commit()
         await self.db.refresh(space)
@@ -498,6 +500,7 @@ class SpaceService:
             tool_mode=space.tool_mode,
             enabled_tools=space.enabled_tools,
             is_collaborative=space.is_collaborative,
+            review_mode=space.review_mode,
             user_role=user_role,
             created_at=space.created_at,
             updated_at=space.updated_at,

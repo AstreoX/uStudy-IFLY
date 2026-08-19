@@ -11,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -79,6 +80,7 @@ class AgentTaskType(str, enum.Enum):
     EXPAND_NODE = "expand_node"
     GENERATE_ARTIFACT = "generate_artifact"
     GENERATE_KNOWLEDGE_GRAPH_FROM_DOCUMENTS = "generate_knowledge_graph_from_documents"
+    GENERATE_REVIEW_QUIZ = "generate_review_quiz"
 
 
 class QuickChatToolTaskStatus(str, enum.Enum):
@@ -290,6 +292,13 @@ class Space(Base):
         server_default="false",
         nullable=False,
         comment="是否为协作学习空间",
+    )
+    review_mode: Mapped[int] = mapped_column(
+        Integer,
+        default=3,
+        server_default="3",
+        nullable=False,
+        comment="复习模式: 0=disabled, 1=suggestions, 2=quiz_no_email, 3=full",
     )
     created_at: Mapped[datetime] = mapped_column(
         default=func.now(), nullable=False
@@ -698,6 +707,13 @@ class Quiz(Base):
         nullable=False,
     )
     total_questions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_review_quiz: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+        comment="是否为复习系统自动生成的测试",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), nullable=False
     )
@@ -1518,6 +1534,26 @@ class ReviewSchedule(Base):
     )
     study_depth: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
+    # SM-2 算法字段
+    ease_factor: Mapped[float] = mapped_column(
+        Float, default=2.5, server_default="2.5", nullable=False,
+        comment="SM-2 易度因子 (>= 1.3)",
+    )
+    interval_days: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False,
+        comment="当前计算的复习间隔天数",
+    )
+    quality_score: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+        comment="SM-2 质量评分 (0-5)",
+    )
+    review_quiz_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("quizzes.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="关联的复习测试题",
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), nullable=False
     )
@@ -1534,6 +1570,43 @@ class ReviewSchedule(Base):
         Index("idx_review_user_node", "user_id", "node_label"),
         Index("idx_review_activity", "activity_id"),
         Index("idx_review_status_date", "user_id", "status", "scheduled_date"),
+    )
+
+
+class ReviewEmailLog(Base):
+    """复习邮件发送日志"""
+
+    __tablename__ = "review_email_log"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    email_type: Mapped[str] = mapped_column(
+        String(30), nullable=False,
+        comment="邮件类型: daily_review / inactivity_care",
+    )
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False,
+    )
+    spaces_included: Mapped[Optional[list]] = mapped_column(
+        JSONB, nullable=True,
+        comment="包含的空间 ID/名称列表",
+    )
+    quiz_ids: Mapped[Optional[list]] = mapped_column(
+        JSONB, nullable=True,
+        comment="关联的测试题 ID 列表",
+    )
+
+    # 关系
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        Index("idx_review_email_user_type_date", "user_id", "email_type", "sent_at"),
     )
 
 

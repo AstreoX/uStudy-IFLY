@@ -294,6 +294,19 @@ class QuizService:
         _background_tasks.add(task)
         task.add_done_callback(_background_tasks.discard)
 
+        # SM-2 反馈：如果是复习测试题，更新复习间隔
+        if quiz.is_review_quiz:
+            sm2_task = asyncio.create_task(
+                _trigger_sm2_feedback(
+                    user_id=user_id,
+                    quiz_id=quiz.id,
+                    score=evaluation_result.score,
+                    total_score=evaluation_result.total_score,
+                )
+            )
+            _background_tasks.add(sm2_task)
+            sm2_task.add_done_callback(_background_tasks.discard)
+
         return evaluation_result
 
     async def submit_async(
@@ -364,6 +377,7 @@ class QuizService:
         space_is_collaborative = quiz.space.is_collaborative if quiz.space else False
         quiz_topic = quiz.topic
         quiz_difficulty = quiz.difficulty.value
+        quiz_is_review = quiz.is_review_quiz
 
         # 创建 pending attempt
         attempt = QuizAttempt(
@@ -397,6 +411,7 @@ class QuizService:
                 questions_snapshot=questions_snapshot,
                 user_answers=user_answers,
                 is_collaborative=space_is_collaborative,
+                is_review_quiz=quiz_is_review,
             )
         )
         _background_tasks.add(task)
@@ -605,6 +620,7 @@ async def _run_background_evaluation(
     questions_snapshot: list[dict],
     user_answers: dict[str, Any],
     is_collaborative: bool = False,
+    is_review_quiz: bool = False,
 ) -> None:
     """后台执行 AI 评估（fire-and-forget）。使用独立 DB session。"""
     from db.database import get_scoped_session
@@ -718,6 +734,19 @@ async def _run_background_evaluation(
         _background_tasks.add(task)
         task.add_done_callback(_background_tasks.discard)
 
+        # SM-2 反馈：如果是复习测试题，更新复习间隔
+        if is_review_quiz:
+            sm2_task = asyncio.create_task(
+                _trigger_sm2_feedback(
+                    user_id=user_id,
+                    quiz_id=quiz_id,
+                    score=evaluation_result.score,
+                    total_score=evaluation_result.total_score,
+                )
+            )
+            _background_tasks.add(sm2_task)
+            sm2_task.add_done_callback(_background_tasks.discard)
+
         logger.info(
             "Background quiz evaluation completed: attempt=%s score=%d/%d",
             attempt_id,
@@ -756,3 +785,42 @@ async def _run_background_evaluation(
             })
         except Exception:
             logger.exception("Failed to push failure notification: %s", attempt_id)
+
+
+async def _trigger_sm2_feedback(
+    user_id: UUID,
+    quiz_id: UUID,
+    score: int,
+    total_score: int,
+) -> None:
+    """复习测试题完成后，触发 SM-2 间隔更新（fire-and-forget）。"""
+    from db.database import get_scoped_session
+    from db.models import ReviewSchedule
+    from review.service import complete_review_with_quiz_score
+
+    try:
+        async with get_scoped_session() as session:
+            result = await session.execute(
+                select(ReviewSchedule).where(
+                    ReviewSchedule.review_quiz_id == quiz_id,
+                    ReviewSchedule.user_id == user_id,
+                    ReviewSchedule.status == "pending",
+                )
+            )
+            reviews = result.scalars().all()
+
+        for review in reviews:
+            await complete_review_with_quiz_score(
+                user_id=user_id,
+                review_id=review.id,
+                quiz_score=score,
+                quiz_total=total_score,
+            )
+            logger.info(
+                "SM-2 feedback: review=%s quiz=%s score=%d/%d",
+                review.id, quiz_id, score, total_score,
+            )
+    except Exception:
+        logger.exception(
+            "SM-2 feedback failed: quiz=%s user=%s", quiz_id, user_id,
+        )

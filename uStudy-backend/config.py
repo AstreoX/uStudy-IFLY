@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_bridge_url: str = ""  # JP bridge for region-restricted models (Gemini etc.)
-    openrouter_model: str = "bytedance-seed/seed-1.6"
+    openrouter_model: str = "bytedance-seed/seed-2.0-lite"
     gemini_model: str = "z-ai/glm-4.7-flash"
     llm_timeout_seconds: int = 300  # 5分钟
     llm_max_retries: int = 3
@@ -193,7 +193,7 @@ class Settings(BaseSettings):
     memory_extraction_model: str = "moonshotai/kimi-k2.5"  # 记忆提取用的 LLM 模型（空则使用默认模型）
 
     # 知识图谱生成配置
-    knowledge_graph_model: str = "bytedance-seed/seed-1.6"  # 空则使用默认模型
+    knowledge_graph_model: str = "bytedance-seed/seed-2.0-lite"  # 空则使用默认模型
 
     # 文档知识图谱提取配置
     document_kg_max_concurrent_extractions: int = 5  # Phase 1 并发 LLM 调用数

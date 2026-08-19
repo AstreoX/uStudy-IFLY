@@ -74,6 +74,7 @@ class QuizDetailResponse(BaseModel):
     topic: str = Field(..., description="测试主题")
     difficulty: str = Field(..., description="难度级别")
     total_questions: int = Field(..., description="题目总数")
+    is_review_quiz: bool = Field(False, description="是否为复习测试题")
     questions: list[QuestionResponse] = Field(..., description="题目列表")
     created_at: datetime = Field(..., description="创建时间")
 
@@ -132,6 +133,7 @@ class QuizListItemResponse(BaseModel):
     topic: str = Field(..., description="测试主题")
     difficulty: str = Field(..., description="难度级别")
     total_questions: int = Field(..., description="题目总数")
+    is_review_quiz: bool = Field(False, description="是否为复习测试题")
     created_at: datetime = Field(..., description="创建时间")
     has_attempt: bool = Field(..., description="是否已作答")
     attempt_score: int | None = Field(None, description="得分（已作答时）")

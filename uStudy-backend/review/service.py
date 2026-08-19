@@ -1,4 +1,4 @@
-"""艾宾浩斯遗忘曲线复习计划服务"""
+"""SM-2 自适应间隔复习计划服务"""
 
 import asyncio
 import logging
@@ -10,12 +10,11 @@ from sqlalchemy import func, select, update
 
 from db.database import get_scoped_session
 from db.models import ReviewSchedule, Space, StudyActivityLog
+from review.sm2 import score_to_quality, should_graduate, sm2_next_review
 
 logger = logging.getLogger(__name__)
 
-# ── 艾宾浩斯间隔配置 ──
-
-BASE_INTERVALS = [1, 3, 7, 14, 30]  # 天
+# ── 首次复习间隔的深度乘子 ──
 
 DEPTH_MULTIPLIERS = {
     "浅层浏览": 0.7,
@@ -23,26 +22,17 @@ DEPTH_MULTIPLIERS = {
     "深入掌握": 1.5,
 }
 
+# SM-2 默认初始值
+DEFAULT_EASE_FACTOR = 2.5
+
 # GC 保护：防止 fire-and-forget task 被回收
 _background_tasks: set[asyncio.Task] = set()
 
 
-def calculate_review_dates(
-    learning_date: date, study_depth: str | None
-) -> list[tuple[int, date]]:
-    """
-    纯函数：根据学习日期和深度计算 5 个复习日期。
-
-    Returns:
-        [(review_number, scheduled_date), ...]
-    """
+def calculate_first_interval(study_depth: str | None) -> int:
+    """根据学习深度计算首次复习间隔天数。"""
     multiplier = DEPTH_MULTIPLIERS.get(study_depth or "", 1.0)
-    results = []
-    for i, base_days in enumerate(BASE_INTERVALS, start=1):
-        adjusted = max(1, math.ceil(base_days * multiplier))
-        review_date = learning_date + timedelta(days=adjusted)
-        results.append((i, review_date))
-    return results
+    return max(1, math.ceil(1 * multiplier))
 
 
 async def generate_reviews_for_activity(
@@ -51,26 +41,27 @@ async def generate_reviews_for_activity(
     activity_date: date,
     study_depth: str | None,
 ) -> None:
-    """为一条学习活动生成 5 条复习计划（按学习事件粒度）。"""
-    review_dates = calculate_review_dates(activity_date, study_depth)
+    """为一条学习活动生成首条复习计划（SM-2：后续复习在完成时动态生成）。"""
+    first_interval = calculate_first_interval(study_depth)
+    scheduled_date = activity_date + timedelta(days=first_interval)
 
     async with get_scoped_session() as session:
-        for review_number, scheduled_date in review_dates:
-            schedule = ReviewSchedule(
-                user_id=user_id,
-                activity_id=activity_id,
-                node_label=None,
-                review_number=review_number,
-                scheduled_date=scheduled_date,
-                status="pending",
-                study_depth=study_depth,
-            )
-            session.add(schedule)
-
+        schedule = ReviewSchedule(
+            user_id=user_id,
+            activity_id=activity_id,
+            node_label=None,
+            review_number=1,
+            scheduled_date=scheduled_date,
+            status="pending",
+            study_depth=study_depth,
+            ease_factor=DEFAULT_EASE_FACTOR,
+            interval_days=first_interval,
+        )
+        session.add(schedule)
         await session.commit()
         logger.info(
-            f"Generated {len(review_dates)} review schedules for activity {activity_id} "
-            f"(user={user_id})"
+            f"Generated first review schedule for activity {activity_id} "
+            f"(user={user_id}, interval={first_interval}d)"
         )
 
 
@@ -192,25 +183,115 @@ async def get_due_reviews_count_by_space(user_id: UUID, space_id: UUID) -> int:
 
 
 async def complete_review(user_id: UUID, review_id: UUID) -> bool:
-    """手动标记复习完成。Atomic UPDATE to avoid race conditions."""
+    """手动标记复习完成，使用中性 quality=3 生成下一条复习。"""
     async with get_scoped_session() as session:
         result = await session.execute(
-            update(ReviewSchedule)
-            .where(
+            select(ReviewSchedule).where(
                 ReviewSchedule.id == review_id,
                 ReviewSchedule.user_id == user_id,
                 ReviewSchedule.status == "pending",
             )
-            .values(
-                status="completed",
-                completed_at=datetime.now(timezone.utc),
-            )
         )
-        if result.rowcount == 0:
+        review = result.scalar_one_or_none()
+        if not review:
             return False
+
+        now = datetime.now(timezone.utc)
+        quality = 3  # 手动完成视为中性
+
+        # 标记完成
+        review.status = "completed"
+        review.completed_at = now
+        review.quality_score = quality
+
+        # 生成下一条复习（除非毕业）
+        if not should_graduate(review.review_number, quality):
+            next_interval, new_ef = sm2_next_review(
+                review.review_number, review.ease_factor, quality, review.interval_days,
+            )
+            # SM-2: 失败 (quality < 3) 时重置 review_number 为 1
+            next_number = 1 if quality < 3 else review.review_number + 1
+            next_schedule = ReviewSchedule(
+                user_id=user_id,
+                activity_id=review.activity_id,
+                node_label=review.node_label,
+                review_number=next_number,
+                scheduled_date=now.date() + timedelta(days=next_interval),
+                status="pending",
+                study_depth=review.study_depth,
+                ease_factor=new_ef,
+                interval_days=next_interval,
+            )
+            session.add(next_schedule)
+
         await session.commit()
         logger.info(f"Manually completed review {review_id} for user {user_id}")
         return True
+
+
+async def complete_review_with_quiz_score(
+    user_id: UUID,
+    review_id: UUID,
+    quiz_score: int,
+    quiz_total: int,
+) -> ReviewSchedule | None:
+    """根据测试题成绩完成复习并动态生成下一条。
+
+    Returns:
+        新生成的 ReviewSchedule，如果毕业则返回 None。
+    """
+    async with get_scoped_session() as session:
+        result = await session.execute(
+            select(ReviewSchedule).where(
+                ReviewSchedule.id == review_id,
+                ReviewSchedule.user_id == user_id,
+                ReviewSchedule.status == "pending",
+            )
+        )
+        review = result.scalar_one_or_none()
+        if not review:
+            return None
+
+        now = datetime.now(timezone.utc)
+        quality = score_to_quality(quiz_score, quiz_total)
+
+        # 标记完成
+        review.status = "completed"
+        review.completed_at = now
+        review.quality_score = quality
+
+        # 生成下一条复习（除非毕业）
+        next_schedule = None
+        if not should_graduate(review.review_number, quality):
+            next_interval, new_ef = sm2_next_review(
+                review.review_number, review.ease_factor, quality, review.interval_days,
+            )
+            # SM-2: 失败 (quality < 3) 时重置 review_number 为 1
+            next_number = 1 if quality < 3 else review.review_number + 1
+            next_schedule = ReviewSchedule(
+                user_id=user_id,
+                activity_id=review.activity_id,
+                node_label=review.node_label,
+                review_number=next_number,
+                scheduled_date=now.date() + timedelta(days=next_interval),
+                status="pending",
+                study_depth=review.study_depth,
+                ease_factor=new_ef,
+                interval_days=next_interval,
+            )
+            session.add(next_schedule)
+            logger.info(
+                f"SM-2 review {review_id}: q={quality}, ef={new_ef:.2f}, "
+                f"next_interval={next_interval}d, next_number={next_number}"
+            )
+        else:
+            logger.info(
+                f"Review graduated: activity {review.activity_id} after "
+                f"{review.review_number} reviews (user={user_id})"
+            )
+
+        await session.commit()
+        return next_schedule
 
 
 async def get_due_reviews_by_space(

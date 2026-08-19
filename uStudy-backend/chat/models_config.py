@@ -8,9 +8,9 @@ if TYPE_CHECKING:
     from db.models import SubscriptionTier
 
 ALLOWED_MODELS: dict[str, dict[str, Any]] = {
-    "seed-1.6": {
-        "openrouter_id": "bytedance-seed/seed-1.6",
-        "display_name": "Seed 1.6",
+    "seed-2.0-lite": {
+        "openrouter_id": "bytedance-seed/seed-2.0-lite",
+        "display_name": "Seed 2.0 Lite",
         "description": "快速响应，适合日常对话",
         "is_default": True,
         "max_output_tokens": 65536,
@@ -30,7 +30,7 @@ ALLOWED_MODELS: dict[str, dict[str, Any]] = {
     },
 }
 
-DEFAULT_MODEL_ID = "seed-1.6"
+DEFAULT_MODEL_ID = "seed-2.0-lite"
 
 
 def get_openrouter_model(model_id: str | None) -> str:

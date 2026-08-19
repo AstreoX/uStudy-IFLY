@@ -285,6 +285,7 @@ class ShareService:
                 note_type=note.note_type,
                 metadata_=note.metadata_,
                 sort_order=note.sort_order,
+                creator_user_id=user_id,
             )
             db.add(new_note)
             await db.flush()

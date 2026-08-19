@@ -1,5 +1,6 @@
 """分享功能 API 端点"""
 
+import asyncio
 import logging
 from uuid import UUID
 
@@ -7,8 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import get_current_user
+from config import get_settings
 from db.database import get_db
 from db.models import User
+from share.notification import send_space_join_notification
 from share.schemas import GenerateShareCodeRequest, ImportSpaceRequest, ShareCodeResponse
 from share.service import ShareCodeError, ShareService
 from spaces.schemas import SpaceResponse
@@ -45,6 +48,22 @@ async def import_space(
 ) -> SpaceResponse:
     """通过分享码导入学习空间"""
     try:
-        return await ShareService.import_space(db, current_user.id, request.share_code)
+        response = await ShareService.import_space(db, current_user.id, request.share_code)
     except ShareCodeError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # Send email notification to space owner when a user joins collaboratively
+    if response.user_role == "member":
+        owner = await db.get(User, response.user_id)
+        if owner and owner.email:
+            asyncio.create_task(
+                send_space_join_notification(
+                    settings=get_settings(),
+                    owner_email=owner.email,
+                    joiner_email=current_user.email,
+                    joiner_nickname=current_user.nickname or "",
+                    space_name=response.name,
+                )
+            )
+
+    return response

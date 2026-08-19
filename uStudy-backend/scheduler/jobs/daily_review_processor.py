@@ -1,0 +1,560 @@
+"""每日复习处理定时任务
+
+每日 08:00 北京时间执行：
+1. 收集所有用户的到期复习事项
+2. 按 (user, space) 分组
+3. AI 规划 + 生成复习测试题
+4. 发送个性化复习提醒邮件
+5. 检测不活跃用户并发送关怀邮件
+"""
+
+import asyncio
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from typing import Any
+from uuid import UUID
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from db.database import AsyncSessionLocal, get_scoped_session
+from db.models import (
+    AgentTask,
+    AgentTaskStatus,
+    AgentTaskType,
+    DifficultyLevel,
+    Quiz,
+    ReviewEmailLog,
+    ReviewSchedule,
+    Space,
+    StudyActivityLog,
+    User,
+)
+from scheduler.models import SchedulerState
+
+logger = logging.getLogger(__name__)
+
+JOB_ID = "daily_review_processor"
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+
+# 并发控制：同时生成的测试题任务数
+MAX_CONCURRENT_GENERATIONS = 5
+
+
+@dataclass
+class ReviewItem:
+    """单条到期复习事项。"""
+    review_id: UUID
+    activity_id: UUID
+    title: str
+    study_depth: str | None
+    review_number: int
+    scheduled_date: Any
+    overdue_days: int
+
+
+@dataclass
+class SpaceReviewGroup:
+    """某用户某空间下的一组到期复习。"""
+    space_id: UUID
+    space_name: str
+    review_mode: int
+    learning_preferences: dict | None
+    reviews: list[ReviewItem] = field(default_factory=list)
+
+
+@dataclass
+class UserReviewData:
+    """某用户的全部到期复习数据。"""
+    user_id: UUID
+    user_email: str
+    nickname: str
+    space_groups: list[SpaceReviewGroup] = field(default_factory=list)
+
+
+async def process_daily_reviews() -> None:
+    """每日复习处理主入口。
+
+    遵循 3-phase + SchedulerState 防重复模式。
+    """
+    logger.info("Starting daily review processor")
+
+    today_beijing = datetime.now(BEIJING_TZ).date()
+    today_utc = datetime.now(timezone.utc).date()
+
+    try:
+        # Phase 0: 去重检查
+        row_exists = False
+        async with get_scoped_session() as db:
+            check_result = await db.execute(
+                select(SchedulerState.last_run_date).where(
+                    SchedulerState.job_id == JOB_ID
+                )
+            )
+            existing_date = check_result.scalar_one_or_none()
+            if existing_date is not None:
+                row_exists = True
+                if existing_date == today_beijing:
+                    logger.info("Daily review already processed today (%s), skipping", today_beijing)
+                    return
+
+        # Phase 1: 收集数据
+        user_reviews = await _gather_review_data(today_utc)
+        if not user_reviews:
+            logger.info("No users with due reviews today")
+            await _check_inactivity(today_utc)
+            await _update_state(today_beijing, row_exists)
+            return
+
+        logger.info("Found %d users with due reviews", len(user_reviews))
+
+        # Phase 2: 生成测试题（带并发控制）
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_GENERATIONS)
+        generation_results: dict[UUID, list[dict]] = {}  # user_id -> [{space_name, topics, quiz_id, due_count}]
+
+        async def process_user(user_data: UserReviewData) -> None:
+            user_summaries = []
+            for group in user_data.space_groups:
+                summary = {
+                    "space_name": group.space_name,
+                    "space_id": str(group.space_id),
+                    "topics": [r.title for r in group.reviews[:5]],
+                    "due_count": len(group.reviews),
+                    "quiz_id": None,
+                }
+
+                if group.review_mode >= 2:
+                    async with semaphore:
+                        quiz_id = await _generate_review_quiz(
+                            user_data.user_id, group,
+                        )
+                        summary["quiz_id"] = str(quiz_id) if quiz_id else None
+
+                user_summaries.append(summary)
+            generation_results[user_data.user_id] = user_summaries
+
+        tasks = [process_user(ud) for ud in user_reviews]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for ud, result in zip(user_reviews, results):
+            if isinstance(result, BaseException):
+                logger.error(
+                    "process_user failed for user=%s: %s", ud.user_id, result,
+                )
+
+        # Phase 3: 发送邮件
+        await _send_review_emails(user_reviews, generation_results)
+
+        # Phase 4: 不活跃关怀检测
+        await _check_inactivity(today_utc)
+
+        # Phase 5: 更新状态
+        await _update_state(today_beijing, row_exists)
+
+        logger.info("Daily review processor completed successfully")
+
+    except Exception:
+        logger.exception("Error in daily review processor")
+
+
+async def _gather_review_data(today: Any) -> list[UserReviewData]:
+    """收集所有用户的到期复习数据。"""
+    async with get_scoped_session() as db:
+        # 查询到期复习 JOIN 活动 + 空间 + 用户
+        stmt = (
+            select(
+                ReviewSchedule.id,
+                ReviewSchedule.activity_id,
+                ReviewSchedule.review_number,
+                ReviewSchedule.scheduled_date,
+                ReviewSchedule.study_depth,
+                StudyActivityLog.title,
+                StudyActivityLog.space_id,
+                Space.name.label("space_name"),
+                Space.review_mode,
+                Space.learning_preferences,
+                User.id.label("user_id"),
+                User.email.label("user_email"),
+                User.nickname,
+            )
+            .join(StudyActivityLog, ReviewSchedule.activity_id == StudyActivityLog.id)
+            .join(Space, StudyActivityLog.space_id == Space.id)
+            .join(User, ReviewSchedule.user_id == User.id)
+            .where(
+                ReviewSchedule.status == "pending",
+                ReviewSchedule.scheduled_date <= today,
+                Space.review_mode > 0,
+            )
+            .order_by(User.id, Space.id, ReviewSchedule.scheduled_date)
+        )
+
+        result = await db.execute(stmt)
+        rows = result.all()
+
+    # 组装为结构化数据
+    users_map: dict[UUID, UserReviewData] = {}
+    spaces_map: dict[tuple[UUID, UUID], SpaceReviewGroup] = {}
+
+    for row in rows:
+        user_id = row.user_id
+        space_id = row.space_id
+
+        if user_id not in users_map:
+            users_map[user_id] = UserReviewData(
+                user_id=user_id,
+                user_email=row.user_email,
+                nickname=row.nickname or "同学",
+            )
+
+        key = (user_id, space_id)
+        if key not in spaces_map:
+            group = SpaceReviewGroup(
+                space_id=space_id,
+                space_name=row.space_name,
+                review_mode=row.review_mode,
+                learning_preferences=row.learning_preferences,
+            )
+            spaces_map[key] = group
+            users_map[user_id].space_groups.append(group)
+
+        overdue_days = (today - row.scheduled_date).days if hasattr(row.scheduled_date, '__sub__') else 0
+        spaces_map[key].reviews.append(ReviewItem(
+            review_id=row.id,
+            activity_id=row.activity_id,
+            title=row.title or "未命名活动",
+            study_depth=row.study_depth,
+            review_number=row.review_number,
+            scheduled_date=row.scheduled_date,
+            overdue_days=max(0, overdue_days),
+        ))
+
+    return list(users_map.values())
+
+
+async def _generate_review_quiz(
+    user_id: UUID,
+    group: SpaceReviewGroup,
+) -> UUID | None:
+    """为一个 (user, space) 生成复习测试题。
+
+    两级 Agent：Planner → TestGenerationAgent
+    """
+    from agents.llm.client import OpenRouterClient
+    from agents.review_quiz_planner import ReviewQuizPlannerAgent
+    from agents.test_generation_agent import TestGenerationAgent
+
+    try:
+        # 检查是否已有未完成的 review quiz
+        async with get_scoped_session() as db:
+            existing = await db.execute(
+                select(func.count(ReviewSchedule.id))
+                .select_from(ReviewSchedule)
+                .join(StudyActivityLog, ReviewSchedule.activity_id == StudyActivityLog.id)
+                .where(
+                    ReviewSchedule.user_id == user_id,
+                    ReviewSchedule.review_quiz_id.isnot(None),
+                    ReviewSchedule.status == "pending",
+                    StudyActivityLog.space_id == group.space_id,
+                )
+            )
+            if (existing.scalar() or 0) > 0:
+                logger.info(
+                    "Skipping quiz gen for user=%s space=%s: existing pending review quiz",
+                    user_id, group.space_id,
+                )
+                return None
+
+        # 第 1 级：Planner
+        planner = ReviewQuizPlannerAgent()
+        review_items = [
+            {
+                "title": r.title,
+                "study_depth": r.study_depth,
+                "overdue_days": r.overdue_days,
+                "review_number": r.review_number,
+            }
+            for r in group.reviews
+        ]
+
+        plan = await planner.plan(
+            space_name=group.space_name,
+            learning_preferences=group.learning_preferences,
+            review_items=review_items,
+        )
+
+        # 第 2 级：TestGenerationAgent
+        async with AsyncSessionLocal() as session:
+            # 创建 AgentTask
+            task = AgentTask(
+                user_id=user_id,
+                space_id=group.space_id,
+                task_type=AgentTaskType.GENERATE_REVIEW_QUIZ,
+                status=AgentTaskStatus.RUNNING,
+                started_at=datetime.now(timezone.utc),
+                input_data={
+                    "topic": plan["topic"],
+                    "difficulty_level": plan["difficulty_level"],
+                    "test_struct": plan["test_struct"],
+                    "focus_areas": plan.get("focus_areas", []),
+                    "reasoning": plan.get("reasoning", ""),
+                    "source": "daily_review_processor",
+                },
+            )
+            session.add(task)
+            await session.commit()
+            await session.refresh(task)
+
+            # 创建 Quiz
+            quiz = Quiz(
+                space_id=group.space_id,
+                agent_task_id=task.id,
+                title=f"复习测试: {plan['topic'][:150]}",
+                topic=plan["topic"],
+                difficulty=DifficultyLevel(plan["difficulty_level"]),
+                total_questions=0,
+                is_review_quiz=True,
+            )
+            session.add(quiz)
+            await session.commit()
+            await session.refresh(quiz)
+
+            # 执行生成
+            agent = TestGenerationAgent(session)
+            expected, actual, debug_logs = await agent.generate(
+                quiz_id=quiz.id,
+                topic=plan["topic"],
+                difficulty=plan["difficulty_level"],
+                test_struct=plan["test_struct"],
+            )
+
+            # 更新 AgentTask 为 done
+            await session.execute(
+                update(AgentTask)
+                .where(AgentTask.id == task.id)
+                .values(
+                    status=AgentTaskStatus.DONE,
+                    completed_at=datetime.now(timezone.utc),
+                    output_data={
+                        "quiz_id": str(quiz.id),
+                        "expected_count": expected,
+                        "question_count": actual,
+                        "plan": plan,
+                    },
+                )
+            )
+            await session.commit()
+
+            # 关联 quiz 到 review schedules
+            review_ids = [r.review_id for r in group.reviews]
+            if review_ids:
+                await session.execute(
+                    update(ReviewSchedule)
+                    .where(ReviewSchedule.id.in_(review_ids))
+                    .values(review_quiz_id=quiz.id)
+                )
+                await session.commit()
+
+            logger.info(
+                "Generated review quiz: user=%s, space=%s, quiz=%s, questions=%d",
+                user_id, group.space_id, quiz.id, actual,
+            )
+            return quiz.id
+
+    except Exception:
+        logger.exception(
+            "Failed to generate review quiz for user=%s space=%s",
+            user_id, group.space_id,
+        )
+        return None
+
+
+async def _send_review_emails(
+    user_reviews: list[UserReviewData],
+    generation_results: dict[UUID, list[dict]],
+) -> None:
+    """为每个有 review_mode=3 空间的用户发送邮件。"""
+    from scheduler.email.review_email_service import ReviewEmailService
+
+    email_service = ReviewEmailService()
+
+    for user_data in user_reviews:
+        # 检查是否有任一空间的 review_mode == 3
+        has_email_space = any(g.review_mode == 3 for g in user_data.space_groups)
+        if not has_email_space:
+            continue
+
+        summaries = generation_results.get(user_data.user_id, [])
+        # 仅包含 review_mode == 3 的空间
+        email_summaries = [
+            s for s in summaries
+            if any(
+                g.review_mode == 3 and str(g.space_id) == s["space_id"]
+                for g in user_data.space_groups
+            )
+        ]
+
+        if not email_summaries:
+            continue
+
+        try:
+            success = await email_service.send_review_email(
+                user_email=user_data.user_email,
+                nickname=user_data.nickname,
+                review_summaries=email_summaries,
+            )
+
+            if success:
+                # 记录邮件日志
+                async with get_scoped_session() as db:
+                    log = ReviewEmailLog(
+                        user_id=user_data.user_id,
+                        email_type="daily_review",
+                        spaces_included=[s["space_id"] for s in email_summaries],
+                        quiz_ids=[s["quiz_id"] for s in email_summaries if s.get("quiz_id")],
+                    )
+                    db.add(log)
+                    await db.commit()
+
+                logger.info("Sent review email to user=%s", user_data.user_id)
+            else:
+                logger.warning("Failed to send review email to user=%s", user_data.user_id)
+
+        except Exception:
+            logger.exception("Error sending review email to user=%s", user_data.user_id)
+
+
+async def _check_inactivity(today: Any) -> None:
+    """检测连续 2+ 天未复习的用户，发送关怀邮件。"""
+    from scheduler.email.review_email_service import ReviewEmailService
+
+    two_days_ago = today - timedelta(days=2)
+    three_days_ago = today - timedelta(days=3)
+
+    try:
+        async with get_scoped_session() as db:
+            # 查找有 pending review 且 scheduled_date <= 2天前的用户
+            # 排除最近 3 天内已发过 inactivity_care 邮件的用户
+            inactive_users_stmt = (
+                select(
+                    User.id,
+                    User.email,
+                    User.nickname,
+                    func.min(ReviewSchedule.scheduled_date).label("earliest_due"),
+                )
+                .join(ReviewSchedule, ReviewSchedule.user_id == User.id)
+                .where(
+                    ReviewSchedule.status == "pending",
+                    ReviewSchedule.scheduled_date <= two_days_ago,
+                )
+                .group_by(User.id, User.email, User.nickname)
+            )
+            result = await db.execute(inactive_users_stmt)
+            inactive_candidates = result.all()
+
+            if not inactive_candidates:
+                return
+
+            # 批量排除最近发过关怀邮件的用户
+            candidate_ids = [c.id for c in inactive_candidates]
+            recent_emails_stmt = (
+                select(ReviewEmailLog.user_id)
+                .where(
+                    ReviewEmailLog.user_id.in_(candidate_ids),
+                    ReviewEmailLog.email_type == "inactivity_care",
+                    ReviewEmailLog.sent_at >= datetime.combine(
+                        three_days_ago, datetime.min.time(), tzinfo=timezone.utc,
+                    ),
+                )
+                .distinct()
+            )
+            recent_result = await db.execute(recent_emails_stmt)
+            already_emailed = {row[0] for row in recent_result.all()}
+
+            # 获取待复习主题
+            eligible = [c for c in inactive_candidates if c.id not in already_emailed]
+
+        if not eligible:
+            return
+
+        email_service = ReviewEmailService()
+
+        for candidate in eligible:
+            # 获取该用户的待复习主题
+            async with get_scoped_session() as db:
+                topics_stmt = (
+                    select(StudyActivityLog.title)
+                    .join(ReviewSchedule, ReviewSchedule.activity_id == StudyActivityLog.id)
+                    .where(
+                        ReviewSchedule.user_id == candidate.id,
+                        ReviewSchedule.status == "pending",
+                    )
+                    .distinct()
+                    .limit(5)
+                )
+                topics_result = await db.execute(topics_stmt)
+                pending_topics = [row[0] for row in topics_result.all() if row[0]]
+
+            if not pending_topics:
+                continue
+
+            days_inactive = (today - candidate.earliest_due).days if candidate.earliest_due else 2
+
+            try:
+                success = await email_service.send_inactivity_care_email(
+                    user_email=candidate.email,
+                    nickname=candidate.nickname or "同学",
+                    days_inactive=days_inactive,
+                    pending_topics=pending_topics,
+                )
+
+                if success:
+                    async with get_scoped_session() as db:
+                        log = ReviewEmailLog(
+                            user_id=candidate.id,
+                            email_type="inactivity_care",
+                            spaces_included=None,
+                            quiz_ids=None,
+                        )
+                        db.add(log)
+                        await db.commit()
+
+                    logger.info(
+                        "Sent inactivity care email to user=%s (inactive %d days)",
+                        candidate.id, days_inactive,
+                    )
+            except Exception:
+                logger.exception("Error sending inactivity email to user=%s", candidate.id)
+
+    except Exception:
+        logger.exception("Error in inactivity check")
+
+
+async def _update_state(today_beijing: Any, row_exists: bool) -> None:
+    """更新 SchedulerState。"""
+    async with get_scoped_session() as db:
+        if row_exists:
+            lock_result = await db.execute(
+                select(SchedulerState)
+                .where(SchedulerState.job_id == JOB_ID)
+                .with_for_update(skip_locked=True)
+            )
+            state = lock_result.scalar_one_or_none()
+            if state is None:
+                return
+            if state.last_run_date == today_beijing:
+                return
+            await db.execute(
+                update(SchedulerState)
+                .where(SchedulerState.job_id == JOB_ID)
+                .values(last_run_date=today_beijing, last_run_at=func.now())
+            )
+        else:
+            db.add(SchedulerState(job_id=JOB_ID, last_run_date=today_beijing))
+
+        try:
+            await db.commit()
+        except IntegrityError:
+            logger.info("Another worker already inserted state record for %s", JOB_ID)
+            await db.rollback()
