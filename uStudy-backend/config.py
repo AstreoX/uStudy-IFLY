@@ -193,7 +193,7 @@ class Settings(BaseSettings):
     memory_extraction_model: str = "moonshotai/kimi-k2.5"  # 记忆提取用的 LLM 模型（空则使用默认模型）
 
     # 知识图谱生成配置
-    knowledge_graph_model: str = "bytedance-seed/seed-2.0-lite"  # 空则使用默认模型
+    knowledge_graph_model: str = "z-ai/glm-5-turbo"  # 空则使用默认模型
 
     # 文档知识图谱提取配置
     document_kg_max_concurrent_extractions: int = 5  # Phase 1 并发 LLM 调用数
