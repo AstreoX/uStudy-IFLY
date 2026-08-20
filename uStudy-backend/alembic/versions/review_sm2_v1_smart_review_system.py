@@ -1,7 +1,7 @@
 """smart review system: SM-2 algorithm, review mode, email log
 
 Revision ID: review_sm2_v1
-Revises: vec_mem_table_v1
+Revises: doc_kg_v1
 Create Date: 2026-03-17
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 # revision identifiers, used by Alembic.
 revision: str = "review_sm2_v1"
-down_revision: Union[str, None] = "vec_mem_table_v1"
+down_revision: Union[str, None] = "doc_kg_v1"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
