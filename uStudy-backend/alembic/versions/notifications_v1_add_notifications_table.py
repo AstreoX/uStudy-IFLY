@@ -27,6 +27,7 @@ def upgrade() -> None:
         "INACTIVITY_CARE",
         "SYSTEM_ANNOUNCEMENT",
         name="notificationtype",
+        create_type=False,
     )
     notification_type.create(op.get_bind(), checkfirst=True)
 
