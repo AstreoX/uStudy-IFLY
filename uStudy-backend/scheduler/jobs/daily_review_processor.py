@@ -133,8 +133,48 @@ async def process_daily_reviews() -> None:
                         )
                         summary["quiz_id"] = str(quiz_id) if quiz_id else None
 
+                # 创建应用内通知
+                try:
+                    from db.models import NotificationType
+                    from notifications.service import NotificationService
+
+                    if summary["quiz_id"]:
+                        await NotificationService.create_and_push(
+                            user_id=user_data.user_id,
+                            notification_type=NotificationType.REVIEW_QUIZ_READY,
+                            title="复习测试已准备好",
+                            body=f"「{group.space_name}」有 {len(group.reviews)} 个知识点需要复习，测试题已生成",
+                            data={
+                                "quiz_id": summary["quiz_id"],
+                                "space_id": str(group.space_id),
+                                "space_name": group.space_name,
+                                "action": "start_quiz",
+                            },
+                        )
+                    else:
+                        # mode=1 (suggestions only) 或 mode>=2 但测试题生成失败
+                        await NotificationService.create_and_push(
+                            user_id=user_data.user_id,
+                            notification_type=NotificationType.REVIEW_REMINDER,
+                            title="复习提醒",
+                            body=f"「{group.space_name}」有 {len(group.reviews)} 个知识点到期需要复习",
+                            data={
+                                "space_id": str(group.space_id),
+                                "space_name": group.space_name,
+                                "action": "open_space",
+                            },
+                        )
+                except Exception:
+                    logger.warning(
+                        "Failed to create notification for user=%s space=%s",
+                        user_data.user_id, group.space_id, exc_info=True,
+                    )
+
                 user_summaries.append(summary)
             generation_results[user_data.user_id] = user_summaries
+
+            from activity.suggestion import invalidate_suggestion_cache
+            invalidate_suggestion_cache(user_data.user_id)
 
         tasks = [process_user(ud) for ud in user_reviews]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -502,6 +542,25 @@ async def _check_inactivity(today: Any) -> None:
             days_inactive = (today - candidate.earliest_due).days if candidate.earliest_due else 2
 
             try:
+                # 创建应用内通知
+                try:
+                    from db.models import NotificationType
+                    from notifications.service import NotificationService
+
+                    topics_preview = "、".join(pending_topics[:3])
+                    await NotificationService.create_and_push(
+                        user_id=candidate.id,
+                        notification_type=NotificationType.INACTIVITY_CARE,
+                        title="好久不见",
+                        body=f"之前学过的{topics_preview}等知识还记得吗？适当回顾一下可以巩固记忆",
+                        data={"action": "go_review"},
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to create inactivity notification for user=%s",
+                        candidate.id, exc_info=True,
+                    )
+
                 success = await email_service.send_inactivity_care_email(
                     user_email=candidate.email,
                     nickname=candidate.nickname or "同学",

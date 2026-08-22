@@ -73,9 +73,39 @@ INACTIVITY_EMAIL_SYSTEM_PROMPT = """你是 uStudy 学习助手，负责为一段
 """
 
 
-def _wrap_email_html(text_content: str, title: str) -> str:
-    """将纯文本内容包装为 HTML 邮件。"""
+def _wrap_email_html(
+    text_content: str,
+    title: str,
+    quiz_links: list[dict[str, str]] | None = None,
+) -> str:
+    """将纯文本内容包装为 HTML 邮件。
+
+    Args:
+        text_content: 邮件正文纯文本
+        title: 邮件标题
+        quiz_links: 可选的测试题深链接列表 [{space_name, url}, ...]
+    """
     escaped = html.escape(text_content).replace("\n", "<br>")
+
+    # 构建测试题深链接按钮
+    buttons_html = ""
+    if quiz_links:
+        buttons_parts = []
+        for link in quiz_links:
+            safe_name = html.escape(link["space_name"])
+            safe_url = html.escape(link["url"])
+            buttons_parts.append(
+                f'<a href="{safe_url}" style="display:inline-block; background:#6C5CE7;'
+                f' color:#ffffff; padding:12px 24px; border-radius:8px;'
+                f' text-decoration:none; font-size:14px; margin:8px 4px;">'
+                f'开始「{safe_name}」复习测试</a>'
+            )
+        buttons_html = (
+            '<div style="text-align:center; margin-top:20px;">'
+            + "".join(buttons_parts)
+            + "</div>"
+        )
+
     return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><title>{html.escape(title)}</title></head>
@@ -87,6 +117,7 @@ def _wrap_email_html(text_content: str, title: str) -> str:
     <div style="background: #f8f9fa; border-radius: 12px; padding: 24px;
                 line-height: 1.8; color: #333; font-size: 15px;">
         {escaped}
+        {buttons_html}
     </div>
     <p style="color: #999; font-size: 12px; text-align: center; margin-top: 24px;">
         此邮件由 uStudy 自动发送，如不需要可在学习空间设置中关闭复习提醒
@@ -153,7 +184,18 @@ class ReviewEmailService:
             nickname, review_summaries,
         )
         subject = "【uStudy】你的今日复习计划已准备好"
-        html_content = _wrap_email_html(text_content, subject)
+
+        # 构建测试题深链接
+        quiz_links = [
+            {
+                "space_name": s.get("space_name", "未命名空间"),
+                "url": f"https://app.ustudy.top/pages/test/test?quizId={s['quiz_id']}",
+            }
+            for s in review_summaries
+            if s.get("quiz_id")
+        ]
+
+        html_content = _wrap_email_html(text_content, subject, quiz_links=quiz_links)
         return await self._send_email(user_email, subject, html_content)
 
     async def send_inactivity_care_email(

@@ -194,6 +194,15 @@ def _heuristic_suggestion(
     }
 
 
+def invalidate_suggestion_cache(user_id: UUID) -> None:
+    """清除指定用户的学习建议缓存（所有时间槽），复习事项变更时调用。"""
+    keys_to_remove = [k for k in _suggestion_cache if k[0] == str(user_id)]
+    for k in keys_to_remove:
+        del _suggestion_cache[k]
+    if keys_to_remove:
+        logger.info("Invalidated %d suggestion cache entries for user %s", len(keys_to_remove), user_id)
+
+
 def _get_cached(user_id: UUID) -> dict | None:
     """Return cached result if still valid (within current time slot)."""
     slot_str, _ = _get_slot_info()

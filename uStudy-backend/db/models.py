@@ -187,6 +187,15 @@ class NoteAttachmentType(str, enum.Enum):
     LINK = "link"
 
 
+class NotificationType(str, enum.Enum):
+    """应用内通知类型"""
+
+    REVIEW_QUIZ_READY = "review_quiz_ready"
+    REVIEW_REMINDER = "review_reminder"
+    INACTIVITY_CARE = "inactivity_care"
+    SYSTEM_ANNOUNCEMENT = "system_announcement"
+
+
 class SpaceMemberRole(str, enum.Enum):
     """协作空间成员角色"""
 
@@ -1607,6 +1616,44 @@ class ReviewEmailLog(Base):
 
     __table_args__ = (
         Index("idx_review_email_user_type_date", "user_id", "email_type", "sent_at"),
+    )
+
+
+class Notification(Base):
+    """应用内通知"""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    type: Mapped[NotificationType] = mapped_column(
+        Enum(NotificationType), nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    data: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True,
+        comment="灵活载荷: quiz_id, space_id, space_name, action 等",
+    )
+    is_read: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+
+    # 关系
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        Index("idx_notif_user_read_created", "user_id", "is_read", "created_at"),
+        Index("idx_notif_user_created", "user_id", "created_at"),
     )
 
 

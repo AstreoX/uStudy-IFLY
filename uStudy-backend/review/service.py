@@ -226,6 +226,10 @@ async def complete_review(user_id: UUID, review_id: UUID) -> bool:
 
         await session.commit()
         logger.info(f"Manually completed review {review_id} for user {user_id}")
+
+        from activity.suggestion import invalidate_suggestion_cache
+        invalidate_suggestion_cache(user_id)
+
         return True
 
 
@@ -291,6 +295,10 @@ async def complete_review_with_quiz_score(
             )
 
         await session.commit()
+
+        from activity.suggestion import invalidate_suggestion_cache
+        invalidate_suggestion_cache(user_id)
+
         return next_schedule
 
 
