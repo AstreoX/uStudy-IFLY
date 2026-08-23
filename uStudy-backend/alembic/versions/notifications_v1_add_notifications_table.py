@@ -8,6 +8,7 @@ Create Date: 2026-03-18
 from typing import Sequence, Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from alembic import op
@@ -20,16 +21,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create enum type (stores uppercase member names per project convention)
-    notification_type = sa.Enum(
-        "REVIEW_QUIZ_READY",
-        "REVIEW_REMINDER",
-        "INACTIVITY_CARE",
-        "SYSTEM_ANNOUNCEMENT",
-        name="notificationtype",
-        create_type=False,
-    )
-    notification_type.create(op.get_bind(), checkfirst=True)
+    # Create enum type idempotently via raw SQL (avoids sa.Enum checkfirst issues with async PG)
+    op.execute(sa.text("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'notificationtype') THEN
+                CREATE TYPE notificationtype AS ENUM (
+                    'REVIEW_QUIZ_READY', 'REVIEW_REMINDER',
+                    'INACTIVITY_CARE', 'SYSTEM_ANNOUNCEMENT'
+                );
+            END IF;
+        END$$;
+    """))
 
     op.create_table(
         "notifications",
@@ -42,7 +45,14 @@ def upgrade() -> None:
         ),
         sa.Column(
             "type",
-            notification_type,
+            PG_ENUM(
+                "REVIEW_QUIZ_READY",
+                "REVIEW_REMINDER",
+                "INACTIVITY_CARE",
+                "SYSTEM_ANNOUNCEMENT",
+                name="notificationtype",
+                create_type=False,
+            ),
             nullable=False,
         ),
         sa.Column("title", sa.String(200), nullable=False),
