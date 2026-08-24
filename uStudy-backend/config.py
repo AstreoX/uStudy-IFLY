@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     openrouter_bridge_url: str = ""  # JP bridge for region-restricted models (Gemini etc.)
     openrouter_model: str = "bytedance-seed/seed-2.0-lite"
     gemini_model: str = "z-ai/glm-4.7-flash"
+    quiz_reasoning_model: str = "google/gemini-3.1-pro-preview"  # 推理型题目（数学/物理/逻辑等）
     llm_timeout_seconds: int = 300  # 5分钟
     llm_max_retries: int = 3
     llm_proxy_url: str = ""  # 可选：显式设置代理 URL，为空则使用系统环境变量

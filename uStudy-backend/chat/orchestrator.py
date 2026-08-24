@@ -781,6 +781,87 @@ class LLMOrchestrator:
             result["node_label"] = node_label
         return result
 
+    async def _auto_save_code_result_as_note(
+        self,
+        code: str,
+        stdout: str,
+        description: str,
+        image_url: str | None = None,
+        image_bytes: bytes | None = None,
+    ) -> dict | None:
+        """Auto-save a code sandbox execution result as a note.
+
+        Returns dict with note_id/note_title on success, None on failure.
+        """
+        # Guard: skip if no meaningful output
+        if not stdout.strip() and not image_url:
+            return None
+
+        # Build title
+        if description:
+            note_title = (description[:47] + "...") if len(description) > 50 else description
+        else:
+            note_title = "Python 代码执行结果"
+
+        # Build Markdown content
+        parts = []
+
+        # Code block (truncate to 100 lines)
+        code_lines = code.split("\n")
+        if len(code_lines) > 100:
+            code_text = "\n".join(code_lines[:100]) + "\n# ...（代码已截断，共 {} 行）".format(len(code_lines))
+        else:
+            code_text = code
+        parts.append(f"```python\n{code_text}\n```")
+
+        # Stdout (truncate to 200 lines)
+        if stdout.strip():
+            stdout_lines = stdout.split("\n")
+            if len(stdout_lines) > 200:
+                stdout_text = "\n".join(stdout_lines[:200]) + "\n...（输出已截断，共 {} 行）".format(len(stdout_lines))
+            else:
+                stdout_text = stdout
+            parts.append(f"**输出:**\n```\n{stdout_text}\n```")
+
+        # Image reference
+        if image_url:
+            parts.append(f"**生成图像:**\n![代码输出图像]({image_url})")
+
+        content = "\n\n".join(parts)
+
+        # Phase 1: Create note
+        try:
+            async with get_scoped_session() as session:
+                note_svc = NoteService(session)
+                note_resp = await note_svc.create_note(
+                    self.user_id,
+                    self.space_id,
+                    NoteCreate(title=note_title, content=content),
+                )
+            logger.info("Auto-saved code result as note %s in space %s", note_resp.id, self.space_id)
+        except Exception:
+            logger.warning("Failed to create note for code result auto-save", exc_info=True)
+            return None
+
+        # Phase 2: Add image attachment if available
+        if image_bytes:
+            try:
+                async with get_scoped_session() as session:
+                    note_svc = NoteService(session)
+                    await note_svc.add_attachment(
+                        self.user_id,
+                        self.space_id,
+                        note_resp.id,
+                        file_data=image_bytes,
+                        original_filename="code_output.png",
+                        mime_type="image/png",
+                    )
+                logger.info("Added code output image to note %s", note_resp.id)
+            except Exception:
+                logger.warning("Failed to add image attachment to note %s", note_resp.id, exc_info=True)
+
+        return {"note_id": str(note_resp.id), "note_title": note_title}
+
     async def _pre_retrieve_rag_context(self, query: str) -> tuple[str | None, list[dict]]:
         """自动 RAG 预检索，返回 (格式化的文档上下文, citations列表)。
 
@@ -1185,6 +1266,28 @@ class LLMOrchestrator:
                             tool_call.name,
                             tool_call.arguments,
                         )
+                        # Auto-save code result as note
+                        if tool_result.success and tool_result.data:
+                            _stdout = tool_result.data.get("stdout", "")
+                            _img_url = tool_result.data.get("image_url")
+                            if _stdout.strip() or _img_url:
+                                import base64 as _b64
+                                _img_bytes = (
+                                    _b64.b64decode(tool_result.image_base64)
+                                    if tool_result.image_base64
+                                    else None
+                                )
+                                note_info = await self._auto_save_code_result_as_note(
+                                    code=tool_call.arguments.get("code", ""),
+                                    stdout=_stdout,
+                                    description=tool_call.arguments.get("description", ""),
+                                    image_url=_img_url,
+                                    image_bytes=_img_bytes,
+                                )
+                                if note_info:
+                                    tool_result.data["note_id"] = note_info["note_id"]
+                                    tool_result.data["note_title"] = note_info["note_title"]
+                                    tool_result.data["auto_saved"] = True
                     elif tool_call.name in self._note_tool_names:
                         if tool_call.name == "create_note":
                             # Require user confirmation before creating note

@@ -9,6 +9,7 @@
 """
 
 import asyncio
+import hashlib
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -16,9 +17,8 @@ from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import AsyncSessionLocal, get_scoped_session
 from db.models import (
@@ -42,6 +42,12 @@ BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 
 # 并发控制：同时生成的测试题任务数
 MAX_CONCURRENT_GENERATIONS = 5
+
+
+def _stable_lock_key(*parts: str) -> int:
+    """生成跨进程稳定的 advisory lock key（不受 PYTHONHASHSEED 影响）。"""
+    raw = ":".join(parts).encode()
+    return int(hashlib.md5(raw).hexdigest()[:8], 16) & 0x7FFFFFFF
 
 
 @dataclass
@@ -86,27 +92,53 @@ async def process_daily_reviews() -> None:
     today_utc = datetime.now(timezone.utc).date()
 
     try:
-        # Phase 0: 去重检查
-        row_exists = False
+        # Phase 0: 原子性抢占 — 在一个短事务内完成互斥 + 日期检查 + 标记
+        # 使用 pg_try_advisory_xact_lock（事务级，commit 时自动释放），不长期占连接
+        lock_key = _stable_lock_key(JOB_ID)
         async with get_scoped_session() as db:
+            lock_result = await db.execute(
+                text("SELECT pg_try_advisory_xact_lock(:key)"),
+                {"key": lock_key},
+            )
+            if not lock_result.scalar():
+                logger.info("Another worker is running daily_review_processor, skipping")
+                return
+
             check_result = await db.execute(
                 select(SchedulerState.last_run_date).where(
                     SchedulerState.job_id == JOB_ID
                 )
             )
             existing_date = check_result.scalar_one_or_none()
-            if existing_date is not None:
-                row_exists = True
-                if existing_date == today_beijing:
-                    logger.info("Daily review already processed today (%s), skipping", today_beijing)
-                    return
+            if existing_date is not None and existing_date == today_beijing:
+                logger.info("Daily review already processed today (%s), skipping", today_beijing)
+                return
+
+            # 立即标记今天已处理（占位），防止其他 worker 重复执行
+            row_exists = existing_date is not None
+            if row_exists:
+                await db.execute(
+                    update(SchedulerState)
+                    .where(SchedulerState.job_id == JOB_ID)
+                    .values(last_run_date=today_beijing, last_run_at=func.now())
+                )
+            else:
+                db.add(SchedulerState(job_id=JOB_ID, last_run_date=today_beijing))
+
+            try:
+                await db.commit()  # 提交占位 + 释放 xact lock + 归还连接
+            except IntegrityError:
+                logger.info("Another worker already claimed daily_review_processor for today")
+                await db.rollback()
+                return
+
+        # 此后无 DB session 被持有 — 安全地执行长时间 LLM 任务
 
         # Phase 1: 收集数据
         user_reviews = await _gather_review_data(today_utc)
         if not user_reviews:
             logger.info("No users with due reviews today")
             await _check_inactivity(today_utc)
-            await _update_state(today_beijing, row_exists)
             return
 
         logger.info("Found %d users with due reviews", len(user_reviews))
@@ -133,43 +165,6 @@ async def process_daily_reviews() -> None:
                         )
                         summary["quiz_id"] = str(quiz_id) if quiz_id else None
 
-                # 创建应用内通知
-                try:
-                    from db.models import NotificationType
-                    from notifications.service import NotificationService
-
-                    if summary["quiz_id"]:
-                        await NotificationService.create_and_push(
-                            user_id=user_data.user_id,
-                            notification_type=NotificationType.REVIEW_QUIZ_READY,
-                            title="复习测试已准备好",
-                            body=f"「{group.space_name}」有 {len(group.reviews)} 个知识点需要复习，测试题已生成",
-                            data={
-                                "quiz_id": summary["quiz_id"],
-                                "space_id": str(group.space_id),
-                                "space_name": group.space_name,
-                                "action": "start_quiz",
-                            },
-                        )
-                    else:
-                        # mode=1 (suggestions only) 或 mode>=2 但测试题生成失败
-                        await NotificationService.create_and_push(
-                            user_id=user_data.user_id,
-                            notification_type=NotificationType.REVIEW_REMINDER,
-                            title="复习提醒",
-                            body=f"「{group.space_name}」有 {len(group.reviews)} 个知识点到期需要复习",
-                            data={
-                                "space_id": str(group.space_id),
-                                "space_name": group.space_name,
-                                "action": "open_space",
-                            },
-                        )
-                except Exception:
-                    logger.warning(
-                        "Failed to create notification for user=%s space=%s",
-                        user_data.user_id, group.space_id, exc_info=True,
-                    )
-
                 user_summaries.append(summary)
             generation_results[user_data.user_id] = user_summaries
 
@@ -184,14 +179,12 @@ async def process_daily_reviews() -> None:
                     "process_user failed for user=%s: %s", ud.user_id, result,
                 )
 
-        # Phase 3: 发送邮件
+        # Phase 3: 所有测试题生成完成后，统一发送通知和邮件
+        await _send_notifications(user_reviews, generation_results)
         await _send_review_emails(user_reviews, generation_results)
 
         # Phase 4: 不活跃关怀检测
         await _check_inactivity(today_utc)
-
-        # Phase 5: 更新状态
-        await _update_state(today_beijing, row_exists)
 
         logger.info("Daily review processor completed successfully")
 
@@ -281,14 +274,25 @@ async def _generate_review_quiz(
 
     两级 Agent：Planner → TestGenerationAgent
     """
-    from agents.llm.client import OpenRouterClient
     from agents.review_quiz_planner import ReviewQuizPlannerAgent
     from agents.test_generation_agent import TestGenerationAgent
 
     try:
-        # 检查是否已有未完成的 review quiz
-        async with get_scoped_session() as db:
-            existing = await db.execute(
+        # 纵深防御：短事务内检查 + advisory lock 防并发
+        pair_key = _stable_lock_key(str(user_id), str(group.space_id))
+        async with get_scoped_session() as check_db:
+            lock_ok = await check_db.execute(
+                text("SELECT pg_try_advisory_xact_lock(:key)"),
+                {"key": pair_key},
+            )
+            if not lock_ok.scalar():
+                logger.info(
+                    "Another worker generating quiz for user=%s space=%s, skipping",
+                    user_id, group.space_id,
+                )
+                return None
+
+            existing = await check_db.execute(
                 select(func.count(ReviewSchedule.id))
                 .select_from(ReviewSchedule)
                 .join(StudyActivityLog, ReviewSchedule.activity_id == StudyActivityLog.id)
@@ -305,8 +309,9 @@ async def _generate_review_quiz(
                     user_id, group.space_id,
                 )
                 return None
+            await check_db.commit()  # 释放 xact lock + 连接
 
-        # 第 1 级：Planner
+        # 第 1 级：Planner（纯 LLM 调用，无 DB 连接占用）
         planner = ReviewQuizPlannerAgent()
         review_items = [
             {
@@ -408,6 +413,55 @@ async def _generate_review_quiz(
             user_id, group.space_id,
         )
         return None
+
+
+async def _send_notifications(
+    user_reviews: list[UserReviewData],
+    generation_results: dict[UUID, list[dict]],
+) -> None:
+    """所有测试题生成完成后，为每个用户发送一条汇总通知。"""
+    from db.models import NotificationType
+    from notifications.service import NotificationService
+
+    for user_data in user_reviews:
+        summaries = generation_results.get(user_data.user_id, [])
+        if not summaries:
+            continue
+
+        quiz_summaries = [s for s in summaries if s.get("quiz_id")]
+        reminder_summaries = [s for s in summaries if not s.get("quiz_id")]
+
+        try:
+            if quiz_summaries:
+                space_names = "、".join(s["space_name"] for s in quiz_summaries[:3])
+                total_due = sum(s["due_count"] for s in quiz_summaries)
+                # 发送一条汇总通知，附带第一个 quiz 的 ID 供跳转
+                await NotificationService.create_and_push(
+                    user_id=user_data.user_id,
+                    notification_type=NotificationType.REVIEW_QUIZ_READY,
+                    title="复习测试已准备好",
+                    body=f"「{space_names}」等共 {total_due} 个知识点需要复习，测试题已生成",
+                    data={
+                        "quiz_id": quiz_summaries[0]["quiz_id"],
+                        "action": "start_quiz",
+                    },
+                )
+
+            if reminder_summaries:
+                space_names = "、".join(s["space_name"] for s in reminder_summaries[:3])
+                total_due = sum(s["due_count"] for s in reminder_summaries)
+                await NotificationService.create_and_push(
+                    user_id=user_data.user_id,
+                    notification_type=NotificationType.REVIEW_REMINDER,
+                    title="复习提醒",
+                    body=f"「{space_names}」等共 {total_due} 个知识点到期需要复习",
+                    data={"action": "go_review"},
+                )
+        except Exception:
+            logger.warning(
+                "Failed to create notification for user=%s",
+                user_data.user_id, exc_info=True,
+            )
 
 
 async def _send_review_emails(
@@ -590,30 +644,3 @@ async def _check_inactivity(today: Any) -> None:
         logger.exception("Error in inactivity check")
 
 
-async def _update_state(today_beijing: Any, row_exists: bool) -> None:
-    """更新 SchedulerState。"""
-    async with get_scoped_session() as db:
-        if row_exists:
-            lock_result = await db.execute(
-                select(SchedulerState)
-                .where(SchedulerState.job_id == JOB_ID)
-                .with_for_update(skip_locked=True)
-            )
-            state = lock_result.scalar_one_or_none()
-            if state is None:
-                return
-            if state.last_run_date == today_beijing:
-                return
-            await db.execute(
-                update(SchedulerState)
-                .where(SchedulerState.job_id == JOB_ID)
-                .values(last_run_date=today_beijing, last_run_at=func.now())
-            )
-        else:
-            db.add(SchedulerState(job_id=JOB_ID, last_run_date=today_beijing))
-
-        try:
-            await db.commit()
-        except IntegrityError:
-            logger.info("Another worker already inserted state record for %s", JOB_ID)
-            await db.rollback()

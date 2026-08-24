@@ -75,8 +75,27 @@ class TestGenerationAgent:
         # 计算期望的题目总数
         expected_total = sum(item.get("question_num", 0) for item in test_struct)
 
+        # 分类主题并选择模型
+        needs_reasoning = await self._classify_topic(topic)
+        if needs_reasoning:
+            selected_model = self.settings.quiz_reasoning_model
+            logger.info("主题「%s」判定为推理型，切换到 %s", topic, selected_model)
+            llm_client = OpenRouterClient(model_override=selected_model)
+        else:
+            selected_model = self.settings.gemini_model
+            logger.info("主题「%s」判定为常识型，使用默认模型 %s", topic, selected_model)
+            llm_client = self.llm_client
+
+        self.debug_logs.append({
+            "step": "model_selection",
+            "topic": topic,
+            "needs_reasoning": needs_reasoning,
+            "selected_model": selected_model,
+        })
+
         # 调用 LLM 并处理工具调用
         created_questions: list[CreatedQuestion] = []
+        seen_stems: set[str] = set()  # 去重：跟踪已生成的题干
 
         for iteration in range(MAX_LLM_ITERATIONS):
             logger.debug("LLM 调用迭代 %d, 已创建题目数: %d", iteration, len(created_questions))
@@ -101,7 +120,7 @@ class TestGenerationAgent:
                     logger.warning("进度回调失败（调用前）: %s", cb_err)
 
             try:
-                result = await self.llm_client.complete_with_tools(
+                result = await llm_client.complete_with_tools(
                     messages=messages,
                     tools=QUIZ_TOOLS,
                     temperature=0.7,
@@ -158,6 +177,20 @@ class TestGenerationAgent:
                             tool_call.name,
                             tool_call.arguments,
                         )
+
+                        # 去重检查
+                        if self._is_duplicate(question.question_stem, seen_stems):
+                            logger.warning(
+                                "检测到重复题目，已跳过: %s",
+                                question.question_stem[:80],
+                            )
+                            tool_results.append({
+                                "tool_call_id": tool_call.id,
+                                "role": "tool",
+                                "content": f"题目「{question.question_stem[:80]}」与已创建的题目重复，已跳过。请生成一道不同的题目。",
+                            })
+                            continue
+
                         created_questions.append(question)
 
                         # 统计各题型数量，构建带进度的返回信息
@@ -169,10 +202,11 @@ class TestGenerationAgent:
                         )
                         current_for_type = type_counts.get(current_type, 0)
 
+                        stem_preview = question.question_stem[:80]
                         tool_results.append({
                             "tool_call_id": tool_call.id,
                             "role": "tool",
-                            "content": f"成功创建 {current_type} 题目 ({current_for_type}/{target_for_type})。总进度: {len(created_questions)}/{expected_total}",
+                            "content": f"成功创建 {current_type} 题目「{stem_preview}」({current_for_type}/{target_for_type})。总进度: {len(created_questions)}/{expected_total}。请确保后续题目与已创建的题目不重复。",
                         })
                         logger.debug(
                             "工具调用成功: %s, 题目: %s, 进度: %d/%d",
@@ -238,6 +272,45 @@ class TestGenerationAgent:
         )
 
         return expected_total, successful_count, self.debug_logs
+
+    async def _classify_topic(self, topic: str) -> bool:
+        """
+        判断主题是否需要推理能力（数学、物理、逻辑、编程算法等）。
+
+        使用便宜模型做轻量级分类，异常时默认返回 False（降级使用便宜模型）。
+        """
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    "判断以下测试题主题是否需要较强的推理能力"
+                    "（如数学计算、物理推导、化学方程式、逻辑分析、编程算法等）。\n"
+                    f"主题：{topic}\n"
+                    "仅回复一个词：REASONING 或 GENERAL"
+                ),
+            },
+        ]
+        try:
+            reply = await self.llm_client.complete(
+                messages=messages,
+                temperature=0.0,
+                max_tokens=16,
+            )
+            result = "REASONING" in reply.upper()
+            logger.debug("主题分类结果: topic=%s, reply=%s, reasoning=%s", topic, reply.strip(), result)
+            return result
+        except Exception as e:
+            logger.warning("主题分类失败，降级使用默认模型: %s", e)
+            return False
+
+    @staticmethod
+    def _is_duplicate(stem: str, seen_stems: set[str]) -> bool:
+        """检查题干是否与已有题目重复"""
+        normalized = stem.strip().lower()
+        if normalized in seen_stems:
+            return True
+        seen_stems.add(normalized)
+        return False
 
     def _count_by_type(self, questions: list[CreatedQuestion]) -> dict[str, int]:
         """统计各题型已创建的数量"""
