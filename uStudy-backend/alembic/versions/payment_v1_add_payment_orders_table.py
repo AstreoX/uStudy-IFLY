@@ -19,18 +19,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create enum types
-    orderstatus_enum = sa.Enum(
-        "pending", "paid", "expired", "cancelled",
-        name="orderstatus",
-    )
-    orderstatus_enum.create(op.get_bind(), checkfirst=True)
-
-    billingcycle_enum = sa.Enum(
-        "monthly", "semester", "yearly",
-        name="billingcycle",
-    )
-    billingcycle_enum.create(op.get_bind(), checkfirst=True)
+    # Create enum types idempotently via raw SQL
+    op.execute(sa.text("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'orderstatus') THEN
+                CREATE TYPE orderstatus AS ENUM ('pending', 'paid', 'expired', 'cancelled');
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'billingcycle') THEN
+                CREATE TYPE billingcycle AS ENUM ('monthly', 'semester', 'yearly');
+            END IF;
+        END$$;
+    """))
 
     # Create payment_orders table
     op.create_table(

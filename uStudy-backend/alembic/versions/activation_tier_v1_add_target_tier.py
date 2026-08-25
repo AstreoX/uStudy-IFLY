@@ -8,6 +8,7 @@ Create Date: 2026-03-15
 from typing import Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -23,7 +24,7 @@ def upgrade() -> None:
         "activation_codes",
         sa.Column(
             "target_tier",
-            sa.Enum(
+            PG_ENUM(
                 "FREE", "BASIC", "PREMIUM", "ALPHA", "ULTRA",
                 name="subscriptiontier",
                 create_type=False,

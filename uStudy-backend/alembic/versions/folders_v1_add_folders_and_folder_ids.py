@@ -8,6 +8,7 @@ Create Date: 2026-03-19
 from typing import Sequence, Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 from sqlalchemy.dialects.postgresql import UUID
 
 from alembic import op
@@ -49,7 +50,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "content_type",
-            sa.Enum("notes", "quizzes", name="foldercontenttype", create_type=False),
+            PG_ENUM("notes", "quizzes", name="foldercontenttype", create_type=False),
             nullable=False,
         ),
         sa.Column("name", sa.String(100), nullable=False),
