@@ -40,6 +40,7 @@ class NoteCreate(BaseModel):
     title: Optional[str] = Field(None, max_length=200)
     content: Optional[str] = None
     node_id: Optional[UUID] = None
+    folder_id: Optional[UUID] = None
     sort_order: int = Field(default=0)
 
 
@@ -55,6 +56,7 @@ class NoteResponse(BaseModel):
     space_id: UUID
     node_id: Optional[UUID] = None
     node_label: Optional[str] = None
+    folder_id: Optional[UUID] = None
     title: Optional[str] = None
     content: Optional[str] = None
     note_type: str = "text"
@@ -74,6 +76,7 @@ class NoteListItem(BaseModel):
     space_id: UUID
     node_id: Optional[UUID] = None
     node_label: Optional[str] = None
+    folder_id: Optional[UUID] = None
     title: Optional[str] = None
     content: Optional[str] = None
     note_type: str = "text"

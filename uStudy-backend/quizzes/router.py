@@ -1,5 +1,6 @@
 """Quiz 模块 API 路由"""
 
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -38,6 +39,7 @@ router = APIRouter(prefix="/api/quizzes", tags=["quizzes"])
 )
 async def get_quizzes_by_space(
     space_id: UUID = Query(..., description="学习空间 ID"),
+    folder_id: Optional[UUID] = Query(None, description="筛选指定文件夹的测验"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[QuizListItemResponse]:
@@ -45,13 +47,16 @@ async def get_quizzes_by_space(
     获取空间所有测验
 
     - **space_id**: 学习空间 ID
+    - **folder_id**: 文件夹 ID（可选）
 
     返回测验列表，每条包含作答状态和得分。
     """
     service = QuizService(db)
 
     try:
-        return await service.get_quizzes_by_space(user.id, space_id)
+        return await service.get_quizzes_by_space(
+            user.id, space_id, folder_id=folder_id
+        )
     except QuizAccessDeniedError:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

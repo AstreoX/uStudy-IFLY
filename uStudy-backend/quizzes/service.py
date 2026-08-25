@@ -428,6 +428,7 @@ class QuizService:
         self,
         user_id: UUID,
         space_id: UUID,
+        folder_id: "UUID | None" = None,
     ) -> list[QuizListItemResponse]:
         """
         获取空间内所有测验列表（带作答状态）
@@ -435,6 +436,7 @@ class QuizService:
         Args:
             user_id: 用户 ID
             space_id: 学习空间 ID
+            folder_id: 文件夹 ID（可选，筛选指定文件夹）
 
         Returns:
             list[QuizListItemResponse]
@@ -446,9 +448,11 @@ class QuizService:
         await self._check_space_access(space_id, user_id)
 
         # 查询空间内所有测验
-        quizzes_result = await self.db.execute(
-            select(Quiz).where(Quiz.space_id == space_id).order_by(Quiz.created_at.desc())
-        )
+        stmt = select(Quiz).where(Quiz.space_id == space_id).order_by(Quiz.created_at.desc())
+        if folder_id is not None:
+            stmt = stmt.where(Quiz.folder_id == folder_id)
+
+        quizzes_result = await self.db.execute(stmt)
         quizzes = quizzes_result.scalars().all()
 
         # 查询用户在这些测验中的作答记录
@@ -472,6 +476,7 @@ class QuizService:
                     topic=quiz.topic,
                     difficulty=quiz.difficulty.value,
                     total_questions=quiz.total_questions,
+                    folder_id=quiz.folder_id,
                     created_at=quiz.created_at,
                     has_attempt=attempt is not None,
                     attempt_score=attempt.score if attempt else None,

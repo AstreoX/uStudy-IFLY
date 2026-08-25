@@ -71,6 +71,7 @@ class NoteService:
         note = Note(
             space_id=space_id,
             node_id=request.node_id,
+            folder_id=request.folder_id,
             title=request.title,
             content=request.content,
             sort_order=request.sort_order,
@@ -88,6 +89,7 @@ class NoteService:
         space_id: UUID,
         node_id: Optional[UUID] = None,
         free_only: bool = False,
+        folder_id: Optional[UUID] = None,
     ) -> list[NoteListItem]:
         await self._verify_space_access(user_id, space_id)
 
@@ -111,6 +113,10 @@ class NoteService:
         elif free_only:
             stmt = stmt.where(Note.node_id.is_(None))
 
+        # folder_id filtering: explicit value filters by folder, "root" means folder_id IS NULL
+        if folder_id is not None:
+            stmt = stmt.where(Note.folder_id == folder_id)
+
         result = await self.db.execute(stmt)
         rows = result.all()
 
@@ -120,6 +126,7 @@ class NoteService:
                 space_id=note.space_id,
                 node_id=note.node_id,
                 node_label=node_label,
+                folder_id=note.folder_id,
                 title=note.title,
                 content=note.content,
                 note_type=note.note_type,

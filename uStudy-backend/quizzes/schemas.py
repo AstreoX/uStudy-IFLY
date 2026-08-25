@@ -134,6 +134,7 @@ class QuizListItemResponse(BaseModel):
     difficulty: str = Field(..., description="难度级别")
     total_questions: int = Field(..., description="题目总数")
     is_review_quiz: bool = Field(False, description="是否为复习测试题")
+    folder_id: UUID | None = Field(None, description="所属文件夹 ID")
     created_at: datetime = Field(..., description="创建时间")
     has_attempt: bool = Field(..., description="是否已作答")
     attempt_score: int | None = Field(None, description="得分（已作答时）")

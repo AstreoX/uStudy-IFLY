@@ -55,13 +55,16 @@ async def list_notes(
     space_id: UUID,
     node_id: Optional[UUID] = Query(None, description="筛选某节点的笔记"),
     free_only: bool = Query(False, description="仅返回自由笔记"),
+    folder_id: Optional[UUID] = Query(None, description="筛选指定文件夹的笔记"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[NoteListItem]:
     """列出空间笔记"""
     try:
         service = NoteService(db)
-        return await service.list_notes(current_user.id, space_id, node_id, free_only)
+        return await service.list_notes(
+            current_user.id, space_id, node_id, free_only, folder_id=folder_id
+        )
     except (NoteNotFoundError, NoteAccessDeniedError) as e:
         _handle_note_error(e)
 

@@ -53,6 +53,10 @@ NOTE_TOOLS: list[dict[str, Any]] = [
                         "type": "string",
                         "description": "笔记标题（可选）",
                     },
+                    "folder_name": {
+                        "type": "string",
+                        "description": "放入的文件夹名称（可选）。如果文件夹不存在会自动创建",
+                    },
                 },
                 "required": ["node_label", "content"],
             },
@@ -196,6 +200,7 @@ class NoteToolExecutor:
         node_label = args.get("node_label", "FREE")
         content = args.get("content", "")
         title = args.get("title")
+        folder_name = args.get("folder_name")
 
         # 1. Resolve node_id from label
         node_id = None
@@ -212,24 +217,59 @@ class NoteToolExecutor:
                         message=f"未找到名为「{node_label}」的知识节点，请检查节点名称是否正确",
                     )
 
-        # 2. Download and replace external images in content
+        # 2. Resolve folder_id from folder_name (auto-create if missing)
+        folder_id = None
+        if folder_name:
+            from sqlalchemy import select as sa_select
+
+            from db.models import Folder, FolderContentType
+            from folders.schemas import FolderCreate
+            from folders.service import FolderService
+
+            async with get_scoped_session() as db:
+                result = await db.execute(
+                    sa_select(Folder).where(
+                        Folder.space_id == self.space_id,
+                        Folder.content_type == FolderContentType.NOTES,
+                        Folder.name == folder_name,
+                    )
+                )
+                existing = result.scalar_one_or_none()
+                if existing:
+                    folder_id = existing.id
+                else:
+                    folder_service = FolderService(db)
+                    new_folder = await folder_service.create_folder(
+                        self.user_id,
+                        self.space_id,
+                        FolderCreate(
+                            name=folder_name,
+                            content_type=FolderContentType.NOTES,
+                        ),
+                    )
+                    folder_id = new_folder.id
+
+        # 3. Download and replace external images in content
         content, download_warnings = await self._process_images(content)
 
-        # 3. Create note via NoteService
+        # 4. Create note via NoteService
         async with get_scoped_session() as db:
             note_service = NoteService(db)
             note_create = NoteCreate(
                 title=title,
                 content=content,
                 node_id=node_id,
+                folder_id=folder_id,
             )
             note = await note_service.create_note(
                 self.user_id, self.space_id, note_create
             )
 
-        # 4. Build result message
+        # 5. Build result message
         location = f"节点「{node_label}」" if node_id else "自由笔记"
         message = f"已创建笔记「{title or '无标题'}」，位置：{location}"
+        if folder_name:
+            message += f"，文件夹：{folder_name}"
         if download_warnings:
             message += f"\n注意：{'; '.join(download_warnings)}"
 
@@ -239,6 +279,7 @@ class NoteToolExecutor:
                 "note_id": str(note.id),
                 "title": note.title,
                 "node_label": node_label if node_id else "FREE",
+                "folder_name": folder_name,
             },
             message=message,
         )

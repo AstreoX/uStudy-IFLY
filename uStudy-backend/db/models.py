@@ -210,6 +210,13 @@ class ShareMode(str, enum.Enum):
     COLLABORATIVE = "collaborative"
 
 
+class FolderContentType(str, enum.Enum):
+    """文件夹内容类型"""
+
+    NOTES = "notes"
+    QUIZZES = "quizzes"
+
+
 # ============ 表模型 ============
 
 
@@ -339,6 +346,51 @@ class Space(Base):
 
     # 索引
     __table_args__ = (Index("ix_spaces_user_id", "user_id"),)
+
+
+class Folder(Base):
+    """文件夹表 — 笔记和测试题共用，通过 content_type 区分"""
+
+    __tablename__ = "folders"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    parent_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("folders.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    content_type: Mapped[FolderContentType] = mapped_column(
+        Enum(FolderContentType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # 关系
+    children: Mapped[list["Folder"]] = relationship(
+        back_populates="parent", cascade="all, delete-orphan"
+    )
+    parent: Mapped[Optional["Folder"]] = relationship(
+        back_populates="children", remote_side=[id]
+    )
+
+    __table_args__ = (
+        Index("ix_folders_space_id", "space_id"),
+        Index("ix_folders_parent_id", "parent_id"),
+    )
 
 
 class Conversation(Base):
@@ -708,6 +760,11 @@ class Quiz(Base):
         ForeignKey("agent_tasks.id", ondelete="SET NULL"),
         nullable=True,
     )
+    folder_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("folders.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     topic: Mapped[str] = mapped_column(String(500), nullable=False)
     difficulty: Mapped[DifficultyLevel] = mapped_column(
@@ -738,6 +795,7 @@ class Quiz(Base):
     __table_args__ = (
         Index("ix_quizzes_space_id", "space_id"),
         Index("ix_quizzes_agent_task_id", "agent_task_id"),
+        Index("ix_quizzes_folder_id", "folder_id"),
     )
 
 
@@ -1716,6 +1774,11 @@ class Note(Base):
         ForeignKey("nodes.id", ondelete="SET NULL"),
         nullable=True,
     )
+    folder_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("folders.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     title: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     note_type: Mapped[str] = mapped_column(String(50), default="text", nullable=False)
@@ -1746,6 +1809,7 @@ class Note(Base):
     __table_args__ = (
         Index("ix_notes_space_id", "space_id"),
         Index("ix_notes_node_id", "node_id"),
+        Index("ix_notes_folder_id", "folder_id"),
     )
 
 
