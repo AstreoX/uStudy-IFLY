@@ -476,6 +476,7 @@ class ChatService:
         model_id: str | None = None,
         validated_space_id: UUID | None = None,
         panel_screenshot: str | None = None,
+        thinking: bool | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Send a message in a conversation and get SSE response stream.
@@ -677,6 +678,10 @@ class ChatService:
         max_output_tokens = get_max_output_tokens(model_id)
         logger.info(f"[ModelSelection] study model_id={model_id!r} -> openrouter_model={openrouter_model!r}, max_output_tokens={max_output_tokens}")
 
+        # Resolve thinking: only honor if model supports it
+        from chat.models_config import get_supports_thinking
+        enable_thinking = thinking if get_supports_thinking(model_id) else None
+
         orchestrator = LLMOrchestrator(
             user_id=user_id,
             conversation_id=conversation_id,
@@ -691,6 +696,7 @@ class ChatService:
             is_collaborative=space_is_collaborative,
             can_edit_graph=space_can_edit_graph,
             max_output_tokens=max_output_tokens,
+            enable_thinking=enable_thinking,
         )
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -1391,6 +1397,7 @@ class ChatService:
         attachment_ids: list[UUID] | None = None,
         model_id: str | None = None,
         validated: bool = False,
+        thinking: bool | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Send message in quick chat mode (no space required).
@@ -1542,6 +1549,10 @@ class ChatService:
         max_output_tokens = get_max_output_tokens(model_id)
         logger.info(f"[ModelSelection] quick_chat model_id={model_id!r} -> openrouter_model={openrouter_model!r}, max_output_tokens={max_output_tokens}")
 
+        # Resolve thinking: only honor if model supports it
+        from chat.models_config import get_supports_thinking
+        enable_thinking = thinking if get_supports_thinking(model_id) else None
+
         orchestrator = QuickChatOrchestrator(
             user_id=user_id,
             conversation_id=conversation_id,
@@ -1549,6 +1560,7 @@ class ChatService:
             openrouter_model=openrouter_model,
             search_channels=enabled_channels,
             max_output_tokens=max_output_tokens,
+            enable_thinking=enable_thinking,
         )
 
         queue: asyncio.Queue = asyncio.Queue()

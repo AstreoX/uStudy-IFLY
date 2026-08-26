@@ -25,6 +25,9 @@ class SendMessageRequest(BaseModel):
     panel_screenshot: Optional[str] = Field(
         default=None, max_length=500000, description="左面板截图 (base64 data URI, 双栏同步模式)"
     )
+    thinking: Optional[bool] = Field(
+        default=None, description="是否启用深度思考模式（True=开启, False=关闭, None=使用默认）"
+    )
 
 
 class CreateConversationRequest(BaseModel):

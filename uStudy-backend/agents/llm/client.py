@@ -369,6 +369,7 @@ class OpenRouterClient:
         tools: list[dict[str, Any]],
         temperature: float = 0.7,
         max_tokens: int = 65536,
+        enable_thinking: bool | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         流式带工具调用的补全请求（带重试机制）
@@ -412,8 +413,8 @@ class OpenRouterClient:
                         "max_tokens": max_tokens,
                         "stream": True,
                         "stream_options": {"include_usage": True},
-                        # Only request reasoning for thinking-capable models
-                        **({"reasoning": {"effort": "high"}} if "thinking" in self.model.lower() else {}),
+                        # Reasoning: high when thinking ON (default), none when explicitly OFF
+                        "reasoning": {"effort": "high" if enable_thinking is not False else "none"},
                     },
                 ) as response:
                     t_response = time.monotonic()

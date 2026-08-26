@@ -104,6 +104,7 @@ class QuickChatOrchestrator:
         openrouter_model: str | None = None,
         search_channels: dict[str, bool] | None = None,
         max_output_tokens: int = 65536,
+        enable_thinking: bool | None = None,
     ) -> None:
         """
         Initialize the quick chat orchestrator.
@@ -115,11 +116,13 @@ class QuickChatOrchestrator:
             openrouter_model: OpenRouter model ID override (resolved from model_id)
             search_channels: User's search channel settings (channel_name -> enabled)
             max_output_tokens: Maximum output tokens for LLM calls
+            enable_thinking: Enable deep thinking mode (True=on, False=off, None=default/on)
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
         self.previous_conversation_context = previous_conversation_context
         self.max_output_tokens = max_output_tokens
+        self.enable_thinking = enable_thinking
 
         self.settings = get_settings()
         self.llm_client = OpenRouterClient(
@@ -271,6 +274,7 @@ class QuickChatOrchestrator:
                     tools=self.available_tools,
                     temperature=0.7,
                     max_tokens=self.max_output_tokens,
+                    enable_thinking=self.enable_thinking,
                 ):
                     event_type = event.get("type")
 
@@ -598,6 +602,7 @@ class LLMOrchestrator:
         is_collaborative: bool = False,
         can_edit_graph: bool = False,
         max_output_tokens: int = 65536,
+        enable_thinking: bool | None = None,
     ) -> None:
         """
         Initialize the orchestrator.
@@ -615,12 +620,14 @@ class LLMOrchestrator:
             is_collaborative: Whether this is a collaborative space
             can_edit_graph: Whether user can modify knowledge graph structure
             max_output_tokens: Maximum output tokens for LLM calls
+            enable_thinking: Enable deep thinking mode (True=on, False=off, None=default/on)
         """
         self.user_id = user_id
         self.conversation_id = conversation_id
         self.space_id = space_id
         self.space_name = space_name
         self.previous_conversation_context = previous_conversation_context
+        self.enable_thinking = enable_thinking
         self.max_output_tokens = max_output_tokens
         self.tool_mode = tool_mode
         self.is_collaborative = is_collaborative
@@ -1076,6 +1083,7 @@ class LLMOrchestrator:
                     tools=self.available_tools,
                     temperature=0.7,
                     max_tokens=self.max_output_tokens,
+                    enable_thinking=self.enable_thinking,
                 ):
                     event_type = event.get("type")
 

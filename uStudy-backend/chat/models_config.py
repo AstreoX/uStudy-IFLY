@@ -14,12 +14,14 @@ ALLOWED_MODELS: dict[str, dict[str, Any]] = {
         "description": "快速响应，适合日常对话",
         "is_default": True,
         "max_output_tokens": 65536,
+        "supports_thinking": True,
     },
     "kimi-k2.5": {
         "openrouter_id": "moonshotai/kimi-k2.5",
         "display_name": "Kimi K2.5",
         "description": "更强推理能力，适合复杂问题",
         "max_output_tokens": 65535,
+        "supports_thinking": True,
     },
     "gemini-3.1-pro": {
         "openrouter_id": "google/gemini-3.1-pro-preview",
@@ -27,6 +29,7 @@ ALLOWED_MODELS: dict[str, dict[str, Any]] = {
         "description": "Google 最新模型，综合能力强",
         "use_bridge": True,
         "max_output_tokens": 65536,
+        "supports_thinking": True,
     },
 }
 
@@ -48,6 +51,13 @@ def get_max_output_tokens(model_id: str | None) -> int:
     if model_id and model_id in ALLOWED_MODELS:
         return ALLOWED_MODELS[model_id].get("max_output_tokens", 65536)
     return ALLOWED_MODELS[DEFAULT_MODEL_ID].get("max_output_tokens", 65536)
+
+
+def get_supports_thinking(model_id: str | None) -> bool:
+    """Check whether a model supports the reasoning/thinking parameter."""
+    if model_id and model_id in ALLOWED_MODELS:
+        return ALLOWED_MODELS[model_id].get("supports_thinking", False)
+    return False
 
 
 def validate_model_id(model_id: str) -> bool:
@@ -75,6 +85,7 @@ def get_available_models(
             "display_name": info["display_name"],
             "description": info["description"],
             "is_default": info.get("is_default", False),
+            "supports_thinking": info.get("supports_thinking", False),
             "locked": allowed_ids is not None and mid not in allowed_ids,
         }
         for mid, info in ALLOWED_MODELS.items()

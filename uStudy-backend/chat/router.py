@@ -451,6 +451,7 @@ async def send_message(
         model_id=request.model_id,
         validated_space_id=validated_space_id,
         panel_screenshot=request.panel_screenshot,
+        thinking=request.thinking,
     )
 
     logger.info(f"[Perf] Router total: {(time.monotonic() - t_start)*1000:.0f}ms")
@@ -936,6 +937,7 @@ async def send_quick_chat_message(
         request.attachment_ids,
         model_id=request.model_id,
         validated=True,
+        thinking=request.thinking,
     )
 
     logger.info(f"[Perf] QuickChat router total: {(time.monotonic() - t_start)*1000:.0f}ms")
