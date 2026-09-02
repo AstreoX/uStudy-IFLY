@@ -14,10 +14,6 @@
 - 用户进入固定“数据结构”课程；教师拥有只读教学看板。
 - 支付、激活码、钱包、邀请、Quick Chat 和非认证通知邮件均已移除。
 
-## 开发历史
-
-Git 历史从 2026-03-02 的精选基线开始，来源和后续实验提交见 [`docs/history-map.md`](docs/history-map.md)。
-
 ## 本地验证
 
 后端：在 `uStudy-backend/` 创建私有 `.env` 后运行 `pytest -m "not e2e"`。
