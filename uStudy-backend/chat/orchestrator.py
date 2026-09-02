@@ -472,6 +472,20 @@ class QuickChatOrchestrator:
                             "requires_confirmation": False,
                         },
                     }
+                    await update_streaming_cache(
+                        str(self.conversation_id),
+                        tool_call={
+                            "id": tool_call.id,
+                            "tool": tool_call.name,
+                            "status": "done",
+                            "success": tool_result.success,
+                            "result": tool_result.data,
+                            "message": tool_result.message,
+                            "arguments": tool_call.arguments,
+                            "display_name": metadata["display_name"],
+                            "requires_confirmation": False,
+                        },
+                    )
 
             # Append current iteration to collector
             context_collector.iterations.append(current_iteration)
@@ -1382,6 +1396,18 @@ class LLMOrchestrator:
                             "arguments": tool_call.arguments,
                         },
                     }
+                    await update_streaming_cache(
+                        str(self.conversation_id),
+                        tool_call={
+                            "id": tool_call.id,
+                            "tool": tool_call.name,
+                            "status": "done",
+                            "success": tool_result.success,
+                            "result": tool_result.data,
+                            "message": tool_result.message,
+                            "arguments": tool_call.arguments,
+                        },
+                    )
 
                 # Append current iteration to collector
                 context_collector.iterations.append(current_iteration)

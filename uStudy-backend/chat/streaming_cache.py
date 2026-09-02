@@ -28,6 +28,8 @@ class StreamingState:
     thinking: str = ""  # 思考过程内容
     tool_calls: list = field(default_factory=list)  # 工具调用记录
     is_complete: bool = False  # 是否已完成
+    is_stopped: bool = False  # 是否已被用户终止
+    stop_reason: Optional[str] = None  # 终止原因
     updated_at: float = 0.0  # 最后更新时间戳
 
     def to_dict(self) -> dict:
@@ -41,6 +43,8 @@ class StreamingState:
             thinking=data.get("thinking", ""),
             tool_calls=data.get("tool_calls", []),
             is_complete=data.get("is_complete", False),
+            is_stopped=data.get("is_stopped", False),
+            stop_reason=data.get("stop_reason"),
             updated_at=data.get("updated_at", 0.0),
         )
 
@@ -103,8 +107,14 @@ async def update_streaming_cache(
                 thinking = "",
                 tool_calls = {},
                 is_complete = false,
+                is_stopped = false,
+                stop_reason = cjson.null,
                 updated_at = 0
             }
+        end
+
+        if state.is_stopped then
+            return "STOPPED"
         end
 
         -- 追加增量内容
@@ -164,6 +174,32 @@ async def get_streaming_state(conversation_id: str) -> Optional[StreamingState]:
     except Exception as e:
         logger.warning(f"Failed to get streaming state: {e}")
         return None
+
+
+async def mark_streaming_stopped(
+    conversation_id: str,
+    reason: str = "user_stopped",
+) -> StreamingState:
+    """将流式缓存标记为已终止，保留当前 partial 内容。"""
+    try:
+        r = await get_redis()
+        key = f"{STREAMING_KEY_PREFIX}{conversation_id}"
+        existing = await get_streaming_state(conversation_id)
+        state = existing or StreamingState(conversation_id=conversation_id)
+        state.is_complete = False
+        state.is_stopped = True
+        state.stop_reason = reason
+        state.updated_at = time.time()
+        await r.setex(key, TTL_SECONDS, json.dumps(state.to_dict()))
+        return state
+    except Exception as e:
+        logger.warning(f"Failed to mark streaming cache stopped: {e}")
+        return StreamingState(
+            conversation_id=conversation_id,
+            is_stopped=True,
+            stop_reason=reason,
+            updated_at=time.time(),
+        )
 
 
 async def clear_streaming_cache(conversation_id: str) -> None:

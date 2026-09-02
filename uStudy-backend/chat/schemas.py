@@ -76,6 +76,7 @@ class MessageResponse(BaseModel):
     attachments: list[AttachmentResponse] = []
     tool_calls: Optional[list[dict[str, Any]]] = None
     citations: Optional[list[dict[str, Any]]] = None
+    response_status: str = "completed"
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -163,6 +164,18 @@ class ClientToolResultResponse(BaseModel):
 
     received: bool = Field(..., description="是否成功接收")
     message: str = Field(..., description="处理消息")
+
+
+class StopStreamResponse(BaseModel):
+    """Response for user-requested stream stop"""
+
+    stopped: bool = Field(..., description="是否成功进入终止态")
+    is_streaming: bool = Field(..., description="当前是否仍在流式生成")
+    is_stopped: bool = Field(..., description="当前是否已被用户终止")
+    partial_content: Optional[str] = Field(None, description="已生成的部分文本")
+    partial_thinking: Optional[str] = Field(None, description="已生成的思考内容")
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list, description="已产生的工具调用")
+    updated_at: Optional[float] = Field(None, description="最近更新时间戳")
 
 
 class ToolConfirmRequest(BaseModel):

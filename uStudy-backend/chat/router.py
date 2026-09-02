@@ -31,6 +31,7 @@ from chat.schemas import (
     ClientToolResultRequest,
     ClientToolResultResponse,
     RollbackResponse,
+    StopStreamResponse,
 )
 from chat.models_config import get_available_models, validate_model_id
 from chat.service import (
@@ -215,6 +216,7 @@ async def get_streaming_status(
 
     Returns:
         - is_streaming: True if AI is currently generating a response
+        - is_stopped: True if AI generation was explicitly stopped by the user
         - partial_content: Content generated so far (if streaming)
         - partial_thinking: Thinking content generated so far (if streaming)
         - tool_calls: Tool calls made so far
@@ -237,6 +239,8 @@ async def get_streaming_status(
     if state is None:
         return {
             "is_streaming": False,
+            "is_stopped": False,
+            "stop_reason": None,
             "partial_content": None,
             "partial_thinking": None,
             "tool_calls": [],
@@ -244,12 +248,40 @@ async def get_streaming_status(
         }
 
     return {
-        "is_streaming": not state.is_complete,
+        "is_streaming": not state.is_complete and not state.is_stopped,
+        "is_stopped": state.is_stopped,
+        "stop_reason": state.stop_reason,
         "partial_content": state.content or None,
         "partial_thinking": state.thinking or None,
         "tool_calls": state.tool_calls,
         "updated_at": state.updated_at,
     }
+
+
+@router.post(
+    "/conversations/{conversation_id}/stop-stream",
+    response_model=StopStreamResponse,
+    summary="终止当前 AI 回复",
+    description="用户主动停止当前会话中的 AI 流式回复，保留已生成的 partial content。",
+)
+async def stop_stream(
+    conversation_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StopStreamResponse:
+    """Stop an in-flight AI streaming response for the conversation."""
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conversation_id)
+    )
+    conv = result.scalar_one_or_none()
+    if not conv or conv.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
+        )
+
+    payload = await ChatService.stop_stream(conversation_id)
+    return StopStreamResponse(**payload)
 
 
 @router.get(
@@ -315,10 +347,26 @@ async def resume_stream(
                 }
                 last_content_len = len(state.content)
 
+            if state.is_stopped:
+                yield {
+                    "event": "done",
+                    "data": {
+                        "content": state.content,
+                        "resumed": True,
+                        "response_status": "stopped",
+                        "stopped": True,
+                    },
+                }
+                break
+
             if state.is_complete:
                 yield {
                     "event": "done",
-                    "data": {"content": state.content, "resumed": True},
+                    "data": {
+                        "content": state.content,
+                        "resumed": True,
+                        "response_status": "completed",
+                    },
                 }
                 break
 

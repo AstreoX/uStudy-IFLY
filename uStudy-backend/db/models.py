@@ -55,6 +55,13 @@ class MessageRole(str, enum.Enum):
     ASSISTANT = "assistant"
 
 
+class MessageResponseStatus(str, enum.Enum):
+    """AI 回复状态"""
+
+    COMPLETED = "completed"
+    STOPPED = "stopped"
+
+
 class EdgeType(str, enum.Enum):
     """边类型"""
 
@@ -468,6 +475,13 @@ class Message(Base):
         JSONB,
         nullable=True,
         comment="Structured citation metadata for source attribution",
+    )
+    response_status: Mapped[MessageResponseStatus] = mapped_column(
+        Enum(MessageResponseStatus),
+        nullable=False,
+        default=MessageResponseStatus.COMPLETED,
+        server_default=MessageResponseStatus.COMPLETED.value,
+        comment="Assistant response generation status",
     )
     created_at: Mapped[datetime] = mapped_column(
         default=func.now(), nullable=False
