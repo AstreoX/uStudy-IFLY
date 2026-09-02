@@ -77,6 +77,28 @@
           <text class="btn-text">{{ isSubmitting ? '登录中...' : '登 录' }}</text>
         </button>
 
+        <view v-if="exampleLoginEnabled" class="example-login-section">
+          <text class="example-login-label">示例账户</text>
+          <view class="example-login-buttons">
+            <button
+              class="example-login-btn teacher-example-btn"
+              :class="{ disabled: isSubmitting }"
+              :disabled="isSubmitting"
+              @tap="loginAsExample('teacher')"
+            >
+              <text class="example-login-btn-text">登录教师示例账户</text>
+            </button>
+            <button
+              class="example-login-btn student-example-btn"
+              :class="{ disabled: isSubmitting }"
+              :disabled="isSubmitting"
+              @tap="loginAsExample('student')"
+            >
+              <text class="example-login-btn-text">登录学生示例账户</text>
+            </button>
+          </view>
+        </view>
+
         <view class="register-link" @tap="handleGoRegister">
           <text class="register-text">没有账户？</text>
           <text class="register-text-highlight">邮箱注册</text>
@@ -97,7 +119,26 @@ import { getTokens, setTokens, clearAuth } from '@/utils/storage'
 import { useUserStore } from '@/store/user'
 import { openDefaultSpace } from '@/utils/default-space'
 
+const EXAMPLE_ACCOUNTS = Object.freeze({
+  teacher: Object.freeze({
+    identifier: 'noreply+local-smoke-1787638979@uverse.cc',
+    password: 'Aa1!2P28o19d1NlxH9c5'
+  }),
+  student: Object.freeze({
+    identifier: 'example@experiment.invalid',
+    password: 'Student@123'
+  })
+})
+// This package is the dedicated experiment frontend; the shortcuts are enabled
+// on its deployed host as well as local development hosts.
+const EXAMPLE_LOGIN_ENABLED = true
+
 export default {
+  computed: {
+    exampleLoginEnabled() {
+      return EXAMPLE_LOGIN_ENABLED
+    }
+  },
   data() {
     return {
       form: {
@@ -177,6 +218,23 @@ export default {
       const identifierValid = this.validateIdentifier()
       const passwordValid = this.validatePassword()
       return identifierValid && passwordValid
+    },
+
+    loginAsExample(role) {
+      if (this.isSubmitting) {
+        return
+      }
+
+      const account = EXAMPLE_ACCOUNTS[role]
+      if (!account) {
+        return
+      }
+
+      this.form.identifier = account.identifier
+      this.form.password = account.password
+      this.errors.identifier = ''
+      this.errors.password = ''
+      this.handleLogin()
     },
 
     showToast(message) {
@@ -575,6 +633,75 @@ export default {
 .login-btn.disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.example-login-section {
+  width: 100%;
+  margin-top: 8rpx;
+}
+
+.example-login-label {
+  display: block;
+  margin-bottom: 14rpx;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 24rpx;
+  text-align: center;
+}
+
+.example-login-buttons {
+  display: flex;
+  flex-direction: row;
+  gap: 16rpx;
+  width: 100%;
+}
+
+.example-login-btn {
+  flex: 1;
+  min-width: 0;
+  height: 72rpx;
+  padding: 0 12rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.16);
+  border-radius: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s ease, transform 0.15s ease, background-color 0.2s ease;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.example-login-btn::after {
+  border: none;
+}
+
+.example-login-btn:active {
+  opacity: 0.85;
+  transform: scale(0.98);
+}
+
+.example-login-btn.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.teacher-example-btn {
+  background-color: rgba(249, 115, 22, 0.18);
+  border-color: rgba(249, 115, 22, 0.35);
+}
+
+.student-example-btn {
+  background-color: rgba(0, 122, 255, 0.18);
+  border-color: rgba(0, 122, 255, 0.35);
+}
+
+.example-login-btn-text {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 25rpx;
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .btn-text {

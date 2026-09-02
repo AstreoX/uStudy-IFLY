@@ -94,6 +94,12 @@ assert(login.includes('identifier: this.form.identifier'), 'login does not submi
 assert(login.includes('handleGoRegister'), 'login does not expose email registration')
 assert(login.includes('handleForgotPassword'), 'login does not expose password recovery')
 assert(login.includes('openDefaultSpace'), 'login does not open the default course')
+assert(login.includes('登录教师示例账户'), 'teacher example login shortcut is missing')
+assert(login.includes('登录学生示例账户'), 'student example login shortcut is missing')
+assert(login.includes("loginAsExample('teacher')"), 'teacher example shortcut is not wired')
+assert(login.includes("loginAsExample('student')"), 'student example shortcut is not wired')
+assert(login.includes('exampleLoginEnabled'), 'example login shortcuts are not environment-gated')
+assert(login.includes('EXAMPLE_LOGIN_ENABLED = true'), 'experiment build must enable example login shortcuts')
 
 const register = read('pages/register/register.vue')
 assert(register.includes("purpose: 'registration'"), 'registration verification flow is missing')
