@@ -1046,20 +1046,20 @@
                       <view
                         v-else-if="seg.toolCall.tool === 'generate_test'"
                         class="quiz-tool-wrap"
-                        :class="{ 'quiz-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id)) }"
+                        :class="{ 'quiz-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && !isQuizGenerationPending(seg.toolCall) && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id)) }"
                       >
                         <view
                           class="quiz-tool-pill"
                           :class="{
-                            'quiz-tool-running': seg.toolCall.status === 'running',
-                            'quiz-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+                            'quiz-tool-running': seg.toolCall.status === 'running' || isQuizGenerationPending(seg.toolCall),
+                            'quiz-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success && !isQuizGenerationPending(seg.toolCall),
                             'quiz-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
                           }"
                           @click="toggleToolCardIfAllowed(seg.toolCall)"
                         >
                           <view class="quiz-tool-pill-icon graph-tool-pill-icon-svg" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
                           <text class="quiz-tool-pill-text">{{ getQuizToolText(seg.toolCall) }}</text>
-                          <view v-if="seg.toolCall.status === 'running'" class="quiz-tool-spinner"></view>
+                          <view v-if="seg.toolCall.status === 'running' || isQuizGenerationPending(seg.toolCall)" class="quiz-tool-spinner"></view>
                           <text v-else-if="canToggleToolCard(seg.toolCall)" class="graph-tool-chevron" :class="{ 'graph-tool-chevron-up': isToolCardExpanded(seg.toolCall.id) }">⌄</text>
                           <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-success">
                             <polyline points="88 136 112 160 168 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
@@ -1071,7 +1071,8 @@
                         </view>
 
                         <view
-                          v-if="seg.toolCall.status === 'done' && seg.toolCall.success && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id))"
+                          v-if="seg.toolCall.status === 'done' && seg.toolCall.success && !isQuizGenerationPending(seg.toolCall) && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id))"
+                          class="quiz-generation-content"
                           :class="{ 'tool-card-leave': isToolCardCollapsing(seg.toolCall.id) }"
                         >
                           <view
@@ -4447,11 +4448,17 @@ export default {
         if (toolCall.status === 'done' && toolCall.success) return '测验分析完成'
         return toolCall.result?.message || '测验分析失败'
       }
-      if (toolCall.status === 'running') return '正在生成测试题…'
+      if (this.isQuizGenerationPending(toolCall)) return '正在生成测试题…'
       if (toolCall.status === 'done' && toolCall.success) {
         return toolCall.quizId ? '测试题已生成' : (toolCall.result?.message || '测试题生成完成')
       }
       return toolCall.result?.message || '测试题生成失败'
+    },
+
+    isQuizGenerationPending(toolCall) {
+      if (!toolCall || toolCall.tool !== 'generate_test') return false
+      if (toolCall.status === 'running') return true
+      return toolCall.status === 'done' && toolCall.success && !toolCall.quizId && !!toolCall.result?.task_id
     },
 
     getQuizResultList(toolCall) {
@@ -4493,7 +4500,7 @@ export default {
       if (this.isScheduleDetailTool(toolCall.tool)) return true
       if (toolCall.tool === 'get_review_events') return true
       if (toolCall.tool === 'generate_chart') return !!toolCall.result?.image_url
-      if (toolCall.tool === 'generate_test') return !!(toolCall.quizId || toolCall.result?.message)
+      if (toolCall.tool === 'generate_test') return !!toolCall.quizId && !this.isQuizGenerationPending(toolCall)
       if (toolCall.tool === 'view_quiz_results') return true
       if (toolCall.tool === 'view_quiz_attempt_detail') return true
       return false
@@ -6912,6 +6919,11 @@ export default {
   box-shadow: none;
 }
 
+.quiz-generation-content {
+  padding: 8px 10px 10px;
+  box-sizing: border-box;
+}
+
 .graph-overview-header,
 .gm-card-header {
   display: flex;
@@ -6978,7 +6990,7 @@ export default {
 }
 
 .quiz-entry-card {
-  margin-top: 0;
+  margin: 0;
   padding: 10px 14px;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.07);
