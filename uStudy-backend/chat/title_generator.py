@@ -59,7 +59,7 @@ async def generate_title(
             {"role": "user", "content": truncated_message},
         ],
         temperature=0.3,
-        max_tokens=50,
+        max_tokens=256,
         enable_thinking=False,
         idempotency_key=(
             f"title_generation:{conversation_id}" if conversation_id else None

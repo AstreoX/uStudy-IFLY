@@ -311,8 +311,8 @@ class TestGenerationAgent:
         try:
             reply = await self.llm_client.complete(
                 messages=messages,
-                temperature=0.0,
-                max_tokens=16,
+                temperature=0.1,
+                max_tokens=256,
             )
             result = "REASONING" in reply.upper()
             logger.debug("主题分类结果: topic=%s, reply=%s, reasoning=%s", topic, reply.strip(), result)

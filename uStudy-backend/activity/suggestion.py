@@ -338,7 +338,7 @@ async def get_ai_suggestion(
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.3,
-            max_tokens=256,
+            max_tokens=512,
         )
         parsed = _parse_suggestion_json(raw)
         if parsed and "decision" in parsed and "subject" in parsed:
