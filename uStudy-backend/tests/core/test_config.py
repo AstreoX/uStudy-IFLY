@@ -71,6 +71,22 @@ class TestPublicConfig:
         assert settings.image_generation_quality == "low"
         assert settings.image_generation_output_format == "png"
 
+    def test_background_llm_defaults_use_minimax(self):
+        settings = Settings(_env_file=None)
+
+        assert settings.minimax_base_url == "https://api.minimaxi.com/v1"
+        assert settings.background_llm_model == "MiniMax-M2.7-highspeed"
+        assert settings.gemini_model == settings.background_llm_model
+        assert settings.quiz_reasoning_model == settings.background_llm_model
+        assert settings.memory_extraction_model == settings.background_llm_model
+        assert settings.knowledge_graph_model == settings.background_llm_model
+        assert settings.quiz_evaluation_model == settings.background_llm_model
+        assert settings.mastery_evaluation_model == settings.background_llm_model
+        assert settings.learning_path_expand_model == settings.background_llm_model
+        assert settings.suggestion_model == settings.background_llm_model
+        assert settings.title_generation_model == settings.background_llm_model
+        assert settings.artifact_model != settings.background_llm_model
+
     def test_teacher_presentation_agent_defaults(self):
         settings = Settings(_env_file=None)
         assert settings.presentation_agent_gateway_base_url.endswith(

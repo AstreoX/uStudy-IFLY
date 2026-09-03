@@ -132,6 +132,8 @@ class LLMClient:
         self.settings = get_settings()
 
         self.model = model_override or self.settings.llm_default_model
+        normalized_model = self.model.strip().lower()
+        self.is_minimax = normalized_model.startswith("minimax-")
         openrouter_key = getattr(self.settings, "openrouter_api_key", "")
         use_openrouter = (
             "/" in self.model
@@ -141,6 +143,11 @@ class LLMClient:
         if base_url_override or api_key_override:
             self.base_url = (base_url_override or self.settings.dashscope_base_url).rstrip("/")
             self.api_key = api_key_override or self.settings.dashscope_api_key
+        elif self.is_minimax:
+            self.base_url = getattr(
+                self.settings, "minimax_base_url", "https://api.minimaxi.com/v1"
+            ).rstrip("/")
+            self.api_key = getattr(self.settings, "minimax_api_key", "")
         elif use_openrouter:
             self.base_url = (
                 getattr(self.settings, "openrouter_bridge_url", "")
@@ -151,7 +158,12 @@ class LLMClient:
             self.base_url = self.settings.dashscope_base_url.rstrip("/")
             self.api_key = self.settings.dashscope_api_key
         if not self.api_key:
-            missing = "OPENROUTER_API_KEY" if "/" in self.model else "DASHSCOPE_API_KEY"
+            if self.is_minimax:
+                missing = "MINIMAX_API_KEY"
+            elif "/" in self.model:
+                missing = "OPENROUTER_API_KEY"
+            else:
+                missing = "DASHSCOPE_API_KEY"
             raise LLMClientError(f"{missing} 未配置，请在 .env 文件中设置")
         self.is_openrouter = "openrouter.ai" in self.base_url or use_openrouter
         self.timeout = (
@@ -403,9 +415,10 @@ class LLMClient:
                             # 传 None 时不带此字段，沿用模型默认行为。
                             **(
                                 {"enable_thinking": enable_thinking}
-                                if enable_thinking is not None
+                                if enable_thinking is not None and not self.is_minimax
                                 else {}
                             ),
+                            **({"reasoning_split": True} if self.is_minimax else {}),
                         },
                     )
                     response_status = response.status_code
@@ -691,6 +704,7 @@ class LLMClient:
                             "max_tokens": max_tokens,
                             "stream": True,
                             "stream_options": {"include_usage": True},
+                            **({"reasoning_split": True} if self.is_minimax else {}),
                         },
                     ) as response:
                         response_status = response.status_code
@@ -928,7 +942,7 @@ class LLMClient:
                 if self.is_openrouter:
                     if enable_thinking is not False:
                         request_payload["reasoning"] = {"effort": "medium"}
-                else:
+                elif not self.is_minimax:
                     # DashScope-specific switch.
                     request_payload["enable_thinking"] = enable_thinking is not False
 

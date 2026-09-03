@@ -15,6 +15,7 @@ from agents.exceptions import (
 )
 from agents.llm.client import LLMClient
 from agents.llm.prompts import build_node_expand_prompt
+from config import get_settings
 from db.models import Edge, EdgeType, Node
 from graph.service import GraphService
 from usage.metering import UsageContext
@@ -61,7 +62,8 @@ class NodeExpandAgent:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
-        self.llm_client = LLMClient()
+        settings = get_settings()
+        self.llm_client = LLMClient(model_override=settings.background_llm_model)
 
     async def expand(
         self,

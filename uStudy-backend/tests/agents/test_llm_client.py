@@ -138,6 +138,40 @@ class TestLLMClientInit:
             assert client.api_key == "sk-or-test"
             assert client.is_openrouter is True
 
+    def test_minimax_model_uses_minimax_credentials(self):
+        with patch("agents.llm.client.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(
+                dashscope_api_key="sk-dashscope",
+                dashscope_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                minimax_api_key="sk-minimax-test",
+                minimax_base_url="https://api.minimaxi.com/v1",
+                llm_default_model="MiniMax-M2.7-highspeed",
+                llm_timeout_seconds=120,
+                llm_max_retries=3,
+            )
+
+            client = LLMClient()
+
+            assert client.base_url == "https://api.minimaxi.com/v1"
+            assert client.api_key == "sk-minimax-test"
+            assert client.is_minimax is True
+            assert client.is_openrouter is False
+
+    def test_minimax_model_requires_its_own_api_key(self):
+        with patch("agents.llm.client.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(
+                dashscope_api_key="sk-dashscope",
+                dashscope_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                minimax_api_key="",
+                minimax_base_url="https://api.minimaxi.com/v1",
+                llm_default_model="MiniMax-M2.7-highspeed",
+                llm_timeout_seconds=120,
+                llm_max_retries=3,
+            )
+
+            with pytest.raises(LLMClientError, match="MINIMAX_API_KEY 未配置"):
+                LLMClient()
+
     def test_init_with_timeout_override(self):
         """测试可为长任务单独覆盖超时时间"""
         with patch("agents.llm.client.get_settings") as mock_settings:
@@ -264,6 +298,39 @@ class TestLLMClientComplete:
             assert request_json["messages"] == [{"role": "user", "content": "test"}]
             assert request_json["temperature"] == 0.5
             assert request_json["max_tokens"] == 2048
+
+    @pytest.mark.asyncio
+    async def test_minimax_request_splits_reasoning_and_omits_dashscope_flag(self):
+        with patch("agents.llm.client.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(
+                dashscope_api_key="sk-dashscope",
+                dashscope_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                minimax_api_key="sk-minimax-test",
+                minimax_base_url="https://api.minimaxi.com/v1",
+                llm_default_model="MiniMax-M2.7-highspeed",
+                llm_timeout_seconds=120,
+                llm_max_retries=3,
+            )
+            client = LLMClient()
+
+        response = httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "response"}}]},
+            request=httpx.Request(
+                "POST", "https://api.minimaxi.com/v1/chat/completions"
+            ),
+        )
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = response
+
+            await client.complete(
+                messages=[{"role": "user", "content": "test"}],
+                enable_thinking=False,
+            )
+
+            request_json = mock_post.call_args.kwargs["json"]
+            assert request_json["reasoning_split"] is True
+            assert "enable_thinking" not in request_json
 
     @pytest.mark.asyncio
     async def test_retry_on_timeout(self, client: LLMClient):
