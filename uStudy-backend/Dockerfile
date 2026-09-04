@@ -43,8 +43,8 @@ RUN useradd -r -s /bin/false -d /tmp sandbox_user
 # 复制应用代码
 COPY . .
 
-# 创建上传目录和证书挂载点
-RUN mkdir -p /app/uploads /app/certs
+# 创建上传目录、私有 RAG 派生目录和证书挂载点
+RUN mkdir -p /app/uploads /app/private-rag /app/certs
 RUN chmod +x /app/scripts/start.sh
 
 # 暴露端口

@@ -1,6 +1,13 @@
 """Chat Tools Module"""
 
-from chat.tools.base import ToolResult
+from chat.tools.base import (
+    TRANSIENT_TOOL_MEDIA_PROMPT,
+    ToolMedia,
+    ToolResult,
+    apply_tool_media_budget,
+    page_assets_for_citation,
+    strip_consumed_tool_media,
+)
 from chat.tools.graph_tools import GRAPH_TOOLS, GraphToolExecutor
 from chat.tools.space_memory_tools import SPACE_MEMORY_TOOLS, SPACE_MEMORY_TOOL_NAMES
 from chat.tools.space_memory_executor import SpaceMemoryToolExecutor, format_space_memory_for_prompt
@@ -12,6 +19,11 @@ from chat.tools.code_sandbox_tools import CODE_SANDBOX_TOOLS, CODE_SANDBOX_TOOL_
 
 __all__ = [
     "ToolResult",
+    "ToolMedia",
+    "TRANSIENT_TOOL_MEDIA_PROMPT",
+    "apply_tool_media_budget",
+    "page_assets_for_citation",
+    "strip_consumed_tool_media",
     "GRAPH_TOOLS",
     "GraphToolExecutor",
     "SPACE_MEMORY_TOOLS",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""One-time script: reprocess all space_documents through the new plaintext pipeline.
+"""One-time script: enqueue missing document indexes through the durable pipeline.
 
 Run after applying the plaintext_rag_v1 migration.
 
@@ -20,10 +20,11 @@ from uuid import UUID
 # Allow running from uStudy-backend/
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from db.database import AsyncSessionLocal
-from db.models import SpaceDocument, DocumentText
-from rag.service import DocumentProcessingService
 from sqlalchemy import select
+
+from db.database import AsyncSessionLocal
+from db.models import DocumentText, SpaceDocument
+from rag.tasks import enqueue_document_processing, process_document_task
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -54,8 +55,8 @@ async def reprocess_all(dry_run: bool = False, space_id: UUID | None = None) -> 
         logger.info("Reprocessing: %s (%s)", doc.title, doc.id)
         try:
             async with AsyncSessionLocal() as db:
-                service = DocumentProcessingService(db)
-                await service.process_document(doc.id)
+                task = await enqueue_document_processing(db, doc.id, dispatch=False)
+            await process_document_task(task.id)
             success += 1
         except Exception as exc:
             logger.error("Failed: %s - %s", doc.id, exc)

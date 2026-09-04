@@ -4,13 +4,14 @@ import asyncio
 import io
 import logging
 from collections import Counter
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, AsyncGenerator, Callable
+from typing import Any
 from uuid import UUID
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.exceptions import (
@@ -34,8 +35,7 @@ from agents.parsers.knowledge_graph import KnowledgeGraphParser
 from config import get_settings
 from db.models import (
     DocumentChunk,
-    DocumentProcessingTask,
-    ProcessingStatus,
+    PdfVisualIndex,
     SpaceDocument,
 )
 from usage.metering import UsageContext
@@ -161,10 +161,10 @@ class DocumentKnowledgeGraphAgent:
 
     async def _verify_space(self, space_id: UUID, user_id: UUID) -> None:
         """验证学习空间存在且用户有权访问"""
-        from spaces.authorization import verify_space_access as _verify
         from spaces.authorization import (
             SpaceAccessDeniedError as _AccessDenied,
             SpaceNotFoundError as _NotFound,
+            verify_space_access as _verify,
         )
 
         try:
@@ -205,10 +205,54 @@ class DocumentKnowledgeGraphAgent:
         # 尝试加载已有 chunks（RAG 已完成的情况）
         result = await self.db.execute(
             select(DocumentChunk)
-            .where(DocumentChunk.document_id.in_(document_ids))
+            .outerjoin(
+                PdfVisualIndex,
+                PdfVisualIndex.id == DocumentChunk.pdf_visual_index_id,
+            )
+            .where(
+                DocumentChunk.document_id.in_(document_ids),
+                or_(
+                    DocumentChunk.pdf_visual_index_id.is_(None),
+                    and_(
+                        PdfVisualIndex.is_current.is_(True),
+                        PdfVisualIndex.state == "published",
+                        DocumentChunk.chunk_kind == "native_page",
+                    ),
+                ),
+            )
             .order_by(DocumentChunk.document_id, DocumentChunk.chunk_index)
         )
         chunks = list(result.scalars().all())
+
+        active_pdf_ids = set(
+            (
+                await self.db.scalars(
+                    select(PdfVisualIndex.document_id).where(
+                        PdfVisualIndex.document_id.in_(document_ids),
+                        PdfVisualIndex.is_current.is_(True),
+                        PdfVisualIndex.state == "published",
+                    )
+                )
+            ).all()
+        )
+        native_pdf_ids = {
+            chunk.document_id
+            for chunk in chunks
+            if chunk.pdf_visual_index_id is not None
+            and chunk.chunk_kind == "native_page"
+        }
+        visual_only_ids = active_pdf_ids - native_pdf_ids
+        if visual_only_ids:
+            titles = [
+                document.title
+                for document in documents
+                if document.id in visual_only_ids
+            ]
+            raise DocumentNotReadyError(
+                "以下扫描 PDF 在 Agentic RAG v1 中只有目录和页面图，"
+                f"未做全文 OCR，不能生成正文知识图谱: {', '.join(titles)}",
+                pending_count=len(visual_only_ids),
+            )
 
         if chunks:
             logger.info("使用已处理的 %d 个 chunks", len(chunks))
@@ -251,10 +295,16 @@ class DocumentKnowledgeGraphAgent:
         """
         settings = get_settings()
         # document.url 格式: /uploads/documents/xxx.pdf
-        relative_path = document.url.lstrip("/uploads/")
-        file_path = Path(settings.upload_dir) / relative_path
+        upload_root = Path(settings.upload_dir).resolve()
+        prefix = "/uploads/"
+        relative_path = (
+            document.url[len(prefix) :]
+            if document.url.startswith(prefix)
+            else document.url.lstrip("/")
+        )
+        file_path = (upload_root / relative_path).resolve()
 
-        if not file_path.exists():
+        if not file_path.is_relative_to(upload_root) or not file_path.exists():
             logger.warning("文件不存在: %s", file_path)
             return []
 

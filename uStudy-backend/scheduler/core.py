@@ -1,8 +1,8 @@
 """Scheduler core initialization and lifecycle management."""
 
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -61,8 +61,8 @@ def _register_jobs(sched: AsyncIOScheduler) -> None:
 
         try:
             await recover_assignment_jobs()
-        except Exception as e:
-            logger.error("Failed to recover assignment jobs: %s", e, exc_info=True)
+        except Exception:
+            logger.exception("Failed to recover assignment jobs")
 
     sched.add_job(
         _recover_assignment_jobs,
@@ -72,6 +72,42 @@ def _register_jobs(sched: AsyncIOScheduler) -> None:
         replace_existing=True,
     )
     logger.info("Registered recover_assignment_jobs job (every 30 sec)")
+
+    async def _recover_document_processing_jobs():
+        from rag.tasks import recover_document_processing_tasks
+
+        try:
+            await recover_document_processing_tasks()
+        except Exception:
+            logger.exception("Failed to recover document processing jobs")
+
+    sched.add_job(
+        _recover_document_processing_jobs,
+        trigger=IntervalTrigger(seconds=30),
+        id="recover_document_processing_jobs",
+        name="Recover durable PDF/document processing jobs",
+        replace_existing=True,
+    )
+    logger.info("Registered recover_document_processing_jobs job (every 30 sec)")
+
+    async def _cleanup_pdf_staging():
+        from rag.tasks import cleanup_pdf_staging_directories
+
+        try:
+            removed = await cleanup_pdf_staging_directories()
+            if removed:
+                logger.info("Removed %d expired PDF staging directories", removed)
+        except Exception:
+            logger.exception("Failed to clean PDF staging directories")
+
+    sched.add_job(
+        _cleanup_pdf_staging,
+        trigger=IntervalTrigger(hours=1),
+        id="cleanup_pdf_staging",
+        name="Cleanup expired private PDF staging directories",
+        replace_existing=True,
+    )
+    logger.info("Registered cleanup_pdf_staging job (hourly)")
 
     # Daily review quiz generation and in-app notifications at 08:00 Beijing time.
     # Only spaces whose owners manually enable review_mode > 0 are processed.

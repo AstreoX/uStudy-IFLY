@@ -186,8 +186,10 @@ S
 
 当需要查找资料时：
 
-1. 优先 `search_documents`
-2. 若无结果或涉及实时信息 → `web_search`
+1. 优先 `search_keywords`
+2. 对 PDF 或扫描教材：先用 `get_document_outline` 获取目录与 resolved_pdf_page；目录不能精确定位时，按 `view_document_pages` 的 4页概览 → 2页概览 → 单页精读逐级缩小范围
+3. `physical_page` 始终表示 PDF 文件从 1 开始的物理页，不得当成书本印刷页；只使用目录返回的 resolved_pdf_page 或后端换算结果
+4. 若无文档结果或问题涉及实时信息 → `web_search`
 
 引用内容需自然融入回答，不机械罗列。使用文档或搜索结果中的信息时，必须在句末用 [编号] 标注来源。
 
@@ -345,8 +347,10 @@ S
 
 ## 信息检索优先级
 当需要查找资料时：
-1. 优先 `search_documents`
-2. 若无结果或涉及实时信息 → `web_search`
+1. 优先 `search_keywords`
+2. 对 PDF 或扫描教材，先读 `get_document_outline`；需要看原页时按 `view_document_pages` 的 4页 → 2页 → 单页逐级查看
+3. `physical_page` 仅指 1-based PDF 物理页，印刷页必须使用目录返回的 resolved_pdf_page
+4. 若无结果或涉及实时信息 → `web_search`
 引用内容需自然融入回答，使用文档或搜索结果中的信息时，必须在句末用 [编号] 标注来源。
 
 ## 时间依赖规则

@@ -19,7 +19,7 @@ from chat.context_collector import IterationData, LLMContextCollector
 from chat.prompt_builder import PromptBuilder
 from chat.context_futures import ContextFutures
 from chat.agent_todo_service import get_agent_todo_prompt_state
-from chat.rag_auto_inject import filter_auto_rag_results, should_skip_auto_rag
+from chat.rag_auto_inject import should_skip_auto_rag
 from chat.tools.catalog import (
     GET_TOOL_DETAILS_TOOL,
     execute_get_tool_details,
@@ -39,9 +39,15 @@ from memory.retriever import MemoryRetriever, format_memories_for_prompt
 
 from chat.tools.quiz_generation_tools import QUIZ_GENERATION_TOOLS, QuizGenerationToolExecutor
 from chat.tools.quiz_result_tools import QUIZ_RESULT_TOOLS, QUIZ_RESULT_TOOL_NAMES, QuizResultToolExecutor
-from chat.tools.rag_tools import RAG_TOOLS, RAGToolExecutor
+from chat.tools.rag_tools import RAG_TOOLS, RAG_TOOL_NAMES, RAGToolExecutor
 from rag.retrieval import get_search_service
-from chat.tools.base import ToolResult
+from chat.tools.base import (
+    TRANSIENT_TOOL_MEDIA_PROMPT,
+    ToolResult,
+    apply_tool_media_budget,
+    page_assets_for_citation,
+    strip_consumed_tool_media,
+)
 from chat.tools.client_tool_bridge import create_pending_request, wait_for_result
 from chat.tools.schedule_tools import SCHEDULE_TOOLS
 from chat.tools.web_tools import WEB_TOOLS, WebToolExecutor
@@ -310,7 +316,7 @@ class LLMOrchestrator:
         self._quiz_result_tool_names = QUIZ_RESULT_TOOL_NAMES
         self._web_tool_names = {"web_search", "web_fetch", "web_crawl"}
         self._schedule_tool_names = {"get_schedule", "add_schedule", "delete_schedule", "update_schedule"}
-        self._rag_tool_names = {"search_keywords", "search_regex", "list_documents", "read_document"}
+        self._rag_tool_names = RAG_TOOL_NAMES
         self._vector_memory_tool_names = VECTOR_MEMORY_TOOL_NAMES
         self._time_tool_names = TIME_TOOL_NAMES
         self._review_tool_names = REVIEW_TOOL_NAMES
@@ -506,13 +512,20 @@ class LLMOrchestrator:
                     query=query,
                     space_id=self.space_id,
                     top_k=3,
-                    score_threshold=settings.rag_auto_inject_threshold,
+                    # PostgreSQL ts_rank is not a cosine score.  Filtering it
+                    # with the legacy 0.55 vector threshold suppresses nearly
+                    # every exact document match.
+                    score_threshold=0.0,
                 )
-            filtered_results = filter_auto_rag_results(
-                results,
-                score_threshold=settings.rag_auto_inject_threshold,
-                max_results=3,
-            )
+            filtered_results = [
+                result
+                for result in results
+                if (
+                    result.score > 0
+                    if result.retrieval_source in {"text", "regex"}
+                    else result.score >= settings.rag_auto_inject_threshold
+                )
+            ][:3]
             if len(filtered_results) != len(results):
                 logger.info(
                     "Auto RAG filtered %d/%d candidates for query: %s",
@@ -560,7 +573,15 @@ class LLMOrchestrator:
             logger.warning(f"RAG auto-inject failed: {e}")
             return None, []
 
-    _CITABLE_TOOLS = {"search_keywords", "web_search", "web_crawl", "academic_search", "encyclopedia_search"}
+    _CITABLE_TOOLS = {
+        "search_keywords",
+        "view_document_pages",
+        "view_document_page",
+        "web_search",
+        "web_crawl",
+        "academic_search",
+        "encyclopedia_search",
+    }
 
     @staticmethod
     def _get_source_type(tool_name: str) -> str:
@@ -578,6 +599,36 @@ class LLMOrchestrator:
             return
         if not tool_result.success or not tool_result.data:
             return
+        if tool_call.name in {"view_document_pages", "view_document_page"}:
+            data = tool_result.data if isinstance(tool_result.data, dict) else {}
+            assets = page_assets_for_citation(data)
+            existing = {
+                (c.get("document_id"), c.get("page_number"), c.get("page_end"))
+                for c in self._citation_registry
+            }
+            for asset in assets:
+                start = asset.get("physical_page_start")
+                end = asset.get("physical_page_end") or start
+                key = (data.get("document_id"), start, end)
+                if start is None or key in existing:
+                    continue
+                self._citation_registry.append(
+                    {
+                        "index": len(self._citation_registry) + 1,
+                        "source_type": "document",
+                        "title": data.get("title") or "PDF 文档",
+                        "url": None,
+                        "content": f"PDF 物理页 {start}-{end}",
+                        "snippet": f"PDF 物理页 {start}-{end}",
+                        "score": 1.0,
+                        "document_id": data.get("document_id"),
+                        "chunk_id": None,
+                        "page_number": start,
+                        "page_end": end,
+                    }
+                )
+                existing.add(key)
+            return
         # Build set of existing chunk_ids for deduplication
         existing_chunk_ids = {
             c.get("chunk_id") for c in self._citation_registry if c.get("chunk_id")
@@ -589,7 +640,10 @@ class LLMOrchestrator:
                 continue
             # Use retrieval_score (cosine similarity) for display, not RRF score
             quality_score = r.get("retrieval_score") or r.get("rerank_score") or r.get("score") or 0
-            if quality_score < 0.4:
+            if tool_call.name == "search_keywords":
+                if quality_score <= 0:
+                    continue
+            elif quality_score < 0.4:
                 continue
             idx = len(self._citation_registry) + 1
             citation = {
@@ -864,9 +918,16 @@ class LLMOrchestrator:
                 }
                 return
 
+            # Any tool images present when this request started have now been
+            # consumed.  Replace their data URIs before another iteration.
+            strip_consumed_tool_media(messages)
+
             # Execute pending tool calls
             if pending_tool_calls:
                 tool_results_for_context: list[tuple[ToolCall, ToolResult, dict[str, Any]]] = []
+                media_settings = get_settings()
+                remaining_media_images = media_settings.rag_media_max_images
+                remaining_media_bytes = media_settings.rag_media_max_bytes
 
                 for tool_call in pending_tool_calls:
                     # Execute tool - dispatch to appropriate executor
@@ -1072,6 +1133,14 @@ class LLMOrchestrator:
                             tool_call.arguments,
                         )
 
+                    delivered_images, delivered_bytes = apply_tool_media_budget(
+                        tool_result,
+                        max_images=remaining_media_images,
+                        max_bytes=remaining_media_bytes,
+                    )
+                    remaining_media_images -= delivered_images
+                    remaining_media_bytes -= delivered_bytes
+
                     # Store result for context
                     llm_tool_payload = _tool_result_payload_for_llm(
                         tool_call.name,
@@ -1152,19 +1221,40 @@ class LLMOrchestrator:
                         }
                     )
 
-                # Inject tool images as visual context for follow-up analysis
-                image_parts = []
+                # Inject bounded tool media for the next model request only.
+                image_parts: list[dict[str, Any]] = []
                 for _tc, tr, _payload in tool_results_for_context:
-                    if tr.image_base64:
-                        image_parts.append({
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{tr.image_base64}"},
-                        })
+                    transient_media = list(tr.media)
+                    if tr.image_base64 and not transient_media:
+                        from chat.tools.base import ToolMedia
+
+                        transient_media = [
+                            ToolMedia(
+                                base64_data=tr.image_base64,
+                                mime_type="image/png",
+                                label=tr.message,
+                            )
+                        ]
+                    for media in transient_media:
+                        image_parts.extend(
+                            [
+                                {"type": "text", "text": media.label},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": (
+                                            f"data:{media.mime_type};base64,"
+                                            f"{media.base64_data}"
+                                        )
+                                    },
+                                },
+                            ]
+                        )
                 if image_parts:
                     messages.append({
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "[系统提示] 以上是工具渲染出的文档页面图片，请结合当前问题直接分析页面内容。"},
+                            {"type": "text", "text": TRANSIENT_TOOL_MEDIA_PROMPT},
                             *image_parts,
                         ],
                     })

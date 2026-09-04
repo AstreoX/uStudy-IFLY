@@ -276,6 +276,28 @@ class Settings(BaseSettings):
     vlm_max_image_size_bytes: int = 5242880    # 跳过 >5MB 大图
     vlm_max_concurrent: int = 3
 
+    # PDF Agentic RAG visual indexing. Derived files live outside the public
+    # upload tree and are addressed by private, relative storage keys.
+    pdf_agentic_enabled: bool = True
+    pdf_private_dir: str = "private-rag"
+    pdf_max_pages: int = 1500
+    pdf_render_dpi: int = 160
+    pdf_render_max_pixels: int = 8_000_000
+    pdf_webp_quality: int = 85
+    pdf_max_image_bytes: int = 4 * 1024 * 1024
+    pdf_lod_max_side: int = 2048
+    pdf_max_derived_bytes: int = 2 * 1024 * 1024 * 1024
+    pdf_min_free_disk_bytes: int = 5 * 1024 * 1024 * 1024
+    pdf_toc_scan_max_pages: int = 96
+    pdf_toc_max_pages: int = 64
+    pdf_toc_agent_max_rounds: int = 16
+    pdf_processing_lease_seconds: int = 300
+    pdf_processing_max_attempts: int = 4
+    pdf_processing_max_concurrent_jobs: int = 1
+    pdf_staging_retention_seconds: int = 86400
+    rag_media_max_images: int = 4
+    rag_media_max_bytes: int = 8 * 1024 * 1024
+
     # 附件文本提取配置
     attachment_text_max_tokens: int = 10000  # 每个文件最大 token 数
     attachment_text_timeout_seconds: int = 30  # 提取超时（秒）

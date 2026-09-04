@@ -112,12 +112,14 @@ TOOL_CATALOG: list[ToolCatalogEntry] = [
     ToolCatalogEntry("delete_schedule", "日程", "删除日程事件"),
     ToolCatalogEntry("update_schedule", "日程", "更新日程事件"),
 
-    # ── 文档检索 (5) ──
+    # ── 文档检索 (7) ──
     ToolCatalogEntry("search_keywords", "文档检索", "知识库全文关键词搜索（BM25）"),
     ToolCatalogEntry("search_regex", "文档检索", "知识库正则表达式搜索"),
     ToolCatalogEntry("list_documents", "文档检索", "列出知识库中所有文档"),
     ToolCatalogEntry("read_document", "文档检索", "读取指定文档全文"),
-    ToolCatalogEntry("view_document_page", "文档检索", "按页渲染 PDF 页面给主 AI 查看"),
+    ToolCatalogEntry("get_document_outline", "文档检索", "读取 PDF 结构化目录和页码映射"),
+    ToolCatalogEntry("view_document_pages", "文档检索", "按 4页/2页/单页渐进查看 PDF"),
+    ToolCatalogEntry("view_document_page", "文档检索", "查看 PDF 单页缓存或即时渲染页"),
 
     # ── 记忆 (4) ──
     ToolCatalogEntry("remember", "记忆", "写入长期记忆（跨空间持久）"),

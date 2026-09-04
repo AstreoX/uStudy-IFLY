@@ -6,7 +6,6 @@ import os
 import uuid
 from contextlib import suppress
 from pathlib import Path
-from typing import Optional
 
 import aiofiles
 from fastapi import HTTPException, UploadFile
@@ -14,19 +13,33 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from db.models import DocumentType, Space, SpaceDocument, User
+from db.models import (
+    DocumentProcessingTask,
+    DocumentType,
+    ProcessingStatus,
+    Space,
+    SpaceDocument,
+    User,
+)
 from quota.service import check_storage_quota
 from rag.parsing import (
     DocumentFormatError,
     get_supported_document_extensions,
     resolve_document_format_from_path,
 )
+from rag.tasks import (
+    dispatch_document_processing,
+    enqueue_document_processing,
+    schedule_document_processing as _schedule_document_processing,
+)
+
+# Kept as a public compatibility hook for presentation publishing and other
+# callers that cannot await the durable enqueue directly.
+schedule_document_processing = _schedule_document_processing
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
-# 保存后台任务的引用，防止被 GC
-_background_tasks: set[asyncio.Task] = set()
 UPLOAD_STREAM_CHUNK_SIZE = 1024 * 1024
 
 
@@ -60,14 +73,17 @@ async def create_link(
         doc_type=DocumentType.LINK,
         title=title,
         url=str(url),
+        creator_user_id=user_id,
     )
 
     db.add(document)
+    await db.flush()
+    task = await enqueue_document_processing(
+        db, document.id, dispatch=False, commit=False
+    )
     await db.commit()
     await db.refresh(document)
-
-    # Trigger async RAG processing (same as file upload)
-    schedule_document_processing(document.id)
+    dispatch_document_processing(task.id)
 
     return document
 
@@ -147,14 +163,17 @@ async def upload_document(
             original_filename=original_filename,
             file_size=file_size,
             mime_type=resolved_format.mime_type,
+            creator_user_id=user_id,
         )
 
         db.add(document)
+        await db.flush()
+        task = await enqueue_document_processing(
+            db, document.id, dispatch=False, commit=False
+        )
         await db.commit()
         await db.refresh(document)
-
-        # 自动触发 RAG 处理（后台异步执行）
-        schedule_document_processing(document.id)
+        dispatch_document_processing(task.id)
 
         return document
     except Exception:
@@ -205,22 +224,50 @@ async def delete_document(
     if not document:
         raise HTTPException(status_code=404, detail="文档不存在")
 
+    # Invalidate the current generation before deleting.  Every publish and
+    # heartbeat is fenced by generation + lease token, so an old worker cannot
+    # recreate assets after this transaction commits.
+    task_result = await db.execute(
+        select(DocumentProcessingTask).where(
+            DocumentProcessingTask.document_id == document.id
+        )
+    )
+    processing_task = task_result.scalar_one_or_none()
+    if processing_task is not None:
+        processing_task.generation = int(processing_task.generation or 0) + 1
+        processing_task.status = ProcessingStatus.FAILED
+        processing_task.stage = "deleted"
+        processing_task.lease_owner = None
+        processing_task.lease_token = None
+        processing_task.lease_expires_at = None
+
     # 保存文件路径信息用于后续删除
     file_to_delete = None
     if document.doc_type == DocumentType.DOCUMENT and document.url:
         # 安全路径验证：防止路径遍历攻击
-        relative_path = document.url.lstrip("/uploads/")
-        file_path = (Path(settings.upload_dir) / relative_path).resolve()
         uploads_dir = Path(settings.upload_dir).resolve()
+        prefix = "/uploads/"
+        relative_path = (
+            document.url[len(prefix) :]
+            if document.url.startswith(prefix)
+            else document.url.lstrip("/")
+        )
+        file_path = (uploads_dir / relative_path).resolve()
 
         # 确保文件路径在 uploads 目录内
         if file_path.is_relative_to(uploads_dir) and file_path.exists():
             file_to_delete = file_path
 
+    private_document_dir = (
+        Path(settings.pdf_private_dir) / str(document.space_id) / str(document.id)
+    )
+
     # 先删除数据库记录
     from rag.service import DocumentProcessingService
 
-    await DocumentProcessingService(db).delete_document_chunks(document.id)
+    await DocumentProcessingService(db).delete_document_chunks(
+        document.id, commit=False
+    )
     await db.delete(document)
     await db.commit()
 
@@ -228,12 +275,22 @@ async def delete_document(
     if file_to_delete:
         os.remove(file_to_delete)
 
+    private_root = Path(settings.pdf_private_dir).resolve()
+    resolved_private_dir = private_document_dir.resolve()
+    if (
+        resolved_private_dir.is_relative_to(private_root)
+        and resolved_private_dir.exists()
+    ):
+        import shutil
+
+        await asyncio.to_thread(shutil.rmtree, resolved_private_dir)
+
 
 async def get_document_by_id(
     db: AsyncSession,
     document_id: uuid.UUID,
     user_id: uuid.UUID,
-) -> Optional[SpaceDocument]:
+) -> SpaceDocument | None:
     """根据 ID 获取文档（验证权限）"""
     result = await db.execute(
         select(SpaceDocument)
@@ -241,44 +298,6 @@ async def get_document_by_id(
         .where(SpaceDocument.id == document_id, Space.user_id == user_id)
     )
     return result.scalar_one_or_none()
-
-
-async def trigger_document_processing(document_id: uuid.UUID) -> None:
-    """
-    触发文档 RAG 处理（后台任务）
-
-    在独立的数据库会话中运行，不阻塞请求。
-    """
-    from db.database import AsyncSessionLocal
-    from rag.service import DocumentProcessingService
-
-    async with AsyncSessionLocal() as db:
-        try:
-            service = DocumentProcessingService(db)
-            await service.process_document(document_id)
-        except Exception as e:
-            logger.error("文档处理失败: %s - %s", document_id, str(e), exc_info=True)
-            # 不抛出异常，避免影响后台任务
-
-
-def schedule_document_processing(document_id: uuid.UUID) -> None:
-    """
-    调度文档处理任务
-
-    使用 asyncio.create_task 在后台运行，不阻塞当前请求。
-    任务引用保存在 _background_tasks 集合中，防止被 GC 回收。
-    """
-    try:
-        loop = asyncio.get_running_loop()
-        task = loop.create_task(trigger_document_processing(document_id))
-        # 保存任务引用，防止被 GC 回收
-        _background_tasks.add(task)
-        # 任务完成后自动从集合中移除
-        task.add_done_callback(_background_tasks.discard)
-        logger.info("已调度文档处理任务: %s", document_id)
-    except RuntimeError:
-        # 没有运行中的事件循环
-        logger.warning("无法调度文档处理任务：没有运行中的事件循环")
 
 
 async def crawl_and_import(

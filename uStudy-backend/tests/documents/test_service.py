@@ -1,19 +1,20 @@
 """Tests for document upload service."""
 
-import io
 import base64
+import io
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
+from sqlalchemy import select
 from starlette.datastructures import Headers
 
+from db.models import Space, SpaceDocument, User
 from documents.service import upload_document
 from rag import service as rag_service
 from rag.parsing.formats import OLE_MAGIC
-
 
 _ONE_PIXEL_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
@@ -22,13 +23,15 @@ _ONE_PIXEL_PNG = base64.b64decode(
 
 @pytest.mark.asyncio
 async def test_upload_document_stores_canonical_mime(monkeypatch, tmp_path):
-    monkeypatch.setattr("documents.service.settings.upload_dir", str(tmp_path / "uploads"))
-    monkeypatch.setattr("documents.service.verify_space_ownership", AsyncMock())
-    scheduled: list = []
     monkeypatch.setattr(
-        "documents.service.schedule_document_processing",
-        lambda document_id: scheduled.append(document_id),
+        "documents.service.settings.upload_dir", str(tmp_path / "uploads")
     )
+    monkeypatch.setattr("documents.service.verify_space_ownership", AsyncMock())
+    task_id = uuid4()
+    enqueue = AsyncMock(return_value=SimpleNamespace(id=task_id))
+    dispatch = Mock()
+    monkeypatch.setattr("documents.service.enqueue_document_processing", enqueue)
+    monkeypatch.setattr("documents.service.dispatch_document_processing", dispatch)
 
     db = AsyncMock()
     added_documents: list = []
@@ -57,14 +60,25 @@ async def test_upload_document_stores_canonical_mime(monkeypatch, tmp_path):
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
     assert added_documents[0].mime_type == document.mime_type
-    assert scheduled == [document.id]
+    enqueue.assert_awaited_once()
+    enqueue_call = enqueue.await_args
+    assert enqueue_call.args[0] is db
+    assert enqueue_call.kwargs == {"dispatch": False, "commit": False}
+    dispatch.assert_called_once_with(task_id)
+    assert added_documents[0].creator_user_id is not None
 
 
 @pytest.mark.asyncio
 async def test_upload_document_detects_markdown_from_bytes(monkeypatch, tmp_path):
-    monkeypatch.setattr("documents.service.settings.upload_dir", str(tmp_path / "uploads"))
+    monkeypatch.setattr(
+        "documents.service.settings.upload_dir", str(tmp_path / "uploads")
+    )
     monkeypatch.setattr("documents.service.verify_space_ownership", AsyncMock())
-    monkeypatch.setattr("documents.service.schedule_document_processing", lambda document_id: None)
+    monkeypatch.setattr(
+        "documents.service.enqueue_document_processing",
+        AsyncMock(return_value=SimpleNamespace(id=uuid4())),
+    )
+    monkeypatch.setattr("documents.service.dispatch_document_processing", Mock())
 
     db = AsyncMock()
     db.add = Mock()
@@ -96,10 +110,13 @@ async def test_upload_document_rejects_oversized_file_without_loading_into_memor
     monkeypatch,
     tmp_path,
 ):
-    monkeypatch.setattr("documents.service.settings.upload_dir", str(tmp_path / "uploads"))
+    monkeypatch.setattr(
+        "documents.service.settings.upload_dir", str(tmp_path / "uploads")
+    )
     monkeypatch.setattr("documents.service.settings.document_max_size_bytes", 4)
     monkeypatch.setattr("documents.service.verify_space_ownership", AsyncMock())
-    monkeypatch.setattr("documents.service.schedule_document_processing", lambda document_id: None)
+    monkeypatch.setattr("documents.service.enqueue_document_processing", AsyncMock())
+    monkeypatch.setattr("documents.service.dispatch_document_processing", Mock())
 
     db = AsyncMock()
     db.add = Mock()
@@ -168,3 +185,43 @@ def test_detect_scanned_pdf_ignores_single_image_cover():
 
     assert result.is_scanned is False
     assert result.scanned_like_pages == 1
+
+
+@pytest.mark.asyncio
+async def test_upload_enqueue_failure_does_not_commit_orphan_document(
+    db_session, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        "documents.service.settings.upload_dir", str(tmp_path / "uploads")
+    )
+    monkeypatch.setattr("documents.service.verify_space_ownership", AsyncMock())
+    monkeypatch.setattr(
+        "documents.service.enqueue_document_processing",
+        AsyncMock(side_effect=RuntimeError("queue unavailable")),
+    )
+    monkeypatch.setattr("documents.service.dispatch_document_processing", Mock())
+    owner = User(email=f"upload-atomic-{uuid4().hex}@example.com", nickname="Owner")
+    db_session.add(owner)
+    await db_session.flush()
+    space = Space(user_id=owner.id, name="Atomic Upload", color="#123456")
+    db_session.add(space)
+    await db_session.commit()
+    upload = UploadFile(
+        file=io.BytesIO(b"plain text document"),
+        filename="notes.txt",
+        headers=Headers({"content-type": "text/plain"}),
+    )
+
+    with pytest.raises(RuntimeError, match="queue unavailable"):
+        await upload_document(
+            db=db_session,
+            space_id=space.id,
+            user_id=owner.id,
+            file=upload,
+            user=None,
+        )
+    await db_session.rollback()
+
+    assert (await db_session.scalars(select(SpaceDocument))).all() == []
+    documents_dir = tmp_path / "uploads" / "documents"
+    assert not documents_dir.exists() or not any(documents_dir.iterdir())

@@ -2,10 +2,11 @@
 
 import enum
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 from uuid import uuid4
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -19,6 +20,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ENUM, JSON, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -30,10 +32,6 @@ except ImportError:
     Vector = None
 
 from db.database import Base
-
-if TYPE_CHECKING:
-    pass
-
 
 # ============ 枚举定义 ============
 
@@ -1342,6 +1340,11 @@ class SpaceDocument(Base):
     chunks: Mapped[list["DocumentChunk"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
+    visual_indexes: Mapped[list["PdfVisualIndex"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     # 索引
     __table_args__ = (
@@ -1616,8 +1619,34 @@ class DocumentProcessingTask(Base):
         default=ProcessingStatus.PENDING,
         nullable=False,
     )
+    generation: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
+    stage: Mapped[str] = mapped_column(
+        String(40), default="queued", server_default="queued", nullable=False
+    )
     chunk_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     processed_chunks: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
+    page_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    processed_pages: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    asset_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), server_default=func.now(), nullable=False
+    )
+    lease_owner: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    lease_token: Mapped[Optional[UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    lease_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    warning_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     started_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -1628,6 +1657,13 @@ class DocumentProcessingTask(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), nullable=False
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
     # 关系
     document: Mapped["SpaceDocument"] = relationship(back_populates="processing_task")
@@ -1636,6 +1672,217 @@ class DocumentProcessingTask(Base):
     __table_args__ = (
         Index("ix_doc_processing_document_id", "document_id"),
         Index("ix_doc_processing_status", "status"),
+        Index(
+            "ix_doc_processing_claim",
+            "status",
+            "available_at",
+            "lease_expires_at",
+        ),
+        CheckConstraint("generation >= 1", name="ck_doc_processing_generation"),
+        CheckConstraint("processed_pages >= 0", name="ck_doc_processing_processed_pages"),
+        CheckConstraint("asset_count >= 0", name="ck_doc_processing_asset_count"),
+        CheckConstraint("attempt_count >= 0", name="ck_doc_processing_attempt_count"),
+    )
+
+
+class PdfVisualIndex(Base):
+    """Versioned private visual index for one PDF document."""
+
+    __tablename__ = "pdf_visual_indexes"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("space_documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("spaces.id", ondelete="CASCADE"), nullable=False
+    )
+    generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(20), default="staging", server_default="staging", nullable=False
+    )
+    is_current: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    page_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    outline_status: Mapped[str] = mapped_column(
+        String(20), default="pending", server_default="pending", nullable=False
+    )
+    toc_pdf_page_start: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    toc_pdf_page_end: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    page_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    outline_entries: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, server_default="[]", nullable=False
+    )
+    outline_markdown_path: Mapped[Optional[str]] = mapped_column(
+        String(1024), nullable=True
+    )
+    derived_bytes: Mapped[int] = mapped_column(
+        BigInteger, default=0, server_default="0", nullable=False
+    )
+    renderer_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), server_default=func.now(), nullable=False
+    )
+    published_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    document: Mapped["SpaceDocument"] = relationship(back_populates="visual_indexes")
+    space: Mapped["Space"] = relationship()
+    assets: Mapped[list["PdfPageAsset"]] = relationship(
+        back_populates="visual_index",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    agent_calls: Mapped[list["PdfIndexAgentCall"]] = relationship(
+        back_populates="visual_index",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        back_populates="pdf_visual_index", passive_deletes=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id", "generation", name="uq_pdf_visual_indexes_document_generation"
+        ),
+        Index("ix_pdf_visual_indexes_space", "space_id"),
+        Index("ix_pdf_visual_indexes_state", "state"),
+        Index(
+            "uq_pdf_visual_indexes_current_document",
+            "document_id",
+            unique=True,
+            postgresql_where=text("is_current"),
+            sqlite_where=text("is_current = 1"),
+        ),
+        CheckConstraint("generation >= 1", name="ck_pdf_visual_indexes_generation"),
+        CheckConstraint("page_count >= 1", name="ck_pdf_visual_indexes_page_count"),
+        CheckConstraint("derived_bytes >= 0", name="ck_pdf_visual_indexes_derived_bytes"),
+        CheckConstraint(
+            "state IN ('staging', 'published', 'superseded', 'failed')",
+            name="ck_pdf_visual_indexes_state",
+        ),
+        CheckConstraint(
+            "outline_status IN ('pending', 'ready', 'not_found', 'failed')",
+            name="ck_pdf_visual_indexes_outline_status",
+        ),
+        CheckConstraint(
+            "toc_pdf_page_start IS NULL OR toc_pdf_page_start >= 1",
+            name="ck_pdf_visual_indexes_toc_start",
+        ),
+        CheckConstraint(
+            "toc_pdf_page_end IS NULL OR toc_pdf_page_end >= toc_pdf_page_start",
+            name="ck_pdf_visual_indexes_toc_end",
+        ),
+    )
+
+
+class PdfPageAsset(Base):
+    """One immutable 1-up, 2-up, or 4-up rendered PDF page asset."""
+
+    __tablename__ = "pdf_page_assets"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    index_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("pdf_visual_indexes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("space_documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("spaces.id", ondelete="CASCADE"), nullable=False
+    )
+    pages_per_image: Mapped[int] = mapped_column(Integer, nullable=False)
+    physical_page_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    physical_page_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(1024), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), server_default=func.now(), nullable=False
+    )
+
+    visual_index: Mapped["PdfVisualIndex"] = relationship(back_populates="assets")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "index_id",
+            "pages_per_image",
+            "physical_page_start",
+            name="uq_pdf_page_assets_index_lod_start",
+        ),
+        Index("ix_pdf_page_assets_document", "document_id"),
+        Index("ix_pdf_page_assets_space", "space_id"),
+        CheckConstraint(
+            "pages_per_image IN (1, 2, 4)", name="ck_pdf_page_assets_pages_per_image"
+        ),
+        CheckConstraint("physical_page_start >= 1", name="ck_pdf_page_assets_page_start"),
+        CheckConstraint(
+            "physical_page_end >= physical_page_start",
+            name="ck_pdf_page_assets_page_end",
+        ),
+        CheckConstraint("width > 0", name="ck_pdf_page_assets_width"),
+        CheckConstraint("height > 0", name="ck_pdf_page_assets_height"),
+        CheckConstraint("byte_size > 0", name="ck_pdf_page_assets_byte_size"),
+    )
+
+
+class PdfIndexAgentCall(Base):
+    """Durable checkpoint for an idempotent PDF VLM-agent call."""
+
+    __tablename__ = "pdf_index_agent_calls"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    index_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("pdf_visual_indexes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    call_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    operation: Mapped[str] = mapped_column(String(64), nullable=False)
+    round_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), default="pending", server_default="pending", nullable=False
+    )
+    response_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    response_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    visual_index: Mapped["PdfVisualIndex"] = relationship(back_populates="agent_calls")
+
+    __table_args__ = (
+        Index("ix_pdf_index_agent_calls_index", "index_id"),
+        CheckConstraint("round_index >= 0", name="ck_pdf_index_agent_calls_round"),
     )
 
 
@@ -1657,6 +1904,14 @@ class DocumentChunk(Base):
         ForeignKey("spaces.id", ondelete="CASCADE"),
         nullable=False,
     )
+    pdf_visual_index_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("pdf_visual_indexes.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    chunk_kind: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    physical_page_start: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    physical_page_end: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     content_tsv = mapped_column(TSVECTOR, nullable=True)
@@ -1669,11 +1924,30 @@ class DocumentChunk(Base):
     # 关系
     document: Mapped["SpaceDocument"] = relationship(back_populates="chunks")
     space: Mapped["Space"] = relationship()
+    pdf_visual_index: Mapped[Optional["PdfVisualIndex"]] = relationship(
+        back_populates="chunks"
+    )
 
     # 索引（embedding 索引将在迁移中单独创建）
     __table_args__ = (
         Index("ix_document_chunks_document_id", "document_id"),
         Index("ix_document_chunks_space_id", "space_id"),
+        Index("ix_document_chunks_pdf_visual_index_id", "pdf_visual_index_id"),
+        Index(
+            "ix_document_chunks_kind_page", "chunk_kind", "physical_page_start"
+        ),
+        CheckConstraint(
+            "chunk_kind IS NULL OR chunk_kind IN ('native_page', 'outline_entry')",
+            name="ck_document_chunks_chunk_kind",
+        ),
+        CheckConstraint(
+            "physical_page_start IS NULL OR physical_page_start >= 1",
+            name="ck_document_chunks_page_start",
+        ),
+        CheckConstraint(
+            "physical_page_end IS NULL OR physical_page_end >= physical_page_start",
+            name="ck_document_chunks_page_end",
+        ),
     )
 
 

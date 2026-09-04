@@ -1,7 +1,6 @@
 """RAG API schemas"""
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -22,11 +21,13 @@ class SearchResultItem(BaseModel):
     document_id: UUID
     content: str
     score: float = Field(description="最终排序分数")
-    retrieval_score: Optional[float] = Field(default=None, description="检索阶段分数")
-    rerank_score: Optional[float] = Field(default=None, description="重排序分数")
-    retrieval_source: str = Field(default="dense", description="结果来源：dense/sparse/merged")
-    document_title: Optional[str]
-    document_filename: Optional[str]
+    retrieval_score: float | None = Field(default=None, description="检索阶段分数")
+    rerank_score: float | None = Field(default=None, description="重排序分数")
+    retrieval_source: str = Field(
+        default="dense", description="结果来源：dense/sparse/merged"
+    )
+    document_title: str | None
+    document_filename: str | None
     metadata: dict = Field(default_factory=dict)
 
 
@@ -43,9 +44,19 @@ class ProcessingStatusResponse(BaseModel):
 
     document_id: UUID
     status: str
-    chunk_count: Optional[int]
+    chunk_count: int | None
     processed_chunks: int
-    error_message: Optional[str]
-    started_at: Optional[datetime]
-    completed_at: Optional[datetime]
+    error_message: str | None
+    started_at: datetime | None
+    completed_at: datetime | None
     created_at: datetime
+    generation: int = 1
+    stage: str = "queued"
+    page_count: int | None = None
+    processed_pages: int = 0
+    asset_count: int = 0
+    outline_status: str | None = None
+    attempt_count: int = 0
+    next_retry_at: datetime | None = None
+    error_code: str | None = None
+    warning_code: str | None = None

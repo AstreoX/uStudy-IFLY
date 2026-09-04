@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.dependencies import get_current_user
 from config import get_settings
 from db.database import get_db
-from db.models import DocumentProcessingTask, Space, SpaceDocument, User
+from db.models import DocumentProcessingTask, PdfVisualIndex, Space, SpaceDocument, User
 from rag.retrieval import get_search_service
 from rag.schemas import (
     ProcessingStatusResponse,
@@ -124,6 +124,15 @@ async def get_processing_status(
     )
     task = task_result.scalar_one_or_none()
 
+    index_result = await db.execute(
+        select(PdfVisualIndex).where(
+            PdfVisualIndex.document_id == document_id,
+            PdfVisualIndex.is_current.is_(True),
+            PdfVisualIndex.state == "published",
+        )
+    )
+    visual_index = index_result.scalar_one_or_none()
+
     if not task:
         # 没有处理任务，返回 pending 状态
         return ProcessingStatusResponse(
@@ -135,6 +144,9 @@ async def get_processing_status(
             started_at=None,
             completed_at=None,
             created_at=document.created_at,
+            generation=1,
+            stage="not_started",
+            outline_status=visual_index.outline_status if visual_index else None,
         )
 
     return ProcessingStatusResponse(
@@ -146,6 +158,16 @@ async def get_processing_status(
         started_at=task.started_at,
         completed_at=task.completed_at,
         created_at=task.created_at,
+        generation=task.generation,
+        stage=task.stage,
+        page_count=task.page_count or (visual_index.page_count if visual_index else None),
+        processed_pages=task.processed_pages,
+        asset_count=task.asset_count,
+        outline_status=visual_index.outline_status if visual_index else None,
+        attempt_count=task.attempt_count,
+        next_retry_at=task.available_at if task.stage == "retry_wait" else None,
+        error_code=task.error_code,
+        warning_code=task.warning_code,
     )
 
 
@@ -159,9 +181,9 @@ async def reprocess_document(
     """
     重新处理文档
 
-    删除现有切片并重新进行切片和向量化。
+    创建新的耐久处理 generation；旧索引在新版本原子发布前继续可用。
     """
-    from documents.service import schedule_document_processing
+    from rag.tasks import enqueue_document_processing
 
     await verify_space_access(db, space_id, current_user.id)
 
@@ -176,7 +198,12 @@ async def reprocess_document(
     if not document:
         raise HTTPException(status_code=404, detail="文档不存在")
 
-    # 触发重新处理
-    schedule_document_processing(document_id)
+    # Persist a new generation before returning.  The old published visual
+    # index remains readable until this generation atomically replaces it.
+    task = await enqueue_document_processing(db, document_id)
 
-    return {"message": "文档处理任务已重新调度", "document_id": str(document_id)}
+    return {
+        "message": "文档处理任务已重新调度",
+        "document_id": str(document_id),
+        "generation": task.generation,
+    }

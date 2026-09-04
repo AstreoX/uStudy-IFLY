@@ -173,6 +173,25 @@ services:
       RAG_AUTO_INJECT_ENABLED: ${RAG_AUTO_INJECT_ENABLED:-true}
       LEARNING_PATH_AUTO_EXPAND_ENABLED: ${LEARNING_PATH_AUTO_EXPAND_ENABLED:-true}
       EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
+      PDF_AGENTIC_ENABLED: ${PDF_AGENTIC_ENABLED:-true}
+      PDF_PRIVATE_DIR: /app/private-rag
+      PDF_MAX_PAGES: ${PDF_MAX_PAGES:-1500}
+      PDF_RENDER_DPI: ${PDF_RENDER_DPI:-160}
+      PDF_RENDER_MAX_PIXELS: ${PDF_RENDER_MAX_PIXELS:-8000000}
+      PDF_WEBP_QUALITY: ${PDF_WEBP_QUALITY:-85}
+      PDF_MAX_IMAGE_BYTES: ${PDF_MAX_IMAGE_BYTES:-4194304}
+      PDF_LOD_MAX_SIDE: ${PDF_LOD_MAX_SIDE:-2048}
+      PDF_MAX_DERIVED_BYTES: ${PDF_MAX_DERIVED_BYTES:-2147483648}
+      PDF_MIN_FREE_DISK_BYTES: ${PDF_MIN_FREE_DISK_BYTES:-5368709120}
+      PDF_TOC_SCAN_MAX_PAGES: ${PDF_TOC_SCAN_MAX_PAGES:-96}
+      PDF_TOC_MAX_PAGES: ${PDF_TOC_MAX_PAGES:-64}
+      PDF_TOC_AGENT_MAX_ROUNDS: ${PDF_TOC_AGENT_MAX_ROUNDS:-16}
+      PDF_PROCESSING_LEASE_SECONDS: ${PDF_PROCESSING_LEASE_SECONDS:-300}
+      PDF_PROCESSING_MAX_ATTEMPTS: ${PDF_PROCESSING_MAX_ATTEMPTS:-4}
+      PDF_PROCESSING_MAX_CONCURRENT_JOBS: ${PDF_PROCESSING_MAX_CONCURRENT_JOBS:-1}
+      PDF_STAGING_RETENTION_SECONDS: ${PDF_STAGING_RETENTION_SECONDS:-86400}
+      RAG_MEDIA_MAX_IMAGES: ${RAG_MEDIA_MAX_IMAGES:-4}
+      RAG_MEDIA_MAX_BYTES: ${RAG_MEDIA_MAX_BYTES:-8388608}
       # Teacher presentation agent control plane. The backend remains the
       # capability gateway; only the manager holds the Docker socket.
       PRESENTATION_SANDBOX_MANAGER_URL: http://presentation-sandbox-manager:8090
@@ -193,6 +212,7 @@ services:
       OJ_RUN_TIMEOUT_SECONDS: ${OJ_RUN_TIMEOUT_SECONDS:-90}
     volumes:
       - uploads:/app/uploads
+      - pdf_rag_private:/app/private-rag
       - presentation_private:/app/private-presentations
       - ./certs:/app/certs:ro
       - oj_manager_secret:/run/secrets/oj-manager:ro
@@ -368,6 +388,8 @@ volumes:
   presentation_manager_state:
     driver: local
   presentation_private:
+    driver: local
+  pdf_rag_private:
     driver: local
   oj_private:
     driver: local
