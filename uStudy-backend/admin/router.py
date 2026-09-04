@@ -12,22 +12,18 @@ from admin.schemas import (
     AdminStats,
     AdminUserDetail,
     AdminUserItem,
-    PaginatedOrders,
+    AiOpsDashboard,
     PaginatedUsers,
-    UpdateSubscriptionRequest,
 )
 from admin.service import (
+    get_ai_ops_dashboard,
     get_analytics,
-    get_orders,
     get_stats,
     get_user_detail,
     get_users,
-    update_user_subscription,
 )
 from db.database import get_db
 from db.models import User
-from payment.exceptions import OrderExpiredError, OrderNotFoundError
-from payment.service import admin_confirm_order, admin_reject_order
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +58,16 @@ async def analytics(
     return await get_analytics(db)
 
 
+@router.get("/ai-stability", response_model=AiOpsDashboard)
+async def ai_stability(
+    hours: int = Query(24, ge=1, le=168),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """AI request stability metrics: failures, latency and TTFT."""
+    return await get_ai_ops_dashboard(db, hours)
+
+
 @router.get("/users", response_model=PaginatedUsers)
 async def list_users(
     page: int = Query(1, ge=1),
@@ -87,59 +93,3 @@ async def user_detail(
         raise HTTPException(status_code=404, detail="用户不存在")
 
 
-@router.put("/users/{user_id}/subscription", response_model=AdminUserItem)
-async def update_subscription(
-    user_id: UUID,
-    body: UpdateSubscriptionRequest,
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Update user subscription tier and/or expiry."""
-    try:
-        return await update_user_subscription(db, user_id, body.tier, body.expires_at)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="用户不存在")
-
-
-@router.get("/orders", response_model=PaginatedOrders)
-async def list_orders(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    status: str = Query(""),
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Paginated order list."""
-    return await get_orders(db, page, page_size, status)
-
-
-@router.post("/orders/{order_id}/confirm")
-async def confirm_order(
-    order_id: UUID,
-    admin: User = Depends(require_admin),
-):
-    """Confirm payment for an order (delegates to payment service)."""
-    try:
-        return await admin_confirm_order(order_id, admin)
-    except OrderNotFoundError:
-        raise HTTPException(status_code=404, detail="订单不存在")
-    except OrderExpiredError as e:
-        raise HTTPException(status_code=410, detail=str(e))
-    except PermissionError:
-        raise HTTPException(status_code=403, detail="无权限")
-
-
-@router.post("/orders/{order_id}/reject")
-async def reject_order(
-    order_id: UUID,
-    admin: User = Depends(require_admin),
-):
-    """Reject a payment order (delegates to payment service)."""
-    try:
-        return await admin_reject_order(order_id, admin)
-    except OrderNotFoundError:
-        raise HTTPException(status_code=404, detail="订单不存在")
-    except OrderExpiredError as e:
-        raise HTTPException(status_code=410, detail=str(e))
-    except PermissionError:
-        raise HTTPException(status_code=403, detail="无权限")

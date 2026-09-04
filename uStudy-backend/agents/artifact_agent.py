@@ -4,7 +4,7 @@ import logging
 import re
 from collections.abc import AsyncGenerator
 
-from agents.llm.client import OpenRouterClient
+from agents.llm.client import LLMClient
 from config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -182,8 +182,9 @@ class ArtifactGenerationAgent:
 
     def __init__(self) -> None:
         settings = get_settings()
-        self.llm_client = OpenRouterClient(
-            model_override=settings.artifact_model
+        self.llm_client = LLMClient(
+            model_override=settings.artifact_model,
+            timeout_seconds=settings.artifact_timeout_seconds,
         )
 
     @staticmethod

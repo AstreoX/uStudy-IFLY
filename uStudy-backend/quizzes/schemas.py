@@ -47,7 +47,23 @@ class QuizSubmitRequest(BaseModel):
     answers: list[UserAnswerItem] = Field(..., description="用户答案列表")
 
 
+class QuizDraftSaveRequest(BaseModel):
+    """测验草稿保存请求"""
+
+    answers: list[UserAnswerItem] = Field(..., description="当前答题状态，未作答题可传 null")
+    current_question_index: int = Field(
+        0, ge=0, description="当前停留的题目索引（从 0 开始）"
+    )
+
+
 # ============ 响应 Schema ============
+
+
+class UserAnswerResponseItem(BaseModel):
+    """用户答题快照"""
+
+    question_id: UUID = Field(..., description="题目 ID")
+    answer: Any = Field(None, description="用户答案")
 
 
 class QuestionResponse(BaseModel):
@@ -75,6 +91,12 @@ class QuizDetailResponse(BaseModel):
     difficulty: str = Field(..., description="难度级别")
     total_questions: int = Field(..., description="题目总数")
     is_review_quiz: bool = Field(False, description="是否为复习测试题")
+    attempt_status: str | None = Field(None, description="当前用户该测验状态")
+    draft_answers: list[UserAnswerResponseItem] = Field(
+        default_factory=list, description="当前用户草稿答案"
+    )
+    current_question_index: int = Field(0, description="草稿停留题目索引")
+    draft_updated_at: datetime | None = Field(None, description="草稿最近更新时间")
     questions: list[QuestionResponse] = Field(..., description="题目列表")
     created_at: datetime = Field(..., description="创建时间")
 
@@ -123,6 +145,16 @@ class QuizSubmitAsyncResponse(BaseModel):
     message: str = Field(..., description="提示信息")
 
 
+class QuizDraftSaveResponse(BaseModel):
+    """草稿保存响应"""
+
+    quiz_id: UUID = Field(..., description="测试 ID")
+    attempt_id: UUID = Field(..., description="作答记录 ID")
+    status: str = Field(..., description="状态: in_progress")
+    draft_updated_at: datetime = Field(..., description="草稿最近更新时间")
+    message: str = Field(..., description="提示信息")
+
+
 class QuizListItemResponse(BaseModel):
     """测验列表项响应"""
 
@@ -139,7 +171,11 @@ class QuizListItemResponse(BaseModel):
     has_attempt: bool = Field(..., description="是否已作答")
     attempt_score: int | None = Field(None, description="得分（已作答时）")
     attempt_total_score: int | None = Field(None, description="总分（已作答时）")
-    attempt_status: str | None = Field(None, description="评估状态（pending/evaluating/completed/failed）")
+    attempt_status: str | None = Field(
+        None, description="作答状态（in_progress/pending/evaluating/completed/failed）"
+    )
+    draft_answer_count: int | None = Field(None, description="草稿中已作答题数")
+    draft_updated_at: datetime | None = Field(None, description="草稿最近更新时间")
 
 
 class QuizAttemptResponse(BaseModel):

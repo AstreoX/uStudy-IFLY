@@ -3,9 +3,9 @@
 import asyncio
 import base64
 import logging
-import os
 import time
 from dataclasses import dataclass
+from datetime import timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator
 from uuid import UUID
@@ -14,8 +14,8 @@ from sqlalchemy import select, delete, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from chat.models_config import get_max_output_tokens, get_openrouter_model
-from chat.orchestrator import LLMOrchestrator, QuickChatOrchestrator
+from chat.models_config import get_max_output_tokens, get_model_id
+from chat.orchestrator import LLMOrchestrator
 from chat.streaming_cache import get_streaming_state, mark_streaming_stopped
 from chat.title_generator import generate_title, fallback_title
 from memory.extractor import MemoryExtractor
@@ -34,6 +34,7 @@ from db.database import get_scoped_session
 from db.models import (
     AttachmentType,
     Conversation,
+    ConversationKind,
     Message,
     MessageAttachment,
     MessageResponseStatus,
@@ -83,6 +84,25 @@ def _extract_tool_calls_from_context(llm_context: dict | None) -> list[dict] | N
             })
     return extracted if extracted else None
 
+
+def _extract_image_urls_from_llm_message(message: dict[str, Any]) -> list[str]:
+    """Extract image URLs from an LLM-formatted multimodal message."""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return []
+
+    image_urls: list[str] = []
+    for part in content:
+        if not isinstance(part, dict) or part.get("type") != "image_url":
+            continue
+
+        image_value = part.get("image_url")
+        image_url = image_value.get("url") if isinstance(image_value, dict) else image_value
+        if isinstance(image_url, str) and image_url:
+            image_urls.append(image_url)
+
+    return image_urls
+
 # Context window limit - how many messages to include in LLM context
 # DeepSeek V3 has 128K context window, so we can include more history
 MAX_HISTORY_MESSAGES = 50
@@ -128,10 +148,6 @@ async def _persist_assistant_message(
         )
         save_db.add(assistant_message)
         await save_db.commit()
-
-# Use base64 encoding for images by default (localhost URLs not accessible to OpenRouter)
-USE_BASE64_FOR_IMAGES = os.getenv("USE_BASE64_FOR_IMAGES", "true").lower() == "true"
-
 
 def _encode_image_to_base64(attachment: MessageAttachment) -> str:
     """
@@ -183,6 +199,7 @@ def _build_llm_message_with_attachments(message: Message) -> dict[str, Any]:
         return {"role": message.role.value, "content": message.content}
 
     # With attachments, use multimodal format
+    settings = get_settings()
     content_parts = []
 
     # 1. Add text part (if any)
@@ -193,7 +210,7 @@ def _build_llm_message_with_attachments(message: Message) -> dict[str, Any]:
     for attachment in message.attachments:
         if attachment.attachment_type == AttachmentType.IMAGE:
             # Use base64 encoding or URL based on config
-            if USE_BASE64_FOR_IMAGES:
+            if settings.use_base64_for_images:
                 image_url = _encode_image_to_base64(attachment)
             else:
                 # Use direct URL (requires public access)
@@ -236,7 +253,7 @@ async def _build_llm_message_with_attachments_async(
     for idx, attachment in enumerate(message.attachments, start=1):
         if attachment.attachment_type == AttachmentType.IMAGE:
             # Image handling (existing logic)
-            if USE_BASE64_FOR_IMAGES:
+            if settings.use_base64_for_images:
                 image_url = _encode_image_to_base64(attachment)
             else:
                 image_url = attachment.file_url
@@ -522,7 +539,7 @@ class ChatService:
                 "is_stopped": bool(state and state.is_stopped),
                 "partial_content": (state.content or None) if state else None,
                 "partial_thinking": (state.thinking or None) if state else None,
-                "tool_calls": state.tool_calls if state else [],
+                "tool_calls": (state.tool_calls or []) if state else [],
                 "updated_at": state.updated_at if state else None,
             }
 
@@ -536,7 +553,7 @@ class ChatService:
             "is_stopped": True,
             "partial_content": stopped_state.content or None,
             "partial_thinking": stopped_state.thinking or None,
-            "tool_calls": stopped_state.tool_calls,
+            "tool_calls": stopped_state.tool_calls or [],
             "updated_at": stopped_state.updated_at,
         }
 
@@ -623,7 +640,10 @@ class ChatService:
             else:
                 t0 = time.monotonic()
                 result = await db.execute(
-                    select(Conversation).where(Conversation.id == conversation_id)
+                    select(Conversation).where(
+                        Conversation.id == conversation_id,
+                        Conversation.kind == ConversationKind.LEARNING,
+                    )
                 )
                 conversation = result.scalar_one_or_none()
 
@@ -693,6 +713,9 @@ class ChatService:
             # Build current message with attachments (async, includes file content extraction)
             current_message_dict = await _build_llm_message_with_attachments_async(
                 user_message, db
+            )
+            current_message_image_urls = _extract_image_urls_from_llm_message(
+                current_message_dict
             )
 
             # Inject panel screenshot into current message (transient, not saved to DB)
@@ -767,7 +790,13 @@ class ChatService:
         title_task = None
         settings = get_settings()
         if is_new_conversation and settings.title_generation_enabled:
-            title_task = asyncio.create_task(generate_title(content))
+            title_task = asyncio.create_task(
+                generate_title(
+                    content,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                )
+            )
 
         # === Load user search settings ===
         t0 = time.monotonic()
@@ -781,10 +810,10 @@ class ChatService:
         # asyncio.Queue; the SSE generator reads from it.  When the client
         # disconnects the generator stops, but the background task keeps running
         # and always executes Phase 3 (save).
-        # Resolve model_id to OpenRouter model string
-        openrouter_model = get_openrouter_model(model_id)
+        # Resolve model_id to DashScope model string
+        llm_model = get_model_id(model_id)
         max_output_tokens = get_max_output_tokens(model_id)
-        logger.info(f"[ModelSelection] study model_id={model_id!r} -> openrouter_model={openrouter_model!r}, max_output_tokens={max_output_tokens}")
+        logger.info(f"[ModelSelection] study model_id={model_id!r} -> llm_model={llm_model!r}, max_output_tokens={max_output_tokens}")
 
         # Resolve thinking: only honor if model supports it
         from chat.models_config import get_supports_thinking
@@ -796,7 +825,7 @@ class ChatService:
             space_id=space_id,
             space_name=space_name,
             previous_conversation_context=previous_conversation_context,
-            openrouter_model=openrouter_model,
+            llm_model=llm_model,
             search_channels=enabled_channels,
             tool_mode=space_tool_mode,
             enabled_tools=space_enabled_tools,
@@ -903,7 +932,10 @@ class ChatService:
                 try:
                     async with get_scoped_session() as save_db:
                         result = await save_db.execute(
-                            select(Conversation).where(Conversation.id == conversation_id)
+                            select(Conversation).where(
+                                Conversation.id == conversation_id,
+                                Conversation.kind == ConversationKind.LEARNING,
+                            )
                         )
                         conv = result.scalar_one_or_none()
                         if conv:
@@ -919,7 +951,9 @@ class ChatService:
             try:
                 try:
                     async for event in orchestrator.process_message(
-                        current_message_dict, llm_history
+                        current_message_dict,
+                        llm_history,
+                        current_message_image_urls=current_message_image_urls,
                     ):
                         if event["event"] == "text_delta":
                             full_response += event["data"].get("content", "")
@@ -1035,6 +1069,7 @@ class ChatService:
             user_id=user_id,
             space_id=space_id,
             title=title[:200],  # Ensure max length
+            kind=ConversationKind.LEARNING,
         )
         self.db.add(conversation)
         await self.db.commit()
@@ -1068,7 +1103,11 @@ class ChatService:
         # Get conversations
         result = await self.db.execute(
             select(Conversation)
-            .where(Conversation.space_id == space_id, Conversation.user_id == user_id)
+            .where(
+                Conversation.space_id == space_id,
+                Conversation.user_id == user_id,
+                Conversation.kind == ConversationKind.LEARNING,
+            )
             .order_by(Conversation.updated_at.desc())
         )
         conversations = result.scalars().all()
@@ -1117,6 +1156,7 @@ class ChatService:
             .where(
                 Conversation.space_id == space_id,
                 Conversation.user_id == user_id,
+                Conversation.kind == ConversationKind.LEARNING,
             )
         )
 
@@ -1262,11 +1302,17 @@ class ChatService:
         if not last_user_msg:
             return 0
 
+        cutoff_created_at = last_user_msg.created_at
+        if cutoff_created_at.tzinfo is not None:
+            cutoff_created_at = cutoff_created_at.astimezone(timezone.utc).replace(
+                tzinfo=None
+            )
+
         # Delete that message and all messages after it
         result = await self.db.execute(
             delete(Message).where(
                 Message.conversation_id == conversation_id,
-                Message.created_at >= last_user_msg.created_at,
+                Message.created_at >= cutoff_created_at,
             )
         )
         deleted_count = result.rowcount
@@ -1316,7 +1362,10 @@ class ChatService:
             ConversationAccessDeniedError: If user doesn't own the conversation
         """
         result = await self.db.execute(
-            select(Conversation).where(Conversation.id == conversation_id)
+            select(Conversation).where(
+                Conversation.id == conversation_id,
+                Conversation.kind == ConversationKind.LEARNING,
+            )
         )
         conversation = result.scalar_one_or_none()
 
@@ -1327,170 +1376,6 @@ class ChatService:
             raise ConversationAccessDeniedError(f"无权访问对话 {conversation_id}")
 
         return conversation
-
-    async def create_quick_chat_conversation(
-        self,
-        user_id: UUID,
-        title: str,
-    ) -> ConversationResponse:
-        """
-        Create a conversation without space binding (quick chat mode).
-
-        Args:
-            user_id: Current user ID
-            title: Conversation title
-
-        Returns:
-            ConversationResponse
-        """
-        conversation = Conversation(
-            user_id=user_id,
-            space_id=None,  # No space binding for quick chat
-            title=title[:200],
-        )
-        self.db.add(conversation)
-        await self.db.commit()
-        await self.db.refresh(conversation)
-
-        logger.info(f"Created quick chat conversation {conversation.id}")
-        return ConversationResponse.model_validate(conversation)
-
-    async def list_quick_chat_conversations(
-        self,
-        user_id: UUID,
-    ) -> ConversationListResponse:
-        """
-        List conversations without space binding (quick chat).
-
-        Args:
-            user_id: Current user ID
-
-        Returns:
-            ConversationListResponse with conversations list
-        """
-        result = await self.db.execute(
-            select(Conversation)
-            .where(
-                Conversation.user_id == user_id,
-                Conversation.space_id.is_(None)
-            )
-            .order_by(Conversation.updated_at.desc())
-        )
-        conversations = result.scalars().all()
-
-        return ConversationListResponse(
-            conversations=[ConversationResponse.model_validate(c) for c in conversations],
-            total=len(conversations),
-        )
-
-    async def search_quick_chat_conversations(
-        self,
-        user_id: UUID,
-        q: str,
-        scope: str = "all",
-        page: int = 1,
-        page_size: int = 20,
-    ) -> ConversationSearchResponse:
-        """
-        Search quick chat conversations (space_id IS NULL) by title and/or message content.
-
-        Args:
-            user_id: Current user ID
-            q: Search query
-            scope: "title" | "content" | "all"
-            page: Page number (1-based)
-            page_size: Results per page (max 50)
-
-        Returns:
-            ConversationSearchResponse
-        """
-        page_size = min(page_size, 50)
-        pattern = f"%{q}%"
-
-        base_query = (
-            select(Conversation)
-            .distinct()
-            .where(
-                Conversation.user_id == user_id,
-                Conversation.space_id.is_(None),
-            )
-        )
-
-        if scope == "title":
-            base_query = base_query.where(Conversation.title.ilike(pattern))
-        elif scope == "content":
-            base_query = (
-                base_query
-                .outerjoin(Message, Message.conversation_id == Conversation.id)
-                .where(Message.content.ilike(pattern))
-            )
-        else:  # "all"
-            base_query = (
-                base_query
-                .outerjoin(Message, Message.conversation_id == Conversation.id)
-                .where(
-                    or_(
-                        Conversation.title.ilike(pattern),
-                        Message.content.ilike(pattern),
-                    )
-                )
-            )
-
-        count_result = await self.db.scalar(
-            select(func.count()).select_from(base_query.subquery())
-        )
-        total = count_result or 0
-
-        paginated = base_query.order_by(Conversation.updated_at.desc()).offset(
-            (page - 1) * page_size
-        ).limit(page_size)
-
-        conv_result = await self.db.execute(paginated)
-        conversations = conv_result.scalars().all()
-
-        items = []
-        for conv in conversations:
-            if scope == "title":
-                matching_messages = []
-            else:
-                msg_result = await self.db.execute(
-                    select(Message)
-                    .where(
-                        Message.conversation_id == conv.id,
-                        Message.content.ilike(pattern),
-                    )
-                    .order_by(Message.created_at.asc())
-                    .limit(3)
-                )
-                msgs = msg_result.scalars().all()
-                matching_messages = [
-                    MessageSnippet(
-                        id=m.id,
-                        role=m.role.value,
-                        snippet=_extract_snippet(m.content, q),
-                        created_at=m.created_at,
-                    )
-                    for m in msgs
-                ]
-
-            items.append(
-                ConversationSearchItem(
-                    id=conv.id,
-                    title=conv.title,
-                    space_id=conv.space_id,
-                    updated_at=conv.updated_at,
-                    created_at=conv.created_at,
-                    matching_messages=matching_messages,
-                )
-            )
-
-        return ConversationSearchResponse(
-            items=items,
-            total=total,
-            page=page,
-            page_size=page_size,
-            query=q,
-        )
 
     async def update_conversation(
         self,
@@ -1530,333 +1415,3 @@ class ChatService:
 
         logger.info(f"Updated conversation {conversation_id}")
         return ConversationResponse.model_validate(conversation)
-
-    @staticmethod
-    async def send_quick_chat_message(
-        user_id: UUID,
-        conversation_id: UUID,
-        content: str,
-        attachment_ids: list[UUID] | None = None,
-        model_id: str | None = None,
-        validated: bool = False,
-        thinking: bool | None = None,
-    ) -> AsyncGenerator[dict[str, Any], None]:
-        """
-        Send message in quick chat mode (no space required).
-
-        Static method - does NOT use instance DB session. Manages its own
-        short-lived sessions internally via get_scoped_session().
-
-        Three-phase design to minimize DB connection hold time:
-        1. Prepare: short-lived session for validation, save user msg, load history
-        2. Stream: LLM streaming without holding any DB connection
-        3. Save: short-lived session to persist AI response
-
-        Args:
-            user_id: Current user ID
-            conversation_id: Conversation ID
-            content: Message content
-            attachment_ids: Optional attachment IDs
-            model_id: Optional model ID for per-message model selection
-            validated: If True, skip conversation ownership check (already done by router)
-
-        Yields:
-            SSE events for streaming response
-
-        Raises:
-            ConversationNotFoundError: If conversation not found
-            ConversationAccessDeniedError: If user doesn't own the conversation
-        """
-        t_phase1_start = time.monotonic()
-
-        # === Phase 1: Prepare (short-lived DB session) ===
-        async with get_scoped_session() as db:
-            # 1. Validate conversation (skip if already validated by router)
-            if not validated:
-                t0 = time.monotonic()
-                result = await db.execute(
-                    select(Conversation).where(Conversation.id == conversation_id)
-                )
-                conversation = result.scalar_one_or_none()
-
-                if not conversation:
-                    raise ConversationNotFoundError(f"对话 {conversation_id} 不存在")
-                if conversation.user_id != user_id:
-                    raise ConversationAccessDeniedError(f"无权访问对话 {conversation_id}")
-                logger.info(f"[Perf][QC] Validate conversation: {(time.monotonic()-t0)*1000:.0f}ms")
-
-            # 2. Save user message
-            t0 = time.monotonic()
-            user_message = Message(
-                conversation_id=conversation_id,
-                role=MessageRole.USER,
-                content=content,
-            )
-            db.add(user_message)
-            await db.flush()  # Get ID without committing
-
-            # 2.5. Attach attachments to message if any
-            if attachment_ids:
-                from attachments.service import AttachmentService
-
-                attachment_service = AttachmentService(db)
-                await attachment_service.attach_to_message(
-                    user_id=user_id,
-                    message_id=user_message.id,
-                    attachment_ids=attachment_ids,
-                    commit=False,  # Don't commit yet
-                )
-
-            # Commit both user message and attachments in single transaction
-            await db.commit()
-
-            # Record study activity (fire-and-forget)
-            from assessment.recorder import schedule_study_activity_recording
-            schedule_study_activity_recording(user_id)
-
-            # Refresh and load attachments relationship
-            await db.refresh(user_message, ["attachments"])
-            logger.info(f"[Perf][QC] Save user message: {(time.monotonic()-t0)*1000:.0f}ms")
-
-            # 3. Load recent history messages (with attachments preloaded)
-            t0 = time.monotonic()
-            history_result = await db.execute(
-                select(Message)
-                .options(selectinload(Message.attachments))
-                .where(Message.conversation_id == conversation_id)
-                .order_by(Message.created_at.desc())
-                .limit(MAX_HISTORY_MESSAGES + 1)
-            )
-            history_messages = list(reversed(history_result.scalars().all()))
-            logger.info(f"[Perf][QC] Load history ({len(history_messages)} msgs): {(time.monotonic()-t0)*1000:.0f}ms")
-
-            # Build LLM history with attachments (async)
-            t0 = time.monotonic()
-            llm_history = []
-            for m in history_messages[:-1]:
-                msg_dict = await _build_llm_message_with_attachments_async(m, db)
-                llm_history.append(msg_dict)
-
-            # Build current message with attachments (async, includes file content extraction)
-            current_message_dict = await _build_llm_message_with_attachments_async(
-                user_message, db
-            )
-            logger.info(f"[Perf][QC] Build LLM history: {(time.monotonic()-t0)*1000:.0f}ms")
-
-            # 4. 对话连续性：检测新对话并加载上一个对话上下文
-            # 新对话定义：当前对话只有刚发送的这一条消息
-            is_new_conversation = len(history_messages) == 1
-            previous_conversation_context = None
-
-            t0 = time.monotonic()
-            settings = get_settings()
-            if is_new_conversation and settings.conversation_continuity_enabled:
-                from chat.previous_conversation import (
-                    get_previous_conversation_context_global,
-                )
-
-                previous_conversation_context = (
-                    await get_previous_conversation_context_global(
-                        db=db,
-                        user_id=user_id,
-                        current_conversation_id=conversation_id,
-                        max_rounds=settings.conversation_continuity_max_rounds,
-                        max_content_length=settings.conversation_continuity_max_content_length,
-                    )
-                )
-                if previous_conversation_context:
-                    logger.debug(
-                        f"Loaded global previous conversation context for quick chat {conversation_id}"
-                    )
-            logger.info(f"[Perf][QC] Previous context: {(time.monotonic()-t0)*1000:.0f}ms")
-        # === DB session released here ===
-
-        logger.info(f"[Perf][QC] Phase 1 total: {(time.monotonic()-t_phase1_start)*1000:.0f}ms")
-
-        # === Start title generation concurrently (for new conversations) ===
-        title_task = None
-        settings = get_settings()
-        if is_new_conversation and settings.title_generation_enabled:
-            title_task = asyncio.create_task(generate_title(content))
-
-        # === Load user search settings ===
-        t0 = time.monotonic()
-        from search_settings.service import SearchSettingsService
-        enabled_channels = await SearchSettingsService.get_enabled_channels(user_id)
-        logger.info(f"[Perf][QC] Search settings: {(time.monotonic()-t0)*1000:.0f}ms")
-
-        # === Phase 2: Stream via Queue + Background Task ===
-        # Resolve model_id to OpenRouter model string
-        openrouter_model = get_openrouter_model(model_id)
-        max_output_tokens = get_max_output_tokens(model_id)
-        logger.info(f"[ModelSelection] quick_chat model_id={model_id!r} -> openrouter_model={openrouter_model!r}, max_output_tokens={max_output_tokens}")
-
-        # Resolve thinking: only honor if model supports it
-        from chat.models_config import get_supports_thinking
-        enable_thinking = thinking if get_supports_thinking(model_id) else None
-
-        orchestrator = QuickChatOrchestrator(
-            user_id=user_id,
-            conversation_id=conversation_id,
-            previous_conversation_context=previous_conversation_context,
-            openrouter_model=openrouter_model,
-            search_channels=enabled_channels,
-            max_output_tokens=max_output_tokens,
-            enable_thinking=enable_thinking,
-        )
-
-        queue: asyncio.Queue = asyncio.Queue()
-
-        async def _run_to_completion() -> None:
-            """Background task: runs orchestrator to completion, then saves result."""
-            full_response = ""
-            llm_context = None
-            citations = None
-            response_status = MessageResponseStatus.COMPLETED
-            finalized = False
-
-            async def _finalize_after_generation() -> None:
-                nonlocal finalized
-                if finalized:
-                    return
-                finalized = True
-
-                if full_response:
-                    stream_state = await get_streaming_state(str(conversation_id))
-                    try:
-                        await _persist_assistant_message(
-                            conversation_id=conversation_id,
-                            content=full_response,
-                            llm_context=llm_context,
-                            citations=citations,
-                            response_status=response_status,
-                            tool_calls=stream_state.tool_calls if stream_state and stream_state.tool_calls else None,
-                        )
-                    except Exception:
-                        logger.critical(
-                            f"Failed to save assistant response for quick chat {conversation_id}, "
-                            f"response length: {len(full_response)}.",
-                            exc_info=True,
-                        )
-
-                    if response_status == MessageResponseStatus.COMPLETED:
-                        _settings = get_settings()
-                        if _settings.memory_auto_extract_enabled:
-                            conversation_for_extraction = llm_history + [
-                                {"role": "user", "content": content},
-                                {"role": "assistant", "content": full_response},
-                            ]
-                            asyncio.create_task(
-                                _extract_memories_background(
-                                    user_id=user_id,
-                                    space_id=None,
-                                    space_name="快速对话",
-                                    conversation=conversation_for_extraction,
-                                    conversation_id=conversation_id,
-                                )
-                            )
-
-                if title_task is None:
-                    return
-
-                if response_status == MessageResponseStatus.STOPPED:
-                    if not title_task.done():
-                        title_task.cancel()
-                        try:
-                            await title_task
-                        except (asyncio.CancelledError, Exception):
-                            pass
-                    return
-
-                _title_timeout = get_settings().title_generation_timeout
-                try:
-                    title = await asyncio.wait_for(title_task, timeout=_title_timeout)
-                except asyncio.TimeoutError:
-                    logger.warning(f"[TitleGen] Timed out after {_title_timeout}s for quick chat {conversation_id}")
-                    title = fallback_title(content)
-                    if not title_task.done():
-                        title_task.cancel()
-                        try:
-                            await title_task
-                        except (asyncio.CancelledError, Exception):
-                            pass
-                except Exception as e:
-                    logger.warning(f"[TitleGen] Failed for quick chat {conversation_id}: {type(e).__name__}: {e}")
-                    title = fallback_title(content)
-
-                try:
-                    async with get_scoped_session() as save_db:
-                        result = await save_db.execute(
-                            select(Conversation).where(Conversation.id == conversation_id)
-                        )
-                        conv = result.scalar_one_or_none()
-                        if conv:
-                            conv.title = title[:200]
-                            await save_db.commit()
-                    await queue.put({"event": "title", "data": {"title": title}})
-                except Exception:
-                    logger.error(
-                        f"Failed to update title for quick chat {conversation_id}",
-                        exc_info=True,
-                    )
-
-            try:
-                try:
-                    async for event in orchestrator.process_message(
-                        current_message_dict, llm_history
-                    ):
-                        if event["event"] == "text_delta":
-                            full_response += event["data"].get("content", "")
-                        elif event["event"] == "done":
-                            full_response = event["data"].get("content", full_response)
-                            llm_context = event["data"].get("llm_context")
-                            citations = event["data"].get("citations")
-                            event = {
-                                "event": "done",
-                                "data": {
-                                    "content": full_response,
-                                    "citations": citations,
-                                    "response_status": MessageResponseStatus.COMPLETED.value,
-                                },
-                            }
-                        await queue.put(event)
-                except asyncio.CancelledError:
-                    response_status = MessageResponseStatus.STOPPED
-                    logger.info(
-                        "Stopped quick chat response for conversation %s with %d chars generated",
-                        conversation_id,
-                        len(full_response),
-                    )
-                    raise
-                except Exception as e:
-                    logger.error(f"Orchestrator error: {e}", exc_info=True)
-                    await queue.put({"event": "error", "data": {"message": str(e)}})
-
-                await _finalize_after_generation()
-
-                logger.info(
-                    f"Processed quick chat message in conversation {conversation_id}, "
-                    f"response length: {len(full_response)}"
-                )
-            except asyncio.CancelledError:
-                response_status = MessageResponseStatus.STOPPED
-                await _finalize_after_generation()
-                logger.info(
-                    "Stopped quick chat background generation for conversation %s",
-                    conversation_id,
-                )
-            finally:
-                # Sentinel: signal consumer to stop (always sent)
-                await queue.put(None)
-
-        # Start background task
-        task = asyncio.create_task(_run_to_completion())
-        task.add_done_callback(_log_task_exception)
-        ChatService._register_active_stream_task(conversation_id, task)
-
-        # Yield events from queue to SSE client
-        while True:
-            event = await queue.get()
-            if event is None:
-                break
-            yield event

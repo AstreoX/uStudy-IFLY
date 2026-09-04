@@ -2,7 +2,8 @@ const QUESTION_TYPE_MAP = {
   single_choice: 'single',
   multiple_choice: 'multiple',
   true_false: 'truefalse',
-  short_answer: 'shortanswer'
+  short_answer: 'shortanswer',
+  code: 'code'
 }
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
@@ -20,6 +21,8 @@ export function convertQuestion(backendQuestion, index = 0) {
     answer = typeof correctAnswer.value === 'boolean' ? correctAnswer.value : null
   } else if (frontendType === 'shortanswer') {
     answer = correctAnswer.reference || null
+  } else if (frontendType === 'code') {
+    answer = correctAnswer
   }
 
   return {
@@ -29,19 +32,26 @@ export function convertQuestion(backendQuestion, index = 0) {
     order: Number.isFinite(backendQuestion?.order_index) ? backendQuestion.order_index : index + 1,
     title: backendQuestion?.question_stem || '',
     options: Array.isArray(backendQuestion?.options) ? backendQuestion.options : [],
+    publicConfig: backendQuestion?.public_config || {},
     answer
   }
 }
 
 export function convertQuizDetail(quizDetail) {
   const rawQuestions = Array.isArray(quizDetail?.questions) ? quizDetail.questions : []
+  const questions = rawQuestions.map((q, index) => convertQuestion(q, index))
+  const draftAnswers = Array.isArray(quizDetail?.draft_answers) ? quizDetail.draft_answers : []
   return {
     id: quizDetail?.id ? String(quizDetail.id) : '',
     title: quizDetail?.title || '',
     topic: quizDetail?.topic || '',
     difficulty: quizDetail?.difficulty || '',
     totalQuestions: Number.isFinite(quizDetail?.total_questions) ? quizDetail.total_questions : rawQuestions.length,
-    questions: rawQuestions.map((q, index) => convertQuestion(q, index))
+    attemptStatus: quizDetail?.attempt_status || null,
+    currentQuestionIndex: Number.isFinite(quizDetail?.current_question_index) ? quizDetail.current_question_index : 0,
+    draftUpdatedAt: quizDetail?.draft_updated_at || '',
+    questions,
+    draftUserAnswers: buildInitialUserAnswers(questions, draftAnswers)
   }
 }
 
@@ -62,6 +72,9 @@ export function buildSubmitAnswersPayload(questions, userAnswers) {
     } else if (question.type === 'shortanswer') {
       const text = typeof userAnswer === 'string' ? userAnswer.trim() : ''
       answer = text ? { text } : null
+    } else if (question.type === 'code') {
+      const source = typeof userAnswer?.source === 'string' ? userAnswer.source.trim() : ''
+      answer = source ? { language: userAnswer.language, source: userAnswer.source } : null
     }
 
     return {
@@ -71,6 +84,54 @@ export function buildSubmitAnswersPayload(questions, userAnswers) {
   })
 
   return { answers }
+}
+
+export function buildDraftSavePayload(questions, userAnswers, currentQuestionIndex = 0) {
+  return {
+    ...buildSubmitAnswersPayload(questions, userAnswers),
+    current_question_index: Number.isFinite(currentQuestionIndex) ? currentQuestionIndex : 0
+  }
+}
+
+export function buildInitialUserAnswers(questions, draftAnswers) {
+  const safeQuestions = Array.isArray(questions) ? questions : []
+  const draftMap = new Map(
+    (Array.isArray(draftAnswers) ? draftAnswers : []).map((item) => [String(item?.question_id || ''), item?.answer ?? null])
+  )
+
+  return safeQuestions.reduce((acc, question) => {
+    const rawAnswer = draftMap.get(question.id)
+    if (rawAnswer == null) return acc
+
+    if (question.type === 'single' && Number.isFinite(rawAnswer?.index)) {
+      acc[question.id] = rawAnswer.index
+      return acc
+    }
+
+    if (question.type === 'multiple' && Array.isArray(rawAnswer?.indices)) {
+      acc[question.id] = rawAnswer.indices
+      return acc
+    }
+
+    if (question.type === 'truefalse' && typeof rawAnswer?.value === 'boolean') {
+      acc[question.id] = rawAnswer.value
+      return acc
+    }
+
+    if (question.type === 'shortanswer') {
+      const text = typeof rawAnswer?.text === 'string' ? rawAnswer.text : ''
+      if (text.trim()) {
+        acc[question.id] = text
+      }
+    }
+
+    if (question.type === 'code') {
+      const source = typeof rawAnswer?.source === 'string' ? rawAnswer.source : ''
+      if (source.trim()) acc[question.id] = { language: rawAnswer.language || question.publicConfig?.default_language || 'python3', source }
+    }
+
+    return acc
+  }, {})
 }
 
 export function formatAnswer(questionType, answer) {
@@ -95,6 +156,12 @@ export function formatAnswer(questionType, answer) {
 
   if (questionType === 'short_answer') {
     return answer.text || answer.reference || '（未作答）'
+  }
+
+
+  if (questionType === 'code') {
+    const language = answer.language === 'cpp20' ? 'GNU C++20' : 'Python 3.11'
+    return answer.source ? `${language}\n${answer.source}` : '（未作答）'
   }
 
   try {
@@ -156,10 +223,14 @@ export function formatQuizDate(value) {
 export function isQuizAlreadyAttemptedError(error) {
   if (!error) return false
 
-  if (error.statusCode === 409 || error.code === 'QUIZ_ALREADY_ATTEMPTED') {
+  if (
+    error.statusCode === 409 ||
+    error.code === 'QUIZ_ALREADY_ATTEMPTED' ||
+    error.code === 'QUIZ_ATTEMPT_LOCKED'
+  ) {
     return true
   }
 
   const detailCode = error?.data?.detail?.code
-  return detailCode === 'QUIZ_ALREADY_ATTEMPTED'
+  return detailCode === 'QUIZ_ALREADY_ATTEMPTED' || detailCode === 'QUIZ_ATTEMPT_LOCKED'
 }

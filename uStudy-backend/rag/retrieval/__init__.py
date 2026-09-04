@@ -1,10 +1,11 @@
-"""Retrieval module for vector search, full-text search, and hybrid search."""
+"""Retrieval module — plain-text BM25 search backend."""
 
-from rag.retrieval.hybrid_search import HybridSearchService
-from rag.retrieval.vector_search import SearchResult, VectorSearchService
+from rag.retrieval.base import SearchResult
+from rag.retrieval.factory import get_search_service
+from rag.retrieval.text_search import TextSearchService
 
 __all__ = [
-    "HybridSearchService",
-    "VectorSearchService",
+    "get_search_service",
+    "TextSearchService",
     "SearchResult",
 ]

@@ -8,7 +8,9 @@ import pytest
 import pytest_asyncio
 from dotenv import load_dotenv
 from sqlalchemy import event
+from sqlalchemy.dialects.postgresql import JSON as PG_JSON, JSONB, TSVECTOR
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.compiler import compiles
 
 # 加载 .env 文件中的环境变量（用于 E2E 测试）
 load_dotenv()
@@ -18,6 +20,21 @@ os.environ.setdefault("DEBUG", "false")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 from db.database import Base
+
+
+@compiles(JSONB, "sqlite")
+def compile_jsonb_sqlite(type_, compiler, **kw):
+    return "JSON"
+
+
+@compiles(PG_JSON, "sqlite")
+def compile_pg_json_sqlite(type_, compiler, **kw):
+    return "JSON"
+
+
+@compiles(TSVECTOR, "sqlite")
+def compile_tsvector_sqlite(type_, compiler, **kw):
+    return "TEXT"
 
 
 # 测试数据库 URL（使用内存 SQLite 或测试容器）

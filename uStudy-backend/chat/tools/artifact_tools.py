@@ -4,7 +4,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from agents.artifact_agent import CDN_LIBRARIES
+from agents.artifact_agent import ArtifactGenerationAgent, CDN_LIBRARIES
 from agents.schemas import AgentTaskStatusEnum
 from chat.tools.base import ToolResult
 from db.database import get_scoped_session
@@ -25,6 +25,7 @@ ARTIFACT_TOOLS: list[dict[str, Any]] = [
             "description": (
                 "创建交互式 HTML 教学演示（物理模拟、数据可视化、动画、交互图表等）。"
                 "演示将在笔记面板中以 iframe 方式渲染。异步生成，立即返回。\n"
+                "必须用 description 描述要生成的内容，不要自行生成 HTML 代码作为参数。\n"
                 "【重要】每个对话仅允许一个 artifact。如果当前对话已有 artifact，"
                 "请使用 update_artifact 修改，不要重复调用 create_artifact。"
                 "再次调用 create_artifact 会覆盖已有的 artifact。"
@@ -124,12 +125,30 @@ class ArtifactToolExecutor:
 
     async def _create_artifact(self, args: dict[str, Any]) -> ToolResult:
         title = args.get("title", "交互演示")
-        description = args.get("description", "")
+        description = (args.get("description") or "").strip()
+        html_content = (args.get("html_content") or "").strip()
         node_label = args.get("node_label", "FREE")
         libraries = args.get("libraries", [])
 
         # Validate libraries
         libraries = [lib for lib in libraries if lib in ALLOWED_LIBRARIES]
+        finalized_html = None
+        if html_content:
+            try:
+                finalized_html = self._finalize_direct_html(html_content)
+            except ValueError:
+                if not description:
+                    raise
+                logger.warning(
+                    "Ignoring invalid create_artifact html_content because description is present"
+                )
+
+        if not description and not finalized_html:
+            return ToolResult(
+                success=False,
+                data=None,
+                message="创建交互演示失败：缺少 description。请用 description 详细说明要生成的内容、功能和交互方式。",
+            )
 
         async with get_scoped_session() as db:
             from sqlalchemy import select
@@ -182,6 +201,24 @@ class ArtifactToolExecutor:
                     user_id=self.user_id,
                 )
 
+            if finalized_html:
+                await self._complete_note_with_html(
+                    db,
+                    note_id=note_id,
+                    html=finalized_html,
+                    libraries=libraries,
+                )
+                return ToolResult(
+                    success=True,
+                    data={
+                        "note_id": str(note_id),
+                        "status": "done",
+                        "title": title,
+                        "html_size": len(finalized_html.encode("utf-8")),
+                    },
+                    message=f"已生成交互演示「{title}」。",
+                )
+
             # Create agent task in the SAME session to ensure atomicity
             from agents.service import AgentService
             agent_service = AgentService(db)
@@ -206,6 +243,40 @@ class ArtifactToolExecutor:
         )
 
     @staticmethod
+    def _finalize_direct_html(html_content: str) -> str:
+        """Validate HTML that the model put directly in tool arguments."""
+        try:
+            return ArtifactGenerationAgent.finalize_output(html_content)
+        except ValueError as exc:
+            raise ValueError(f"html_content 不是有效的交互演示 HTML：{exc}") from exc
+
+    @staticmethod
+    async def _complete_note_with_html(
+        db,
+        *,
+        note_id: UUID,
+        html: str,
+        libraries: list,
+    ) -> None:
+        """Persist already-generated HTML without launching a second generation."""
+        from sqlalchemy import select
+
+        result = await db.execute(select(Note).where(Note.id == note_id))
+        note = result.scalar_one_or_none()
+        if not note:
+            raise ValueError("演示笔记不存在")
+
+        note.content = html
+        note.metadata_ = {
+            **(note.metadata_ or {}),
+            "generating": False,
+            "libraries": libraries,
+            "html_size": len(html.encode("utf-8")),
+        }
+        note.metadata_.pop("error", None)
+        await db.commit()
+
+    @staticmethod
     async def _create_note_record(
         db, conv, title: str, libraries: list, node_id: UUID | None = None,
         *, user_id: UUID | None = None,
@@ -228,7 +299,25 @@ class ArtifactToolExecutor:
         return note.id
 
     async def _update_artifact(self, args: dict[str, Any]) -> ToolResult:
-        description = args.get("description", "")
+        description = (args.get("description") or "").strip()
+        html_content = (args.get("html_content") or "").strip()
+        finalized_html = None
+        if html_content:
+            try:
+                finalized_html = self._finalize_direct_html(html_content)
+            except ValueError:
+                if not description:
+                    raise
+                logger.warning(
+                    "Ignoring invalid update_artifact html_content because description is present"
+                )
+        if not description and not finalized_html:
+            return ToolResult(
+                success=False,
+                data=None,
+                message="更新交互演示失败：缺少 description。请说明要修改的内容。",
+            )
+
         libraries = args.get("libraries")
         if libraries:
             libraries = [lib for lib in libraries if lib in ALLOWED_LIBRARIES]
@@ -264,6 +353,27 @@ class ArtifactToolExecutor:
 
             existing_html = note.content or ""
             version = current_meta.get("version", 1) + 1
+
+            if finalized_html:
+                note.content = finalized_html
+                note.metadata_ = {
+                    **current_meta,
+                    "generating": False,
+                    "version": version,
+                    "html_size": len(finalized_html.encode("utf-8")),
+                }
+                note.metadata_.pop("error", None)
+                await db.commit()
+                return ToolResult(
+                    success=True,
+                    data={
+                        "note_id": str(note_id),
+                        "status": "done",
+                        "version": version,
+                        "html_size": len(finalized_html.encode("utf-8")),
+                    },
+                    message=f"已更新交互演示（v{version}）。",
+                )
 
             # Update metadata (immutable pattern)
             new_meta = {**current_meta, "generating": True, "version": version}

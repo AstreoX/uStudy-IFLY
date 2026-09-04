@@ -9,6 +9,22 @@
 			}
 		},
 		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "uStudy",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/openQuiz/openQuiz",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "打开复习测试",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
 			"path": "pages/forgotPassword/forgotPassword",
 			"style": {
 				"navigationStyle": "custom",
@@ -20,23 +36,7 @@
 			"path": "pages/register/register",
 			"style": {
 				"navigationStyle": "custom",
-				"navigationBarTitleText": "注册",
-				"backgroundColor": "#0A0A12"
-			}
-		},
-		{
-			"path": "pages/activation/activation",
-			"style": {
-				"navigationStyle": "custom",
-				"navigationBarTitleText": "订阅",
-				"backgroundColor": "#0A0A12"
-			}
-		},
-		{
-			"path": "pages/index/index",
-			"style": {
-				"navigationStyle": "custom",
-				"navigationBarTitleText": "uStudy",
+				"navigationBarTitleText": "邮箱注册",
 				"backgroundColor": "#0A0A12"
 			}
 		},
@@ -45,22 +45,6 @@
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTitleText": "Study",
-				"backgroundColor": "#0A0A12"
-			}
-		},
-		{
-			"path": "pages/quickChat/quickChat",
-			"style": {
-				"navigationStyle": "custom",
-				"navigationBarTitleText": "快速对话",
-				"backgroundColor": "#0A0A12"
-			}
-		},
-		{
-			"path": "pages/createSpace/createSpace",
-			"style": {
-				"navigationStyle": "custom",
-				"navigationBarTitleText": "新建学习空间",
 				"backgroundColor": "#0A0A12"
 			}
 		},
@@ -77,6 +61,30 @@
 			"style": {
 				"navigationStyle": "custom",
 				"navigationBarTitleText": "日程",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/teacherDashboard/teacherDashboard",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "教学看板",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/teacherAssistant/teacherAssistant",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "教学助教",
+				"backgroundColor": "#0A0A12"
+			}
+		},
+		{
+			"path": "pages/teacherAssignments/teacherAssignments",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "作业管理",
 				"backgroundColor": "#0A0A12"
 			}
 		}

@@ -12,7 +12,6 @@
       :collapsed="sidebarCollapsed"
       @toggle="sidebarCollapsed = !sidebarCollapsed"
       @select-space="handleSelectSpace"
-      @create-space="handleCreateSpace"
     />
 
     <!-- Main Content: Two-Panel Layout -->
@@ -523,11 +522,8 @@ export default {
     this.cleanupDrag()
   },
   methods: {
-    handleSelectSpace(space) {
-      uni.navigateTo({ url: `/pages/study/study?id=${space.id}&name=${encodeURIComponent(space.name)}&color=${encodeURIComponent(space.color || '#3B82F6')}` })
-    },
-    handleCreateSpace() {
-      uni.navigateTo({ url: '/pages/createSpace/createSpace' })
+    handleSelectSpace(spaceId) {
+      uni.navigateTo({ url: `/pages/study/study?spaceId=${spaceId}` })
     },
     initWeekStart() {
       const today = new Date()

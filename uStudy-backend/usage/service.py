@@ -101,7 +101,7 @@ class UsageService:
                         case(
                             (
                                 ApiUsageLog.usage_type.in_(
-                                    [UsageType.CHAT_LLM, UsageType.QUICK_CHAT_LLM, UsageType.AGENT_LLM]
+                                    [UsageType.CHAT_LLM, UsageType.AGENT_LLM]
                                 ),
                                 ApiUsageLog.total_tokens,
                             ),
@@ -126,7 +126,7 @@ class UsageService:
                     case(
                         (
                             ApiUsageLog.usage_type.in_(
-                                [UsageType.CHAT_LLM, UsageType.QUICK_CHAT_LLM, UsageType.AGENT_LLM]
+                                [UsageType.CHAT_LLM, UsageType.AGENT_LLM]
                             ),
                             1,
                         )

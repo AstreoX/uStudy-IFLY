@@ -83,7 +83,6 @@ if [ ! -f .env ]; then
         echo "  - SECRET_KEY"
         echo "  - JWT_SECRET_KEY"
         echo "  - OPENROUTER_API_KEY"
-        echo "  - RESEND_API_KEY"
         echo ""
         echo -e "${YELLOW}是否现在编辑? (y/n):${NC}"
         read -r EDIT_ENV

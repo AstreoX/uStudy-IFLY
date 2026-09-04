@@ -15,6 +15,8 @@ from quizzes.schemas import (
     QuestionResultResponse,
     QuizAttemptResponse,
     QuizDetailResponse,
+    QuizDraftSaveRequest,
+    QuizDraftSaveResponse,
     QuizEvaluationResponse,
     QuizListItemResponse,
     QuizSubmitAsyncResponse,
@@ -24,6 +26,7 @@ from quizzes.service import (
     QuizAccessDeniedError,
     QuizAlreadyAttemptedError,
     QuizAttemptNotFoundError,
+    QuizAttemptLockedError,
     QuizNotFoundError,
     QuizService,
 )
@@ -95,6 +98,44 @@ async def get_quiz_detail(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "QUIZ_ACCESS_DENIED", "message": "无权访问该测试"},
+        )
+
+
+@router.put(
+    "/{quiz_id}/draft",
+    response_model=QuizDraftSaveResponse,
+    summary="保存答题草稿",
+    description="保存用户当前答题进度，支持退出后恢复。",
+)
+async def save_quiz_draft(
+    quiz_id: UUID,
+    request: QuizDraftSaveRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> QuizDraftSaveResponse:
+    service = QuizService(db)
+
+    try:
+        return await service.save_draft(
+            user.id,
+            quiz_id,
+            request.answers,
+            request.current_question_index,
+        )
+    except QuizNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "QUIZ_NOT_FOUND", "message": "测试不存在"},
+        )
+    except QuizAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "QUIZ_ACCESS_DENIED", "message": "无权访问该测试"},
+        )
+    except QuizAttemptLockedError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "QUIZ_ATTEMPT_LOCKED", "message": "该测试已提交，无法继续暂存"},
         )
 
 
@@ -186,6 +227,11 @@ async def submit_quiz(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "QUIZ_ALREADY_ATTEMPTED", "message": "该测试已经作答过"},
+        )
+    except QuizAttemptLockedError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "QUIZ_ATTEMPT_LOCKED", "message": "该测试正在评估或已完成，无法再次提交"},
         )
 
 

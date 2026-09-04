@@ -38,6 +38,7 @@
 
       <!-- 扩展按钮 -->
       <view
+        v-if="canEditGraph"
         class="kg-expand-btn"
         :class="{ 'kg-expand-btn--loading': isExpandingNode }"
         @click.stop="handleExpandNode"
@@ -193,6 +194,7 @@ export default {
     generating: { type: Boolean, default: false },
     targetUserId: { type: String, default: null },
     isForeignGraphView: { type: Boolean, default: false },
+    canEditGraph: { type: Boolean, default: true },
     pathColor: { type: String, default: '#0088FF' }
   },
 
@@ -957,6 +959,17 @@ export default {
           node.glowColor = node._highlightGlowOverride || node.glowColor
         }
 
+        // Apply grow animation scale for incrementally added nodes
+        const growScale = node._growScale
+        if (growScale != null && growScale < 1) {
+          ctx.save()
+          const sx = (node.x * this.scale + this.offsetX) * this.dpr
+          const sy = (node.y * this.scale + this.offsetY) * this.dpr
+          ctx.translate(sx, sy)
+          ctx.scale(growScale, growScale)
+          ctx.translate(-sx, -sy)
+        }
+
         drawNode(ctx, node, {
           selectedNodeId: this.selectedNodeId,
           isPathHighlightOn: this.pathHighlight,
@@ -964,6 +977,10 @@ export default {
           isForeignGraphView: this.isForeignGraphView,
           pathColor: this.pathColor
         })
+
+        if (growScale != null && growScale < 1) {
+          ctx.restore()
+        }
 
         if (savedFill) {
           node.fillColor = savedFill
@@ -1665,7 +1682,109 @@ export default {
       this.offsetY = this.canvasHeight / 2 - targetY * this.scale
       this.requestRender()
       this.requestMinimapRender(true)
-    }
+    },
+
+    // ===== Incremental node/edge addition (for streaming KG generation) =====
+
+    addIncrementalNode({ label, level, parent }) {
+      // Skip if node with same label already exists
+      if (this.nodes.find(n => n.label === label)) return
+
+      const node = {
+        id: `temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        label,
+        mastery: null,
+        _level: level,
+        _isNew: true,
+        _appearTime: Date.now(),
+      }
+
+      // Position: relative to parent or centered
+      const parentNode = parent ? this.nodes.find(n => n.label === parent) : null
+      if (parentNode) {
+        // Fan out below parent with some randomness
+        const siblingCount = this.edges.filter(e => e.from === parentNode.id).length
+        const xOffset = (siblingCount - 1) * 60 + (Math.random() - 0.5) * 40
+        node.x = parentNode.x + xOffset
+        node.y = parentNode.y + 90 + Math.random() * 20
+      } else if (this.nodes.length === 0) {
+        // First node: center of canvas
+        node.x = this.canvasWidth / 2
+        node.y = this.canvasHeight / 3
+      } else {
+        // No parent found: place near existing nodes
+        const lastNode = this.nodes[this.nodes.length - 1]
+        node.x = lastNode.x + (Math.random() - 0.5) * 150
+        node.y = lastNode.y + 60 + Math.random() * 30
+      }
+
+      this.nodes.push(node)
+      this.nodeMap.set(node.id, node)
+
+      // Add tree edge from parent
+      if (parentNode) {
+        const edge = { from: parentNode.id, to: node.id, type: 'knowledge_tree' }
+        this.edges.push(edge)
+        if (this.edgeBuckets) {
+          const fromNode = parentNode
+          const toNode = node
+          this.edgeBuckets.treeEdges.push({ ...edge, fromNode, toNode })
+        }
+      }
+
+      // Start grow animation
+      this._startGrowAnimation(node)
+    },
+
+    addIncrementalEdge({ source, target, type }) {
+      const fromNode = this.nodes.find(n => n.label === source)
+      const toNode = this.nodes.find(n => n.label === target)
+      if (!fromNode || !toNode) return
+
+      // Skip duplicate edges
+      if (this.edges.find(e => e.from === fromNode.id && e.to === toNode.id)) return
+
+      const edgeType = type || 'advanced'
+      const edge = { from: fromNode.id, to: toNode.id, type: edgeType }
+      this.edges.push(edge)
+
+      if (this.edgeBuckets) {
+        const linked = { ...edge, fromNode, toNode }
+        if (edgeType === 'advanced') {
+          this.edgeBuckets.advancedEdges.push(linked)
+        } else {
+          this.edgeBuckets.treeEdges.push(linked)
+        }
+      }
+
+      this.requestRender()
+    },
+
+    _startGrowAnimation(node) {
+      const animDuration = 600
+      const startTime = node._appearTime
+
+      const animate = () => {
+        const elapsed = Date.now() - startTime
+        if (elapsed >= animDuration) {
+          node._isNew = false
+          this.requestRender()
+          this.requestMinimapRender(true)
+          return
+        }
+
+        // Elastic ease-out: overshoot then settle
+        const t = elapsed / animDuration
+        const scale = 1 + Math.pow(2, -10 * t) * Math.sin((t - 0.075) * (2 * Math.PI) / 0.3) * -0.3
+        node._growScale = Math.max(0, Math.min(1.2, scale))
+
+        this.requestRender()
+        requestAnimationFrame(animate)
+      }
+
+      node._growScale = 0
+      requestAnimationFrame(animate)
+    },
   }
 }
 </script>

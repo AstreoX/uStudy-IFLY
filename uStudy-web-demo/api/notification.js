@@ -18,7 +18,10 @@ const MAX_RETRIES = RETRY_DELAYS.length
  * @param {Object} callbacks
  * @param {Function} [callbacks.onMasteryUpdate] - Called with { node_name, change, new_mastery }
  * @param {Function} [callbacks.onQuizEvaluationComplete] - Called with { quiz_id, attempt_id, quiz_topic, score, total_score, status }
+ * @param {Function} [callbacks.onAssignmentGraded] - Called when an assignment provisional grade is ready
+ * @param {Function} [callbacks.onAssignmentGradeUpdated] - Called when a teacher updates/finalizes an assignment grade
  * @param {Function} [callbacks.onLearningPathExpanded] - Called with { space_id, new_nodes, junction_node, message }
+ * @param {Function} [callbacks.onArtifactStream] - Called with { task_id, note_id, title, status, delta, chars_total, conversation_id, space_id }
  * @param {Function} [callbacks.onArtifactReady] - Called with { note_id, conversation_id, space_id, title, status, error_message }
  * @param {Function} [callbacks.onDebugLog] - Optional debug logger
  * @returns {Function} Abort function to close the connection and stop retries
@@ -58,8 +61,20 @@ export function connectNotificationStream(callbacks) {
           callbacks.onQuizEvaluationComplete?.(data)
         }
 
+        if (eventType === 'assignment_graded') {
+          callbacks.onAssignmentGraded?.(data)
+        }
+
+        if (eventType === 'assignment_grade_updated') {
+          callbacks.onAssignmentGradeUpdated?.(data)
+        }
+
         if (eventType === 'learning_path_expanded') {
           callbacks.onLearningPathExpanded?.(data)
+        }
+
+        if (eventType === 'artifact_stream') {
+          callbacks.onArtifactStream?.(data)
         }
 
         if (eventType === 'artifact_ready') {

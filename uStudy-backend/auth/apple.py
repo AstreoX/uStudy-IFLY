@@ -15,7 +15,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.exceptions import AppleAuthError
-from auth.registration_notification import send_registration_notification
 from config import get_settings
 from db.models import User
 
@@ -167,6 +166,9 @@ async def get_or_create_apple_user(
     apple_id: str,
     email: str | None,
     email_verified: bool | None = None,
+    invite_code: str | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> User:
     """
     查找或创建 Apple 用户
@@ -214,14 +216,7 @@ async def get_or_create_apple_user(
         raise AppleAuthError("Email already registered") from exc
 
     await db.refresh(user)
-
-    asyncio.create_task(
-        send_registration_notification(
-            settings=get_settings(),
-            user_email=email,
-            user_nickname=nickname,
-            registration_method="apple",
-        )
-    )
+    await db.commit()
+    await db.refresh(user)
 
     return user

@@ -12,7 +12,7 @@ class SearchRequest(BaseModel):
 
     query: str = Field(..., min_length=1, max_length=1000, description="搜索查询")
     top_k: int = Field(default=10, ge=1, le=50, description="返回结果数量")
-    rerank: bool = Field(default=True, description="是否启用重排序")
+    rerank: bool = Field(default=False, description="是否启用重排序")
 
 
 class SearchResultItem(BaseModel):
@@ -21,9 +21,11 @@ class SearchResultItem(BaseModel):
     chunk_id: UUID
     document_id: UUID
     content: str
-    score: float = Field(description="向量相似度分数")
+    score: float = Field(description="最终排序分数")
+    retrieval_score: Optional[float] = Field(default=None, description="检索阶段分数")
     rerank_score: Optional[float] = Field(default=None, description="重排序分数")
-    document_title: str
+    retrieval_source: str = Field(default="dense", description="结果来源：dense/sparse/merged")
+    document_title: Optional[str]
     document_filename: Optional[str]
     metadata: dict = Field(default_factory=dict)
 

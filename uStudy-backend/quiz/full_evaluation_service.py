@@ -9,10 +9,12 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 from uuid import UUID
 
-from agents.llm import OpenRouterClient
+from agents.llm import LLMClient
 from agents.llm.full_quiz_evaluation_prompts import build_full_quiz_evaluation_prompt
 from config import get_settings
 from quiz.evaluator import evaluate_short_answer
+from usage.metering import UsageContext
+from usage.models import UsageType
 
 logger = logging.getLogger(__name__)
 
@@ -257,7 +259,7 @@ class QuizEvaluationService:
 
         # 获取模型名称
         try:
-            client = OpenRouterClient(model_override=get_settings().quiz_evaluation_model or None)
+            client = LLMClient(model_override=get_settings().quiz_evaluation_model or None)
             debug_info.model_name = client.model
         except Exception:
             debug_info.model_name = "unknown"
@@ -410,6 +412,8 @@ class QuizEvaluationService:
                 reference_answer=reference_answer,
                 user_answer=user_text,
                 max_score=max_score,
+                user_id=self.user_id,
+                space_id=self.space_id,
             )
 
             score = eval_result.score
@@ -681,7 +685,17 @@ class QuizEvaluationService:
         )
 
         try:
-            client = OpenRouterClient(model_override=get_settings().quiz_evaluation_model or None)
+            client = LLMClient(
+                model_override=get_settings().quiz_evaluation_model or None,
+                usage_context=UsageContext(
+                    user_id=self.user_id,
+                    usage_type=UsageType.AGENT_LLM,
+                    source_module="quiz",
+                    source_operation="full_evaluation",
+                    billable=bool(self.user_id),
+                    space_id=self.space_id,
+                ),
+            )
             response = await client.complete(
                 messages=messages,
                 temperature=AI_EVALUATION_TEMPERATURE,

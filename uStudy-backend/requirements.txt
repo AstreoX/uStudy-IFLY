@@ -15,7 +15,6 @@ pydantic-settings>=2.1.0
 # 安全
 bcrypt>=4.0.0
 python-jose[cryptography]>=3.3.0
-resend>=2.0.0
 aiosmtplib>=3.0.0
 tenacity>=8.2.0
 structlog>=24.0.0
@@ -34,7 +33,10 @@ youtube-transcript-api>=1.0.0  # YouTube 字幕获取
 yt-dlp>=2024.1.0          # 通用视频字幕/音频提取
 
 # RAG 系统
+haystack-ai>=2.8.0
+pgvector-haystack>=0.1.0
 PyMuPDF>=1.23.0           # PDF 解析
+rapidocr-onnxruntime>=1.3.0  # 扫描件 OCR（替代 VLM）
 python-docx>=1.0.0        # DOCX 解析
 openpyxl>=3.1.0           # Excel 解析
 python-pptx>=0.6.21       # PowerPoint 解析
@@ -45,9 +47,10 @@ pgvector>=0.2.0           # PostgreSQL 向量扩展
 tiktoken>=0.5.0           # Token 计数
 chardet>=5.0.0            # 编码检测
 jieba>=0.42.1             # 中文分词（全文检索用）
+sentence-transformers>=3.0.0  # Haystack reranker
+transformers>=4.42.4,<5.0.0  # 双任务 BERT 掌握分评估与离线训练
 
 # 支付
-python-alipay-sdk>=3.3.0
 
 # 定时任务
 apscheduler>=3.10.0

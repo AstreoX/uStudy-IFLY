@@ -3,7 +3,7 @@
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,7 @@ from db.models import (
     Edge,
     EdgeType,
     Message,
+    MessageResponseStatus,
     MessageRole,
     Node,
     Space,
@@ -73,6 +74,30 @@ class TestUserModel:
         )
         db_session.add(user2)
 
+        with pytest.raises(IntegrityError):
+            await db_session.commit()
+
+    @pytest.mark.asyncio
+    async def test_username_is_nullable_for_legacy_users(
+        self, db_session: AsyncSession
+    ):
+        user = User(email="legacy@example.com", nickname="Legacy")
+        db_session.add(user)
+        await db_session.commit()
+        assert user.username is None
+
+    @pytest.mark.asyncio
+    async def test_username_unique_constraint_is_case_insensitive(
+        self, db_session: AsyncSession
+    ):
+        db_session.add(
+            User(username="Exp001", email="first@example.com", nickname="First")
+        )
+        await db_session.commit()
+
+        db_session.add(
+            User(username="exp001", email="second@example.com", nickname="Second")
+        )
         with pytest.raises(IntegrityError):
             await db_session.commit()
 
@@ -193,22 +218,16 @@ class TestConversationModel:
 
     @pytest.mark.asyncio
     async def test_create_conversation_without_space(self, db_session: AsyncSession):
-        """创建快速对话（不绑定空间）"""
+        """对话必须绑定学习空间"""
         user = User(email="quick@example.com", nickname="Quick User")
         db_session.add(user)
         await db_session.commit()
         await db_session.refresh(user)
 
-        conversation = Conversation(
-            user_id=user.id,
-            space_id=None,
-            title="Quick Chat",
-        )
+        conversation = Conversation(user_id=user.id, title="Missing Space")
         db_session.add(conversation)
-        await db_session.commit()
-        await db_session.refresh(conversation)
-
-        assert conversation.space_id is None
+        with pytest.raises(IntegrityError):
+            await db_session.commit()
 
 
 # ============ Message 测试 ============
@@ -216,6 +235,14 @@ class TestConversationModel:
 
 class TestMessageModel:
     """Message 模型测试"""
+
+    def test_response_status_enum_uses_enum_values(self):
+        """response_status 持久化为小写 value 而不是大写 name"""
+        response_status_type = Message.__table__.c.response_status.type
+
+        assert response_status_type.enums == [
+            status.value for status in MessageResponseStatus
+        ]
 
     @pytest.mark.asyncio
     async def test_create_message_user_role(self, db_session: AsyncSession):
@@ -225,7 +252,10 @@ class TestMessageModel:
         await db_session.commit()
         await db_session.refresh(user)
 
-        conversation = Conversation(user_id=user.id, title="Test Conv")
+        space = Space(user_id=user.id, name="Message Space", color="#00FF00")
+        db_session.add(space)
+        await db_session.flush()
+        conversation = Conversation(user_id=user.id, space_id=space.id, title="Test Conv")
         db_session.add(conversation)
         await db_session.commit()
         await db_session.refresh(conversation)
@@ -250,7 +280,10 @@ class TestMessageModel:
         await db_session.commit()
         await db_session.refresh(user)
 
-        conversation = Conversation(user_id=user.id, title="AI Conv")
+        space = Space(user_id=user.id, name="AI Space", color="#00FF00")
+        db_session.add(space)
+        await db_session.flush()
+        conversation = Conversation(user_id=user.id, space_id=space.id, title="AI Conv")
         db_session.add(conversation)
         await db_session.commit()
         await db_session.refresh(conversation)
@@ -267,6 +300,40 @@ class TestMessageModel:
         assert message.role == MessageRole.ASSISTANT
 
     @pytest.mark.asyncio
+    async def test_create_message_persists_lowercase_response_status(
+        self, db_session: AsyncSession
+    ):
+        """response_status 入库时使用与 PostgreSQL enum 一致的小写值"""
+        user = User(email="status@example.com", nickname="Status User")
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+
+        space = Space(user_id=user.id, name="Status Space", color="#00FF00")
+        db_session.add(space)
+        await db_session.flush()
+        conversation = Conversation(user_id=user.id, space_id=space.id, title="Status Conv")
+        db_session.add(conversation)
+        await db_session.commit()
+        await db_session.refresh(conversation)
+
+        message = Message(
+            conversation_id=conversation.id,
+            role=MessageRole.USER,
+            content="Hello with status",
+            response_status=MessageResponseStatus.COMPLETED,
+        )
+        db_session.add(message)
+        await db_session.commit()
+
+        result = await db_session.execute(
+            text("SELECT response_status FROM messages WHERE id = :message_id"),
+            {"message_id": str(message.id)},
+        )
+
+        assert result.scalar_one() == MessageResponseStatus.COMPLETED.value
+
+    @pytest.mark.asyncio
     async def test_conversation_cascade_deletes_messages(
         self, db_session: AsyncSession
     ):
@@ -276,7 +343,10 @@ class TestMessageModel:
         await db_session.commit()
         await db_session.refresh(user)
 
-        conversation = Conversation(user_id=user.id, title="To Delete Conv")
+        space = Space(user_id=user.id, name="Cascade Space", color="#00FF00")
+        db_session.add(space)
+        await db_session.flush()
+        conversation = Conversation(user_id=user.id, space_id=space.id, title="To Delete Conv")
         db_session.add(conversation)
         await db_session.commit()
         await db_session.refresh(conversation)

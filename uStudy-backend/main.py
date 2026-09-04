@@ -14,32 +14,35 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from activation.router import router as activation_router
+from assignments.router import student_router as assignments_router
+from assignments.router import teacher_router as teacher_assignments_router
 from activity.router import router as activity_router
+from admin.router import router as admin_router
 from agents.router import router as agents_router
+from assessment.router import router as assessment_router
 from attachments.router import router as attachments_router
 from auth.router import router as auth_router
+from calendar_events.router import router as calendar_events_router
 from chat.router import router as chat_router
 from config import get_settings
 from documents.router import router as documents_router
 from feedback.router import router as feedback_router
+from folders.router import router as folders_router
+from mcp.router import router as mcp_router
+from notes.router import router as notes_router
 from notifications.router import router as notifications_router
 from quizzes.router import router as quizzes_router
-from scheduler.core import get_scheduler_lifespan
-from usage.router import router as usage_router
+from quota.router import router as quota_router
 from rag.router import router as rag_router
 from review.router import router as review_router
-from assessment.router import router as assessment_router
-from spaces.router import router as spaces_router
-from payment.router import router as payment_router
-from quota.router import router as quota_router
-from admin.router import router as admin_router
-from upload.router import router as upload_router
-from notes.router import router as notes_router
+from scheduler.core import get_scheduler_lifespan
 from search_settings.router import router as search_settings_router
-from calendar_events.router import router as calendar_events_router
-from folders.router import router as folders_router
 from share.router import router as share_router
+from spaces.router import router as spaces_router
+from teacher.presentations.gateway import router as teacher_presentations_gateway_router
+from teacher.router import router as teacher_router
+from upload.router import router as upload_router
+from usage.router import router as usage_router
 
 settings = get_settings()
 
@@ -47,7 +50,12 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown events."""
+    from db.database import get_scoped_session
+    from experiment.default_course import ensure_default_course
     from notifications.pg_notify import start_listener, stop_listener
+
+    async with get_scoped_session() as session:
+        await ensure_default_course(session)
 
     async with get_scheduler_lifespan():
         await start_listener()
@@ -125,47 +133,16 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# CORS 配置
-DEV_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:3000",
-    "http://localhost:8080",
-    "http://localhost:9000",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5174",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:8080",
-    "http://127.0.0.1:9000",
-]
-
-PROD_ORIGINS = [
-    "https://ustudy.app",
-    "https://www.ustudy.app",
-    "https://app.ustudy.app",
-    "https://ustudy.top",
-    "https://www.ustudy.top",
-    "https://api.ustudy.top",
-    "https://app.ustudy.top",
-    # HTTP fallback during DNS/SSL cutover
-    "http://ustudy.top",
-    "http://www.ustudy.top",
-    "http://api.ustudy.top",
-    "http://app.ustudy.top",
-    # 本地开发
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5175",
-    "http://localhost:3000",
-    "http://localhost:8080",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5174",
-    "http://127.0.0.1:5175",
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=DEV_ORIGINS if settings.debug else PROD_ORIGINS,
+    allow_origins=settings.cors_dev_origins if settings.debug else settings.cors_prod_origins,
+    allow_origin_regex=(
+        r"^https?://(?:localhost|127\.0\.0\.1|10(?:\.\d{1,3}){3}|"
+        r"192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])"
+        r"(?:\.\d{1,3}){2})(?::\d+)?$"
+        if settings.cors_allow_local_network
+        else None
+    ),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -177,19 +154,14 @@ uploads_dir = Path(settings.upload_dir)
 uploads_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
-# 挂载支付收款码静态文件
-payment_static_dir = Path("static/payment")
-payment_static_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/static/payment", StaticFiles(directory=str(payment_static_dir)), name="payment-static")
-
 # 注册路由
 app.include_router(auth_router)
-app.include_router(activation_router)
 app.include_router(upload_router)
 app.include_router(attachments_router)
 app.include_router(agents_router)
 app.include_router(spaces_router)
 app.include_router(quizzes_router)
+app.include_router(assignments_router)
 app.include_router(documents_router)
 app.include_router(chat_router)
 app.include_router(rag_router)
@@ -199,7 +171,6 @@ app.include_router(notifications_router)
 app.include_router(assessment_router)
 app.include_router(activity_router)
 app.include_router(review_router)
-app.include_router(payment_router)
 app.include_router(quota_router)
 app.include_router(admin_router)
 app.include_router(notes_router)
@@ -207,6 +178,10 @@ app.include_router(search_settings_router)
 app.include_router(calendar_events_router)
 app.include_router(folders_router)
 app.include_router(share_router)
+app.include_router(mcp_router)
+app.include_router(teacher_router)
+app.include_router(teacher_assignments_router)
+app.include_router(teacher_presentations_gateway_router)
 
 
 @app.get("/health")

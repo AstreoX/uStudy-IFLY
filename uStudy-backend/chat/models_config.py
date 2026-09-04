@@ -2,52 +2,54 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from db.models import SubscriptionTier
 
+LEGACY_MODEL_IDS: dict[str, str] = {
+    "kimi-k2.5": "glm-5.3-flash",
+    "mimo-v2-omni": "glm-5.3-flash",
+    "qwen3.6-plus": "glm-5.3-flash",
+    "glm-5v-turbo": "glm-5.3-flash",
+    "gemini-3.1-pro": "glm-5.3-flash",
+}
+
 ALLOWED_MODELS: dict[str, dict[str, Any]] = {
-    "seed-2.0-lite": {
-        "openrouter_id": "bytedance-seed/seed-2.0-lite",
-        "display_name": "Seed 2.0 Lite",
-        "description": "快速响应，适合日常对话",
+    "glm-5.3-flash": {
+        "model_id": "z-ai/glm-5.3-flash",
+        "display_name": "GLM 5.3 Flash",
+        "description": "OpenRouter 多模态推理模型",
         "is_default": True,
-        "max_output_tokens": 65536,
-        "supports_thinking": True,
-    },
-    "kimi-k2.5": {
-        "openrouter_id": "moonshotai/kimi-k2.5",
-        "display_name": "Kimi K2.5",
-        "description": "更强推理能力，适合复杂问题",
-        "max_output_tokens": 65535,
-        "supports_thinking": True,
-    },
-    "gemini-3.1-pro": {
-        "openrouter_id": "google/gemini-3.1-pro-preview",
-        "display_name": "Gemini 3.1 Pro",
-        "description": "Google 最新模型，综合能力强",
-        "use_bridge": True,
         "max_output_tokens": 65536,
         "supports_thinking": True,
     },
 }
 
-DEFAULT_MODEL_ID = "seed-2.0-lite"
+DEFAULT_MODEL_ID = "glm-5.3-flash"
 
 
-def get_openrouter_model(model_id: str | None) -> str:
-    """Resolve a model_id to an OpenRouter model string.
+def normalize_model_id(model_id: str | None) -> str | None:
+    """Map legacy model IDs to the current canonical model ID."""
+    if model_id is None:
+        return None
+    return LEGACY_MODEL_IDS.get(model_id, model_id)
+
+
+def get_model_id(model_id: str | None) -> str:
+    """Resolve a model_id to the configured provider model string.
 
     Falls back to the default model when model_id is None or not found.
     """
+    model_id = normalize_model_id(model_id)
     if model_id and model_id in ALLOWED_MODELS:
-        return ALLOWED_MODELS[model_id]["openrouter_id"]
-    return ALLOWED_MODELS[DEFAULT_MODEL_ID]["openrouter_id"]
+        return ALLOWED_MODELS[model_id]["model_id"]
+    return ALLOWED_MODELS[DEFAULT_MODEL_ID]["model_id"]
 
 
 def get_max_output_tokens(model_id: str | None) -> int:
     """Return max_output_tokens for a model, defaulting to 65536."""
+    model_id = normalize_model_id(model_id)
     if model_id and model_id in ALLOWED_MODELS:
         return ALLOWED_MODELS[model_id].get("max_output_tokens", 65536)
     return ALLOWED_MODELS[DEFAULT_MODEL_ID].get("max_output_tokens", 65536)
@@ -55,6 +57,7 @@ def get_max_output_tokens(model_id: str | None) -> int:
 
 def get_supports_thinking(model_id: str | None) -> bool:
     """Check whether a model supports the reasoning/thinking parameter."""
+    model_id = normalize_model_id(model_id)
     if model_id and model_id in ALLOWED_MODELS:
         return ALLOWED_MODELS[model_id].get("supports_thinking", False)
     return False
@@ -62,7 +65,7 @@ def get_supports_thinking(model_id: str | None) -> bool:
 
 def validate_model_id(model_id: str) -> bool:
     """Check whether a model_id is in the allowed set."""
-    return model_id in ALLOWED_MODELS
+    return normalize_model_id(model_id) in ALLOWED_MODELS
 
 
 def get_available_models(

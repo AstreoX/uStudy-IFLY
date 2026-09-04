@@ -12,7 +12,6 @@
       :collapsed="sidebarCollapsed"
       @toggle="sidebarCollapsed = !sidebarCollapsed"
       @select-space="handleSelectSpace"
-      @create-space="handleCreateSpace"
     />
 
     <!-- Main Content -->
@@ -100,6 +99,7 @@
                 :generating="graphGenerating"
                 :targetUserId="selectedMemberUserId"
                 :isForeignGraphView="isForeignGraphView"
+                :canEditGraph="canEditGraph"
                 :pathColor="selectedMemberColor"
                 @node-selected="onNodeSelected"
                 @graph-loaded="onGraphLoaded"
@@ -390,8 +390,19 @@
           </svg>
         </view>
 
-        <!-- Right Panel: Chat -->
+        <!-- Right Panel: Chat or DocKG Generation -->
         <view class="panel-chat">
+          <!-- Document KG generation mode: streaming panel -->
+          <DocKgGenPanel
+            v-if="docKgMode && !docKgCompleted"
+            :spaceId="spaceId"
+            :documentIds="docKgDocIds"
+            @kg-node="handleDocKgNode"
+            @kg-edge="handleDocKgEdge"
+            @done="handleDocKgDone"
+            @error="handleDocKgError"
+          />
+
           <!-- Mastery score toast notifications -->
           <UMasteryToast
             v-for="toast in masteryNotifications"
@@ -429,7 +440,7 @@
             @click="handleArtifactNotificationClick(notif)"
             @close="removeArtifactNotification(notif.id)"
           />
-          <view class="panel-chat-inner" :class="{ 'panel-synced': dualSyncEnabled }">
+          <view v-show="!docKgMode || docKgCompleted" class="panel-chat-inner" :class="{ 'panel-synced': dualSyncEnabled }">
             <!-- Chat Panel Header -->
             <view class="chat-panel-header">
               <view
@@ -514,7 +525,7 @@
                     >
                       <view class="model-menu-item-info">
                         <text class="model-menu-item-name">{{ m.display_name }}</text>
-                        <text class="model-menu-item-desc">{{ m.locked ? '升级订阅解锁' : m.description }}</text>
+                        <text class="model-menu-item-desc">{{ m.locked ? '实验账号权限异常' : m.description }}</text>
                       </view>
                       <svg v-if="m.locked" viewBox="0 0 256 256" class="model-menu-lock">
                         <rect x="40" y="112" width="176" height="112" rx="8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
@@ -626,20 +637,14 @@
                 </view>
 
                 <!-- AI message -->
-                <view v-else class="message-bubble bubble-ai">
+                <view v-else class="message-bubble bubble-ai" :class="{ 'bubble-ai-tools-only': isToolOnlyMessage(msg) }">
                   <!-- Thinking block -->
-                  <view v-if="msg.thinkingContent" class="thinking-block" :class="{ 'thinking-active': msg.isThinking }">
-                    <view class="thinking-header" @tap="toggleThinking(msg.id)">
-                      <view v-if="msg.isThinking" class="thinking-spinner"></view>
-                      <text class="thinking-label">
-                        {{ msg.isThinking ? '深度思考中...' : `已深度思考 ${msg.thinkingDuration} 秒` }}
-                      </text>
-                      <text class="thinking-chevron" :class="{ 'thinking-chevron-expanded': isThinkingExpanded(msg.id) || msg.isThinking }">&#9662;</text>
-                    </view>
-                    <view class="thinking-body" :class="{ 'thinking-body-collapsed': !isThinkingExpanded(msg.id) && !msg.isThinking }">
-                      <text class="thinking-text">{{ msg.thinkingContent }}</text>
-                    </view>
-                  </view>
+                  <AgentThinkingBlock
+                    v-if="msg.thinkingContent || msg.isThinking"
+                    :content="msg.thinkingContent || ''"
+                    :active="Boolean(msg.isThinking)"
+                    :duration="msg.thinkingDuration || 0"
+                  />
 
                   <!-- Segment-based rendering -->
                   <template v-for="(seg, segIdx) in getMessageSegments(msg)" :key="segIdx">
@@ -671,46 +676,424 @@
                         <text class="planning-tool-text">{{ planningToolText }}</text>
                       </view>
 
-                      <!-- Search tools: structured result card -->
+                      <!-- Review tools -->
                       <view
-                        v-else-if="isSearchTool(seg.toolCall.tool)"
-                        class="tool-call-card search-result-card"
-                        :class="getToolCardClass(seg.toolCall)"
+                        v-else-if="isReviewTool(seg.toolCall.tool)"
+                        class="review-tool-wrap"
+                        :class="{ 'review-expanded-container': seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id)) }"
                       >
-                        <view class="tool-call-header">
-                          <view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
-                          <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-success">
+                        <view
+                          class="graph-tool-pill"
+                          :class="{
+                            'graph-tool-running': seg.toolCall.status === 'running',
+                            'graph-tool-success': seg.toolCall.status === 'done' && seg.toolCall.success,
+                            'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+                          }"
+                          @click="toggleToolCardIfAllowed(seg.toolCall)"
+                        >
+                          <view class="graph-tool-pill-icon graph-tool-pill-icon-svg" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
+                          <text class="graph-tool-pill-text">{{ getReviewToolText(seg.toolCall) }}</text>
+                          <view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+                          <text v-else-if="canToggleToolCard(seg.toolCall)" class="graph-tool-chevron" :class="{ 'graph-tool-chevron-up': isToolCardExpanded(seg.toolCall.id) }">⌄</text>
+                          <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-success">
                             <polyline points="88 136 112 160 168 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
                           </svg>
-                          <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-failed">
+                          <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-failed">
                             <line x1="160" y1="96" x2="96" y2="160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
                             <line x1="160" y1="160" x2="96" y2="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
                           </svg>
-                          <view class="tool-call-icon" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
-                          <text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
                         </view>
-                        <view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.results?.length"
-                          class="search-results-list">
-                          <view v-for="(item, idx) in getVisibleSearchResults(seg.toolCall)" :key="idx"
-                            class="search-result-item" @click="openSearchResultUrl(item.url)">
-                            <image class="search-result-favicon"
-                              :src="getFaviconUrl(item.url)" mode="aspectFit" />
-                            <text class="search-result-title">{{ item.title }}</text>
-                            <text class="search-result-domain">{{ formatDisplayUrl(item.url) }}</text>
+
+                        <view
+                          v-if="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && getReviewDisplayItems(seg.toolCall).length && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id))"
+                          class="review-card"
+                          :class="{ 'tool-card-leave': isToolCardCollapsing(seg.toolCall.id) }"
+                        >
+                          <view v-for="(item, idx) in getReviewDisplayItems(seg.toolCall)" :key="idx" class="review-event-item">
+                            <view class="review-event-header">
+                              <text class="review-event-label">{{ item.activity_title || item.title || '待复习内容' }}</text>
+                              <text v-if="item.study_depth" class="review-event-depth">{{ item.study_depth }}</text>
+                            </view>
+                            <view class="review-event-meta">
+                              <text class="review-event-round">第{{ item.review_number || 0 }}次复习</text>
+                              <view class="review-event-urgency-badge" :class="{ 'urgency-overdue': item.overdue_days > 0 }">
+                                <text class="review-event-urgency-text" :class="{ 'urgency-overdue-text': item.overdue_days > 0 }">
+                                  {{ item.urgency || '待复习' }}
+                                </text>
+                              </view>
+                            </view>
                           </view>
-                          <view v-if="seg.toolCall.result.results.length > 5"
-                            class="search-results-toggle" @click="toggleSearchResults(seg.toolCall.id)">
-                            <text class="search-results-toggle-text">
-                              {{ isSearchExpanded(seg.toolCall.id) ? '收起' : '展开全部 ' + seg.toolCall.result.results.length + ' 条结果' }}
-                            </text>
+                          <view class="review-card-footer">
+                            <text class="review-card-count">共 {{ getReviewDisplayItems(seg.toolCall).length }} 条待复习</text>
                           </view>
                         </view>
-                        <text v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" class="tool-call-args">
-                          {{ seg.toolCall.result?.message || '未找到相关结果' }}
-                        </text>
-                        <text v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-args">
-                          {{ seg.toolCall.result?.message || '搜索失败' }}
-                        </text>
+
+                        <view
+                          v-else-if="seg.toolCall.tool === 'get_review_events' && seg.toolCall.status === 'done' && seg.toolCall.success && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id))"
+                          class="review-card review-card-empty"
+                          :class="{ 'tool-card-leave': isToolCardCollapsing(seg.toolCall.id) }"
+                        >
+                          <text class="review-empty-text">当前没有待复习项</text>
+                        </view>
+                      </view>
+
+                      <!-- Graph overview -->
+                      <view
+                        v-else-if="isGraphOverviewTool(seg.toolCall.tool)"
+                        class="graph-overview-wrap"
+                      >
+                        <view
+                          class="graph-tool-pill"
+                          :class="{
+                            'graph-tool-running': seg.toolCall.status === 'running',
+                            'graph-tool-success': seg.toolCall.status === 'done' && seg.toolCall.success,
+                            'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+                          }"
+                        >
+                          <view class="graph-tool-pill-icon graph-tool-pill-icon-svg" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
+                          <text class="graph-tool-pill-text">{{ getGraphToolText(seg.toolCall) }}</text>
+                          <view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+                          <text v-else-if="canToggleToolCard(seg.toolCall)" class="graph-tool-chevron" :class="{ 'graph-tool-chevron-up': isToolCardExpanded(seg.toolCall.id) }">⌄</text>
+                          <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-success">
+                            <polyline points="88 136 112 160 168 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                          <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-failed">
+                            <line x1="160" y1="96" x2="96" y2="160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                            <line x1="160" y1="160" x2="96" y2="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                        </view>
+
+                      </view>
+
+                      <!-- Graph mutation/query/path tools -->
+                      <view
+                        v-else-if="isGraphDetailTool(seg.toolCall.tool)"
+                        class="gm-wrap"
+                      >
+                        <view
+                          class="graph-tool-pill"
+                          :class="{
+                            'graph-tool-running': seg.toolCall.status === 'running',
+                            'graph-tool-success': seg.toolCall.status === 'done' && seg.toolCall.success,
+                            'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+                          }"
+                        >
+                          <view class="graph-tool-pill-icon graph-tool-pill-icon-svg" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
+                          <text class="graph-tool-pill-text">{{ getGraphToolText(seg.toolCall) }}</text>
+                          <view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+                          <text v-else-if="canToggleToolCard(seg.toolCall)" class="graph-tool-chevron" :class="{ 'graph-tool-chevron-up': isToolCardExpanded(seg.toolCall.id) }">⌄</text>
+                          <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-success">
+                            <polyline points="88 136 112 160 168 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                          <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-failed">
+                            <line x1="160" y1="96" x2="96" y2="160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                            <line x1="160" y1="160" x2="96" y2="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                        </view>
+
+                      </view>
+
+                      <!-- Schedule tools -->
+                      <view
+                        v-else-if="isScheduleTool(seg.toolCall.tool)"
+                        class="schedule-view-wrap"
+                        :class="{ 'schedule-expanded-container': isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id)) }"
+                      >
+                        <view
+                          class="graph-tool-pill"
+                          :class="{
+                            'graph-tool-running': seg.toolCall.status === 'running',
+                            'graph-tool-success': seg.toolCall.status === 'done' && seg.toolCall.success,
+                            'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+                          }"
+                          @click="toggleToolCardIfAllowed(seg.toolCall)"
+                        >
+                          <view class="graph-tool-pill-icon graph-tool-pill-icon-svg" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
+                          <text class="graph-tool-pill-text">{{ getScheduleToolText(seg.toolCall) }}</text>
+                          <view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+                          <text v-else-if="canToggleToolCard(seg.toolCall)" class="graph-tool-chevron" :class="{ 'graph-tool-chevron-up': isToolCardExpanded(seg.toolCall.id) }">⌄</text>
+                          <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-success">
+                            <polyline points="88 136 112 160 168 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                          <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-failed">
+                            <line x1="160" y1="96" x2="96" y2="160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                            <line x1="160" y1="160" x2="96" y2="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                        </view>
+
+                        <view
+                          v-if="isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && getScheduleDisplayEvents(seg.toolCall).length && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id))"
+                          class="schedule-card"
+                          :class="{ 'tool-card-leave': isToolCardCollapsing(seg.toolCall.id) }"
+                        >
+                          <template v-for="(group, idx) in groupScheduleByDate(getScheduleDisplayEvents(seg.toolCall))" :key="group.date + '-' + idx">
+                            <view class="schedule-date-header">
+                              <view class="schedule-date-dot" :class="{ 'schedule-date-dot-today': group.isToday }"></view>
+                              <text class="schedule-date-text" :class="{ 'schedule-date-text-today': group.isToday }">{{ group.label }}</text>
+                            </view>
+                            <view v-for="(event, eventIdx) in group.events" :key="group.date + '-' + eventIdx" class="schedule-event-row">
+                              <view class="schedule-event-time">
+                                <text class="schedule-event-time-start">{{ event.startShort }}</text>
+                                <text class="schedule-event-time-end">{{ event.endShort }}</text>
+                              </view>
+                              <view class="schedule-event-bar" :style="{ background: event.barColor }"></view>
+                              <view class="schedule-event-info">
+                                <text class="schedule-event-title">{{ event.title }}</text>
+                                <text v-if="event.details" class="schedule-event-desc">{{ event.details }}</text>
+                              </view>
+                            </view>
+                          </template>
+                          <view v-if="seg.toolCall.tool === 'get_schedule'" class="schedule-card-footer">
+                            <text class="schedule-card-count">共 {{ getScheduleDisplayEvents(seg.toolCall).length }} 个日程</text>
+                          </view>
+                        </view>
+
+                        <view
+                          v-else-if="isScheduleDetailTool(seg.toolCall.tool) && seg.toolCall.status === 'done' && seg.toolCall.success && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id))"
+                          class="schedule-card schedule-card-empty"
+                          :class="{ 'tool-card-leave': isToolCardCollapsing(seg.toolCall.id) }"
+                        >
+                          <text class="schedule-empty-text">该时间范围内没有日程安排</text>
+                        </view>
+                      </view>
+
+                      <!-- Search tools -->
+                      <view
+                        v-else-if="isSearchTool(seg.toolCall.tool)"
+                        class="search-tool-wrap"
+                      >
+                        <view
+                          class="search-indicator"
+                          :class="{
+                            'search-indicator-running': seg.toolCall.status === 'running',
+                            'search-indicator-success': seg.toolCall.status === 'done' && seg.toolCall.success,
+                            'search-indicator-failed': seg.toolCall.status === 'done' && !seg.toolCall.success,
+                            'search-indicator-expanded': seg.toolCall.status === 'done' && seg.toolCall.success && isSearchExpanded(seg.toolCall.id),
+                            'search-indicator-collapsed': seg.toolCall.status === 'done' && seg.toolCall.success && !isSearchExpanded(seg.toolCall.id)
+                          }"
+                          @click="seg.toolCall.status !== 'running' && toggleSearchResults(seg.toolCall.id)"
+                        >
+                          <view class="search-indicator-globe graph-tool-pill-icon-svg" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
+                          <text class="search-indicator-text">{{ getSearchToolText(seg.toolCall) }}</text>
+                          <view v-if="seg.toolCall.status === 'running'" class="search-indicator-spinner"></view>
+                          <text v-else class="search-indicator-chevron" :class="{ 'search-chevron-up': isSearchExpanded(seg.toolCall.id) }">⌄</text>
+                        </view>
+
+                        <scroll-view
+                          v-if="seg.toolCall.status === 'done' && seg.toolCall.success && getSearchToolResults(seg.toolCall).length && isSearchExpanded(seg.toolCall.id)"
+                          class="search-sources-scroll"
+                          scroll-x
+                          :show-scrollbar="false"
+                        >
+                          <view class="search-sources-row">
+                            <view v-for="(item, idx) in getSearchToolResults(seg.toolCall)" :key="idx" class="search-source-card" @click="openSearchResultUrl(item.url)">
+                              <view class="search-source-head">
+                                <view class="search-source-num">
+                                  <text class="search-source-num-text">{{ idx + 1 }}</text>
+                                </view>
+                                <text class="search-source-site">{{ formatDisplayUrl(item.url) }}</text>
+                              </view>
+                              <text class="search-source-title">{{ item.title }}</text>
+                            </view>
+                          </view>
+                        </scroll-view>
+
+                        <view v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" class="search-tool-empty">
+                          <text class="search-tool-empty-text">{{ seg.toolCall.result?.message || '未找到相关结果' }}</text>
+                        </view>
+
+                        <view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="search-tool-error">
+                          <text class="search-tool-error-text">{{ seg.toolCall.result?.message || '搜索失败' }}</text>
+                        </view>
+                      </view>
+
+                      <!-- Quiz result/detail tools -->
+                      <view
+                        v-else-if="isQuizResultTool(seg.toolCall.tool)"
+                        class="quiz-tool-wrap"
+                        :class="{ 'quiz-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id)) }"
+                      >
+                        <view
+                          class="quiz-tool-pill"
+                          :class="{
+                            'quiz-tool-running': seg.toolCall.status === 'running',
+                            'quiz-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+                            'quiz-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+                          }"
+                          @click="toggleToolCardIfAllowed(seg.toolCall)"
+                        >
+                          <view class="quiz-tool-pill-icon graph-tool-pill-icon-svg" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
+                          <text class="quiz-tool-pill-text">{{ getQuizToolText(seg.toolCall) }}</text>
+                          <view v-if="seg.toolCall.status === 'running'" class="quiz-tool-spinner"></view>
+                          <text v-else-if="canToggleToolCard(seg.toolCall)" class="graph-tool-chevron" :class="{ 'graph-tool-chevron-up': isToolCardExpanded(seg.toolCall.id) }">⌄</text>
+                          <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-success">
+                            <polyline points="88 136 112 160 168 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                          <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-failed">
+                            <line x1="160" y1="96" x2="96" y2="160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                            <line x1="160" y1="160" x2="96" y2="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                        </view>
+
+                        <view
+                          v-if="seg.toolCall.tool === 'view_quiz_results' && seg.toolCall.status === 'done' && seg.toolCall.success && getQuizResultList(seg.toolCall).length && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id))"
+                          class="quiz-tool-results-card"
+                          :class="{ 'tool-card-leave': isToolCardCollapsing(seg.toolCall.id) }"
+                        >
+                          <view
+                            v-for="(quiz, idx) in getQuizResultList(seg.toolCall)"
+                            :key="quiz.id || idx"
+                            class="quiz-result-item"
+                            :class="{
+                              'quiz-result-clickable': getQuizClickAction(quiz) !== 'disabled',
+                              'quiz-result-evaluating': quiz.attempt_status === 'pending' || quiz.attempt_status === 'evaluating'
+                            }"
+                            @click="onQuizItemClick(quiz)"
+                          >
+                            <view class="quiz-result-row">
+                              <text class="quiz-result-title">{{ quiz.title || '未命名测验' }}</text>
+                              <text v-if="quiz.difficulty" class="quiz-result-difficulty" :class="'difficulty-' + quiz.difficulty">{{ getDifficultyLabel(quiz.difficulty) }}</text>
+                            </view>
+                            <view class="quiz-result-meta">
+                              <text v-if="quiz.attempt_status === 'pending' || quiz.attempt_status === 'evaluating'" class="quiz-result-evaluating-text">评估中</text>
+                              <text v-else-if="quiz.attempt_status === 'in_progress'" class="quiz-result-evaluating-text">进行中</text>
+                              <text v-else-if="quiz.has_attempt" class="quiz-result-score">{{ quiz.score }}/{{ quiz.total_score }}</text>
+                              <text v-else class="quiz-result-no-attempt">未作答</text>
+                              <text class="quiz-result-date">{{ quiz.created_at || '' }}</text>
+                              <text v-if="getQuizClickAction(quiz) !== 'disabled'" class="quiz-result-arrow">›</text>
+                            </view>
+                          </view>
+                        </view>
+
+                        <view
+                          v-else-if="seg.toolCall.tool === 'view_quiz_results' && seg.toolCall.status === 'done' && seg.toolCall.success && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id))"
+                          class="quiz-tool-empty"
+                          :class="{ 'tool-card-leave': isToolCardCollapsing(seg.toolCall.id) }"
+                        >
+                          <text class="quiz-tool-empty-text">{{ seg.toolCall.result?.message || '当前学习空间没有测验' }}</text>
+                        </view>
+
+                        <view
+                          v-else-if="seg.toolCall.tool === 'view_quiz_attempt_detail' && seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id))"
+                          class="quiz-tool-detail-card quiz-tool-detail-clickable"
+                          :class="{ 'tool-card-leave': isToolCardCollapsing(seg.toolCall.id) }"
+                          @click="navigateToResult(seg.toolCall.arguments?.quiz_id || seg.toolCall.result?.quiz_id)"
+                        >
+                          <view class="quiz-detail-score-section">
+                            <view class="quiz-detail-score-header">
+                              <text class="quiz-detail-score-label">得分</text>
+                            </view>
+                            <view class="quiz-detail-score-row">
+                              <text class="quiz-detail-score-value">{{ seg.toolCall.result.score }}/{{ seg.toolCall.result.total_score }}</text>
+                              <text class="quiz-detail-score-percent">({{ seg.toolCall.result.percentage }}%)</text>
+                            </view>
+                            <view class="quiz-detail-score-bar-bg">
+                              <view class="quiz-detail-score-bar-fill" :style="{ width: (seg.toolCall.result.percentage || 0) + '%' }" :class="getScoreBarClass(seg.toolCall.result.percentage)"></view>
+                            </view>
+                          </view>
+
+                          <view v-if="seg.toolCall.result.strengths?.length || seg.toolCall.result.weaknesses?.length" class="quiz-detail-analysis-section">
+                            <view class="quiz-detail-analysis-header">
+                              <text class="quiz-detail-section-title">分析</text>
+                            </view>
+
+                            <view v-if="seg.toolCall.result.strengths?.length" class="quiz-detail-subsection">
+                              <text class="quiz-detail-subsection-title">优势</text>
+                              <view v-for="(item, idx) in seg.toolCall.result.strengths" :key="'s-' + idx" class="quiz-detail-tag-item">
+                                <view class="quiz-detail-dot strength-dot"></view>
+                                <text class="quiz-detail-tag-text">{{ item }}</text>
+                              </view>
+                            </view>
+
+                            <view v-if="seg.toolCall.result.weaknesses?.length" class="quiz-detail-subsection">
+                              <text class="quiz-detail-subsection-title">不足</text>
+                              <view v-for="(item, idx) in seg.toolCall.result.weaknesses" :key="'w-' + idx" class="quiz-detail-tag-item">
+                                <view class="quiz-detail-dot weakness-dot"></view>
+                                <text class="quiz-detail-tag-text">{{ item }}</text>
+                              </view>
+                            </view>
+                          </view>
+
+                          <view v-if="seg.toolCall.result.questions?.length" class="quiz-detail-questions-section">
+                            <view class="quiz-detail-questions-header">
+                              <text class="quiz-detail-section-title">题目详情</text>
+                              <text class="quiz-detail-questions-count">{{ seg.toolCall.result.questions.length }} 题</text>
+                            </view>
+                            <view v-for="(question, idx) in seg.toolCall.result.questions" :key="'q-' + idx" class="quiz-detail-q-row">
+                              <text class="quiz-detail-q-order">{{ question.order }}</text>
+                              <view class="quiz-detail-q-status-dot" :class="'status-dot-' + question.status"></view>
+                              <text class="quiz-detail-q-title">{{ question.title }}</text>
+                              <text class="quiz-detail-q-score">{{ question.score }}</text>
+                            </view>
+                          </view>
+
+                          <view class="quiz-detail-footer">
+                            <text class="quiz-detail-footer-text">查看完整评估结果</text>
+                            <text class="quiz-detail-footer-arrow">›</text>
+                          </view>
+                        </view>
+
+                        <view
+                          v-else-if="seg.toolCall.tool === 'view_quiz_attempt_detail' && seg.toolCall.status === 'done' && !seg.toolCall.success && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id))"
+                          class="quiz-tool-empty"
+                          :class="{ 'tool-card-leave': isToolCardCollapsing(seg.toolCall.id) }"
+                        >
+                          <text class="quiz-tool-empty-text">{{ seg.toolCall.result?.message || '获取测验详情失败' }}</text>
+                        </view>
+                      </view>
+
+                      <!-- Quiz generation -->
+                      <view
+                        v-else-if="seg.toolCall.tool === 'generate_test'"
+                        class="quiz-tool-wrap"
+                        :class="{ 'quiz-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id)) }"
+                      >
+                        <view
+                          class="quiz-tool-pill"
+                          :class="{
+                            'quiz-tool-running': seg.toolCall.status === 'running',
+                            'quiz-tool-done': seg.toolCall.status === 'done' && seg.toolCall.success,
+                            'quiz-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+                          }"
+                          @click="toggleToolCardIfAllowed(seg.toolCall)"
+                        >
+                          <view class="quiz-tool-pill-icon graph-tool-pill-icon-svg" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
+                          <text class="quiz-tool-pill-text">{{ getQuizToolText(seg.toolCall) }}</text>
+                          <view v-if="seg.toolCall.status === 'running'" class="quiz-tool-spinner"></view>
+                          <text v-else-if="canToggleToolCard(seg.toolCall)" class="graph-tool-chevron" :class="{ 'graph-tool-chevron-up': isToolCardExpanded(seg.toolCall.id) }">⌄</text>
+                          <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-success">
+                            <polyline points="88 136 112 160 168 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                          <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-failed">
+                            <line x1="160" y1="96" x2="96" y2="160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                            <line x1="160" y1="160" x2="96" y2="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+                          </svg>
+                        </view>
+
+                        <view
+                          v-if="seg.toolCall.status === 'done' && seg.toolCall.success && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id))"
+                          :class="{ 'tool-card-leave': isToolCardCollapsing(seg.toolCall.id) }"
+                        >
+                          <view
+                            v-if="seg.toolCall.quizId"
+                            class="quiz-entry-card"
+                            @click="handleQuizEntryClick(seg.toolCall.quizId)"
+                          >
+                            <view class="quiz-entry-content">
+                              <view class="quiz-entry-icon-wrap">
+                                <view class="quiz-entry-icon graph-tool-pill-icon-svg" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
+                              </view>
+                              <view class="quiz-entry-text-col">
+                                <text class="quiz-entry-title">测试题已生成</text>
+                                <text class="quiz-entry-meta">点击进入测试</text>
+                              </view>
+                              <text class="quiz-entry-chevron">›</text>
+                            </view>
+                          </view>
+                          <view v-else class="quiz-tool-empty">
+                            <text class="quiz-tool-empty-text">{{ seg.toolCall.result?.message || '测试题生成完成' }}</text>
+                          </view>
+                        </view>
                       </view>
 
                       <!-- Note creation: rich card -->
@@ -719,6 +1102,11 @@
                         :tool-call="seg.toolCall"
                         :space-id="spaceId"
                         :conversation-id="conversationId"
+                      />
+
+                      <NoteDisplayCard
+                        v-else-if="isNoteDisplayTool(seg.toolCall.tool)"
+                        :tool-call="seg.toolCall"
                       />
 
                       <!-- Artifact creation/update: card -->
@@ -733,37 +1121,54 @@
                       <!-- Chart generation tool: image preview card -->
                       <view
                         v-else-if="seg.toolCall.tool === 'generate_chart'"
-                        class="tool-call-card"
-                        :class="getToolCardClass(seg.toolCall)"
+                        class="chart-tool-wrap"
+                        :class="{ 'chart-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.image_url && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id)) }"
                       >
-                        <view class="tool-call-header">
-                          <view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
-                          <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-success">
+                        <view
+                          class="graph-tool-pill"
+                          :class="{
+                            'graph-tool-running': seg.toolCall.status === 'running',
+                            'graph-tool-success': seg.toolCall.status === 'done' && seg.toolCall.success,
+                            'graph-tool-failed': seg.toolCall.status === 'done' && !seg.toolCall.success
+                          }"
+                          @click="toggleToolCardIfAllowed(seg.toolCall)"
+                        >
+                          <view class="graph-tool-pill-icon graph-tool-pill-icon-svg" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
+                          <text class="graph-tool-pill-text">{{ getChartToolText(seg.toolCall) }}</text>
+                          <view v-if="seg.toolCall.status === 'running'" class="graph-tool-spinner"></view>
+                          <text v-else-if="canToggleToolCard(seg.toolCall)" class="graph-tool-chevron" :class="{ 'graph-tool-chevron-up': isToolCardExpanded(seg.toolCall.id) }">⌄</text>
+                          <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-success">
                             <polyline points="88 136 112 160 168 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
                           </svg>
-                          <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-failed">
+                          <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="graph-tool-status-icon tool-status-failed">
                             <line x1="160" y1="96" x2="96" y2="160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
                             <line x1="160" y1="160" x2="96" y2="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
                           </svg>
-                          <view class="tool-call-icon" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
-                          <text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
                         </view>
-                        <view v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.image_url" class="chart-image-preview">
-                          <img
-                            :src="getFullImageUrl(seg.toolCall.result.image_url)"
-                            class="chart-preview-img"
-                            @click="previewChartImage(seg.toolCall.result.image_url)"
-                          />
+
+                        <view
+                          v-if="seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.result?.image_url && (isToolCardExpanded(seg.toolCall.id) || isToolCardCollapsing(seg.toolCall.id))"
+                          class="chart-detail-card"
+                          :class="{ 'tool-card-leave': isToolCardCollapsing(seg.toolCall.id) }"
+                        >
+                          <view class="chart-image-preview">
+                            <img
+                              :src="getFullImageUrl(seg.toolCall.result.image_url)"
+                              class="chart-preview-img"
+                              @click="previewChartImage(seg.toolCall.result.image_url)"
+                            />
+                          </view>
+                          <view v-if="seg.toolCall.result?.auto_saved" class="chart-saved-badge">
+                            <image class="chart-saved-icon" src="/static/icons/phosphor/regular/notebook-white.svg" mode="aspectFit" />
+                            <span class="chart-saved-text">已保存为笔记</span>
+                            <template v-if="seg.toolCall.result?.node_label">
+                              <span class="chart-saved-text chart-saved-node"> · </span>
+                              <image class="chart-saved-icon" src="/static/icons/phosphor/regular/push-pin-white.svg" mode="aspectFit" />
+                              <span class="chart-saved-text chart-saved-node">{{ seg.toolCall.result.node_label }}</span>
+                            </template>
+                          </view>
                         </view>
-                        <view v-if="seg.toolCall.result?.auto_saved" class="chart-saved-badge">
-                          <image class="chart-saved-icon" src="/static/icons/phosphor/regular/notebook-white.svg" mode="aspectFit" />
-                          <span class="chart-saved-text">已保存为笔记</span>
-                          <template v-if="seg.toolCall.result?.node_label">
-                            <span class="chart-saved-text chart-saved-node"> · </span>
-                            <image class="chart-saved-icon" src="/static/icons/phosphor/regular/push-pin-white.svg" mode="aspectFit" />
-                            <span class="chart-saved-text chart-saved-node">{{ seg.toolCall.result.node_label }}</span>
-                          </template>
-                        </view>
+
                         <view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="tool-call-result">
                           <text class="tool-call-result-text">{{ seg.toolCall.result?.message || '图表生成失败' }}</text>
                         </view>
@@ -812,57 +1217,8 @@
                         </view>
                       </view>
 
-                      <!-- Regular tools: card -->
-                      <view
-                        v-else
-                        class="tool-call-card"
-                        :class="getToolCardClass(seg.toolCall)"
-                      >
-                        <view class="tool-call-header">
-                          <!-- Status icon -->
-                          <view v-if="seg.toolCall.status === 'running'" class="tool-call-spinner"></view>
-                          <svg v-else-if="seg.toolCall.status === 'done' && seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-success">
-                            <polyline points="88 136 112 160 168 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-                          </svg>
-                          <svg v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" viewBox="0 0 256 256" class="tool-call-status-icon tool-status-failed">
-                            <line x1="160" y1="96" x2="96" y2="160" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-                            <line x1="160" y1="160" x2="96" y2="96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-                          </svg>
-
-                          <!-- Tool icon -->
-                          <view class="tool-call-icon" v-html="getToolIconSvg(seg.toolCall.tool)"></view>
-
-                          <!-- Tool name -->
-                          <text class="tool-call-name">{{ getToolDisplayName(seg.toolCall.tool) }}</text>
-                        </view>
-
-                        <!-- Tool arguments -->
-                        <text v-if="seg.toolCall.arguments" class="tool-call-args">{{ formatToolArgs(seg.toolCall.arguments) }}</text>
-
-                        <!-- Quiz entry card -->
-                        <view
-                          v-if="seg.toolCall.tool === 'generate_test' && seg.toolCall.status === 'done' && seg.toolCall.success && seg.toolCall.quizId"
-                          class="quiz-entry-card"
-                          @click="handleQuizEntryClick(seg.toolCall.quizId)"
-                        >
-                          <view class="quiz-entry-content">
-                            <view class="quiz-entry-icon">
-                              <svg viewBox="0 0 256 256" width="20" height="20">
-                                <path d="M200,40H56A16,16,0,0,0,40,56V200a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V56A16,16,0,0,0,200,40Zm-36.69,77.49-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L101.65,156.5l50.34-50.34a8,8,0,0,1,11.32,11.32Z" fill="currentColor"/>
-                              </svg>
-                            </view>
-                            <view class="quiz-entry-text">
-                              <text class="quiz-entry-title">测试题已生成</text>
-                              <text class="quiz-entry-subtitle">点击进入测试</text>
-                            </view>
-                            <view class="quiz-entry-arrow">
-                              <svg viewBox="0 0 256 256" width="16" height="16">
-                                <polyline points="96 48 176 128 96 208" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-                              </svg>
-                            </view>
-                          </view>
-                        </view>
-                      </view>
+                      <!-- Remaining tools -->
+                      <AgentToolCard v-else :tool-call="withDefaultToolLabel(seg.toolCall)" />
                     </view>
                   </template>
 
@@ -1058,10 +1414,14 @@ import HomeSidebar from '@/components/layout/HomeSidebar.vue'
 import KnowledgeGraph from '@/components/graph/KnowledgeGraph.vue'
 import MarkdownRender from '@/components/markdown-render/markdown-render.vue'
 import StudyMaterialsPanel from '@/components/study/StudyMaterialsPanel.vue'
+import DocKgGenPanel from '@/components/study/DocKgGenPanel.vue'
 import QuizPanel from '@/components/study/quiz/QuizPanel.vue'
 import NotesPanel from '@/components/study/notes/NotesPanel.vue'
 import NoteCreationCard from '@/components/study/notes/NoteCreationCard.vue'
+import NoteDisplayCard from '@/components/study/notes/NoteDisplayCard.vue'
 import ArtifactCreationCard from '@/components/study/notes/ArtifactCreationCard.vue'
+import AgentThinkingBlock from '@/components/chat/AgentThinkingBlock.vue'
+import AgentToolCard from '@/components/chat/AgentToolCard.vue'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UMasteryToast from '@/components/u-mastery-toast/u-mastery-toast.vue'
 import UQuizNotification from '@/components/u-quiz-notification/u-quiz-notification.vue'
@@ -1073,6 +1433,7 @@ import { getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCale
 import { useUserStore } from '@/store/user'
 import { useSpacesStore } from '@/store/spaces'
 import config from '@/config'
+import { getAgentMessageSegments } from '@/utils/agent-stream-segments'
 
 // Tool display name mapping
 const TOOL_DISPLAY_NAMES = {
@@ -1090,14 +1451,18 @@ const TOOL_DISPLAY_NAMES = {
   get_learning_paths: 'Get Paths',
   delete_all_learning_paths: 'Delete Paths',
   get_postorder_traversal: 'Traverse Graph',
+  get_current_time: 'Get Current Time',
   get_schedule: 'View Schedule',
   add_schedule: 'Add Schedule',
   delete_schedule: 'Delete Schedule',
   update_schedule: 'Update Schedule',
   web_search: 'Web Search',
   web_fetch: 'Fetch Page',
+  web_crawl: 'Deep Crawl',
   search_documents: 'Search Documents',
   generate_test: 'Generate Test',
+  view_quiz_results: 'View Quiz Results',
+  view_quiz_attempt_detail: 'View Quiz Analysis',
   write_to_long_term_memory: 'Update Memory',
   delete_from_long_term_memory: 'Delete Memory',
   write_to_space_memory: 'Update Space Memory',
@@ -1113,6 +1478,7 @@ const TOOL_DISPLAY_NAMES = {
   update_note: 'Update Note',
   delete_note: 'Delete Note',
   generate_chart: 'Generate Chart',
+  save_to_knowledge_base: 'Save to Knowledge Base',
   annotate_panel: '面板标注',
   run_python_code: '执行 Python 代码'
 }
@@ -1129,8 +1495,52 @@ const GRAPH_MUTATING_TOOLS = new Set([
   'delete_all_learning_paths'
 ])
 
-// Schedule tools (auto-executed via backend API on web)
-const SCHEDULE_TOOLS = new Set(['get_schedule', 'add_schedule', 'delete_schedule', 'update_schedule'])
+const GRAPH_QUERY_TOOLS = new Set(['get_child_nodes', 'get_parent_nodes', 'get_sibling_nodes'])
+const LEARNING_PATH_TOOLS = new Set(['generate_learning_path', 'extend_learning_path', 'get_learning_paths', 'delete_all_learning_paths'])
+const GRAPH_TOOLS = new Set([
+  'get_graph_overview',
+  ...GRAPH_MUTATING_TOOLS,
+  ...GRAPH_QUERY_TOOLS,
+  ...LEARNING_PATH_TOOLS,
+  'get_postorder_traversal'
+])
+
+// Schedule/time tools (auto-executed on web)
+const SCHEDULE_TOOLS = new Set(['get_current_time', 'get_schedule', 'add_schedule', 'delete_schedule', 'update_schedule'])
+const REVIEW_TOOLS = new Set(['get_review_events', 'mark_review_completed'])
+const DOC_RETRIEVAL_TOOLS = new Set(['search_documents', 'web_fetch'])
+const SEARCH_TOOLS = new Set(['web_search', 'academic_search', 'encyclopedia_search', 'course_search', 'web_crawl'])
+const NOTE_DISPLAY_TOOLS = new Set(['list_notes', 'view_note_detail', 'update_note', 'delete_note'])
+
+const GRAPH_TOOL_TEXT = {
+  get_graph_overview: { running: '正在查看知识图谱…', done: '已获取知识图谱', failed: '获取知识图谱失败' },
+  add_node: { running: '正在添加节点…', done: '已添加节点', failed: '添加节点失败' },
+  add_edge: { running: '正在连接节点…', done: '已连接节点', failed: '连接节点失败' },
+  delete_node: { running: '正在删除节点…', done: '已删除节点', failed: '删除节点失败' },
+  delete_edge: { running: '正在移除连接…', done: '已移除连接', failed: '移除连接失败' },
+  update_mastery: { running: '正在更新掌握度…', done: '已更新掌握度', failed: '更新掌握度失败' },
+  get_child_nodes: { running: '正在查找子节点…', done: '已找到子节点', failed: '查找子节点失败' },
+  get_parent_nodes: { running: '正在查找父节点…', done: '已找到父节点', failed: '查找父节点失败' },
+  get_sibling_nodes: { running: '正在查找兄弟节点…', done: '已找到兄弟节点', failed: '查找兄弟节点失败' },
+  generate_learning_path: { running: '正在生成学习路径…', done: '已生成学习路径', failed: '生成学习路径失败' },
+  extend_learning_path: { running: '正在延伸学习路径…', done: '已延伸学习路径', failed: '延伸学习路径失败' },
+  get_learning_paths: { running: '正在读取学习路径…', done: '已读取学习路径', failed: '读取学习路径失败' },
+  delete_all_learning_paths: { running: '正在清理学习路径…', done: '已清理学习路径', failed: '清理学习路径失败' },
+  get_postorder_traversal: { running: '正在生成后序遍历…', done: '已生成后序遍历', failed: '生成后序遍历失败' }
+}
+
+const SCHEDULE_TOOL_TEXT = {
+  get_current_time: { running: '正在获取当前时间…', done: '已获取当前时间', failed: '获取时间失败' },
+  get_schedule: { running: '正在查看日程…', done: '已获取日程', failed: '获取日程失败' },
+  add_schedule: { running: '正在添加日程…', done: '已添加日程', failed: '添加日程失败' },
+  update_schedule: { running: '正在更新日程…', done: '已更新日程', failed: '更新日程失败' },
+  delete_schedule: { running: '正在删除日程…', done: '已删除日程', failed: '删除日程失败' }
+}
+
+const REVIEW_TOOL_TEXT = {
+  get_review_events: { running: '正在查看复习事项…', done: '已获取复习事项', failed: '获取复习事项失败' },
+  mark_review_completed: { running: '正在标记已复习…', done: '已标记完成复习', failed: '标记复习失败' }
+}
 
 // Planning tools (shown as inline shimmer text that fades out)
 const PLANNING_TOOLS = new Set(['get_tool_details'])
@@ -1157,7 +1567,9 @@ const TOOL_ICON_SVGS = {
   memory: '<svg viewBox="0 0 256 256" width="14" height="14"><path d="M128,24A96,96,0,0,0,64,184V224h128V184A96,96,0,0,0,128,24Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="112" y1="224" x2="112" y2="192" fill="none" stroke="currentColor" stroke-width="16"/><line x1="144" y1="224" x2="144" y2="192" fill="none" stroke="currentColor" stroke-width="16"/></svg>',
   search: '<svg viewBox="0 0 256 256" width="14" height="14"><circle cx="116" cy="116" r="84" fill="none" stroke="currentColor" stroke-width="16"/><line x1="175.4" y1="175.4" x2="224" y2="224" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/></svg>',
   calendar: '<svg viewBox="0 0 256 256" width="14" height="14"><rect x="40" y="40" width="176" height="176" rx="8" fill="none" stroke="currentColor" stroke-width="16"/><line x1="176" y1="24" x2="176" y2="56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><line x1="80" y1="24" x2="80" y2="56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="16"/><line x1="40" y1="88" x2="216" y2="88" fill="none" stroke="currentColor" stroke-width="16"/></svg>',
+  time: '<svg viewBox="0 0 256 256" width="14" height="14"><polyline points="24 56 24 104 72 104" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><path d="M34.3,152A96,96,0,1,0,64,56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><polyline points="128 80 128 128 160 144" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>',
   review: '<svg viewBox="0 0 256 256" width="14" height="14"><circle cx="128" cy="128" r="96" fill="none" stroke="currentColor" stroke-width="16"/><polyline points="128 80 128 128 168 152" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>',
+  quiz: '<svg viewBox="0 0 256 256" width="14" height="14"><path d="M216,48H40A8,8,0,0,0,32,56V216a8,8,0,0,0,8,8H216a8,8,0,0,0,8-8V56A8,8,0,0,0,216,48ZM88,176a8,8,0,0,1-11.31,0l-24-24a8,8,0,0,1,11.31-11.31L88,164.69l40-40a8,8,0,0,1,11.31,11.31Zm0-64a8,8,0,0,1-11.31,0l-24-24a8,8,0,0,1,11.31-11.31L88,100.69l40-40a8,8,0,0,1,11.31,11.31Z" fill="currentColor"/></svg>',
   note: '<svg viewBox="0 0 256 256" width="14" height="14"><path d="M200,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32ZM80,80h96a8,8,0,0,1,0,16H80a8,8,0,0,1,0-16Zm0,40h96a8,8,0,0,1,0,16H80a8,8,0,0,1,0-16Zm0,40h64a8,8,0,0,1,0,16H80a8,8,0,0,1,0-16Z" fill="currentColor"/></svg>',
   image: '<svg viewBox="0 0 256 256" width="14" height="14"><rect x="40" y="40" width="176" height="176" rx="8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><circle cx="100" cy="92" r="16" fill="none" stroke="currentColor" stroke-width="16"/><path d="M80,160l40-48,40,32,48-56,48,40" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>',
   code: '<svg viewBox="0 0 256 256" width="14" height="14"><polyline points="64 88 16 128 64 168" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><polyline points="192 88 240 128 192 168" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="160" y1="40" x2="96" y2="216" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>',
@@ -1171,16 +1583,19 @@ const TOOL_ICON_MAP = {
   get_child_nodes: 'graph', get_parent_nodes: 'graph', get_sibling_nodes: 'graph',
   generate_learning_path: 'graph', extend_learning_path: 'graph', get_learning_paths: 'graph',
   delete_all_learning_paths: 'graph', get_postorder_traversal: 'graph',
+  get_current_time: 'time',
   get_schedule: 'calendar', add_schedule: 'calendar',
   delete_schedule: 'calendar', update_schedule: 'calendar',
-  generate_test: 'default',
-  web_search: 'search', web_fetch: 'search', search_documents: 'search',
+  generate_test: 'quiz',
+  view_quiz_results: 'quiz',
+  view_quiz_attempt_detail: 'quiz',
+  web_search: 'search', web_fetch: 'search', web_crawl: 'search', search_documents: 'search',
   write_to_long_term_memory: 'memory', delete_from_long_term_memory: 'memory',
   write_to_space_memory: 'memory', delete_from_space_memory: 'memory',
   get_review_events: 'review', mark_review_completed: 'review',
   create_note: 'note', list_notes: 'note', view_note_detail: 'note',
   update_note: 'note', delete_note: 'note',
-  generate_chart: 'image',
+  generate_chart: 'image', save_to_knowledge_base: 'note',
   annotate_panel: 'default',
   run_python_code: 'code'
 }
@@ -1189,7 +1604,7 @@ const DEFAULT_BROWSER_URL = 'https://www.wikipedia.org'
 const BROWSER_LOAD_TIMEOUT_MS = 8000
 
 export default {
-  components: { HomeSidebar, KnowledgeGraph, MarkdownRender, StudyMaterialsPanel, QuizPanel, NotesPanel, NoteCreationCard, ArtifactCreationCard, UModal, UMasteryToast, UQuizNotification, UArtifactNotification },
+  components: { HomeSidebar, KnowledgeGraph, MarkdownRender, StudyMaterialsPanel, DocKgGenPanel, QuizPanel, NotesPanel, NoteCreationCard, NoteDisplayCard, ArtifactCreationCard, AgentThinkingBlock, AgentToolCard, UModal, UMasteryToast, UQuizNotification, UArtifactNotification },
   data() {
     return {
       sidebarCollapsed: false,
@@ -1242,6 +1657,8 @@ export default {
       planningToolStartTimes: {},
       expandedSearchResults: {},
       expandedCodeBlocks: {},
+      expandedToolCards: {},
+      collapsingToolCards: {},
 
       // Thinking model state
       thinkingStartTime: null,
@@ -1318,6 +1735,11 @@ export default {
       graphGenerating: false,
       _abortGraphPoll: false,
 
+      // Document-based KG generation mode
+      docKgMode: false,
+      docKgDocIds: [],
+      docKgCompleted: false,
+
       // Dual-sync mode
       dualSyncEnabled: false,
       annotations: [],
@@ -1358,9 +1780,7 @@ export default {
       return this.tabs
     },
     currentUserTier() {
-      const userStore = useUserStore()
-      const tier = userStore?.user?.subscription_tier
-      return typeof tier === 'string' ? tier.toUpperCase() : 'FREE'
+      return 'ALPHA'
     },
     canBrowserBack() {
       return this.browserHistoryIndex > 0
@@ -1403,6 +1823,13 @@ export default {
       const member = this.spaceMembers.find(m => m.user_id === this.selectedMemberUserId)
       return member ? member.color : '#0088FF'
     },
+    canEditGraph() {
+      if (!this.isCollaborative || this.userRole === 'owner') return true
+      const self = this.spaceMembers.find(
+        m => String(m.user_id) === String(this.currentUserId || '')
+      )
+      return !!self?.can_edit_graph
+    },
     isForeignGraphView() {
       return !!this.selectedMemberUserId && String(this.selectedMemberUserId) !== String(this.currentUserId || '')
     },
@@ -1419,9 +1846,19 @@ export default {
         this.graphTaskId = options.graphTaskId
         this.graphGenerating = true
       }
+      // Document-based KG generation mode
+      if (options.docKgMode === '1' && options.docKgDocIds) {
+        this.docKgMode = true
+        this.docKgDocIds = options.docKgDocIds.split(',')
+        this.graphGenerating = true
+      }
       await this.loadSpaceInfo()
       this.loadSpaceToolMode()
       this.initConversation()
+      if (options.quizId) {
+        this.activeTab = 'quizzes'
+        this.$nextTick(() => this.handleQuizEntryClick(options.quizId))
+      }
       if (this.graphTaskId) {
         this.pollGraphTask(this.graphTaskId)
       }
@@ -1502,7 +1939,10 @@ export default {
       this.notificationAbort = connectNotificationStream({
         onMasteryUpdate: (data) => this.onMasteryUpdate(data),
         onQuizEvaluationComplete: (data) => this.onQuizEvaluationComplete(data),
+        onAssignmentGraded: (data) => this.onAssignmentGradeNotification(data),
+        onAssignmentGradeUpdated: (data) => this.onAssignmentGradeNotification(data),
         onLearningPathExpanded: (data) => this.onLearningPathExpanded(data),
+        onArtifactStream: (data) => this.onArtifactStream(data),
         onArtifactReady: (data) => this.onArtifactReady(data)
       })
     },
@@ -1556,12 +1996,44 @@ export default {
       }
     },
 
+    onAssignmentGradeNotification(data) {
+      const assignmentId = data.assignment_id || data.id
+      if (!assignmentId) return
+      const score = data.final_score ?? data.provisional_score ?? data.score ?? 0
+      const totalScore = data.total_score ?? 0
+      this.quizNotificationIdCounter++
+      const id = this.quizNotificationIdCounter
+      const index = this.quizEvaluationNotifications.length
+      this.quizEvaluationNotifications = [
+        ...this.quizEvaluationNotifications,
+        {
+          id,
+          visible: true,
+          itemKind: 'assignment',
+          assignmentId,
+          quizTopic: data.title || data.assignment_title || '教师作业',
+          score: Number(score),
+          totalScore: Number(totalScore),
+          status: data.status || 'completed',
+          index
+        }
+      ]
+
+      if (this.activeTab === 'quizzes' && this.$refs.quizPanel) {
+        this.$refs.quizPanel.loadQuizzes()
+      }
+    },
+
     handleQuizNotificationClick(notification) {
       this.removeQuizNotification(notification.id)
       this.activeTab = 'quizzes'
       this.$nextTick(() => {
         if (this.$refs.quizPanel) {
-          this.$refs.quizPanel.navigateToQuizResult(notification.quizId)
+          if (notification.itemKind === 'assignment') {
+            this.$refs.quizPanel.navigateToAssignmentResult(notification.assignmentId)
+          } else {
+            this.$refs.quizPanel.navigateToQuizResult(notification.quizId)
+          }
         }
       })
     },
@@ -1571,13 +2043,112 @@ export default {
     },
 
     // ==================== Artifact Notifications ====================
-    onArtifactReady(data) {
-      const { note_id, space_id, status, title, error_message } = data
+    walkArtifactToolCalls(visitor) {
+      for (const msg of this.messages) {
+        for (const segmentKey of ['segments', 'streamSegments']) {
+          const segments = msg[segmentKey]
+          if (!Array.isArray(segments)) continue
+          for (let index = 0; index < segments.length; index++) {
+            const seg = segments[index]
+            if (seg?.type === 'tool' && (seg.toolCall?.tool === 'create_artifact' || seg.toolCall?.tool === 'update_artifact')) {
+              if (visitor(seg, msg, segmentKey, index)) return true
+            }
+          }
+        }
+      }
+      return false
+    },
+
+    applyArtifactSnapshot(payload, { appendDelta = false } = {}) {
+      const { taskId, noteId, title, status, delta, codeSnapshot, htmlSize, errorMessage } = payload
+      let updated = false
+
+      this.walkArtifactToolCalls((seg) => {
+        const currentResult = seg.toolCall?.result || {}
+        if (taskId) {
+          if (String(currentResult.task_id) !== String(taskId)) return false
+        } else if (noteId) {
+          if (String(currentResult.note_id) !== String(noteId)) return false
+        } else {
+          return false
+        }
+
+        const nextResult = { ...currentResult }
+        if (taskId) nextResult.task_id = taskId
+        if (noteId) nextResult.note_id = noteId
+        if (title) {
+          nextResult.artifact_title = title
+          if (!nextResult.title) nextResult.title = title
+        }
+        if (status) {
+          nextResult.status = status
+          nextResult.artifact_progress_status = status
+        }
+        if (typeof codeSnapshot === 'string') {
+          nextResult.code_snapshot = codeSnapshot
+        } else if (appendDelta && delta) {
+          nextResult.code_snapshot = `${nextResult.code_snapshot || ''}${delta}`
+        }
+        if (typeof htmlSize === 'number') nextResult.html_size = htmlSize
+        if (errorMessage) nextResult.message = errorMessage
+
+        seg.toolCall = { ...seg.toolCall, result: nextResult }
+        updated = true
+        return true
+      })
+
+      if (updated) this.$forceUpdate()
+      return updated
+    },
+
+    async refreshArtifactTaskSnapshot(taskId) {
+      if (!taskId) return null
+      try {
+        const taskResult = await getTaskStatus(taskId)
+        if (taskResult.task_type !== 'generate_artifact') return taskResult
+        const resolvedStatus = taskResult.artifact_progress_status
+          || (taskResult.status === 'failed' ? 'failed' : taskResult.status === 'done' ? 'done' : 'streaming')
+        this.applyArtifactSnapshot({
+          taskId,
+          noteId: taskResult.note_id,
+          title: taskResult.artifact_title,
+          status: resolvedStatus,
+          codeSnapshot: typeof taskResult.code_snapshot === 'string' ? taskResult.code_snapshot : undefined,
+          htmlSize: typeof taskResult.html_size === 'number' ? taskResult.html_size : undefined,
+          errorMessage: taskResult.error_message || ''
+        })
+        return taskResult
+      } catch (error) {
+        return null
+      }
+    },
+
+    onArtifactStream(data) {
+      const { note_id, space_id, task_id, title, status, delta } = data || {}
+      if (String(space_id) !== String(this.spaceId)) return
+      this.applyArtifactSnapshot({
+        taskId: task_id,
+        noteId: note_id,
+        title,
+        status: status || 'streaming',
+        delta
+      }, { appendDelta: true })
+    },
+
+    async onArtifactReady(data) {
+      const { note_id, space_id, task_id, status, title, error_message } = data
       if (String(space_id) !== String(this.spaceId)) return
 
-      // Directly update the toolCall's result.status in the message segments
-      if (note_id) {
-        this.updateArtifactToolCallStatus(note_id, status)
+      // Try to get final snapshot from backend (includes full code)
+      const refreshed = task_id ? await this.refreshArtifactTaskSnapshot(task_id) : null
+      if (!refreshed) {
+        this.applyArtifactSnapshot({
+          taskId: task_id,
+          noteId: note_id,
+          title,
+          status,
+          errorMessage: error_message || ''
+        })
       }
 
       // Push toast notification
@@ -1619,27 +2190,6 @@ export default {
 
     removeArtifactNotification(id) {
       this.artifactNotifications = this.artifactNotifications.filter(n => n.id !== id)
-    },
-
-    updateArtifactToolCallStatus(noteId, newStatus) {
-      for (const msg of this.messages) {
-        const updateSegments = (segments) => {
-          if (!Array.isArray(segments)) return false
-          for (const seg of segments) {
-            if (seg.type === 'tool' && seg.toolCall &&
-                (seg.toolCall.tool === 'create_artifact' || seg.toolCall.tool === 'update_artifact') &&
-                seg.toolCall.result?.note_id === noteId) {
-              seg.toolCall = { ...seg.toolCall, result: { ...seg.toolCall.result, status: newStatus } }
-              return true
-            }
-          }
-          return false
-        }
-        if (updateSegments(msg.segments) || updateSegments(msg.streamSegments)) {
-          break
-        }
-      }
-      this.$forceUpdate()
     },
 
     handleViewArtifact({ noteId, spaceId }) {
@@ -1700,6 +2250,32 @@ export default {
       }
     },
 
+    // ==================== Document KG Generation Events ====================
+    handleDocKgNode(nodeData) {
+      if (this.$refs.knowledgeGraph) {
+        this.$refs.knowledgeGraph.addIncrementalNode(nodeData)
+      }
+    },
+    handleDocKgEdge(edgeData) {
+      if (this.$refs.knowledgeGraph) {
+        this.$refs.knowledgeGraph.addIncrementalEdge(edgeData)
+      }
+    },
+    handleDocKgDone({ nodeCount, edgeCount }) {
+      this.graphGenerating = false
+      this.docKgCompleted = true
+      // Reload the full graph from DB after persistence
+      setTimeout(() => {
+        if (this.$refs.knowledgeGraph) {
+          this.$refs.knowledgeGraph.loadAndRender()
+        }
+      }, 1500)
+    },
+    handleDocKgError(message) {
+      this.graphGenerating = false
+      this.docKgCompleted = true
+    },
+
     // ==================== Model Selection ====================
     toggleModelMenu() {
       this.showModelMenu = !this.showModelMenu
@@ -1707,7 +2283,7 @@ export default {
     selectModel(id) {
       const model = this.availableModels.find(m => m.id === id)
       if (model?.locked) {
-        uni.showToast({ title: '升级订阅以解锁该模型', icon: 'none' })
+        uni.showToast({ title: '实验账号权限异常，请联系管理员', icon: 'none' })
         return
       }
       this.selectedModelId = id
@@ -2209,10 +2785,6 @@ export default {
       await this.loadSpaceInfo()
       this.loadSpaceToolMode()
       this.initConversation()
-    },
-
-    handleCreateSpace() {
-      uni.navigateTo({ url: '/pages/createSpace/createSpace' })
     },
 
     resolveDeleteSpaceError(error) {
@@ -2927,20 +3499,12 @@ export default {
           finalized = true
           this.flushThinkingBuffer()
           this.flushTypewriter()
-          const isDaily = info.code === 'DAILY_MESSAGE_QUOTA_EXCEEDED'
-          const shortText = isDaily ? '今日消息已用完' : '配额已达上限'
+          const shortText = info.code === 'DAILY_MESSAGE_QUOTA_EXCEEDED' ? '今日消息已用完' : '配额已达上限'
           uni.showModal({
             title: '配额已达上限',
-            content: isDaily
-              ? '今日消息次数已用完，明日自动重置。升级后可无限对话'
-              : (info.message || '当前套餐不支持此功能，升级后可使用'),
-            confirmText: '去升级',
-            cancelText: '知道了',
-            success: (res) => {
-              if (res.confirm) {
-                uni.navigateTo({ url: '/pages/activation/activation' })
-              }
-            }
+            content: info.message || '实验账号权限异常，请联系管理员',
+            confirmText: '知道了',
+            showCancel: false
           })
           const aiMsg = this.messages.find(m => m.id === aiMsgId)
           if (aiMsg) {
@@ -3254,20 +3818,25 @@ export default {
       updateToolCallStatus('running')
 
       try {
-        let resultText = ''
+        let localResult = null
 
-        if (tool === 'get_schedule') {
+        if (tool === 'get_current_time') {
+          const now = new Date()
+          const pad = (value) => String(value).padStart(2, '0')
+          const weekdayMap = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+          localResult = {
+            current_time: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`,
+            weekday: weekdayMap[now.getDay()],
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai'
+          }
+        } else if (tool === 'get_schedule') {
           const startDate = params.start_date || new Date().toISOString().split('T')[0]
           const endDate = params.end_date || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
           const events = await getCalendarEvents(startDate + 'T00:00:00', endDate + 'T23:59:59')
-          if (!events || events.length === 0) {
-            resultText = '该时间范围内没有日程安排。'
-          } else {
-            resultText = events.map(e => {
-              const start = new Date(e.start_time).toLocaleString('zh-CN')
-              const end = new Date(e.end_time).toLocaleString('zh-CN')
-              return `- ${e.title}: ${start} ~ ${end}${e.details ? ' (' + e.details + ')' : ''}`
-            }).join('\n')
+          localResult = {
+            events: Array.isArray(events) ? events : [],
+            date_range: `${startDate} ~ ${endDate}`,
+            message: (!events || events.length === 0) ? '该时间范围内没有日程安排。' : ''
           }
         } else if (tool === 'add_schedule') {
           const event = await createCalendarEvent({
@@ -3277,14 +3846,21 @@ export default {
             details: params.description || params.details || null,
             source_conversation_id: this.conversationId || null
           })
-          resultText = `日程已添加：${event.title}`
+          localResult = {
+            ...event,
+            message: `日程已添加：${event.title}`
+          }
         } else if (tool === 'delete_schedule') {
           const eventId = params.event_id || params.id
           if (eventId) {
             await deleteCalendarEvent(eventId)
-            resultText = '日程已删除。'
+            localResult = {
+              deleted_id: eventId,
+              title: params.title || '',
+              message: '日程已删除。'
+            }
           } else {
-            resultText = '未提供要删除的日程 ID。'
+            throw new Error('未提供要删除的日程 ID。')
           }
         } else if (tool === 'update_schedule') {
           const eventId = params.event_id || params.id
@@ -3295,30 +3871,33 @@ export default {
             if (params.end_time) updateData.end_time = params.end_time
             if (params.description || params.details) updateData.details = params.description || params.details
             const event = await updateCalendarEvent(eventId, updateData)
-            resultText = `日程已更新：${event.title}`
+            localResult = {
+              ...event,
+              message: `日程已更新：${event.title}`
+            }
           } else {
-            resultText = '未提供要更新的日程 ID。'
+            throw new Error('未提供要更新的日程 ID。')
           }
         }
 
-        updateToolCallStatus('done', true, { text: resultText })
+        updateToolCallStatus('done', true, localResult)
 
         if (this.conversationId) {
           submitToolResult(this.conversationId, {
             tool_call_id: toolCallId,
-            result: resultText,
+            result: localResult,
             success: true
           }).catch(() => {})
         }
       } catch (err) {
         const errMsg = err.message || '日程操作失败'
-        updateToolCallStatus('done', false, { text: errMsg })
+        updateToolCallStatus('done', false, { message: errMsg })
 
         if (this.conversationId) {
           submitToolResult(this.conversationId, {
             tool_call_id: toolCallId,
-            result: errMsg,
-            success: false
+            success: false,
+            error: errMsg
           }).catch(() => {})
         }
       }
@@ -3424,7 +4003,16 @@ export default {
     handleQuizEntryClick(quizId) {
       this.activeTab = 'quizzes'
       this.$nextTick(() => {
-        if (this.$refs.quizPanel) {
+        if (!this.$refs.quizPanel) return
+        if (quizId && typeof this.$refs.quizPanel.handleOpenQuiz === 'function') {
+          this.$refs.quizPanel.handleOpenQuiz({
+            id: quizId,
+            has_attempt: false,
+            attempt_status: 'not_started'
+          })
+          return
+        }
+        if (typeof this.$refs.quizPanel.loadQuizzes === 'function') {
           this.$refs.quizPanel.loadQuizzes()
         }
       })
@@ -3448,37 +4036,20 @@ export default {
     },
 
     getMessageSegments(msg) {
-      if (msg.isStreaming) {
-        return this.buildStreamingSegments(msg)
-      }
-      if (Array.isArray(msg.segments) && msg.segments.length > 0) {
-        return msg.segments
-      }
-      if (msg.content) {
-        return [{ type: 'text', content: msg.content }]
-      }
-      return []
+      return getAgentMessageSegments(msg, this.activeToolCalls)
     },
 
     buildStreamingSegments(msg) {
-      const segments = []
+      return getAgentMessageSegments({ ...msg, isStreaming: true }, this.activeToolCalls)
+    },
 
-      if (Array.isArray(msg.streamSegments) && msg.streamSegments.length > 0) {
-        for (const seg of msg.streamSegments) {
-          if (seg.type === 'tool') {
-            const tc = this.activeToolCalls.find(t => t.id === seg.toolCall.id)
-            segments.push({ type: 'tool', toolCall: tc ? { ...tc } : { ...seg.toolCall } })
-          } else {
-            segments.push({ ...seg })
-          }
-        }
-      }
-
-      if (msg.content && msg.content.length > 0) {
-        segments.push({ type: 'text', content: msg.content })
-      }
-
-      return segments
+    withDefaultToolLabel(toolCall) {
+      const label = this.isDocRetrievalTool(toolCall.tool)
+        ? this.getDocRetrievalToolText(toolCall)
+        : toolCall.tool === 'save_to_knowledge_base'
+          ? this.getKBToolText(toolCall)
+          : this.getToolDisplayName(toolCall.tool)
+      return { ...toolCall, label }
     },
 
     getToolDisplayName(toolName) {
@@ -3490,11 +4061,301 @@ export default {
       return TOOL_ICON_SVGS[category] || TOOL_ICON_SVGS.default
     },
 
+    getToolIconBgClass(toolName) {
+      if (toolName === 'delete_node' || toolName === 'delete_edge') return 'gm-icon-delete'
+      if (toolName === 'update_mastery') return 'gm-icon-update'
+      if (toolName === 'get_child_nodes' || toolName === 'get_parent_nodes' || toolName === 'get_sibling_nodes') return 'gm-icon-query'
+      if (toolName === 'generate_learning_path') return 'gm-icon-path-generate'
+      if (toolName === 'extend_learning_path' || toolName === 'get_learning_paths' || toolName === 'delete_all_learning_paths') return 'gm-icon-path-modify'
+      if (toolName === 'get_postorder_traversal') return 'gm-icon-postorder'
+      return 'gm-icon-add'
+    },
+
     getToolCardClass(toolCall) {
       if (toolCall.status === 'running') return 'tool-call-running'
       if (toolCall.status === 'done' && toolCall.success) return 'tool-call-success'
       if (toolCall.status === 'done' && !toolCall.success) return 'tool-call-failed'
       return 'tool-call-running'
+    },
+
+    isToolOnlyMessage(msg) {
+      if (!msg || msg.thinkingContent) return false
+      const segments = this.getMessageSegments(msg)
+      if (!segments.length) return false
+      return !segments.some(seg => seg.type === 'text' && seg.content && seg.content.trim())
+    },
+
+    isGraphTool(toolName) {
+      return GRAPH_TOOLS.has(toolName)
+    },
+
+    isGraphOverviewTool(toolName) {
+      return toolName === 'get_graph_overview'
+    },
+
+    isGraphDetailTool(toolName) {
+      return GRAPH_MUTATING_TOOLS.has(toolName)
+        || GRAPH_QUERY_TOOLS.has(toolName)
+        || LEARNING_PATH_TOOLS.has(toolName)
+        || toolName === 'get_postorder_traversal'
+    },
+
+    getGraphToolText(toolCall) {
+      const texts = GRAPH_TOOL_TEXT[toolCall.tool]
+      if (!texts) return this.getToolDisplayName(toolCall.tool)
+      if (toolCall.status === 'running') return texts.running
+      if (toolCall.status === 'done' && toolCall.success) return texts.done
+      return texts.failed
+    },
+
+    getGraphStats() {
+      const graphRef = this.$refs.knowledgeGraph
+      const nodes = Array.isArray(graphRef?.nodes) ? graphRef.nodes.length : 0
+      const edges = Array.isArray(graphRef?.edges) ? graphRef.edges.length : 0
+      return { nodes, edges }
+    },
+
+    getGraphOverviewTitle(toolCall) {
+      if (toolCall.result?.title) return toolCall.result.title
+      return '当前知识图谱'
+    },
+
+    getGraphOverviewMeta() {
+      const { nodes, edges } = this.getGraphStats()
+      if (nodes || edges) return `${nodes} 个节点 · ${edges} 条连接`
+      return '已同步到左侧知识图谱'
+    },
+
+    getGraphOverviewLines(toolCall) {
+      const { nodes, edges } = this.getGraphStats()
+      const lines = []
+      if (nodes || edges) {
+        lines.push(`知识图谱当前包含 ${nodes} 个知识点与 ${edges} 条连接。`)
+      } else {
+        lines.push('知识图谱已同步到左侧画布，可直接查看最新结构。')
+      }
+      if (toolCall.result?.message) lines.push(toolCall.result.message)
+      lines.push('继续在聊天中追问节点、路径或掌握度变化。')
+      return lines.slice(0, 3)
+    },
+
+    getGraphCardTitle(toolCall) {
+      const args = toolCall.arguments || {}
+      const result = toolCall.result || {}
+      switch (toolCall.tool) {
+        case 'add_node':
+          return `已添加节点: ${result.label || args.label || args.node_name || '未命名节点'}`
+        case 'add_edge':
+          return `已连接: ${result.from_node || args.from_node || args.source || '节点'} → ${result.to_node || args.to_node || args.target || '节点'}`
+        case 'delete_node':
+          return `已删除节点: ${result.deleted_node_name || args.node_name || '目标节点'}`
+        case 'delete_edge':
+          return `已移除连接: ${result.from_node || args.from_node || '节点'} ↔ ${result.to_node || args.to_node || '节点'}`
+        case 'update_mastery':
+          return `${result.node_name || args.node_name || '节点'} 掌握度已更新`
+        case 'get_child_nodes':
+          return `${args.node_name || '目标节点'} 的子节点`
+        case 'get_parent_nodes':
+          return `${args.node_name || '目标节点'} 的父节点`
+        case 'get_sibling_nodes':
+          return `${args.node_name || '目标节点'} 的兄弟节点`
+        case 'generate_learning_path':
+          return '已生成学习路径'
+        case 'extend_learning_path':
+          return '已延伸学习路径'
+        case 'get_learning_paths':
+          return '已读取学习路径'
+        case 'delete_all_learning_paths':
+          return '已清理学习路径'
+        case 'get_postorder_traversal':
+          return `${args.node_name || '目标节点'} 的后序遍历`
+        default:
+          return this.getToolDisplayName(toolCall.tool)
+      }
+    },
+
+    getGraphCardMeta() {
+      const { nodes, edges } = this.getGraphStats()
+      if (nodes || edges) return `${nodes} 个节点 · ${edges} 条连接`
+      return '知识图谱已更新'
+    },
+
+    getGraphToolHighlights(toolCall) {
+      const args = toolCall.arguments || {}
+      const result = toolCall.result || {}
+      const candidates = []
+      switch (toolCall.tool) {
+        case 'add_node':
+          candidates.push(result.label, args.label, args.node_name)
+          break
+        case 'add_edge':
+        case 'delete_edge':
+          candidates.push(result.from_node, result.to_node, args.from_node, args.to_node, args.source, args.target)
+          break
+        case 'delete_node':
+          candidates.push(result.deleted_node_name, args.node_name)
+          break
+        case 'update_mastery':
+          candidates.push(result.node_name, args.node_name)
+          break
+        case 'get_child_nodes':
+        case 'get_parent_nodes':
+        case 'get_sibling_nodes':
+          candidates.push(args.node_name)
+          if (Array.isArray(result.nodes)) {
+            candidates.push(...result.nodes.map(item => item?.label || item?.name || item))
+          }
+          break
+        case 'generate_learning_path':
+        case 'extend_learning_path':
+        case 'get_learning_paths':
+        case 'delete_all_learning_paths':
+          if (Array.isArray(result.path)) candidates.push(...result.path)
+          if (Array.isArray(args.node_sequence)) candidates.push(...args.node_sequence)
+          break
+        case 'get_postorder_traversal':
+          candidates.push(args.node_name)
+          if (typeof result === 'string') candidates.push(...result.split('->'))
+          break
+      }
+      return [...new Set(candidates.filter(item => typeof item === 'string' && item.trim()))].slice(0, 6)
+    },
+
+    getGraphCardBody(toolCall) {
+      const result = toolCall.result || {}
+      if (toolCall.tool === 'get_postorder_traversal' && typeof result === 'string' && result.trim()) {
+        const items = result.split('->').filter(Boolean)
+        return items.length ? `遍历顺序：${items.join(' → ')}` : '后序遍历已完成。'
+      }
+      if (toolCall.tool === 'get_learning_paths' && Array.isArray(result.paths)) {
+        return result.paths.length ? `共读取 ${result.paths.length} 条学习路径。` : '当前没有可用学习路径。'
+      }
+      if (toolCall.tool === 'delete_all_learning_paths') {
+        return result.message || '所有学习路径已从图谱中移除。'
+      }
+      if (typeof result?.message === 'string' && result.message.trim()) return result.message
+      return '左侧知识图谱已经同步更新。'
+    },
+
+    isScheduleTool(toolName) {
+      return SCHEDULE_TOOLS.has(toolName)
+    },
+
+    isScheduleDetailTool(toolName) {
+      return toolName === 'get_schedule' || toolName === 'add_schedule' || toolName === 'update_schedule'
+    },
+
+    getScheduleToolText(toolCall) {
+      const texts = SCHEDULE_TOOL_TEXT[toolCall.tool]
+      if (!texts) return this.getToolDisplayName(toolCall.tool)
+      if (toolCall.status === 'running') return texts.running
+      if (toolCall.status === 'done' && toolCall.success) {
+        if (toolCall.tool === 'get_current_time' && toolCall.result?.current_time) {
+          const timestamp = String(toolCall.result.current_time)
+          const shortText = timestamp.length >= 16 ? timestamp.slice(5, 16) : timestamp
+          const weekday = toolCall.result.weekday || ''
+          return `${texts.done} · ${shortText}${weekday ? ' ' + weekday : ''}`
+        }
+        if (toolCall.tool === 'get_schedule') {
+          const count = this.getScheduleDisplayEvents(toolCall).length
+          return count ? `${texts.done} · ${count} 个日程` : texts.done
+        }
+        return texts.done
+      }
+      return texts.failed
+    },
+
+    getScheduleDisplayEvents(toolCall) {
+      const result = toolCall.result
+      if (!result) return []
+      if (Array.isArray(result.events)) return result.events
+      if (Array.isArray(result?.data?.events)) return result.data.events
+      if (result.start_time) {
+        return [{
+          id: result.id || result.updated_id || '',
+          title: result.title || '未命名日程',
+          start_time: result.start_time,
+          end_time: result.end_time || result.start_time,
+          details: result.details || ''
+        }]
+      }
+      return []
+    },
+
+    groupScheduleByDate(events) {
+      if (!events || !events.length) return []
+      const today = new Date()
+      const todayText = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      const weekdayMap = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+      const barColors = ['rgba(74, 108, 247, 0.8)', 'rgba(232, 168, 56, 0.82)', 'rgba(94, 194, 105, 0.82)', 'rgba(129, 140, 248, 0.82)']
+      const groups = new Map()
+      let colorIndex = 0
+
+      for (const event of events) {
+        const dateKey = event?.start_time ? String(event.start_time).slice(0, 10) : 'unknown'
+        if (!groups.has(dateKey)) {
+          const dateObj = dateKey === 'unknown' ? new Date() : new Date(dateKey.replace(/-/g, '/'))
+          const month = dateObj.getMonth() + 1
+          const day = dateObj.getDate()
+          const weekday = weekdayMap[dateObj.getDay()]
+          const isToday = dateKey === todayText
+          groups.set(dateKey, {
+            date: dateKey,
+            label: `${month}月${day}日 ${weekday}${isToday ? ' · 今天' : ''}`,
+            isToday,
+            events: []
+          })
+        }
+        groups.get(dateKey).events.push({
+          ...event,
+          startShort: event?.start_time ? String(event.start_time).slice(11, 16) : '--:--',
+          endShort: event?.end_time ? String(event.end_time).slice(11, 16) : '--:--',
+          barColor: barColors[colorIndex % barColors.length]
+        })
+        colorIndex += 1
+      }
+
+      return [...groups.values()].sort((a, b) => a.date.localeCompare(b.date))
+    },
+
+    isReviewTool(toolName) {
+      return REVIEW_TOOLS.has(toolName)
+    },
+
+    getReviewToolText(toolCall) {
+      const texts = REVIEW_TOOL_TEXT[toolCall.tool]
+      if (!texts) return this.getToolDisplayName(toolCall.tool)
+      if (toolCall.status === 'running') return texts.running
+      if (toolCall.status === 'done' && toolCall.success) {
+        if (toolCall.tool === 'get_review_events') {
+          const total = this.getReviewDisplayItems(toolCall).length
+          return total ? `${texts.done} · ${total} 条待复习` : texts.done
+        }
+        return texts.done
+      }
+      return texts.failed
+    },
+
+    getReviewDisplayItems(toolCall) {
+      if (!toolCall?.result) return []
+      return Array.isArray(toolCall.result.items) ? toolCall.result.items : []
+    },
+
+    isSearchTool(toolName) {
+      return SEARCH_TOOLS.has(toolName)
+    },
+
+    getSearchToolResults(toolCall) {
+      if (Array.isArray(toolCall?.result?.results)) return toolCall.result.results
+      if (Array.isArray(toolCall?.result?.pages)) return toolCall.result.pages
+      return []
+    },
+
+    getSearchToolText(toolCall) {
+      if (toolCall.status === 'running') return `${this.getToolDisplayName(toolCall.tool)}...`
+      const count = this.getSearchToolResults(toolCall).length
+      if (toolCall.status === 'done' && toolCall.success) return `已搜索 ${count} 个来源`
+      return toolCall.result?.message || `${this.getToolDisplayName(toolCall.tool)} 失败`
     },
 
     getFullImageUrl(relativePath) {
@@ -3516,12 +4377,8 @@ export default {
       return PLANNING_TOOLS.has(toolName)
     },
 
-    isSearchTool(toolName) {
-      return ['web_search', 'academic_search', 'encyclopedia_search', 'course_search'].includes(toolName)
-    },
-
     getVisibleSearchResults(toolCall) {
-      const results = toolCall.result?.results || []
+      const results = this.getSearchToolResults(toolCall)
       if (this.expandedSearchResults[toolCall.id]) return results
       return results.slice(0, 5)
     },
@@ -3532,14 +4389,140 @@ export default {
     },
 
     isSearchExpanded(toolCallId) {
-      return !!this.expandedSearchResults[toolCallId]
+      return this.expandedSearchResults[toolCallId] !== false
     },
 
     toggleSearchResults(toolCallId) {
       this.expandedSearchResults = {
         ...this.expandedSearchResults,
-        [toolCallId]: !this.expandedSearchResults[toolCallId]
+        [toolCallId]: this.expandedSearchResults[toolCallId] === false
       }
+    },
+
+    isDocRetrievalTool(toolName) {
+      return DOC_RETRIEVAL_TOOLS.has(toolName)
+    },
+
+    isNoteDisplayTool(toolName) {
+      return NOTE_DISPLAY_TOOLS.has(toolName)
+    },
+
+    isQuizResultTool(toolName) {
+      return toolName === 'view_quiz_results' || toolName === 'view_quiz_attempt_detail'
+    },
+
+    getDocRetrievalToolText(toolCall) {
+      if (toolCall.status === 'running') return '正在检索学习资料…'
+      if (toolCall.status === 'done' && toolCall.success) return '已完成资料检索'
+      return '资料检索失败'
+    },
+
+    getKBToolText(toolCall) {
+      if (toolCall.status === 'running') return '正在保存到知识库…'
+      if (toolCall.status === 'done' && toolCall.success) {
+        const title = toolCall.result?.data?.title || toolCall.arguments?.title
+        return title ? `已保存「${title}」` : '已保存到知识库'
+      }
+      return '保存到知识库失败'
+    },
+
+    getChartToolText(toolCall) {
+      if (toolCall.status === 'running') return '正在生成图表…'
+      if (toolCall.status === 'done' && toolCall.success) {
+        return toolCall.result?.auto_saved ? '图表已生成并保存' : '图表已生成'
+      }
+      return '图表生成失败'
+    },
+
+    getQuizToolText(toolCall) {
+      if (toolCall.tool === 'view_quiz_results') {
+        if (toolCall.status === 'running') return '正在查询测验成绩…'
+        if (toolCall.status === 'done' && toolCall.success) {
+          return `已查询 ${this.getQuizResultList(toolCall).length} 份测验`
+        }
+        return toolCall.result?.message || '查询测验成绩失败'
+      }
+      if (toolCall.tool === 'view_quiz_attempt_detail') {
+        if (toolCall.status === 'running') return '正在分析测验详情…'
+        if (toolCall.status === 'done' && toolCall.success) return '测验分析完成'
+        return toolCall.result?.message || '测验分析失败'
+      }
+      if (toolCall.status === 'running') return '正在生成测试题…'
+      if (toolCall.status === 'done' && toolCall.success) {
+        return toolCall.quizId ? '测试题已生成' : (toolCall.result?.message || '测试题生成完成')
+      }
+      return toolCall.result?.message || '测试题生成失败'
+    },
+
+    getQuizResultList(toolCall) {
+      if (Array.isArray(toolCall?.result?.quizzes)) return toolCall.result.quizzes
+      if (Array.isArray(toolCall?.result?.data?.quizzes)) return toolCall.result.data.quizzes
+      return []
+    },
+
+    getDifficultyLabel(difficulty) {
+      return { easy: '简单', medium: '中等', hard: '困难' }[difficulty] || difficulty || '未知'
+    },
+
+    getQuizClickAction(quiz) {
+      if (!quiz) return 'disabled'
+      if (quiz.attempt_status === 'pending' || quiz.attempt_status === 'evaluating') return 'disabled'
+      if (quiz.attempt_status === 'in_progress') return 'take_quiz'
+      if (quiz.has_attempt) return 'view_result'
+      return 'take_quiz'
+    },
+
+    onQuizItemClick(quiz) {
+      const action = this.getQuizClickAction(quiz)
+      if (action === 'disabled') return
+      this.activeTab = 'quizzes'
+      this.$nextTick(() => {
+        if (!this.$refs.quizPanel || typeof this.$refs.quizPanel.handleOpenQuiz !== 'function') return
+        this.$refs.quizPanel.handleOpenQuiz(quiz)
+      })
+    },
+
+    getScoreBarClass(percentage) {
+      if (percentage >= 80) return 'score-bar-high'
+      if (percentage >= 50) return 'score-bar-mid'
+      return 'score-bar-low'
+    },
+
+    canToggleToolCard(toolCall) {
+      if (!toolCall || toolCall.status !== 'done' || !toolCall.success) return false
+      if (this.isScheduleDetailTool(toolCall.tool)) return true
+      if (toolCall.tool === 'get_review_events') return true
+      if (toolCall.tool === 'generate_chart') return !!toolCall.result?.image_url
+      if (toolCall.tool === 'generate_test') return !!(toolCall.quizId || toolCall.result?.message)
+      if (toolCall.tool === 'view_quiz_results') return true
+      if (toolCall.tool === 'view_quiz_attempt_detail') return true
+      return false
+    },
+
+    isToolCardExpanded(toolCallId) {
+      return this.expandedToolCards[toolCallId] !== false
+    },
+
+    isToolCardCollapsing(toolCallId) {
+      return !!this.collapsingToolCards[toolCallId]
+    },
+
+    toggleToolCard(toolCallId) {
+      const expanded = this.expandedToolCards[toolCallId] !== false
+      if (expanded) {
+        this.collapsingToolCards = { ...this.collapsingToolCards, [toolCallId]: true }
+        setTimeout(() => {
+          this.expandedToolCards = { ...this.expandedToolCards, [toolCallId]: false }
+          const { [toolCallId]: _removed, ...rest } = this.collapsingToolCards
+          this.collapsingToolCards = rest
+        }, 200)
+        return
+      }
+      this.expandedToolCards = { ...this.expandedToolCards, [toolCallId]: true }
+    },
+
+    toggleToolCardIfAllowed(toolCall) {
+      if (this.canToggleToolCard(toolCall)) this.toggleToolCard(toolCall.id)
     },
 
     isCodeExpanded(toolCallId) {
@@ -3556,6 +4539,15 @@ export default {
     openSearchResultUrl(url) {
       if (!url) return
       window.open(url, '_blank')
+    },
+
+    navigateToResult(quizId) {
+      if (!quizId) return
+      this.activeTab = 'quizzes'
+      this.$nextTick(() => {
+        if (!this.$refs.quizPanel || typeof this.$refs.quizPanel.navigateToQuizResult !== 'function') return
+        this.$refs.quizPanel.navigateToQuizResult(quizId)
+      })
     },
 
     getSourceLabel(source) {
@@ -5621,6 +6613,1101 @@ export default {
 .search-results-toggle-text {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.45);
+}
+
+/* Tool cards aligned with app dark theme */
+.bubble-ai-tools-only {
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
+  max-width: 100%;
+}
+
+.tool-call-card {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.tool-call-success {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.06);
+}
+
+.tool-call-header {
+  gap: 6px;
+}
+
+.tool-call-status-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.tool-call-icon {
+  color: rgba(96, 165, 250, 0.92);
+}
+
+.tool-call-success .tool-call-icon {
+  color: rgba(74, 222, 128, 0.95);
+}
+
+.code-execution-card.tool-call-success {
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.code-execution-card.tool-call-success .tool-call-header {
+  margin: -8px -12px 0;
+  padding: 8px 12px 6px;
+  background: rgba(34, 197, 94, 0.06);
+  border-bottom: 1px solid rgba(34, 197, 94, 0.16);
+}
+
+.tool-call-name {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.tool-call-args {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.42);
+  margin-top: 4px;
+}
+
+.tool-call-args-inline {
+  margin-top: 0;
+  padding: 0 2px;
+}
+
+.default-tool-wrap,
+.review-tool-wrap,
+.graph-overview-wrap,
+.gm-wrap,
+.schedule-view-wrap,
+.search-tool-wrap,
+.chart-tool-wrap,
+.quiz-tool-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.graph-tool-pill,
+.quiz-tool-pill,
+.search-indicator {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.graph-tool-pill:hover,
+.quiz-tool-pill:hover,
+.search-indicator:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.graph-tool-running,
+.search-indicator-running,
+.quiz-tool-running {
+  border-color: rgba(74, 108, 247, 0.35);
+  background: rgba(74, 108, 247, 0.1);
+}
+
+.graph-tool-success,
+.search-indicator-success,
+.quiz-tool-done {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.06);
+}
+
+.graph-tool-failed,
+.search-indicator-failed,
+.quiz-tool-failed {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.graph-tool-success:hover,
+.search-indicator-success:hover,
+.quiz-tool-done:hover {
+  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.graph-tool-pill:active,
+.quiz-tool-pill:active,
+.search-indicator:active {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.graph-tool-success:active,
+.search-indicator-success:active,
+.quiz-tool-done:active {
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.graph-tool-pill-icon,
+.quiz-tool-pill-icon,
+.search-indicator-globe {
+  width: 16px;
+  height: 16px;
+  color: rgba(255, 255, 255, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.graph-overview-icon-img,
+.gm-card-icon-img,
+.quiz-entry-icon {
+  width: 16px;
+  height: 16px;
+  color: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.graph-tool-pill-icon-svg :deep(svg),
+.search-indicator-globe :deep(svg),
+.graph-overview-icon-img :deep(svg),
+.gm-card-icon-img :deep(svg),
+.quiz-entry-icon :deep(svg) {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.graph-tool-success .graph-tool-pill-icon,
+.search-indicator-success .search-indicator-globe,
+.quiz-tool-done .quiz-tool-pill-icon {
+  background: rgba(34, 197, 94, 0.12);
+  color: rgba(74, 222, 128, 0.95);
+}
+
+.graph-tool-pill-text,
+.quiz-tool-pill-text,
+.search-indicator-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.82);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.1px;
+  line-height: 1.3;
+}
+
+.graph-tool-running .graph-tool-pill-text,
+.quiz-tool-running .quiz-tool-pill-text,
+.search-indicator-running .search-indicator-text {
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.graph-tool-spinner,
+.quiz-tool-spinner,
+.search-indicator-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(74, 108, 247, 0.3);
+  border-top-color: #4A6CF7;
+  border-radius: 50%;
+  animation: tool-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.graph-tool-status-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.graph-tool-chevron,
+.search-indicator-chevron,
+.quiz-entry-chevron {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.4);
+  transition: transform 0.2s ease, color 0.2s ease;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.graph-tool-chevron-up,
+.search-chevron-up {
+  transform: rotate(180deg);
+}
+
+.gm-expanded-container,
+.schedule-expanded-container,
+.review-expanded-container,
+.chart-expanded-container,
+.quiz-expanded-container {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  border-radius: 8px;
+  overflow: hidden;
+  gap: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.gm-expanded-container .graph-tool-pill,
+.schedule-expanded-container .graph-tool-pill,
+.review-expanded-container .graph-tool-pill,
+.chart-expanded-container .graph-tool-pill,
+.quiz-expanded-container .quiz-tool-pill {
+  border: none;
+  background: rgba(34, 197, 94, 0.06);
+  border-radius: 8px 8px 0 0;
+  padding: 8px 12px 6px;
+  box-shadow: none;
+}
+
+.graph-overview-card,
+.gm-card,
+.schedule-card,
+.review-card,
+.chart-detail-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 14px;
+  box-sizing: border-box;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.gm-expanded-container .graph-overview-card,
+.gm-expanded-container .gm-card,
+.schedule-expanded-container .schedule-card,
+.review-expanded-container .review-card,
+.chart-expanded-container .chart-detail-card,
+.quiz-expanded-container .quiz-tool-empty {
+  border: none;
+  border-top: 1px solid rgba(34, 197, 94, 0.16);
+  background: rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.graph-overview-header,
+.gm-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.graph-overview-icon-wrap,
+.gm-card-icon-wrap,
+.quiz-entry-icon-wrap {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(74, 108, 247, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.gm-icon-delete {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.gm-icon-update {
+  background: rgba(73, 255, 170, 0.12);
+}
+
+.gm-icon-query {
+  background: rgba(129, 140, 248, 0.12);
+}
+
+.gm-icon-path-generate {
+  background: rgba(0, 136, 255, 0.12);
+}
+
+.gm-icon-path-modify {
+  background: rgba(255, 217, 61, 0.12);
+}
+
+.gm-icon-postorder {
+  background: rgba(74, 108, 247, 0.12);
+}
+
+.graph-overview-title-col,
+.gm-card-title-col,
+.quiz-entry-text-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.graph-overview-title,
+.gm-card-title,
+.quiz-entry-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quiz-entry-card {
+  margin-top: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.quiz-entry-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+}
+
+.quiz-entry-card:active {
+  transform: scale(0.98);
+}
+
+.quiz-entry-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.graph-overview-meta,
+.gm-card-meta,
+.chart-saved-text,
+.schedule-date-text,
+.schedule-event-desc,
+.schedule-card-count,
+.schedule-empty-text,
+.review-empty-text,
+.review-card-count,
+.review-event-round,
+.quiz-entry-meta,
+.quiz-tool-empty-text,
+.search-source-site,
+.search-tool-empty-text,
+.tool-call-result-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.graph-overview-divider,
+.gm-card-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.07);
+  margin: 10px 0;
+}
+
+.graph-overview-preview,
+.gm-card-preview,
+.chart-image-preview {
+  position: relative;
+  background: rgba(255, 255, 255, 0.025);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  padding: 12px;
+}
+
+.graph-overview-hint {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 1;
+}
+
+.graph-overview-hint-text {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.graph-overview-preview-copy,
+.gm-card-preview {
+  padding: 12px;
+}
+
+.graph-overview-preview-line,
+.gm-card-preview-text {
+  display: block;
+  font-size: 12px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.graph-overview-preview-line + .graph-overview-preview-line,
+.gm-card-chip-row + .gm-card-preview-text {
+  margin-top: 6px;
+}
+
+.gm-card-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.gm-card-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gm-card-chip-text {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.schedule-date-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0 8px;
+}
+
+.schedule-date-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.24);
+  flex-shrink: 0;
+}
+
+.schedule-date-dot-today {
+  background: rgba(74, 108, 247, 0.85);
+}
+
+.schedule-date-text-today {
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.schedule-event-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  margin-top: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.schedule-event-time {
+  width: 58px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.schedule-event-time-start {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.schedule-event-time-end {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.36);
+}
+
+.schedule-event-bar {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 999px;
+  min-height: 42px;
+  flex-shrink: 0;
+}
+
+.schedule-event-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.schedule-event-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.schedule-card-footer,
+.review-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 10px;
+}
+
+.schedule-card-empty,
+.review-card-empty {
+  align-items: center;
+}
+
+.review-event-item {
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.review-event-item + .review-event-item {
+  margin-top: 8px;
+}
+
+.review-event-header,
+.review-event-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-event-header {
+  margin-bottom: 8px;
+}
+
+.review-event-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.review-event-depth {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(129, 140, 248, 0.12);
+  color: rgba(129, 140, 248, 0.9);
+  font-size: 11px;
+}
+
+.review-event-urgency-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(94, 194, 105, 0.1);
+}
+
+.review-event-urgency-badge.urgency-overdue {
+  background: rgba(232, 168, 56, 0.12);
+}
+
+.review-event-urgency-text {
+  font-size: 11px;
+  color: rgba(94, 194, 105, 0.9);
+}
+
+.review-event-urgency-text.urgency-overdue-text {
+  color: rgba(232, 168, 56, 0.92);
+}
+
+.search-indicator-expanded {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
+.search-indicator-collapsed {
+  background: rgba(34, 197, 94, 0.06);
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.search-sources-scroll {
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+.search-sources-row {
+  display: inline-flex;
+  gap: 10px;
+}
+
+.search-source-card {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 220px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  white-space: normal;
+  box-sizing: border-box;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.55);
+}
+
+.search-source-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-2px);
+  box-shadow: 0 24px 45px rgba(0, 0, 0, 0.55);
+}
+
+.search-source-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.search-source-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-source-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: rgba(74, 108, 247, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.search-source-num-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: #60A5FA;
+}
+
+.search-source-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.86);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.search-tool-empty,
+.search-tool-error,
+.quiz-tool-empty {
+  padding: 18px 22px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 22px 45px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+
+.search-tool-error-text {
+  font-size: 12px;
+  color: rgba(248, 113, 113, 0.86);
+}
+
+.quiz-tool-results-card,
+.quiz-tool-detail-card {
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 18px 20px;
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.55);
+}
+
+.quiz-expanded-container .quiz-tool-results-card,
+.quiz-expanded-container .quiz-tool-detail-card {
+  border: none;
+  border-top: 1px solid rgba(34, 197, 94, 0.16);
+  background: rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-radius: 0 0 16px 16px;
+}
+
+.quiz-tool-results-card {
+  padding: 0 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quiz-result-item {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.quiz-result-clickable {
+  cursor: pointer;
+}
+
+.quiz-result-clickable:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.quiz-result-clickable:active,
+.quiz-tool-detail-clickable:active {
+  transform: scale(0.99);
+}
+
+.quiz-result-evaluating {
+  opacity: 0.58;
+}
+
+.quiz-result-row,
+.quiz-result-meta,
+.quiz-detail-questions-header,
+.quiz-detail-footer {
+  display: flex;
+  align-items: center;
+}
+
+.quiz-result-row {
+  gap: 8px;
+}
+
+.quiz-result-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.quiz-result-difficulty {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.quiz-result-difficulty.difficulty-easy {
+  color: rgba(34, 197, 94, 0.9);
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.quiz-result-difficulty.difficulty-medium {
+  color: rgba(251, 191, 36, 0.9);
+  background: rgba(251, 191, 36, 0.15);
+}
+
+.quiz-result-difficulty.difficulty-hard {
+  color: rgba(248, 113, 113, 0.92);
+  background: rgba(248, 113, 113, 0.16);
+}
+
+.quiz-result-meta {
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.quiz-result-score {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(96, 165, 250, 0.96);
+}
+
+.quiz-result-evaluating-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(251, 191, 36, 0.9);
+}
+
+.quiz-result-no-attempt,
+.quiz-result-date,
+.quiz-detail-score-label,
+.quiz-detail-score-percent,
+.quiz-detail-section-title,
+.quiz-detail-subsection-title,
+.quiz-detail-questions-count,
+.quiz-detail-q-order,
+.quiz-detail-q-score {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.quiz-result-date {
+  flex: 1;
+}
+
+.quiz-result-arrow,
+.quiz-detail-footer-arrow {
+  font-size: 18px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.34);
+  flex-shrink: 0;
+}
+
+.quiz-tool-detail-card {
+  overflow: hidden;
+}
+
+.quiz-detail-score-section,
+.quiz-detail-analysis-section,
+.quiz-detail-questions-section {
+  padding: 12px 14px;
+}
+
+.quiz-detail-score-header,
+.quiz-detail-analysis-header {
+  margin-bottom: 8px;
+}
+
+.quiz-detail-score-label,
+.quiz-detail-section-title {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.quiz-detail-score-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.quiz-detail-score-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: rgba(96, 165, 250, 0.96);
+}
+
+.quiz-detail-score-bar-bg {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.quiz-detail-score-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.score-bar-high {
+  background: rgba(34, 197, 94, 0.85);
+}
+
+.score-bar-mid {
+  background: rgba(251, 191, 36, 0.85);
+}
+
+.score-bar-low {
+  background: rgba(248, 113, 113, 0.88);
+}
+
+.quiz-detail-analysis-section,
+.quiz-detail-questions-section,
+.quiz-detail-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.quiz-detail-subsection + .quiz-detail-subsection {
+  margin-top: 12px;
+}
+
+.quiz-detail-subsection-title {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.quiz-detail-tag-item,
+.quiz-detail-q-row {
+  display: flex;
+  gap: 10px;
+}
+
+.quiz-detail-tag-item {
+  align-items: flex-start;
+  padding: 4px 0;
+}
+
+.quiz-detail-dot,
+.quiz-detail-q-status-dot {
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.quiz-detail-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+}
+
+.strength-dot {
+  background: rgba(34, 197, 94, 0.9);
+}
+
+.weakness-dot {
+  background: rgba(248, 113, 113, 0.9);
+}
+
+.quiz-detail-tag-text,
+.quiz-detail-q-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.quiz-detail-q-row {
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.quiz-detail-q-row + .quiz-detail-q-row {
+  margin-top: 8px;
+}
+
+.quiz-detail-q-status-dot {
+  width: 10px;
+  height: 10px;
+}
+
+.status-dot-correct {
+  background: rgba(34, 197, 94, 0.9);
+}
+
+.status-dot-wrong {
+  background: rgba(248, 113, 113, 0.9);
+}
+
+.status-dot-partial {
+  background: rgba(251, 191, 36, 0.9);
+}
+
+.quiz-detail-footer {
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 16px 16px;
+  cursor: pointer;
+}
+
+.quiz-detail-footer-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(96, 165, 250, 0.92);
+}
+
+.chart-image-preview {
+  margin-top: 0;
+}
+
+.chart-preview-img {
+  width: 100%;
+  display: block;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.chart-preview-img:hover {
+  opacity: 0.92;
+}
+
+.chart-saved-badge {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chart-saved-icon {
+  width: 14px;
+  height: 14px;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.code-execution-card .code-block-section {
+  margin-top: 10px;
+}
+
+.code-toggle-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.46);
+}
+
+.code-toggle-text:hover {
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.code-block-wrapper {
+  margin-top: 8px;
+}
+
+.code-block-pre {
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 10px;
+}
+
+.code-output-section {
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.code-output-stdout,
+.code-output-stderr {
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
+.code-output-stderr {
+  margin-top: 8px;
+}
+
+.tool-card-leave {
+  animation: tool-card-leave 0.2s ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes tool-card-leave {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-8px); }
 }
 
 /* Typing Indicator */

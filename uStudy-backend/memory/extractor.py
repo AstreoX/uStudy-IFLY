@@ -9,11 +9,13 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from agents.llm.client import OpenRouterClient
+from agents.llm.client import LLMClient
 from db.database import get_scoped_session
 from db.models import MemoryType, Node, StudyActivityLog
 from memory.schemas import ExtractionResult
 from memory.service import MemoryService
+from usage.metering import UsageContext
+from usage.models import UsageType
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +103,7 @@ class MemoryExtractor:
         from config import get_settings
         settings = get_settings()
         model_override = settings.memory_extraction_model or None
-        self.llm_client = OpenRouterClient(model_override=model_override)
+        self.llm_client = LLMClient(model_override=model_override)
         self.memory_service = MemoryService()
 
     async def extract_and_save(
@@ -125,6 +127,15 @@ class MemoryExtractor:
         Returns:
             ExtractionResult 包含提取数量和内容
         """
+        self.llm_client.usage_context = UsageContext(
+            user_id=user_id,
+            usage_type=UsageType.AGENT_LLM,
+            source_module="memory",
+            source_operation="extract",
+            billable=True,
+            space_id=space_id,
+            conversation_id=conversation_id,
+        )
         # 1. 格式化对话内容
         conv_text = self._format_conversation(conversation)
         if not conv_text.strip():

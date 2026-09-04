@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from chat.prompt_builder import PromptBuilder
 from config import get_settings
 from db.models import Conversation, Message, Space
-from feedback.email_service import FeedbackEmailService
 from feedback.models import ChatMode, Feedback
 from feedback.schemas import FeedbackRequest, FeedbackResponse
 
@@ -32,7 +31,6 @@ class FeedbackService:
         """Initialize service with database session."""
         self.db = db
         self.settings = get_settings()
-        self.email_service = FeedbackEmailService(self.settings)
         self.prompt_builder = PromptBuilder()
 
     async def submit_feedback(
@@ -68,11 +66,7 @@ class FeedbackService:
                 )
 
             # Determine chat mode enum
-            chat_mode = (
-                ChatMode.SPACE_CHAT
-                if request.chat_mode == "space_chat"
-                else ChatMode.QUICK_CHAT
-            )
+            chat_mode = ChatMode.SPACE_CHAT
 
             # Parse message_id if it's a valid UUID string
             message_id = None
@@ -122,20 +116,6 @@ class FeedbackService:
                 f"id={feedback.id}"
             )
 
-            # Schedule email notification as background task (runs after response)
-            background_tasks.add_task(
-                self._send_email_notification,
-                user_email=user_email,
-                user_nickname=user_nickname,
-                chat_mode=request.chat_mode,
-                space_name=request.space_name,
-                feedback_type=request.feedback_type or "report",
-                feedback_content=request.feedback_content,
-                conversation_history=request.conversation_history,
-                system_prompt=system_prompt,
-                llm_context=llm_context,
-            )
-
             return FeedbackResponse(
                 success=True,
                 message="Feedback submitted successfully",
@@ -180,16 +160,12 @@ class FeedbackService:
 
         Args:
             conversation_id: The conversation ID (may be None)
-            chat_mode: The chat mode (quick_chat or space_chat)
+            chat_mode: The chat mode (space_chat)
 
         Returns:
             The system prompt string, or None if unavailable
         """
         try:
-            if chat_mode == ChatMode.QUICK_CHAT:
-                # Quick chat uses a standard prompt
-                return self.prompt_builder.build_quick_chat_prompt(with_tools=True)
-
             # For space chat, we need to get the space info
             if conversation_id:
                 result = await self.db.execute(
@@ -209,8 +185,7 @@ class FeedbackService:
                             space_name=space.name,
                         )
 
-            # Fallback to generic quick chat prompt
-            return self.prompt_builder.build_quick_chat_prompt(with_tools=True)
+            return None
 
         except Exception as e:
             logger.warning(f"Failed to get system prompt: {e}")
@@ -241,51 +216,3 @@ class FeedbackService:
             logger.warning(f"Failed to get LLM context: {e}")
             return None
 
-    def _send_email_notification(
-        self,
-        user_email: str,
-        user_nickname: str,
-        chat_mode: str,
-        space_name: Optional[str],
-        feedback_type: str,
-        feedback_content: str,
-        conversation_history: list[dict[str, Any]],
-        system_prompt: Optional[str],
-        llm_context: Optional[dict[str, Any]] = None,
-    ) -> None:
-        """Send email notification for feedback.
-
-        This runs as a background task (sync function for BackgroundTasks).
-        """
-        import asyncio
-
-        async def _async_send():
-            try:
-                success = await self.email_service.send_feedback_email(
-                    user_email=user_email,
-                    user_nickname=user_nickname,
-                    chat_mode=chat_mode,
-                    space_name=space_name,
-                    feedback_type=feedback_type,
-                    feedback_content=feedback_content,
-                    conversation_history=conversation_history,
-                    system_prompt=system_prompt,
-                    llm_context=llm_context,
-                )
-                if success:
-                    logger.info("Feedback email sent successfully")
-                else:
-                    logger.warning("Failed to send feedback email")
-            except Exception:
-                logger.exception("Error sending feedback email")
-
-        # Run the async function in the event loop
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(_async_send())
-            else:
-                loop.run_until_complete(_async_send())
-        except RuntimeError:
-            # No event loop, create a new one
-            asyncio.run(_async_send())

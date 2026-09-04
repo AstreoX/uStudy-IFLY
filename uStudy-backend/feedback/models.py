@@ -15,7 +15,6 @@ from db.database import Base
 class ChatMode(str, enum.Enum):
     """Chat mode enumeration."""
 
-    QUICK_CHAT = "quick_chat"
     SPACE_CHAT = "space_chat"
 
 
@@ -55,7 +54,7 @@ class Feedback(Base):
             values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,
-        comment="quick_chat or space_chat",
+        comment="space_chat",
     )
     space_name: Mapped[Optional[str]] = mapped_column(
         String(200),

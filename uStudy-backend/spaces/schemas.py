@@ -84,7 +84,7 @@ class SpaceResponse(BaseModel):
     tool_mode: str = "auto"
     enabled_tools: Optional[list[str]] = None
     is_collaborative: bool = False
-    review_mode: int = 3
+    review_mode: int = 0
     user_role: Optional[str] = None
     created_at: datetime
     updated_at: datetime

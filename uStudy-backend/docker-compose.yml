@@ -9,7 +9,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${DB_PASSWORD:-123456}
-      POSTGRES_DB: ustudy
+      POSTGRES_DB: ustudy_dev
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -36,6 +36,30 @@ services:
       timeout: 5s
       retries: 5
 
+  # Generates persistent internal OJ tokens once. The values live only in
+  # named Docker volumes and are reused across container recreation.
+  oj-secret-init:
+    image: python:3.11-alpine
+    container_name: ustudy-oj-secret-init
+    restart: "no"
+    command:
+      - python
+      - -c
+      - |
+        from pathlib import Path
+        import secrets
+        for directory in (Path('/run/secrets/oj-manager'), Path('/run/secrets/oj-executor')):
+            directory.mkdir(parents=True, exist_ok=True)
+            target = directory / 'token'
+            if not target.exists():
+                target.write_text(secrets.token_hex(32), encoding='utf-8')
+                target.chmod(0o444)
+            elif len(target.read_text(encoding='utf-8').strip()) < 32:
+                raise SystemExit(f'invalid persisted OJ token: {target}')
+    volumes:
+      - oj_manager_secret:/run/secrets/oj-manager
+      - oj_executor_secret:/run/secrets/oj-executor
+
   # FastAPI 后端服务
   backend:
     build:
@@ -48,39 +72,72 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      oj-secret-init:
+        condition: service_completed_successfully
     environment:
       # 数据库连接（Docker 内部网络使用服务名 db）
-      DATABASE_URL: postgresql+asyncpg://postgres:${DB_PASSWORD:-123456}@db:5432/ustudy
+      DATABASE_URL: postgresql+asyncpg://postgres:${DB_PASSWORD:-123456}@db:5432/ustudy_dev
       # Redis 连接（Docker 内部网络使用服务名 redis）
       REDIS_URL: redis://redis:6379/0
       # 应用配置
-      APP_ENV: ${APP_ENV:-production}
+      APP_ENV: ${APP_ENV:-experiment}
       DEBUG: ${DEBUG:-false}
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-https://ustudy.top}
+      PUBLIC_WEB_BASE_URL: ${PUBLIC_WEB_BASE_URL:-https://ustudy.top}
+      PUBLIC_APP_BASE_URL: ${PUBLIC_APP_BASE_URL:-https://ustudy.top}
+      DOWNLOAD_BASE_URL: ${DOWNLOAD_BASE_URL:-https://ustudy.top}
+      SUPPORT_CONTACT_EMAIL: ${SUPPORT_CONTACT_EMAIL:-contact@ustudy.top}
+      PUBLIC_REGISTRATION_ENABLED: ${PUBLIC_REGISTRATION_ENABLED:-true}
+      AUTH_EMAIL_ENABLED: ${AUTH_EMAIL_ENABLED:-true}
+      APPLE_LOGIN_ENABLED: ${APPLE_LOGIN_ENABLED:-false}
+      SPACE_CREATION_ENABLED: ${SPACE_CREATION_ENABLED:-false}
+      PAYMENT_ENABLED: ${PAYMENT_ENABLED:-false}
+      ACTIVATION_ENABLED: ${ACTIVATION_ENABLED:-false}
+      INVITES_ENABLED: ${INVITES_ENABLED:-false}
+      WALLET_BILLING_ENABLED: ${WALLET_BILLING_ENABLED:-false}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      CORS_DEV_ORIGINS: ${CORS_DEV_ORIGINS:-http://localhost:5173,http://localhost:5174,http://localhost:3000,http://localhost:8080,http://localhost:9000,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:3000,http://127.0.0.1:8080,http://127.0.0.1:9000}
+      CORS_PROD_ORIGINS: ${CORS_PROD_ORIGINS:-https://ustudy.top,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175}
       SECRET_KEY: ${SECRET_KEY}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      # OpenRouter
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      # DashScope
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       OPENROUTER_BRIDGE_URL: ${OPENROUTER_BRIDGE_URL:-}
+      LLM_DEFAULT_MODEL: ${LLM_DEFAULT_MODEL:-z-ai/glm-5.3-flash}
+      GEMINI_MODEL: ${GEMINI_MODEL:-z-ai/glm-5.3-flash}
+      QUIZ_REASONING_MODEL: ${QUIZ_REASONING_MODEL:-z-ai/glm-5.3-flash}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
+      LLM_STREAM_CONNECT_TIMEOUT_SECONDS: ${LLM_STREAM_CONNECT_TIMEOUT_SECONDS:-10}
+      LLM_STREAM_READ_TIMEOUT_SECONDS: ${LLM_STREAM_READ_TIMEOUT_SECONDS:-180}
+      LLM_STREAM_WRITE_TIMEOUT_SECONDS: ${LLM_STREAM_WRITE_TIMEOUT_SECONDS:-30}
+      LLM_STREAM_POOL_TIMEOUT_SECONDS: ${LLM_STREAM_POOL_TIMEOUT_SECONDS:-30}
+      LLM_TOOL_RESULT_MAX_CHARS: ${LLM_TOOL_RESULT_MAX_CHARS:-20000}
+      LLM_CONTEXT_MAX_CHARS: ${LLM_CONTEXT_MAX_CHARS:-120000}
+      ARTIFACT_MODEL: ${ARTIFACT_MODEL:-z-ai/glm-5.3-flash}
+      ARTIFACT_TIMEOUT_SECONDS: ${ARTIFACT_TIMEOUT_SECONDS:-300}
+      # Image generation (GPT Image 2 via OpenAI Images API compatible relay)
+      IMAGE_GENERATION_BASE_URL: ${IMAGE_GENERATION_BASE_URL:-https://openapi.center}
+      IMAGE_GENERATION_API_KEY: ${IMAGE_GENERATION_API_KEY:-}
+      IMAGE_GENERATION_MODEL: ${IMAGE_GENERATION_MODEL:-gpt-image-2}
+      IMAGE_GENERATION_TIMEOUT_SECONDS: ${IMAGE_GENERATION_TIMEOUT_SECONDS:-90}
+      IMAGE_GENERATION_SIZE: ${IMAGE_GENERATION_SIZE:-1024x1024}
+      IMAGE_GENERATION_QUALITY: ${IMAGE_GENERATION_QUALITY:-low}
+      IMAGE_GENERATION_OUTPUT_FORMAT: ${IMAGE_GENERATION_OUTPUT_FORMAT:-png}
+      USE_BASE64_FOR_IMAGES: ${USE_BASE64_FOR_IMAGES:-true}
+      QUIZ_EVALUATION_MODEL: ${QUIZ_EVALUATION_MODEL:-z-ai/glm-5.3-flash}
+      MASTERY_EVALUATION_MODEL: ${MASTERY_EVALUATION_MODEL:-z-ai/glm-5.3-flash}
       # 邮件配置
-      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
       SMTP_HOST: ${SMTP_HOST:-smtpdm.aliyun.com}
       SMTP_PORT: ${SMTP_PORT:-465}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@ustudy.app}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@ustudy.top}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-uStudy}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
       SMTP_USE_SSL: ${SMTP_USE_SSL:-true}
-      # 支付宝
-      ALIPAY_APP_ID: ${ALIPAY_APP_ID:-}
-      ALIPAY_APP_PRIVATE_KEY_PATH: /app/certs/alipay_app_private_key.pem
-      ALIPAY_PUBLIC_KEY_PATH: /app/certs/alipay_public_key.pem
-      ALIPAY_SIGN_TYPE: ${ALIPAY_SIGN_TYPE:-RSA2}
-      ALIPAY_DEBUG: ${ALIPAY_DEBUG:-false}
-      ALIPAY_NOTIFY_URL: ${ALIPAY_NOTIFY_URL:-}
-      ALIPAY_RETURN_URL: ${ALIPAY_RETURN_URL:-}
       # 爬虫增强
       DEEP_CRAWL_ENABLED: ${DEEP_CRAWL_ENABLED:-false}
       JINA_READER_ENABLED: ${JINA_READER_ENABLED:-true}
@@ -102,15 +159,174 @@ services:
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
       DB_POOL_TIMEOUT_SECONDS: ${DB_POOL_TIMEOUT_SECONDS:-15}
       DB_POOL_RECYCLE_SECONDS: ${DB_POOL_RECYCLE_SECONDS:-1800}
+      # RAG 配置
+      RAG_BACKEND: ${RAG_BACKEND:-hybrid}
+      RAG_ENABLE_RERANK: ${RAG_ENABLE_RERANK:-false}
+      RAG_AUTO_INJECT_ENABLED: ${RAG_AUTO_INJECT_ENABLED:-true}
+      LEARNING_PATH_AUTO_EXPAND_ENABLED: ${LEARNING_PATH_AUTO_EXPAND_ENABLED:-true}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
+      # Teacher presentation agent control plane. The backend remains the
+      # capability gateway; only the manager holds the Docker socket.
+      PRESENTATION_SANDBOX_MANAGER_URL: http://presentation-sandbox-manager:8090
+      PRESENTATION_SANDBOX_MANAGER_TOKEN: ${PRESENTATION_SANDBOX_MANAGER_TOKEN:-}
+      PRESENTATION_AGENT_GATEWAY_BASE_URL: http://backend:8000/api/internal/presentation-agent/runs
+      PRESENTATION_PRIVATE_DIR: /app/private-presentations
+      # Isolated assignment OJ. Keep disabled until the executor readiness
+      # probes pass on the deployment host.
+      OJ_ENABLED: ${OJ_ENABLED:-false}
+      OJ_MANAGER_URL: ${OJ_MANAGER_URL:-http://oj-manager:8091}
+      OJ_MANAGER_TOKEN: ${OJ_MANAGER_TOKEN:-}
+      OJ_MANAGER_TOKEN_FILE: /run/secrets/oj-manager/token
+      OJ_SAMPLE_RATE_PER_MINUTE: ${OJ_SAMPLE_RATE_PER_MINUTE:-10}
+      OJ_SOURCE_MAX_BYTES: ${OJ_SOURCE_MAX_BYTES:-65536}
+      OJ_SAMPLE_RETENTION_HOURS: ${OJ_SAMPLE_RETENTION_HOURS:-24}
+      OJ_REQUEST_TIMEOUT_SECONDS: ${OJ_REQUEST_TIMEOUT_SECONDS:-15}
+      OJ_RUN_POLL_SECONDS: ${OJ_RUN_POLL_SECONDS:-0.5}
+      OJ_RUN_TIMEOUT_SECONDS: ${OJ_RUN_TIMEOUT_SECONDS:-90}
     volumes:
       - uploads:/app/uploads
-      - payment_static:/app/static/payment
+      - presentation_private:/app/private-presentations
       - ./certs:/app/certs:ro
+      - oj_manager_secret:/run/secrets/oj-manager:ro
     ports:
       - "8000:8000"
     networks:
       - default
       - crawl4ai_net
+      - presentation_agent_internal
+      - oj_control
+
+  # Build-only image definition. Sandboxes are created dynamically by the
+  # manager and are never long-running Compose services.
+  presentation-agent-image:
+    image: ${PRESENTATION_AGENT_IMAGE:-ustudy-presentation-agent:local}
+    build:
+      context: .
+      dockerfile: Dockerfile.presentation-agent
+      additional_contexts:
+        # `docker compose up --no-build` remains usable without a host path.
+        # A real image build still fails at the Dockerfile COPY/validation step
+        # unless this points at the pinned @oai runtime node_modules directory.
+        presentation_runtime_node: ${PRESENTATION_RUNTIME_NODE_MODULES_HOST_DIR:-.}
+    # A successful one-shot build helper ensures `up --build` materializes the
+    # image before the manager attempts dynamic `docker run` calls.
+    entrypoint: ["/bin/true"]
+    command: []
+    restart: "no"
+
+  presentation-sandbox-manager:
+    image: ${PRESENTATION_SANDBOX_MANAGER_IMAGE:-ustudy-presentation-sandbox-manager:local}
+    build:
+      context: .
+      dockerfile: Dockerfile.presentation-sandbox-manager
+    restart: unless-stopped
+    depends_on:
+      presentation-agent-image:
+        condition: service_completed_successfully
+    environment:
+      PRESENTATION_SANDBOX_MANAGER_TOKEN: ${PRESENTATION_SANDBOX_MANAGER_TOKEN:-}
+      PRESENTATION_AGENT_IMAGE: ${PRESENTATION_AGENT_IMAGE:-ustudy-presentation-agent:local}
+      PRESENTATION_AGENT_NETWORK: ustudy-presentation-agent-internal
+      # These are absolute paths as seen by the Docker daemon host, not paths
+      # inside this manager container. They are mounted read-only into agents.
+      PRESENTATION_SKILL_HOST_DIR: ${PRESENTATION_SKILL_HOST_DIR:-}
+      PRESENTATION_RUNTIME_NODE_MODULES_HOST_DIR: ${PRESENTATION_RUNTIME_NODE_MODULES_HOST_DIR:-}
+      PRESENTATION_RUNTIME_BIN_HOST_DIR: ${PRESENTATION_RUNTIME_BIN_HOST_DIR:-}
+      PRESENTATION_GATEWAY_ALLOWED_HOSTS: backend,ustudy-backend,ustudy-dev-backend
+      PRESENTATION_AGENT_MEMORY: ${PRESENTATION_AGENT_MEMORY:-1536m}
+      PRESENTATION_AGENT_CPUS: ${PRESENTATION_AGENT_CPUS:-2.0}
+      PRESENTATION_AGENT_PIDS: ${PRESENTATION_AGENT_PIDS:-256}
+      PRESENTATION_AGENT_MAX_FILE_BYTES: ${PRESENTATION_AGENT_MAX_FILE_BYTES:-268435456}
+      PRESENTATION_AGENT_MAX_WORKSPACE_BYTES: ${PRESENTATION_AGENT_MAX_WORKSPACE_BYTES:-2147483648}
+      PRESENTATION_AGENT_CONTAINER_RETENTION_SECONDS: ${PRESENTATION_AGENT_CONTAINER_RETENTION_SECONDS:-3600}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - presentation_manager_state:/var/lib/presentation-manager
+    networks:
+      - presentation_agent_internal
+
+  # Private OJ control plane. It owns hidden tests and the persistent run
+  # queue, but has no production database, Redis, uploads, or Docker socket.
+  oj-manager:
+    profiles: ["oj"]
+    build:
+      context: ../oj-manager
+      dockerfile: Dockerfile
+    container_name: ustudy-oj-manager
+    restart: unless-stopped
+    depends_on:
+      oj-executor:
+        condition: service_healthy
+      oj-secret-init:
+        condition: service_completed_successfully
+    environment:
+      OJ_MANAGER_TOKEN: ${OJ_MANAGER_TOKEN:-}
+      OJ_MANAGER_TOKEN_FILE: /run/secrets/oj-manager/token
+      OJ_EXECUTOR_URL: http://oj-executor:5050
+      OJ_EXECUTOR_TOKEN: ${OJ_EXECUTOR_TOKEN:-}
+      OJ_EXECUTOR_TOKEN_FILE: /run/secrets/oj-executor/token
+      OJ_DATA_DIR: /var/lib/ustudy-oj
+      OJ_PARALLELISM: ${OJ_PARALLELISM:-2}
+      OJ_QUEUE_LIMIT: ${OJ_QUEUE_LIMIT:-50}
+      OJ_EXECUTOR_VERSION: ${OJ_EXECUTOR_VERSION:-v1.12.2}
+      OJ_LEASE_SECONDS: ${OJ_LEASE_SECONDS:-90}
+      OJ_REQUEST_TIMEOUT_SECONDS: ${OJ_EXECUTOR_REQUEST_TIMEOUT_SECONDS:-65}
+    volumes:
+      - oj_private:/var/lib/ustudy-oj
+      - oj_manager_secret:/run/secrets/oj-manager:ro
+      - oj_executor_secret:/run/secrets/oj-executor:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,nr_inodes=1024,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - oj_control
+      - oj_exec
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os,urllib.request,pathlib; token=os.environ.get('OJ_MANAGER_TOKEN') or pathlib.Path(os.environ['OJ_MANAGER_TOKEN_FILE']).read_text().strip(); r=urllib.request.Request('http://127.0.0.1:8091/health/ready',headers={'Authorization':'Bearer '+token}); urllib.request.urlopen(r,timeout=5)"
+      interval: 15s
+      timeout: 6s
+      retries: 12
+      start_period: 30s
+
+  # go-judge is the only privileged OJ component. It has no host port, no
+  # business data, and no secrets except its own executor token.
+  oj-executor:
+    profiles: ["oj"]
+    build:
+      context: ../oj-manager
+      dockerfile: Dockerfile.executor
+      args:
+        GO_JUDGE_VERSION: ${OJ_EXECUTOR_VERSION:-v1.12.2}
+        GO_JUDGE_COMMIT: ${OJ_EXECUTOR_COMMIT:-955585f050286993ead2b2dd11c107d529b6b508}
+    container_name: ustudy-oj-executor
+    restart: unless-stopped
+    privileged: true
+    cgroup: host
+    shm_size: 512m
+    environment:
+      ES_AUTH_TOKEN: ${OJ_EXECUTOR_TOKEN:-}
+      OJ_EXECUTOR_TOKEN_FILE: /run/secrets/oj-executor/token
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - oj_executor_secret:/run/secrets/oj-executor:ro
+    networks:
+      - oj_exec
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "TOKEN=$$ES_AUTH_TOKEN; if [ -z \"$$TOKEN\" ]; then TOKEN=$$(cat $$OJ_EXECUTOR_TOKEN_FILE); fi; curl --fail --silent -H \"Authorization: Bearer $$TOKEN\" http://127.0.0.1:5050/version >/dev/null"
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   # Crawl4AI - Headless browser for JS-rendered page extraction
   crawl4ai:
@@ -141,9 +357,29 @@ volumes:
     driver: local
   uploads:
     driver: local
-  payment_static:
+  presentation_manager_state:
+    driver: local
+  presentation_private:
+    driver: local
+  oj_private:
+    driver: local
+  oj_manager_secret:
+    driver: local
+  oj_executor_secret:
     driver: local
 
 networks:
   crawl4ai_net:
     driver: bridge
+  presentation_agent_internal:
+    name: ustudy-presentation-agent-internal
+    driver: bridge
+    internal: true
+  oj_control:
+    name: ustudy-oj-control
+    driver: bridge
+    internal: true
+  oj_exec:
+    name: ustudy-oj-exec
+    driver: bridge
+    internal: true

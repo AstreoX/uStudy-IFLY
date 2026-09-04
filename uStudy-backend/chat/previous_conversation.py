@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Conversation, Message, MessageRole
+from db.models import Conversation, ConversationKind, Message, MessageRole
 
 
 async def get_previous_conversation_id(
@@ -52,6 +52,7 @@ async def get_previous_conversation_id(
             Conversation.user_id == user_id,
             Conversation.space_id == space_id,
             Conversation.id != current_conversation_id,
+            Conversation.kind == ConversationKind.LEARNING,
         )
         .group_by(Message.conversation_id)
         .subquery()

@@ -8,8 +8,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine
 
-from agents.llm.client import OpenRouterClient
+from agents.llm.client import LLMClient
 from config import get_settings
+from usage.metering import UsageContext
+from usage.models import UsageType
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +221,7 @@ class ReviewQuizPlannerAgent:
 
     def __init__(self) -> None:
         self.settings = get_settings()
-        self.llm_client = OpenRouterClient(
+        self.llm_client = LLMClient(
             model_override=self.settings.gemini_model,
         )
         self.debug_logs: list[dict[str, Any]] = []
@@ -230,6 +232,9 @@ class ReviewQuizPlannerAgent:
         learning_preferences: dict | None,
         review_items: list[dict[str, Any]],
         on_progress: Callable[[list[dict]], Coroutine] | None = None,
+        user_id: Any = None,
+        space_id: Any = None,
+        billable: bool = True,
     ) -> dict[str, Any]:
         """规划复习测试题结构。
 
@@ -243,6 +248,15 @@ class ReviewQuizPlannerAgent:
             验证后的规划结果 dict:
             {topic, difficulty_level, test_struct, focus_areas, reasoning}
         """
+        self.llm_client.usage_context = UsageContext(
+            user_id=user_id,
+            usage_type=UsageType.AGENT_LLM,
+            source_module="agents",
+            source_operation="review_quiz_planner",
+            billable=bool(user_id and billable),
+            space_id=space_id,
+            metadata={"review_count": len(review_items)},
+        )
         messages = _build_planner_prompt(space_name, learning_preferences, review_items)
 
         for iteration in range(MAX_PLANNER_ITERATIONS):

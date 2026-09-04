@@ -389,11 +389,12 @@ export default {
 
 <style scoped>
 .note-creation-card {
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.04);
   transition: border-color 0.2s ease, background 0.2s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
 }
 
 .ncc-pending {
@@ -466,10 +467,14 @@ export default {
   flex-shrink: 0;
 }
 
+.ncc-success .ncc-icon {
+  color: rgba(74, 222, 128, 0.95);
+}
+
 .ncc-title-text {
   font-size: 12px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.78);
 }
 
 /* Field row (for node dropdown) */
@@ -491,7 +496,7 @@ export default {
   color: rgba(255, 255, 255, 0.85);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
+  border-radius: 10px;
   outline: none;
   appearance: none;
   -webkit-appearance: none;
@@ -534,9 +539,9 @@ export default {
   display: inline-block;
   font-size: 11px;
   color: rgba(129, 140, 248, 0.9);
-  padding: 2px 8px;
+  padding: 3px 9px;
   background: rgba(129, 140, 248, 0.12);
-  border-radius: 4px;
+  border-radius: 999px;
 }
 
 /* Loading state */
@@ -554,10 +559,10 @@ export default {
 /* Note title (view mode) */
 .ncc-note-title {
   display: block;
-  font-size: 16px;
-  font-weight: 600;
-  color: #ffffff;
-  margin-top: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  margin-top: 8px;
   line-height: 1.4;
 }
 
@@ -566,9 +571,9 @@ export default {
   position: relative;
   margin-top: 8px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.025);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .ncc-edit-btn {
@@ -579,7 +584,7 @@ export default {
   align-items: center;
   gap: 4px;
   padding: 3px 8px;
-  border-radius: 4px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   cursor: pointer;
   transition: background 0.15s ease;
@@ -623,7 +628,7 @@ export default {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
+  border-radius: 10px;
   outline: none;
   box-sizing: border-box;
   cursor: text;
@@ -636,7 +641,7 @@ export default {
 .ncc-edit-area {
   margin-top: 8px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  border-radius: 14px;
   overflow: hidden;
 }
 
@@ -722,7 +727,7 @@ export default {
   font-size: 13px;
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
   color: rgba(255, 255, 255, 0.85);
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.24);
   border: none;
   outline: none;
   resize: vertical;

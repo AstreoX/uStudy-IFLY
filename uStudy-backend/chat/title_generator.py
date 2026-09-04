@@ -3,9 +3,10 @@
 import logging
 import re
 
-import httpx
-
+from agents.llm.client import LLMClient
 from config import get_settings
+from usage.metering import UsageContext
+from usage.models import UsageType
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,12 @@ _TITLE_SYSTEM_PROMPT = (
 )
 
 
-async def generate_title(user_message: str) -> str:
+async def generate_title(
+    user_message: str,
+    *,
+    user_id=None,
+    conversation_id=None,
+) -> str:
     """Call a lightweight LLM to generate a concise conversation title.
 
     Uses a single httpx POST with a short timeout. No retries — title
@@ -35,39 +41,35 @@ async def generate_title(user_message: str) -> str:
 
     logger.info(f"[TitleGen] Calling model={settings.title_generation_model}, input={truncated_message[:60]!r}")
 
-    async with httpx.AsyncClient(timeout=settings.title_generation_timeout) as client:
-        response = await client.post(
-            f"{settings.openrouter_base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {settings.openrouter_api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": settings.title_generation_model,
-                "messages": [
-                    {"role": "system", "content": _TITLE_SYSTEM_PROMPT},
-                    {"role": "user", "content": truncated_message},
-                ],
-                "temperature": 0.3,
-                "max_tokens": 50,
-                "reasoning": {"effort": "none"},  # 禁用 reasoning，标题生成无需思考
-            },
+    client = LLMClient(
+        model_override=settings.title_generation_model,
+        timeout_seconds=settings.title_generation_timeout,
+        usage_context=UsageContext(
+            user_id=user_id,
+            usage_type=UsageType.CHAT_LLM,
+            source_module="chat",
+            source_operation="title_generation",
+            billable=bool(user_id),
+            conversation_id=conversation_id,
+        ),
+    )
+    result = await client.complete_result(
+        messages=[
+            {"role": "system", "content": _TITLE_SYSTEM_PROMPT},
+            {"role": "user", "content": truncated_message},
+        ],
+        temperature=0.3,
+        max_tokens=50,
+        enable_thinking=False,
+        idempotency_key=(
+            f"title_generation:{conversation_id}" if conversation_id else None
         )
-        response.raise_for_status()
-
-    data = response.json()
-    logger.debug(f"[TitleGen] Full API response keys: {list(data.keys())}")
-    choices = data.get("choices") or []
-    if not choices:
-        raise ValueError(f"Unexpected API response: no choices")
-    message = choices[0].get("message", {})
-    raw_title = message.get("content", "").strip()
+    )
+    raw_title = result.content.strip()
 
     # 某些 reasoning 模型可能将内容放在 reasoning_content 字段
     if not raw_title:
-        raw_title = message.get("reasoning_content", "").strip()
-        if raw_title:
-            logger.info(f"[TitleGen] Title found in reasoning_content instead of content")
+        raise ValueError("Title generation returned empty content")
 
     logger.info(f"[TitleGen] Raw response: {raw_title!r}")
 

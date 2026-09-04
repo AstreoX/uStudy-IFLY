@@ -21,6 +21,10 @@ from graph.exceptions import (
 logger = logging.getLogger(__name__)
 
 _NODE_NOT_FOUND_HINT = "节点名称必须与知识图谱中已有节点完全匹配，请先调用 get_graph_overview 查看所有节点。"
+_MAX_GENERATE_LEARNING_PATH_NODES = 5
+_SHORT_PATH_PRINCIPLE_TEXT = (
+    f"短路径原则：单次路径生成不超过 {_MAX_GENERATE_LEARNING_PATH_NODES} 个知识点，仅规划“临近学习内容”。"
+)
 
 _LABEL_MASTERY_RE = re.compile(r"^(.+?)\[(\d{1,3})]$")
 
@@ -221,14 +225,20 @@ GRAPH_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "generate_learning_path",
-            "description": "根据输入的节点序列生成学习路径，在相邻节点间创建 learning_path 类型的边",
+            "description": (
+                "根据输入的节点序列生成学习路径，仅在当前用户尚无学习路径时使用。"
+                f"单次最多 {_MAX_GENERATE_LEARNING_PATH_NODES} 个节点；若已有路径，请改用扩展或局部更新工具。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "node_sequence": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "节点名称序列（字符串数组），如 [\"数组\", \"链表\", \"栈\"]",
+                        "description": (
+                            "节点名称序列（字符串数组），如 [\"数组\", \"链表\", \"栈\"]。"
+                            f"单次最多 {_MAX_GENERATE_LEARNING_PATH_NODES} 个节点。"
+                        ),
                     },
                 },
                 "required": ["node_sequence"],
@@ -331,6 +341,13 @@ def _format_mastery(mastery: int | None) -> str:
     if value == int(value):
         return str(int(value))
     return f"{value:.2g}"
+
+
+def _parse_node_sequence(node_sequence: Any) -> list[str]:
+    """Normalize node sequence input into a list of non-empty node names."""
+    if isinstance(node_sequence, list):
+        return [str(name).strip() for name in node_sequence if str(name).strip()]
+    return [name.strip() for name in str(node_sequence).split(",") if name.strip()]
 
 
 def _build_children_text(
@@ -521,7 +538,15 @@ def build_knowledge_tree_text(
 class GraphToolExecutor:
     """Executor for knowledge graph tools"""
 
-    _STRUCTURE_TOOLS = frozenset({"add_node", "delete_node", "add_edge", "delete_edge", "expand_node"})
+    _STRUCTURE_TOOLS = frozenset(
+        {
+            "add_node",
+            "delete_node",
+            "add_edge",
+            "delete_edge",
+            "expand_node",
+        }
+    )
 
     def __init__(self, space_id: UUID, user_id: UUID | None = None, is_collaborative: bool = False, can_edit_graph: bool = False) -> None:
         self.space_id = space_id
@@ -927,12 +952,42 @@ class GraphToolExecutor:
                 success=False, data=None, message="节点序列不能为空"
             )
 
-        # 解析节点名称序列
-        node_names = node_sequence if isinstance(node_sequence, list) else [name.strip() for name in node_sequence.split(",")]
+        node_names = _parse_node_sequence(node_sequence)
 
         if len(node_names) < 2:
             return ToolResult(
                 success=False, data=None, message="学习路径至少需要 2 个节点"
+            )
+
+        graph = await graph_service.get_graph(
+            self.space_id, user_id=self.user_id, is_collaborative=self.is_collaborative
+        )
+        learning_path_edges = [
+            edge for edge in graph["edges"] if edge.get("type") == "learning_path"
+        ]
+
+        if learning_path_edges:
+            return ToolResult(
+                success=False,
+                data=None,
+                message=(
+                    "当前用户已有学习路径，不能再次调用 generate_learning_path。"
+                    "请不要在已有学习路径上重复生成。"
+                    "请先调用 get_learning_paths 查看当前路径；"
+                    "如果要继续追加，请使用 extend_learning_path；"
+                    "如果只需要调整其中一段，请使用 update_learning_path_segment。"
+                ),
+            )
+
+        if len(node_names) > _MAX_GENERATE_LEARNING_PATH_NODES:
+            return ToolResult(
+                success=False,
+                data=None,
+                message=(
+                    f"本次请求包含 {len(node_names)} 个节点，已违反短路径原则。"
+                    f"{_SHORT_PATH_PRINCIPLE_TEXT}"
+                    f"请先回顾短路径原则，将本次生成范围缩短到 {_MAX_GENERATE_LEARNING_PATH_NODES} 个节点以内后再重试。"
+                ),
             )
 
         # 根据名称查找所有节点
@@ -967,7 +1022,7 @@ class GraphToolExecutor:
                 success=False, data=None, message="节点序列不能为空"
             )
 
-        node_names = node_sequence if isinstance(node_sequence, list) else [name.strip() for name in node_sequence.split(",")]
+        node_names = _parse_node_sequence(node_sequence)
 
         if len(node_names) < 2:
             return ToolResult(
@@ -1028,7 +1083,7 @@ class GraphToolExecutor:
                 "path": node_names,
                 "edges_created": len(edges),
             },
-            message=f"成功扩展学习路径，新增 {len(node_names) - 1} 个节点，创建 {len(edges)} 条边",
+            message=f"成功扩展学习路径，追加 {len(node_names) - 1} 个已有知识节点，创建 {len(edges)} 条边",
         )
 
     async def _get_learning_paths(self, args: dict, graph_service: GraphService) -> ToolResult:
@@ -1138,7 +1193,7 @@ class GraphToolExecutor:
         if not node_sequence:
             return ToolResult(success=False, data=None, message="节点序列不能为空")
 
-        node_names = node_sequence if isinstance(node_sequence, list) else [name.strip() for name in node_sequence.split(",")]
+        node_names = _parse_node_sequence(node_sequence)
 
         if len(node_names) < 3:
             return ToolResult(

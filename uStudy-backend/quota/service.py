@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from chat.models_config import normalize_model_id
 from db.models import (
     Conversation,
     Message,
@@ -124,6 +125,7 @@ def check_model_access(user: User, model_id: str | None) -> None:
     if model_id is None:
         return
 
+    model_id = normalize_model_id(model_id)
     limits = get_user_tier_limits(user)
     if model_id not in limits.allowed_model_ids:
         tier = get_effective_tier(user)

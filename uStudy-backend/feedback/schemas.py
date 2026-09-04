@@ -31,9 +31,9 @@ class FeedbackRequest(BaseModel):
         None, description="The specific AI message being reported (UUID string or null)"
     )
     chat_mode: str = Field(
-        ...,
-        description="Chat mode: quick_chat or space_chat",
-        pattern="^(quick_chat|space_chat)$",
+        "space_chat",
+        description="Chat mode: space_chat",
+        pattern="^space_chat$",
     )
     space_name: Optional[str] = Field(
         None,

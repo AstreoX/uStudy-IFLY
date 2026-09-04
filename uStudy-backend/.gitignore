@@ -1,5 +1,11 @@
 # 环境变量（包含密钥，不要上传！）
 .env
+.env.local
+experiment-accounts*.csv
+.local-test-credentials.json
+outputs/local-smoke/
+outputs/mastery-dual-task/
+deploy/searxng/settings.local.yml
 
 # Python 虚拟环境
 venv/
@@ -37,3 +43,9 @@ uploads/attachments/
 
 # 支付宝证书密钥（绝对不要提交！）
 certs/
+
+# Agent docs
+CLAUDE.md
+AGENTS.md
+claude.md
+agents.md

@@ -336,9 +336,9 @@
 
     <u-modal
       :visible="showUpgradeModal"
-      :title="isExpiredSubscription ? '订阅已到期' : (fileSizeExceeded ? '文件大小超出限制' : (pendingFileSize > 0 ? '存储空间不足' : '存储空间已满'))"
+      :title="fileSizeExceeded ? '文件大小超出限制' : (pendingFileSize > 0 ? '存储空间不足' : '存储空间已满')"
       :content="upgradeModalContent"
-      :confirm-text="isExpiredSubscription ? `续费 ${expiredTierLabel}` : (nextTierInfo ? `升级到 ${nextTierInfo.label}` : '查看订阅')"
+      confirm-text="知道了"
       @confirm="handleUpgrade"
       @close="handleUpgradeModalClose"
     />
@@ -362,7 +362,6 @@ import {
   uploadSpaceDocumentH5
 } from '@/api/space'
 import config from '@/config'
-import { useUserStore } from '@/store/user'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
 
@@ -462,18 +461,14 @@ export default {
       return Boolean(this.normalizedSpaceId)
     },
     normalizedTier() {
-      const tier = (this.userTier || 'FREE').toUpperCase()
-      const tierMap = { BASIC: 'PLUS', PREMIUM: 'ULTRA' }
-      const mapped = tierMap[tier] || tier
-      if (['FREE', 'PLUS', 'ULTRA', 'ALPHA'].includes(mapped)) return mapped
-      return 'FREE'
+      return 'ALPHA'
     },
     storageLimits() {
       return {
         FREE: 30 * 1024 * 1024,
-        PLUS: 200 * 1024 * 1024,
-        ULTRA: 500 * 1024 * 1024,
-        ALPHA: 500 * 1024 * 1024
+        PLUS: 300 * 1024 * 1024,
+        ULTRA: 2 * 1024 * 1024 * 1024,
+        ALPHA: 2 * 1024 * 1024 * 1024
       }
     },
     storageLimit() {
@@ -481,38 +476,14 @@ export default {
     },
     uploadFileLimits() {
       return {
-        FREE: 10 * 1024 * 1024,
-        PLUS: 50 * 1024 * 1024,
-        ULTRA: 100 * 1024 * 1024,
-        ALPHA: 100 * 1024 * 1024
+        FREE: 50 * 1024 * 1024,
+        PLUS: 200 * 1024 * 1024,
+        ULTRA: 500 * 1024 * 1024,
+        ALPHA: 500 * 1024 * 1024
       }
     },
     uploadFileLimit() {
       return this.uploadFileLimits[this.normalizedTier] || this.uploadFileLimits.FREE
-    },
-    nextTierInfo() {
-      const tierOrder = ['FREE', 'PLUS', 'ULTRA']
-      const currentIdx = tierOrder.indexOf(this.normalizedTier)
-      if (currentIdx < 0 || currentIdx >= tierOrder.length - 1) return null
-      const nextTier = tierOrder[currentIdx + 1]
-      const labels = { PLUS: 'Plus', ULTRA: 'Ultra' }
-      const uploadLimits = { PLUS: 50, ULTRA: 100 }
-      const storageLimits = { PLUS: 200, ULTRA: 500 }
-      return { label: labels[nextTier], uploadLimitMB: uploadLimits[nextTier], storageLimitMB: storageLimits[nextTier] }
-    },
-    isExpiredSubscription() {
-      const userStore = useUserStore()
-      const user = userStore.user
-      if (!user?.subscription_expires_at) return false
-      const rawTier = (user.subscription_tier || 'FREE').toUpperCase()
-      if (rawTier === 'FREE') return false
-      return new Date(user.subscription_expires_at) < new Date()
-    },
-    expiredTierLabel() {
-      const userStore = useUserStore()
-      const rawTier = (userStore.user?.subscription_tier || '').toUpperCase()
-      const labels = { BASIC: 'Plus', PREMIUM: 'Ultra', PLUS: 'Plus', ULTRA: 'Ultra', ALPHA: 'Alpha' }
-      return labels[rawTier] || ''
     },
     storageUsed() {
       return this.documents.reduce((acc, doc) => {
@@ -550,38 +521,20 @@ export default {
       const limitMB = (this.storageLimit / (1024 * 1024)).toFixed(0)
       const remainingMB = ((this.storageLimit - this.storageUsed) / (1024 * 1024)).toFixed(1)
 
-      // 已到期用户
-      if (this.isExpiredSubscription) {
-        const tierLabel = this.expiredTierLabel
-        if (this.fileSizeExceeded && this.pendingFileSize > 0) {
-          const fileSizeMB = (this.pendingFileSize / (1024 * 1024)).toFixed(1)
-          return `你的 ${tierLabel} 订阅已到期，当前文件上传上限为 10MB，该文件 ${fileSizeMB}MB 无法上传。\n\n续费 ${tierLabel} 即可恢复更大上传额度。`
-        }
-        return `你的 ${tierLabel} 订阅已到期，存储空间已降至 ${limitMB}MB。\n\n续费即可恢复原有空间和功能。`
-      }
-
       // 文件大小超限
       if (this.fileSizeExceeded && this.pendingFileSize > 0) {
         const fileSizeMB = (this.pendingFileSize / (1024 * 1024)).toFixed(1)
         const uploadLimitMB = (this.uploadFileLimit / (1024 * 1024)).toFixed(0)
-        let msg = `文件大小 ${fileSizeMB}MB，超过当前 ${this.tierLabel} 的单文件上限 ${uploadLimitMB}MB。`
-        if (this.nextTierInfo) {
-          msg += `\n\n升级到 ${this.nextTierInfo.label} 可上传最大 ${this.nextTierInfo.uploadLimitMB}MB 的文件。`
-        }
-        return msg
+        return `文件大小 ${fileSizeMB}MB，超过实验环境单文件上限 ${uploadLimitMB}MB。`
       }
 
       // 存储空间不足
       if (this.pendingFileSize > 0) {
         const fileSizeMB = (this.pendingFileSize / (1024 * 1024)).toFixed(1)
-        let msg = `文件大小 ${fileSizeMB}MB，剩余空间仅 ${remainingMB}MB。\n\n当前 ${this.tierLabel} 存储上限为 ${limitMB}MB。`
-        if (this.nextTierInfo) {
-          msg += `\n\n升级到 ${this.nextTierInfo.label} 可获得 ${this.nextTierInfo.storageLimitMB}MB 存储空间。`
-        }
-        return msg
+        return `文件大小 ${fileSizeMB}MB，剩余空间仅 ${remainingMB}MB。实验环境存储上限为 ${limitMB}MB。`
       }
 
-      return `当前 ${this.tierLabel} 存储空间为 ${limitMB}MB，已达到上限。`
+      return `实验环境存储空间为 ${limitMB}MB，已达到上限。`
     },
     previewTitle() {
       return this.previewDoc?.title || '文件预览'
@@ -917,7 +870,6 @@ export default {
       this.showUpgradeModal = false
       this.pendingFileSize = 0
       this.fileSizeExceeded = false
-      uni.navigateTo({ url: '/pages/activation/activation' })
     },
     handleUpgradeModalClose() {
       this.showUpgradeModal = false

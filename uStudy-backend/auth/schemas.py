@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from db.models import SubscriptionTier, VerificationCodePurpose
 
@@ -30,19 +30,34 @@ class RegisterRequest(BaseModel, PasswordMixin):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=128)
     nickname: str = Field(..., min_length=1, max_length=100)
+    invite_code: Optional[str] = Field(default=None, max_length=32)
 
 
 class LoginRequest(BaseModel):
-    """邮箱登录请求"""
+    """Username/password login request with legacy email input compatibility."""
 
-    email: EmailStr
+    identifier: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        validation_alias=AliasChoices("identifier", "email"),
+    )
     password: str = Field(..., min_length=1)
+
+    @field_validator("identifier")
+    @classmethod
+    def normalize_identifier(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("账号不能为空")
+        return normalized
 
 
 class AppleLoginRequest(BaseModel):
     """Apple 登录请求"""
 
     id_token: str = Field(..., min_length=1)
+    invite_code: Optional[str] = Field(default=None, max_length=32)
 
 
 class RefreshRequest(BaseModel):
@@ -81,6 +96,7 @@ class RegisterWithCodeRequest(BaseModel, PasswordMixin):
     verification_token: str = Field(..., min_length=1)
     password: str = Field(..., min_length=8, max_length=128)
     nickname: str = Field(..., min_length=2, max_length=50)
+    invite_code: Optional[str] = Field(default=None, max_length=32)
 
 
 class ResetPasswordRequest(BaseModel, PasswordMixin):
@@ -100,6 +116,7 @@ class UserProfile(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    username: Optional[str] = None
     email: str
     nickname: str
     avatar_url: Optional[str] = None

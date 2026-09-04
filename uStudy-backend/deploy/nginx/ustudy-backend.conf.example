@@ -1,12 +1,12 @@
 server {
     listen 80;
-    server_name api.ustudy.top;
+    server_name api.ustudy.cc;
 
     access_log /var/log/nginx/ustudy-access.log;
     error_log /var/log/nginx/ustudy-error.log;
 
-    # Keep proxy ingress above the largest business-tier upload limit.
-    client_max_body_size 220M;
+    # Keep proxy ingress above the largest Ultra-tier upload limit.
+    client_max_body_size 550M;
     client_body_timeout 300s;
 
     location / {

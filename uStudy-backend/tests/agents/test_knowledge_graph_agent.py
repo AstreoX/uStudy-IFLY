@@ -22,7 +22,7 @@ class TestKnowledgeGraphAgentInit:
     @pytest.mark.asyncio
     async def test_init_creates_components(self, db_session: AsyncSession):
         """测试 Agent 初始化创建必要组件"""
-        with patch("agents.knowledge_graph_agent.OpenRouterClient") as mock_client:
+        with patch("agents.knowledge_graph_agent.LLMClient") as mock_client:
             mock_client.return_value = MagicMock()
             agent = KnowledgeGraphAgent(db_session)
 
@@ -83,7 +83,7 @@ Sub A1->Sub A2
         mock_llm_response: str,
     ):
         """测试完整成功流程"""
-        with patch("agents.knowledge_graph_agent.OpenRouterClient") as mock_client_cls:
+        with patch("agents.knowledge_graph_agent.LLMClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.complete = AsyncMock(return_value=mock_llm_response)
             mock_client_cls.return_value = mock_client
@@ -118,7 +118,7 @@ Sub A1->Sub A2
     @pytest.mark.asyncio
     async def test_space_not_found(self, db_session: AsyncSession, test_user: User):
         """测试空间不存在"""
-        with patch("agents.knowledge_graph_agent.OpenRouterClient") as mock_client_cls:
+        with patch("agents.knowledge_graph_agent.LLMClient") as mock_client_cls:
             mock_client_cls.return_value = MagicMock()
 
             agent = KnowledgeGraphAgent(db_session)
@@ -139,7 +139,7 @@ Sub A1->Sub A2
         test_space: Space,
     ):
         """测试空间属于其他用户"""
-        with patch("agents.knowledge_graph_agent.OpenRouterClient") as mock_client_cls:
+        with patch("agents.knowledge_graph_agent.LLMClient") as mock_client_cls:
             mock_client_cls.return_value = MagicMock()
 
             agent = KnowledgeGraphAgent(db_session)
@@ -163,7 +163,7 @@ Sub A1->Sub A2
         test_space: Space,
     ):
         """测试 LLM 调用失败"""
-        with patch("agents.knowledge_graph_agent.OpenRouterClient") as mock_client_cls:
+        with patch("agents.knowledge_graph_agent.LLMClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.complete = AsyncMock(
                 side_effect=httpx.TimeoutException("Connection timeout")
@@ -190,7 +190,7 @@ Sub A1->Sub A2
         """测试解析失败（重试后仍失败）"""
         invalid_response = "Invalid LLM output without proper tags"
 
-        with patch("agents.knowledge_graph_agent.OpenRouterClient") as mock_client_cls:
+        with patch("agents.knowledge_graph_agent.LLMClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.complete = AsyncMock(return_value=invalid_response)
             mock_client_cls.return_value = mock_client
@@ -224,7 +224,7 @@ Sub A1->Sub A2
                 return invalid_response
             return mock_llm_response
 
-        with patch("agents.knowledge_graph_agent.OpenRouterClient") as mock_client_cls:
+        with patch("agents.knowledge_graph_agent.LLMClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.complete = mock_complete
             mock_client_cls.return_value = mock_client
@@ -288,7 +288,7 @@ class TestKnowledgeGraphAgentPersistence:
 /advanced_knowledge_connections
 </knowledge_graph>
 """
-        with patch("agents.knowledge_graph_agent.OpenRouterClient") as mock_client_cls:
+        with patch("agents.knowledge_graph_agent.LLMClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.complete = AsyncMock(return_value=llm_response)
             mock_client_cls.return_value = mock_client
@@ -331,7 +331,7 @@ class TestKnowledgeGraphAgentPersistence:
 Root->Child
 </knowledge_graph>
 """
-        with patch("agents.knowledge_graph_agent.OpenRouterClient") as mock_client_cls:
+        with patch("agents.knowledge_graph_agent.LLMClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.complete = AsyncMock(return_value=llm_response)
             mock_client_cls.return_value = mock_client
@@ -366,7 +366,7 @@ class TestEdgeTypeMapping:
     @pytest.mark.asyncio
     async def test_map_edge_type_knowledge_tree(self, db_session: AsyncSession):
         """测试映射 knowledge_tree 类型"""
-        with patch("agents.knowledge_graph_agent.OpenRouterClient") as mock_client_cls:
+        with patch("agents.knowledge_graph_agent.LLMClient") as mock_client_cls:
             mock_client_cls.return_value = MagicMock()
             agent = KnowledgeGraphAgent(db_session)
 
@@ -376,7 +376,7 @@ class TestEdgeTypeMapping:
     @pytest.mark.asyncio
     async def test_map_edge_type_advanced(self, db_session: AsyncSession):
         """测试映射 advanced 类型"""
-        with patch("agents.knowledge_graph_agent.OpenRouterClient") as mock_client_cls:
+        with patch("agents.knowledge_graph_agent.LLMClient") as mock_client_cls:
             mock_client_cls.return_value = MagicMock()
             agent = KnowledgeGraphAgent(db_session)
 
@@ -388,7 +388,7 @@ class TestEdgeTypeMapping:
         self, db_session: AsyncSession
     ):
         """测试未知类型默认为 KNOWLEDGE_TREE"""
-        with patch("agents.knowledge_graph_agent.OpenRouterClient") as mock_client_cls:
+        with patch("agents.knowledge_graph_agent.LLMClient") as mock_client_cls:
             mock_client_cls.return_value = MagicMock()
             agent = KnowledgeGraphAgent(db_session)
 

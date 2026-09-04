@@ -1,0 +1,62 @@
+# Runtime image for the complete teacher presentation agent. The actual mature
+# Presentations skill is supplied as a read-only runtime mount. The pinned
+# @oai/artifact-tool tree is copied from a BuildKit context and its native
+# skia-canvas binary is replaced during this Linux image build. Never mount a
+# host Windows node_modules tree into a Linux sandbox.
+FROM node:22-bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    SKILL_DIR=/opt/skills/presentations \
+    RUNTIME_NODE=/usr/local/bin/node \
+    RUNTIME_NODE_MODULES=/opt/runtime/node_modules \
+    RUNTIME_BIN_DIR=/opt/runtime/bin \
+    HOME=/workspace/.home \
+    TMPDIR=/workspace/.tmp
+
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
+
+RUN TMPDIR=/tmp apt-get update && TMPDIR=/tmp apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    python3 \
+    python3-pip \
+    libreoffice-impress \
+    poppler-utils \
+    graphviz \
+    patch \
+    fonts-noto-cjk \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --break-system-packages --no-cache-dir \
+    httpx==0.28.1 \
+    pydantic==2.11.7 \
+    pillow==11.3.0 \
+    pymupdf==1.26.3 \
+    numpy==2.3.2 \
+    python-pptx==1.0.2 \
+    pdf2image==1.17.0
+
+COPY --from=presentation_runtime_node . /opt/runtime/node_modules
+
+RUN rm -f /opt/runtime/node_modules/@oai/artifact-tool/node_modules/skia-canvas/lib/skia.node \
+    && node /opt/runtime/node_modules/@oai/artifact-tool/node_modules/skia-canvas/lib/prebuild.mjs download \
+    && mkdir -p /opt/runtime/bin \
+    && ln -sf /usr/bin/pdfinfo /opt/runtime/bin/pdfinfo \
+    && ln -sf /usr/bin/pdftoppm /opt/runtime/bin/pdftoppm \
+    && node --input-type=module -e "import('/opt/runtime/node_modules/@oai/artifact-tool/node_modules/skia-canvas/lib/index.mjs').then(({Canvas}) => { const c = new Canvas(8, 8); if (!c) process.exit(1) })" \
+    && node --input-type=module -e "import('/opt/runtime/node_modules/@oai/artifact-tool/dist/artifact_tool.mjs')"
+
+RUN groupadd --gid 10001 presentation-agent \
+    && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /workspace/.home \
+       --shell /usr/sbin/nologin presentation-agent \
+    && mkdir -p /opt/ustudy /opt/skills/presentations /workspace \
+    && chown -R 10001:10001 /workspace
+
+WORKDIR /opt/ustudy
+COPY --chown=10001:10001 presentation_agent /opt/ustudy/presentation_agent
+
+USER 10001:10001
+ENTRYPOINT ["python3", "-m", "presentation_agent.runner"]

@@ -29,6 +29,7 @@ from auth.service import (
     apple_login,
     get_user_by_email,
     get_user_by_id,
+    get_user_by_identifier,
     login,
     refresh_token,
     register,
@@ -37,7 +38,8 @@ from auth.service import (
 )
 from auth.verification import create_verification_token
 from core.jwt import create_access_token, create_refresh_token
-from db.models import User, VerificationCodePurpose
+from core.security import hash_password
+from db.models import SubscriptionTier, User, VerificationCodePurpose
 
 
 class TestRegister:
@@ -57,6 +59,8 @@ class TestRegister:
         assert user.nickname == "New User"
         assert user.password_hash is not None
         assert user.id is not None
+        assert user.subscription_tier == SubscriptionTier.ALPHA
+        assert user.subscription_expires_at is None
 
     @pytest.mark.asyncio
     async def test_register_hashes_password(self, db_session: AsyncSession):
@@ -165,6 +169,32 @@ class TestLogin:
         )
         with pytest.raises(InvalidCredentialsError):
             await login(db_session, login_req)
+
+    @pytest.mark.asyncio
+    async def test_login_by_username_is_case_insensitive(
+        self, db_session: AsyncSession
+    ):
+        user = User(
+            username="exp001",
+            email="exp001@experiment.invalid",
+            password_hash=hash_password("Password123"),
+            nickname="Experiment 001",
+            subscription_tier=SubscriptionTier.ALPHA,
+            subscription_expires_at=None,
+        )
+        db_session.add(user)
+        await db_session.commit()
+
+        found = await get_user_by_identifier(db_session, "EXP001")
+        assert found is not None
+        assert found.username == "exp001"
+
+        token_resp = await login(
+            db_session,
+            LoginRequest(identifier="EXP001", password="Password123"),
+        )
+        assert token_resp.access_token
+        assert token_resp.refresh_token
 
 
 class TestRefreshToken:
@@ -378,6 +408,10 @@ class TestRegisterWithCode:
         resp = await register_with_code(db_session, request)
         assert resp.access_token is not None
         assert resp.refresh_token is not None
+        user = await get_user_by_email(db_session, "codeuser@example.com")
+        assert user is not None
+        assert user.subscription_tier == SubscriptionTier.ALPHA
+        assert user.subscription_expires_at is None
 
     @pytest.mark.asyncio
     async def test_register_with_code_email_mismatch(self, db_session: AsyncSession):

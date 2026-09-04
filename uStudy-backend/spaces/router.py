@@ -10,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import get_current_user
 from chat.tools.catalog import get_catalog_for_api
+from core.features import require_space_creation_enabled
 from db.database import get_db
 from db.models import LearningPathEvent, User
+from experiment.default_course import ensure_default_space_membership
 from spaces.schemas import (
     LearningPathEventResponse,
     SpaceCreate,
@@ -33,6 +35,7 @@ router = APIRouter(
     response_model=SpaceResponse,
     status_code=status.HTTP_201_CREATED,
     summary="创建学习空间",
+    dependencies=[Depends(require_space_creation_enabled)],
 )
 async def create_space(
     request: SpaceCreate,
@@ -63,6 +66,30 @@ async def get_spaces(
     """获取当前用户的所有学习空间，按更新时间倒序"""
     service = SpaceService(db)
     return await service.get_user_spaces(user.id)
+
+
+@router.get(
+    "/default",
+    response_model=SpaceResponse,
+    summary="获取默认数据结构协作空间",
+)
+async def get_default_space(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SpaceResponse:
+    ready = await ensure_default_space_membership(db, user.id)
+    if not ready:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "DEFAULT_SPACE_NOT_READY",
+                "message": "默认数据结构课程尚未初始化",
+            },
+        )
+    await db.commit()
+    from experiment.default_course import DEFAULT_SPACE_ID
+
+    return await SpaceService(db).get_space(user.id, DEFAULT_SPACE_ID)
 
 
 @router.get(

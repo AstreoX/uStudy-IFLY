@@ -13,10 +13,12 @@ from agents.exceptions import (
     LLMParsingError,
     LLMParsingErrorWithOutput,
 )
-from agents.llm.client import OpenRouterClient
+from agents.llm.client import LLMClient
 from agents.llm.prompts import build_node_expand_prompt
 from db.models import Edge, EdgeType, Node
 from graph.service import GraphService
+from usage.metering import UsageContext
+from usage.models import UsageType
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +61,7 @@ class NodeExpandAgent:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
-        self.llm_client = OpenRouterClient()
+        self.llm_client = LLMClient()
 
     async def expand(
         self,
@@ -82,6 +84,16 @@ class NodeExpandAgent:
             LLMClientError: LLM 调用失败
             LLMParsingError: 输出解析失败
         """
+        self.llm_client.usage_context = UsageContext(
+            user_id=user_id,
+            usage_type=UsageType.AGENT_LLM,
+            source_module="agents",
+            source_operation="node_expand",
+            billable=True,
+            space_id=space_id,
+            metadata={"node_id": str(node_id)},
+        )
+
         # 1. 获取目标节点信息
         node = await self._get_node(space_id, node_id)
 

@@ -86,19 +86,22 @@ class TestLoginRequest:
     """LoginRequest Schema 测试"""
 
     def test_valid_login_request(self):
-        """有效的登录请求"""
+        """旧 email 字段仍可作为账号标识输入"""
         req = LoginRequest(
             email="user@example.com",
             password="password123",
         )
-        assert req.email == "user@example.com"
+        assert req.identifier == "user@example.com"
         assert req.password == "password123"
 
-    def test_invalid_email(self):
-        """无效邮箱"""
+    def test_username_identifier_is_supported(self):
+        req = LoginRequest(identifier="  Exp001  ", password="password123")
+        assert req.identifier == "Exp001"
+
+    def test_empty_identifier_is_invalid(self):
         with pytest.raises(ValidationError):
             LoginRequest(
-                email="invalid",
+                identifier="   ",
                 password="password123",
             )
 

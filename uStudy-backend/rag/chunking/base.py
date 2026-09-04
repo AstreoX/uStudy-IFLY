@@ -193,7 +193,8 @@ class BaseChunker(ABC):
         raise NotImplementedError
 
     async def enrich(
-        self, chunks: list[Chunk], content: bytes, filename: str | None = None
+        self, chunks: list[Chunk], content: bytes, filename: str | None = None,
+        on_progress=None,
     ) -> list[Chunk]:
         """
         异步后处理：VLM OCR / 图片描述等增强处理。
@@ -204,6 +205,7 @@ class BaseChunker(ABC):
             chunks: chunk() 产出的切片列表
             content: 原始文档字节内容
             filename: 文件名
+            on_progress: 可选的进度回调 (completed, total)
 
         Returns:
             增强后的切片列表

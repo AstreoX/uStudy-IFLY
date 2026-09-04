@@ -2,17 +2,20 @@
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 
-from agents.llm import OpenRouterClient
+from agents.llm import LLMClient
 from agents.llm.mastery_update_prompts import build_mastery_update_prompt
 from config import get_settings
 from db.database import AsyncSessionLocal
-from db.models import Node
+from db.models import Node, NodeMasteryEvent, NodeUserMastery
 from graph.service import GraphService
 from quiz.full_evaluation_service import _extract_json_from_response
+from usage.metering import UsageContext
+from usage.models import UsageType
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +106,17 @@ class MasteryUpdateAgent:
                     question_results=question_results,
                 )
 
-                client = OpenRouterClient(model_override=get_settings().mastery_evaluation_model or None)
+                client = LLMClient(
+                    model_override=get_settings().mastery_evaluation_model or None,
+                    usage_context=UsageContext(
+                        user_id=self.user_id,
+                        usage_type=UsageType.AGENT_LLM,
+                        source_module="agents",
+                        source_operation="mastery_update",
+                        billable=bool(self.user_id),
+                        space_id=self.space_id,
+                    ),
+                )
                 response = await client.complete(
                     messages=messages,
                     temperature=MASTERY_UPDATE_TEMPERATURE,
@@ -232,20 +245,40 @@ class MasteryUpdateAgent:
         try:
             for node_id, new_mastery, node_name, current_mastery, reason in valid_updates:
                 if self.is_collaborative and self.user_id:
-                    # Collaborative mode: UPSERT into per-user node_user_mastery table
-                    await db.execute(
-                        text(
-                            "INSERT INTO node_user_mastery (id, node_id, user_id, mastery) "
-                            "VALUES (gen_random_uuid(), :node_id, :user_id, :mastery) "
-                            "ON CONFLICT (node_id, user_id) "
-                            "DO UPDATE SET mastery = :mastery, updated_at = now()"
-                        ),
-                        {"node_id": node_id, "user_id": self.user_id, "mastery": new_mastery},
+                    mastery_row = await db.scalar(
+                        select(NodeUserMastery).where(
+                            NodeUserMastery.node_id == node_id,
+                            NodeUserMastery.user_id == self.user_id,
+                        )
                     )
+                    actual_previous = mastery_row.mastery if mastery_row else None
+                    if mastery_row is None:
+                        db.add(
+                            NodeUserMastery(
+                                node_id=node_id,
+                                user_id=self.user_id,
+                                mastery=new_mastery,
+                            )
+                        )
+                    else:
+                        mastery_row.mastery = new_mastery
+                    if actual_previous != new_mastery:
+                        db.add(
+                            NodeMasteryEvent(
+                                space_id=self.space_id,
+                                node_id=node_id,
+                                user_id=self.user_id,
+                                previous_mastery=actual_previous,
+                                new_mastery=new_mastery,
+                                source="quiz_evaluation",
+                                reason=reason or None,
+                                created_at=datetime.now(timezone.utc),
+                            )
+                        )
                     updates.append(
                         MasteryUpdateItem(
                             node_name=node_name,
-                            current_mastery=current_mastery,
+                            current_mastery=actual_previous,
                             new_mastery=new_mastery,
                             reason=reason,
                         )
@@ -255,7 +288,7 @@ class MasteryUpdateAgent:
                         "Updated per-user mastery for node '%s' user '%s': %s -> %s (%s)",
                         node_name,
                         self.user_id,
-                        current_mastery,
+                        actual_previous,
                         new_mastery,
                         reason,
                     )

@@ -43,6 +43,12 @@ class UpdateConversationRequest(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=200, description="对话标题")
 
 
+class UpdateConversationTodoStatusRequest(BaseModel):
+    """Request for updating a conversation-scoped todo completion state."""
+
+    completed: bool = Field(..., description="是否标记为已完成")
+
+
 class ToolCallFunction(BaseModel):
     """Tool call function payload (LLM tool_call format)"""
 
@@ -100,6 +106,28 @@ class ConversationDetailResponse(BaseModel):
 
     conversation: ConversationResponse
     messages: list[MessageResponse]
+
+
+class AgentTodoItemResponse(BaseModel):
+    """Normalized conversation-scoped agent todo item."""
+
+    id: UUID
+    conversation_id: UUID
+    task_id: str
+    title: str
+    details: Optional[str] = None
+    status: str
+    sort_order: int
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationTodoListResponse(BaseModel):
+    """Todo list for a conversation."""
+
+    conversation_id: UUID
+    todos: list[AgentTodoItemResponse]
 
 
 class ConversationListResponse(BaseModel):
@@ -176,47 +204,6 @@ class StopStreamResponse(BaseModel):
     partial_thinking: Optional[str] = Field(None, description="已生成的思考内容")
     tool_calls: list[dict[str, Any]] = Field(default_factory=list, description="已产生的工具调用")
     updated_at: Optional[float] = Field(None, description="最近更新时间戳")
-
-
-class ToolConfirmRequest(BaseModel):
-    """Request to confirm or reject a tool execution"""
-
-    tool_name: str = Field(..., min_length=1, description="工具名称")
-    arguments: dict[str, Any] = Field(default_factory=dict, description="工具参数")
-    confirmed: bool = Field(..., description="是否确认执行")
-
-
-class ToolConfirmResponse(BaseModel):
-    """Response for tool confirmation"""
-
-    status: str = Field(..., description="状态: executed, rejected, accepted")
-    success: Optional[bool] = Field(None, description="执行是否成功（仅当 executed）")
-    data: Optional[dict[str, Any]] = Field(None, description="执行结果数据")
-    message: str = Field(..., description="结果消息")
-
-
-class QuickChatToolTaskStatusResponse(BaseModel):
-    """Response for quick chat async tool task status"""
-
-    success: bool = Field(..., description="请求是否成功")
-    data: Optional[dict[str, Any]] = Field(None, description="任务状态数据")
-    message: str = Field(..., description="结果消息")
-
-
-class QuickChatToolTaskListResponse(BaseModel):
-    """Response for quick chat async tool task list"""
-
-    success: bool = Field(..., description="请求是否成功")
-    data: dict[str, Any] = Field(..., description="任务列表数据")
-    message: str = Field(..., description="结果消息")
-
-
-class QuickChatToolTaskBindResponse(BaseModel):
-    """Response for binding quick chat async tool task"""
-
-    success: bool = Field(..., description="绑定是否成功")
-    data: Optional[dict[str, Any]] = Field(None, description="绑定结果数据")
-    message: str = Field(..., description="结果消息")
 
 
 class RollbackResponse(BaseModel):

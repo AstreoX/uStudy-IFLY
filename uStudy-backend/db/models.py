@@ -2,7 +2,7 @@
 
 import enum
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -62,6 +62,44 @@ class MessageResponseStatus(str, enum.Enum):
     STOPPED = "stopped"
 
 
+class ConversationKind(str, enum.Enum):
+    """Conversation runtime isolation boundary."""
+
+    LEARNING = "learning"
+    TEACHER_PRESENTATION = "teacher_presentation"
+
+
+class PresentationRevisionStatus(str, enum.Enum):
+    DRAFT = "draft"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class PresentationRunStatus(str, enum.Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    RECOVERING = "recovering"
+    WAITING_CONFIRMATION = "waiting_confirmation"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class PresentationAssetKind(str, enum.Enum):
+    SOURCE = "source"
+    TEMPLATE = "template"
+    GENERATED_IMAGE = "generated_image"
+    PREVIEW = "preview"
+    PPTX = "pptx"
+
+
+class AgentTodoStatus(str, enum.Enum):
+    """Agent 对话内 todo 状态"""
+
+    PENDING = "pending"
+    COMPLETED = "completed"
+
+
 class EdgeType(str, enum.Enum):
     """边类型"""
 
@@ -88,30 +126,6 @@ class AgentTaskType(str, enum.Enum):
     GENERATE_ARTIFACT = "generate_artifact"
     GENERATE_KNOWLEDGE_GRAPH_FROM_DOCUMENTS = "generate_knowledge_graph_from_documents"
     GENERATE_REVIEW_QUIZ = "generate_review_quiz"
-
-
-class QuickChatToolTaskStatus(str, enum.Enum):
-    """快速对话工具任务状态"""
-
-    RUNNING = "running"
-    DONE = "done"
-    FAILED = "failed"
-
-
-class QuickChatToolTaskStage(str, enum.Enum):
-    """快速对话创建学习空间任务阶段"""
-
-    QUEUED = "queued"
-    SPACE_CREATED = "space_created"
-    KG_RUNNING = "kg_running"
-    KG_DONE = "kg_done"
-    BINDING = "binding"
-    BINDING_DONE = "binding_done"
-    KG_FAILED = "kg_failed"
-    BINDING_FAILED = "binding_failed"
-    TIMEOUT = "timeout"
-    CLEANUP_DONE = "cleanup_done"
-    CLEANUP_FAILED = "cleanup_failed"
 
 
 class QuestionType(str, enum.Enum):
@@ -186,6 +200,19 @@ class BillingCycle(str, enum.Enum):
     YEARLY = "yearly"
 
 
+class WalletTransactionType(str, enum.Enum):
+    """钱包流水类型"""
+
+    CREDIT_PURCHASE = "credit_purchase"
+    LLM_CHARGE = "llm_charge"
+    SUBSCRIPTION_GRANT = "subscription_grant"
+    REGISTRATION_GRANT = "registration_grant"
+    INVITE_REWARD = "invite_reward"
+    INVITE_SIGNUP_BONUS = "invite_signup_bonus"
+    ADMIN_ADJUSTMENT = "admin_adjustment"
+    REFUND = "refund"
+
+
 class NoteAttachmentType(str, enum.Enum):
     """笔记附件类型"""
 
@@ -201,12 +228,15 @@ class NotificationType(str, enum.Enum):
     REVIEW_REMINDER = "review_reminder"
     INACTIVITY_CARE = "inactivity_care"
     SYSTEM_ANNOUNCEMENT = "system_announcement"
+    ASSIGNMENT_GRADED = "assignment_graded"
+    ASSIGNMENT_GRADE_UPDATED = "assignment_grade_updated"
 
 
 class SpaceMemberRole(str, enum.Enum):
     """协作空间成员角色"""
 
     OWNER = "owner"
+    TEACHER = "teacher"
     MEMBER = "member"
 
 
@@ -235,6 +265,7 @@ class User(Base):
     id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid4
     )
+    username: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     apple_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -266,6 +297,7 @@ class User(Base):
 
     # 索引
     __table_args__ = (
+        Index("uq_users_username_lower", func.lower(username), unique=True),
         Index("ix_users_email", "email", unique=True),
         Index("ix_users_apple_id", "apple_id", unique=True),
     )
@@ -318,8 +350,8 @@ class Space(Base):
     )
     review_mode: Mapped[int] = mapped_column(
         Integer,
-        default=3,
-        server_default="3",
+        default=0,
+        server_default="0",
         nullable=False,
         comment="复习模式: 0=disabled, 1=suggestions, 2=quiz_no_email, 3=full",
     )
@@ -413,12 +445,22 @@ class Conversation(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
-    space_id: Mapped[Optional[UUID]] = mapped_column(
+    space_id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("spaces.id", ondelete="CASCADE"),
-        nullable=True,
+        nullable=False,
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    kind: Mapped[ConversationKind] = mapped_column(
+        Enum(
+            ConversationKind,
+            name="conversationkind",
+            values_callable=lambda obj: [item.value for item in obj],
+        ),
+        nullable=False,
+        default=ConversationKind.LEARNING,
+        server_default=ConversationKind.LEARNING.value,
+    )
     artifact_note_id: Mapped[Optional[UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("notes.id", ondelete="SET NULL"),
@@ -433,15 +475,21 @@ class Conversation(Base):
 
     # 关系
     user: Mapped["User"] = relationship(back_populates="conversations")
-    space: Mapped[Optional["Space"]] = relationship(back_populates="conversations")
+    space: Mapped["Space"] = relationship(back_populates="conversations")
     messages: Mapped[list["Message"]] = relationship(
         back_populates="conversation", cascade="all, delete-orphan"
+    )
+    agent_todos: Mapped[list["ConversationAgentTodo"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="ConversationAgentTodo.sort_order",
     )
 
     # 索引
     __table_args__ = (
         Index("ix_conversations_user_created", "user_id", "created_at"),
         Index("ix_conversations_space_id", "space_id"),
+        Index("ix_conversations_kind", "kind"),
         Index("ix_conversations_artifact_note_id", "artifact_note_id"),
     )
 
@@ -477,7 +525,12 @@ class Message(Base):
         comment="Structured citation metadata for source attribution",
     )
     response_status: Mapped[MessageResponseStatus] = mapped_column(
-        Enum(MessageResponseStatus),
+        Enum(
+            MessageResponseStatus,
+            name="messageresponsestatus",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         nullable=False,
         default=MessageResponseStatus.COMPLETED,
         server_default=MessageResponseStatus.COMPLETED.value,
@@ -496,6 +549,64 @@ class Message(Base):
     # 索引
     __table_args__ = (
         Index("ix_messages_conversation_created", "conversation_id", "created_at"),
+    )
+
+
+class ConversationAgentTodo(Base):
+    """Conversation-scoped agent todo items."""
+
+    __tablename__ = "conversation_agent_todos"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    conversation_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    task_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=AgentTodoStatus.PENDING.value,
+        server_default=AgentTodoStatus.PENDING.value,
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    conversation: Mapped["Conversation"] = relationship(back_populates="agent_todos")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "conversation_id",
+            "task_id",
+            name="uq_conversation_agent_todos_conversation_task_id",
+        ),
+        UniqueConstraint(
+            "conversation_id",
+            "sort_order",
+            name="uq_conversation_agent_todos_conversation_sort_order",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'completed')",
+            name="ck_conversation_agent_todos_status",
+        ),
+        Index(
+            "ix_conversation_agent_todos_conversation_sort",
+            "conversation_id",
+            "sort_order",
+        ),
     )
 
 
@@ -866,13 +977,22 @@ class QuizAttempt(Base):
         nullable=False,
     )
 
-    # 异步评估状态: pending -> evaluating -> completed / failed
+    # 作答状态: in_progress -> pending -> evaluating -> completed / failed
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="completed"
     )
 
-    # 原始用户答案（异步模式下存储，供后台任务使用）
+    # 原始用户答案（草稿和异步评估都复用）
     user_answers_raw: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    current_question_index: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", default=0
+    )
+    draft_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
     # 评估结果
     score: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -897,6 +1017,289 @@ class QuizAttempt(Base):
         Index("ix_quiz_attempts_user_id", "user_id"),
         UniqueConstraint("quiz_id", "user_id", name="uq_quiz_attempt_once"),
     )
+
+
+class Assignment(Base):
+    """Teacher-authored course assignment."""
+
+    __tablename__ = "assignments"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("spaces.id", ondelete="CASCADE"), nullable=False
+    )
+    teacher_user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    instructions: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    difficulty: Mapped[str] = mapped_column(String(20), nullable=False, default="medium")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    total_questions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    questions: Mapped[list["AssignmentQuestion"]] = relationship(
+        back_populates="assignment", cascade="all, delete-orphan"
+    )
+    recipients: Mapped[list["AssignmentRecipient"]] = relationship(
+        back_populates="assignment", cascade="all, delete-orphan"
+    )
+    submissions: Mapped[list["AssignmentSubmission"]] = relationship(
+        back_populates="assignment", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("ix_assignments_space_status_due", "space_id", "status", "due_at"),
+        Index("ix_assignments_teacher", "teacher_user_id", "created_at"),
+        CheckConstraint("total_score >= 0", name="ck_assignments_total_score"),
+    )
+
+
+class AssignmentQuestion(Base):
+    """Immutable-after-publish assignment question snapshot."""
+
+    __tablename__ = "assignment_questions"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    assignment_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assignments.id", ondelete="CASCADE"), nullable=False
+    )
+    question_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    question_stem: Mapped[str] = mapped_column(Text, nullable=False)
+    options: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    correct_answer: Mapped[dict] = mapped_column(JSON, nullable=False)
+    rubric: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    max_score: Mapped[float] = mapped_column(Float, nullable=False)
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    grader_type: Mapped[str] = mapped_column(String(30), nullable=False, default="rule")
+    public_config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    grader_config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    assignment: Mapped["Assignment"] = relationship(back_populates="questions")
+
+    __table_args__ = (
+        UniqueConstraint("assignment_id", "order_index", name="uq_assignment_question_order"),
+        Index("ix_assignment_questions_assignment", "assignment_id"),
+        CheckConstraint("max_score > 0", name="ck_assignment_questions_score"),
+    )
+
+
+class AssignmentRecipient(Base):
+    """Published assignment recipient snapshot and per-student extension."""
+
+    __tablename__ = "assignment_recipients"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    assignment_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assignments.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    due_at_override: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    assignment: Mapped["Assignment"] = relationship(back_populates="recipients")
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("assignment_id", "user_id", name="uq_assignment_recipient"),
+        Index("ix_assignment_recipients_user", "user_id", "assignment_id"),
+    )
+
+
+class AssignmentSubmission(Base):
+    """One draft/submission per assignment recipient."""
+
+    __tablename__ = "assignment_submissions"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    assignment_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assignments.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="in_progress")
+    answers_raw: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    current_question_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    draft_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    grading_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    grading_completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    provisional_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    final_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    teacher_feedback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    grading_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    assignment: Mapped["Assignment"] = relationship(back_populates="submissions")
+    user: Mapped["User"] = relationship()
+    answers: Mapped[list["AssignmentAnswer"]] = relationship(
+        back_populates="submission", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("assignment_id", "user_id", name="uq_assignment_submission_once"),
+        Index("ix_assignment_submissions_assignment_status", "assignment_id", "status"),
+        Index("ix_assignment_submissions_user", "user_id", "assignment_id"),
+    )
+
+
+class AssignmentAnswer(Base):
+    """Per-question grading result for an assignment submission."""
+
+    __tablename__ = "assignment_answers"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    submission_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assignment_submissions.id", ondelete="CASCADE"), nullable=False
+    )
+    question_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assignment_questions.id", ondelete="CASCADE"), nullable=False
+    )
+    user_answer: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    auto_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    final_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="pending")
+    feedback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    review_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    grader_result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    oj_run_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assignment_oj_runs.id", ondelete="SET NULL"), nullable=True
+    )
+
+    submission: Mapped["AssignmentSubmission"] = relationship(back_populates="answers")
+    question: Mapped["AssignmentQuestion"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("submission_id", "question_id", name="uq_assignment_answer_question"),
+        Index("ix_assignment_answers_submission", "submission_id"),
+    )
+
+
+class AssignmentJob(Base):
+    """Durable generation/grading job with retry lease."""
+
+    __tablename__ = "assignment_jobs"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    assignment_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assignments.id", ondelete="CASCADE"), nullable=True
+    )
+    submission_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assignment_submissions.id", ondelete="CASCADE"), nullable=True
+    )
+    requested_by_user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    job_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    input_data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    output_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    lease_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_assignment_jobs_claim", "status", "available_at", "lease_expires_at"),
+        Index("ix_assignment_jobs_assignment", "assignment_id", "created_at"),
+        Index("ix_assignment_jobs_submission", "submission_id", "created_at"),
+    )
+
+
+class AssignmentOjRun(Base):
+    """Log-safe control-plane record for an isolated OJ manager run."""
+
+    __tablename__ = "assignment_oj_runs"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    assignment_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assignments.id", ondelete="CASCADE"), nullable=False
+    )
+    question_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assignment_questions.id", ondelete="CASCADE"), nullable=False
+    )
+    submission_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assignment_submissions.id", ondelete="CASCADE"), nullable=True
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    run_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    manager_run_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    language: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    problem_version_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="pending")
+    result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_assignment_oj_runs_user_created", "user_id", "created_at"),
+        Index("ix_assignment_oj_runs_status", "status", "created_at"),
+        Index("ix_assignment_oj_runs_submission", "submission_id", "question_id"),
+    )
+
+
+class AssignmentGradeAudit(Base):
+    """Append-only audit trail for teacher score changes."""
+
+    __tablename__ = "assignment_grade_audits"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    submission_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assignment_submissions.id", ondelete="CASCADE"), nullable=False
+    )
+    answer_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assignment_answers.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewer_user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    previous_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    new_score: Mapped[float] = mapped_column(Float, nullable=False)
+    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_assignment_grade_audits_submission", "submission_id", "created_at"),)
 
 
 class SpaceDocument(Base):
@@ -943,6 +1346,247 @@ class SpaceDocument(Base):
     # 索引
     __table_args__ = (
         Index("ix_space_documents_space_id", "space_id"),
+    )
+
+
+class TeacherPresentationProject(Base):
+    """Teacher-owned presentation workspace in one course."""
+
+    __tablename__ = "teacher_presentation_projects"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("spaces.id", ondelete="CASCADE"), nullable=False
+    )
+    teacher_user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    conversation_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    current_revision_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "teacher_presentation_revisions.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_presentation_project_current_revision",
+        ),
+        nullable=True,
+    )
+    published_document_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("space_documents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_teacher_presentation_projects_space_teacher", "space_id", "teacher_user_id"),
+        Index("ix_teacher_presentation_projects_current_revision", "current_revision_id"),
+    )
+
+
+class TeacherPresentationRevision(Base):
+    """Immutable presentation output produced by one successful agent run."""
+
+    __tablename__ = "teacher_presentation_revisions"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    project_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("teacher_presentation_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    parent_revision_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("teacher_presentation_revisions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[PresentationRevisionStatus] = mapped_column(
+        Enum(
+            PresentationRevisionStatus,
+            name="presentationrevisionstatus",
+            values_callable=lambda obj: [item.value for item in obj],
+        ),
+        nullable=False,
+        default=PresentationRevisionStatus.DRAFT,
+        server_default=PresentationRevisionStatus.DRAFT.value,
+    )
+    prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    manifest: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    pptx_path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    preview_manifest: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "revision_number", name="uq_presentation_revision_number"),
+        Index("ix_teacher_presentation_revisions_project", "project_id", "created_at"),
+    )
+
+
+class TeacherPresentationRun(Base):
+    """Host-side record for a sandbox Presentation Agent invocation."""
+
+    __tablename__ = "teacher_presentation_runs"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    project_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("teacher_presentation_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    revision_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("teacher_presentation_revisions.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("spaces.id", ondelete="CASCADE"), nullable=False
+    )
+    manager_run_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, unique=True)
+    status: Mapped[PresentationRunStatus] = mapped_column(
+        Enum(
+            PresentationRunStatus,
+            name="presentationrunstatus",
+            values_callable=lambda obj: [item.value for item in obj],
+        ),
+        nullable=False,
+        default=PresentationRunStatus.QUEUED,
+        server_default=PresentationRunStatus.QUEUED.value,
+    )
+    capability_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    capability_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    last_heartbeat_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    retry_deadline_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_teacher_presentation_runs_project", "project_id", "created_at"),
+        Index("ix_teacher_presentation_runs_status", "status"),
+    )
+
+
+class TeacherPresentationAsset(Base):
+    """Private source or generated file; never mounted below public /uploads."""
+
+    __tablename__ = "teacher_presentation_assets"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    project_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("teacher_presentation_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    revision_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("teacher_presentation_revisions.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    kind: Mapped[PresentationAssetKind] = mapped_column(
+        Enum(
+            PresentationAssetKind,
+            name="presentationassetkind",
+            values_callable=lambda obj: [item.value for item in obj],
+        ),
+        nullable=False,
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    private_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    mime_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    asset_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_teacher_presentation_assets_project", "project_id", "created_at"),)
+
+
+class TeacherPresentationPublication(Base):
+    """Append-only audit history for publishing a revision to the course library."""
+
+    __tablename__ = "teacher_presentation_publications"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    project_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("teacher_presentation_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    revision_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("teacher_presentation_revisions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("space_documents.id", ondelete="RESTRICT"), nullable=False
+    )
+    publisher_user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_teacher_presentation_publications_project", "project_id", "created_at"),)
+
+
+class TeacherPresentationEvent(Base):
+    """Persisted sandbox events used for resumable SSE delivery."""
+
+    __tablename__ = "teacher_presentation_events"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    run_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("teacher_presentation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "sequence", name="uq_presentation_event_sequence"),
+        Index("ix_teacher_presentation_events_run", "run_id", "sequence"),
     )
 
 
@@ -1015,7 +1659,6 @@ class DocumentChunk(Base):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding: Mapped[Optional[list]] = mapped_column(Vector(2000), nullable=True)
     content_tsv = mapped_column(TSVECTOR, nullable=True)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
@@ -1031,6 +1674,88 @@ class DocumentChunk(Base):
     __table_args__ = (
         Index("ix_document_chunks_document_id", "document_id"),
         Index("ix_document_chunks_space_id", "space_id"),
+    )
+
+
+class DocumentText(Base):
+    """文档全文存储表（每文档一行，去向量化 RAG）"""
+
+    __tablename__ = "document_texts"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("space_documents.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_tsv: Mapped[Optional[Any]] = mapped_column(TSVECTOR, nullable=True)
+    word_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    document: Mapped["SpaceDocument"] = relationship()
+    space: Mapped["Space"] = relationship()
+    images: Mapped[list["DocumentImage"]] = relationship(
+        back_populates="document_text", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("ix_document_texts_space_id", "space_id"),
+    )
+
+
+class DocumentImage(Base):
+    """文档嵌入图片存储表（用于知识库图片召回）"""
+
+    __tablename__ = "document_images"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("space_documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    document_text_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("document_texts.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    page_num: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    image_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    vlm_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    # 关系
+    document: Mapped["SpaceDocument"] = relationship()
+    document_text: Mapped[Optional["DocumentText"]] = relationship(
+        back_populates="images"
+    )
+
+    __table_args__ = (
+        Index("ix_document_images_document_id", "document_id"),
+        Index("ix_document_images_space_id", "space_id"),
+        Index("ix_document_images_document_text_id", "document_text_id"),
     )
 
 
@@ -1130,9 +1855,9 @@ class VectorMemory(Base):
         nullable=False,
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    # pgvector 向量列，2000 维度（与现有 embedding 配置一致）
+    # pgvector 向量列，1024 维度（与 DashScope text-embedding-v3 配置一致）
     embedding: Mapped[list] = mapped_column(
-        Vector(2000) if Vector else Text,  # fallback for dev without pgvector
+        Vector(1024) if Vector else Text,  # fallback for dev without pgvector
         nullable=False,
     )
     # 可选元数据（来源、置信度等）- 注意：不能用 metadata，是 SQLAlchemy 保留字
@@ -1192,6 +1917,104 @@ class ActivationCode(Base):
     )
 
 
+class InviteCode(Base):
+    """用户个人邀请码"""
+
+    __tablename__ = "invite_codes"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    owner_user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    code: Mapped[str] = mapped_column(String(16), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", server_default="active"
+    )
+    uses_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    owner: Mapped["User"] = relationship(foreign_keys=[owner_user_id])
+
+    __table_args__ = (
+        Index("ix_invite_codes_owner_user_id", "owner_user_id", unique=True),
+        Index("ix_invite_codes_code", "code", unique=True),
+        Index("ix_invite_codes_status", "status"),
+    )
+
+
+class InviteRedemption(Base):
+    """邀请注册绑定和奖励流水"""
+
+    __tablename__ = "invite_redemptions"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    invite_code_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("invite_codes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    inviter_user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    invitee_user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    ip_address: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    inviter_reward_transaction_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("wallet_transactions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    invitee_reward_transaction_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("wallet_transactions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    invite_code: Mapped["InviteCode"] = relationship()
+    inviter: Mapped["User"] = relationship(foreign_keys=[inviter_user_id])
+    invitee: Mapped["User"] = relationship(foreign_keys=[invitee_user_id])
+    inviter_reward_transaction: Mapped[Optional["WalletTransaction"]] = relationship(
+        foreign_keys=[inviter_reward_transaction_id]
+    )
+    invitee_reward_transaction: Mapped[Optional["WalletTransaction"]] = relationship(
+        foreign_keys=[invitee_reward_transaction_id]
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "inviter_user_id <> invitee_user_id",
+            name="ck_invite_redemptions_not_self",
+        ),
+        Index("ix_invite_redemptions_inviter_created", "inviter_user_id", "created_at"),
+        Index("ix_invite_redemptions_invitee", "invitee_user_id", unique=True),
+        Index("ix_invite_redemptions_code", "invite_code_id"),
+    )
+
+
 class PendingClientToolRequest(Base):
     """客户端工具请求表 — 跨 worker 共享待处理的客户端工具请求"""
 
@@ -1230,93 +2053,6 @@ class PendingClientToolRequest(Base):
         Index("ix_pending_client_tool_requests_conv_id", "conversation_id"),
         Index("ix_pending_client_tool_requests_tool_call_id", "tool_call_id", unique=True),
         Index("ix_pending_client_tool_requests_status", "status"),
-    )
-
-
-class QuickChatToolTask(Base):
-    """快速对话工具异步任务表（主要用于 create_learning_space）"""
-
-    __tablename__ = "quick_chat_tool_tasks"
-
-    id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid4
-    )
-    user_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    conversation_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("conversations.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    tool_call_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
-    tool_name: Mapped[str] = mapped_column(String(50), nullable=False)
-    status: Mapped[QuickChatToolTaskStatus] = mapped_column(
-        Enum(
-            QuickChatToolTaskStatus,
-            name="quickchattooltaskstatus",
-            create_type=False,
-            values_callable=lambda obj: [e.value for e in obj],
-        ),
-        default=QuickChatToolTaskStatus.RUNNING,
-        nullable=False,
-    )
-    stage: Mapped[QuickChatToolTaskStage] = mapped_column(
-        Enum(
-            QuickChatToolTaskStage,
-            name="quickchattooltaskstage",
-            create_type=False,
-            values_callable=lambda obj: [e.value for e in obj],
-        ),
-        default=QuickChatToolTaskStage.QUEUED,
-        nullable=False,
-    )
-    space_id: Mapped[Optional[UUID]] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("spaces.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    kg_task_id: Mapped[Optional[UUID]] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("agent_tasks.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    source_message_id: Mapped[Optional[UUID]] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("messages.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    request_payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    result_payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    error_stage: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    error_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
-    )
-    completed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    user: Mapped["User"] = relationship()
-    conversation: Mapped["Conversation"] = relationship()
-    space: Mapped[Optional["Space"]] = relationship()
-    kg_task: Mapped[Optional["AgentTask"]] = relationship()
-    source_message: Mapped[Optional["Message"]] = relationship()
-
-    __table_args__ = (
-        Index(
-            "ix_quick_chat_tool_tasks_conversation_status",
-            "conversation_id",
-            "status",
-        ),
-        Index("ix_quick_chat_tool_tasks_tool_call_id", "tool_call_id", unique=True),
-        Index("ix_quick_chat_tool_tasks_user_status", "user_id", "status"),
     )
 
 
@@ -1480,24 +2216,48 @@ class PaymentOrder(Base):
     out_trade_no: Mapped[str] = mapped_column(
         String(64), unique=True, nullable=False, comment="商户订单号"
     )
-    target_tier: Mapped[SubscriptionTier] = mapped_column(
-        Enum(SubscriptionTier), nullable=False, comment="目标订阅等级"
+    product_type: Mapped[str] = mapped_column(
+        String(32),
+        default="subscription",
+        server_default="subscription",
+        nullable=False,
+        comment="订单产品类型：subscription / credit_pack",
     )
-    billing_cycle: Mapped[BillingCycle] = mapped_column(
+    product_code: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, comment="产品编码，如 BASIC_monthly / credit_10"
+    )
+    target_tier: Mapped[Optional[SubscriptionTier]] = mapped_column(
+        Enum(SubscriptionTier), nullable=True, comment="目标订阅等级"
+    )
+    billing_cycle: Mapped[Optional[BillingCycle]] = mapped_column(
         Enum(
             BillingCycle,
             name="billingcycle",
             create_type=False,
             values_callable=lambda obj: [e.value for e in obj],
         ),
-        nullable=False,
+        nullable=True,
         comment="计费周期",
     )
     amount_cents: Mapped[int] = mapped_column(
         Integer, nullable=False, comment="金额（分）"
     )
     subscription_days: Mapped[int] = mapped_column(
-        Integer, nullable=False, comment="订阅天数"
+        Integer, default=0, server_default="0", nullable=False, comment="订阅天数"
+    )
+    credit_amount_cents: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+        comment="充值到账金额（分）",
+    )
+    wallet_grant_cents: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+        comment="订阅赠送余额（分）",
     )
     status: Mapped[OrderStatus] = mapped_column(
         Enum(
@@ -1533,6 +2293,7 @@ class PaymentOrder(Base):
         Index("ix_payment_orders_user_id", "user_id"),
         Index("ix_payment_orders_out_trade_no", "out_trade_no", unique=True),
         Index("ix_payment_orders_status", "status"),
+        Index("ix_payment_orders_product_type", "product_type"),
         Index("ix_payment_orders_expires_at", "expires_at"),
     )
 
@@ -1545,17 +2306,27 @@ class PaymentQrCode(Base):
     id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid4
     )
-    tier: Mapped[SubscriptionTier] = mapped_column(
-        Enum(SubscriptionTier), nullable=False
+    product_type: Mapped[str] = mapped_column(
+        String(32),
+        default="subscription",
+        server_default="subscription",
+        nullable=False,
+        comment="二维码产品类型：subscription / credit_pack",
     )
-    billing_cycle: Mapped[BillingCycle] = mapped_column(
+    product_code: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, comment="产品编码"
+    )
+    tier: Mapped[Optional[SubscriptionTier]] = mapped_column(
+        Enum(SubscriptionTier), nullable=True
+    )
+    billing_cycle: Mapped[Optional[BillingCycle]] = mapped_column(
         Enum(
             BillingCycle,
             name="billingcycle",
             create_type=False,
             values_callable=lambda obj: [e.value for e in obj],
         ),
-        nullable=False,
+        nullable=True,
     )
     pay_method: Mapped[str] = mapped_column(
         String(20), nullable=False, comment="alipay / wechat"
@@ -1575,7 +2346,154 @@ class PaymentQrCode(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "tier", "billing_cycle", "pay_method", name="uq_payment_qr_combo"
+            "product_type",
+            "tier",
+            "billing_cycle",
+            "pay_method",
+            name="uq_payment_qr_subscription_combo",
+        ),
+        UniqueConstraint(
+            "product_type",
+            "product_code",
+            "pay_method",
+            name="uq_payment_qr_product_combo",
+        ),
+    )
+
+
+class PaymentNotifyLog(Base):
+    """支付宝异步通知处理日志"""
+
+    __tablename__ = "payment_notify_logs"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    out_trade_no: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    trade_no: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    trade_status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    app_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    seller_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    total_amount: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    raw_payload_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    verify_success: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    process_success: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    process_message: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    processed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_payment_notify_logs_out_trade_no", "out_trade_no"),
+        Index("ix_payment_notify_logs_trade_no", "trade_no"),
+        Index("ix_payment_notify_logs_received_at", "received_at"),
+        Index("ix_payment_notify_logs_provider_created", "provider", "created_at"),
+    )
+
+
+class WalletAccount(Base):
+    """用户钱包账户"""
+
+    __tablename__ = "wallet_accounts"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    balance_cents: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False, comment="当前余额（分）"
+    )
+    debt_limit_cents: Mapped[int] = mapped_column(
+        Integer,
+        default=500,
+        server_default="500",
+        nullable=False,
+        comment="允许欠费额度（正数，分）",
+    )
+    total_recharged_cents: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    total_granted_cents: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    total_spent_cents: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        Index("ix_wallet_accounts_user_id", "user_id", unique=True),
+    )
+
+
+class WalletTransaction(Base):
+    """用户钱包流水"""
+
+    __tablename__ = "wallet_transactions"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    account_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("wallet_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    transaction_type: Mapped[WalletTransactionType] = mapped_column(
+        Enum(WalletTransactionType, name="wallettransactiontype"),
+        nullable=False,
+    )
+    amount_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="流水金额（分），正数入账，负数扣费"
+    )
+    balance_after_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    reference_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    reference_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    idempotency_key: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship()
+    account: Mapped["WalletAccount"] = relationship()
+
+    __table_args__ = (
+        Index("ix_wallet_transactions_user_created", "user_id", "created_at"),
+        Index("ix_wallet_transactions_type", "transaction_type"),
+        Index(
+            "ix_wallet_transactions_idempotency_key",
+            "idempotency_key",
+            unique=True,
         ),
     )
 
@@ -2014,4 +2932,98 @@ class NodeUserMastery(Base):
             "mastery >= 0 AND mastery <= 100",
             name="ck_node_user_mastery_range",
         ),
+    )
+
+
+class NodeMasteryEvent(Base):
+    """协作空间中每次真实掌握度变化的审计事件。"""
+
+    __tablename__ = "node_mastery_events"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    space_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    node_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("nodes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    previous_mastery: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    new_mastery: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "previous_mastery IS NULL OR (previous_mastery >= 0 AND previous_mastery <= 100)",
+            name="ck_mastery_events_previous_range",
+        ),
+        CheckConstraint(
+            "new_mastery >= 0 AND new_mastery <= 100",
+            name="ck_mastery_events_new_range",
+        ),
+        CheckConstraint(
+            "source IN ('baseline', 'chat_tool', 'quiz_evaluation')",
+            name="ck_mastery_events_source",
+        ),
+        Index("ix_mastery_events_space_time", "space_id", "created_at"),
+        Index("ix_mastery_events_user_time", "user_id", "created_at"),
+        Index(
+            "ix_mastery_events_user_node_time",
+            "user_id",
+            "node_id",
+            "created_at",
+        ),
+    )
+
+
+# ============ MCP 服务配置 ============
+
+
+class UserMcpService(Base):
+    """用户自定义 MCP 服务配置"""
+
+    __tablename__ = "user_mcp_services"
+
+    id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    api_key_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    tools_cache: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    last_connected_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "url", name="uq_user_mcp_service_url"),
+        Index("ix_user_mcp_services_user_id", "user_id"),
     )

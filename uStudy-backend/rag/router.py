@@ -11,7 +11,7 @@ from auth.dependencies import get_current_user
 from config import get_settings
 from db.database import get_db
 from db.models import DocumentProcessingTask, Space, SpaceDocument, User
-from rag.retrieval import HybridSearchService, VectorSearchService
+from rag.retrieval import get_search_service
 from rag.schemas import (
     ProcessingStatusResponse,
     SearchRequest,
@@ -57,16 +57,13 @@ async def search_documents(
     """
     await verify_space_access(db, space_id, current_user.id)
 
-    # 选择搜索服务
-    if settings.hybrid_search_enabled:
-        search_service = HybridSearchService(db)
-    else:
-        search_service = VectorSearchService(db)
+    search_service = get_search_service(db)
 
     search_results = await search_service.search(
         query=request.query,
         space_id=space_id,
         top_k=request.top_k,
+        rerank=request.rerank,
     )
 
     if not search_results:
@@ -78,6 +75,9 @@ async def search_documents(
             document_id=r.document_id,
             content=r.content,
             score=r.score,
+            retrieval_score=r.retrieval_score,
+            rerank_score=r.rerank_score,
+            retrieval_source=r.retrieval_source,
             document_title=r.document_title,
             document_filename=r.document_filename,
             metadata=r.metadata,

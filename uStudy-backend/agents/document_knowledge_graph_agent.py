@@ -21,7 +21,7 @@ from agents.exceptions import (
     SpaceNotFoundError,
 )
 from agents.graph_persistence import persist_graph
-from agents.llm.client import OpenRouterClient
+from agents.llm.client import LLMClient
 from agents.llm.prompts import (
     build_document_concept_extraction_prompt,
     build_document_knowledge_graph_prompt,
@@ -38,6 +38,8 @@ from db.models import (
     ProcessingStatus,
     SpaceDocument,
 )
+from usage.metering import UsageContext
+from usage.models import UsageType
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +66,7 @@ class DocumentKnowledgeGraphAgent:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
         settings = get_settings()
-        self.llm_client = OpenRouterClient(
+        self.llm_client = LLMClient(
             model_override=settings.knowledge_graph_model or None,
         )
         self.kg_parser = KnowledgeGraphParser()
@@ -96,6 +98,15 @@ class DocumentKnowledgeGraphAgent:
         """
         # 1. 验证 space 访问权限
         await self._verify_space(space_id, user_id)
+        self.llm_client.usage_context = UsageContext(
+            user_id=user_id,
+            usage_type=UsageType.AGENT_LLM,
+            source_module="agents",
+            source_operation="document_knowledge_graph",
+            billable=True,
+            space_id=space_id,
+            metadata={"document_count": len(document_ids)},
+        )
 
         # 2. 验证文档并获取 chunks
         documents, chunks = await self._load_document_chunks(space_id, document_ids)
@@ -546,6 +557,15 @@ class DocumentKnowledgeGraphAgent:
         """
         # 1. 验证
         await self._verify_space(space_id, user_id)
+        self.llm_client.usage_context = UsageContext(
+            user_id=user_id,
+            usage_type=UsageType.AGENT_LLM,
+            source_module="agents",
+            source_operation="document_knowledge_graph_stream",
+            billable=True,
+            space_id=space_id,
+            metadata={"document_count": len(document_ids), "stream": True},
+        )
         documents, chunks = await self._load_document_chunks(space_id, document_ids)
         document_titles = [doc.title for doc in documents]
         doc_title_map = {doc.id: doc.title for doc in documents}

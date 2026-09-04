@@ -1,14 +1,15 @@
 """Knowledge Graph Service - CRUD Operations"""
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import or_, select, delete, text
+from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Node, Edge, EdgeType, NodeUserMastery
+from db.models import Edge, EdgeType, Node, NodeMasteryEvent, NodeUserMastery
 from graph.exceptions import (
     NodeNotFoundError,
     EdgeNotFoundError,
@@ -376,17 +377,35 @@ class GraphService:
         node = await self._get_node(space_id, node_id)
 
         if is_collaborative and user_id is not None:
-            # Upsert per-user mastery in node_user_mastery table
-            stmt = text("""
-                INSERT INTO node_user_mastery (id, node_id, user_id, mastery, updated_at)
-                VALUES (gen_random_uuid(), :node_id, :user_id, :mastery, NOW())
-                ON CONFLICT (node_id, user_id)
-                DO UPDATE SET mastery = :mastery, updated_at = NOW()
-            """)
-            await self.db.execute(
-                stmt,
-                {"node_id": node_id, "user_id": user_id, "mastery": mastery},
+            mastery_row = await self.db.scalar(
+                select(NodeUserMastery).where(
+                    NodeUserMastery.node_id == node_id,
+                    NodeUserMastery.user_id == user_id,
+                )
             )
+            previous_mastery = mastery_row.mastery if mastery_row else None
+            if mastery_row is None:
+                self.db.add(
+                    NodeUserMastery(
+                        node_id=node_id,
+                        user_id=user_id,
+                        mastery=mastery,
+                    )
+                )
+            else:
+                mastery_row.mastery = mastery
+            if previous_mastery != mastery:
+                self.db.add(
+                    NodeMasteryEvent(
+                        space_id=space_id,
+                        node_id=node_id,
+                        user_id=user_id,
+                        previous_mastery=previous_mastery,
+                        new_mastery=mastery,
+                        source="chat_tool",
+                        created_at=datetime.now(timezone.utc),
+                    )
+                )
             await self.db.commit()
             logger.info(
                 f"Updated per-user mastery for node {node_id}, user {user_id}: {mastery}"

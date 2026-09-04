@@ -1,5 +1,6 @@
 """知识图谱生成 Agent"""
 
+import json
 import logging
 from uuid import UUID
 
@@ -13,7 +14,7 @@ from agents.exceptions import (
     LLMParsingErrorWithOutput,
     SpaceNotFoundError,
 )
-from agents.llm.client import OpenRouterClient
+from agents.llm.client import LLMClient
 from agents.llm.prompts import build_knowledge_graph_prompt
 from agents.graph_persistence import persist_graph
 from agents.parsers.knowledge_graph import (
@@ -23,6 +24,8 @@ from agents.parsers.knowledge_graph import (
 from agents.schemas import KnowledgeGraphGenerateRequest
 from config import get_settings
 from db.models import Space
+from usage.metering import UsageContext
+from usage.models import UsageType
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +39,14 @@ class KnowledgeGraphAgent:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
-        self.llm_client = OpenRouterClient(model_override=get_settings().knowledge_graph_model or None)
-        self.parser = KnowledgeGraphParser()
         self.settings = get_settings()
+        self.llm_client = LLMClient(model_override=self.settings.knowledge_graph_model or None)
+        # 图谱生成是非流式长输出，单独放宽 read timeout，避免 20s 默认值过早失败。
+        self.llm_client.timeout = max(
+            self.settings.llm_timeout_seconds,
+            self.settings.knowledge_graph_timeout_seconds,
+        )
+        self.parser = KnowledgeGraphParser()
 
     async def generate(
         self,
@@ -64,6 +72,15 @@ class KnowledgeGraphAgent:
         """
         # 1. 验证 space 存在
         space = await self._verify_space(space_id, user_id)
+        self.llm_client.usage_context = UsageContext(
+            user_id=user_id,
+            usage_type=UsageType.AGENT_LLM,
+            source_module="agents",
+            source_operation="knowledge_graph",
+            billable=True,
+            space_id=space_id,
+            metadata={"topic": request.topic},
+        )
 
         # 2. 调用 LLM 生成知识图谱（带重试）
         llm_output = await self._call_llm_with_retry(request)
@@ -120,7 +137,11 @@ class KnowledgeGraphAgent:
             try:
                 logger.info("LLM 调用尝试 %d/%d", attempt + 1, max_retries)
 
-                llm_output = await self.llm_client.complete(messages)
+                llm_output = await self.llm_client.complete(
+                    messages,
+                    max_tokens=self.settings.knowledge_graph_max_tokens,
+                    enable_thinking=False,
+                )
                 last_llm_output = llm_output  # 保存输出
 
                 # 调试日志：记录 LLM 输出摘要
@@ -158,9 +179,31 @@ class KnowledgeGraphAgent:
                     last_error = e
                     continue
 
-            except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
-                logger.warning("LLM API 调用失败: %s", e)
-                last_error = LLMClientError(str(e))
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code if e.response is not None else "unknown"
+                response_text = e.response.text if e.response is not None else ""
+                provider_error = self._extract_provider_error(response_text)
+                logger.warning(
+                    "LLM API 调用失败 (尝试 %d/%d): status=%s, error=%s",
+                    attempt + 1,
+                    max_retries,
+                    status_code,
+                    provider_error,
+                )
+                last_error = LLMClientError(
+                    f"LLM API 错误 ({status_code}): {provider_error}"
+                )
+                continue
+
+            except httpx.TimeoutException as e:
+                error_text = str(e) or "<empty>"
+                logger.warning(
+                    "LLM API 调用超时 (尝试 %d/%d): %s",
+                    attempt + 1,
+                    max_retries,
+                    error_text,
+                )
+                last_error = LLMClientError(f"LLM 请求超时: {error_text}")
                 continue
 
         # 所有重试都失败 - 只在解析错误时携带调试信息
@@ -175,3 +218,23 @@ class KnowledgeGraphAgent:
         """解析 LLM 输出"""
         return self.parser.parse(llm_output, root_label=topic)
 
+    @staticmethod
+    def _extract_provider_error(response_text: str) -> str:
+        """从上游 LLM 错误响应中提取可读错误信息。"""
+        if not response_text:
+            return "未知错误（空响应）"
+        try:
+            data = json.loads(response_text)
+        except json.JSONDecodeError:
+            return response_text[:300]
+
+        error_obj = data.get("error")
+        if isinstance(error_obj, dict):
+            msg = error_obj.get("message")
+            code = error_obj.get("code")
+            if msg and code:
+                return f"{code}: {msg}"
+            if msg:
+                return str(msg)
+            return str(error_obj)
+        return str(data)[:300]

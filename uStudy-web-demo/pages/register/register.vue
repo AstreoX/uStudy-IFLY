@@ -147,6 +147,7 @@
 import { sendCode, verifyCode, registerWithCode, getMe } from '@/api/auth'
 import { setTokens } from '@/utils/storage'
 import { useUserStore } from '@/store/user'
+import { openDefaultSpace } from '@/utils/default-space'
 
 export default {
   data() {
@@ -408,11 +409,7 @@ export default {
 
         this.showToast('注册成功')
 
-        setTimeout(() => {
-          uni.reLaunch({
-            url: '/pages/index/index'
-          })
-        }, 800)
+        await openDefaultSpace()
       } catch (error) {
         const message = this.getErrorMessage(error, '注册失败，请重试')
         this.showToast(message)
@@ -674,6 +671,16 @@ export default {
   font-size: 24rpx;
   color: #EF4444;
   margin-top: 8rpx;
+}
+
+.invite-message {
+  font-size: 24rpx;
+  color: #34D399;
+  margin-top: 8rpx;
+}
+
+.invite-message.invalid {
+  color: #F59E0B;
 }
 
 /* Terms Section */

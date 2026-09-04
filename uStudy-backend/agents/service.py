@@ -37,6 +37,8 @@ from agents.schemas import (
 from agents.test_generation_agent import TestGenerationAgent
 from db.database import AsyncSessionLocal
 from db.models import AgentTask, AgentTaskStatus, AgentTaskType, Conversation, DifficultyLevel, Node, Note, Quiz, Space
+from usage.metering import UsageContext
+from usage.models import UsageType
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +103,7 @@ class AgentService:
             SpaceAccessDeniedError: 无权访问该学习空间
         """
         # 1. 验证 space 存在且属于当前用户
-        await self._verify_space_ownership(space_id, user_id)
+        await self._verify_graph_edit_access(space_id, user_id)
 
         # 2. 创建任务记录
         task = AgentTask(
@@ -166,7 +168,7 @@ class AgentService:
             ValueError: 文档验证失败
         """
         # 1. 验证 space 权限
-        await self._verify_space_ownership(space_id, user_id)
+        await self._verify_graph_edit_access(space_id, user_id)
 
         # 2. 创建任务记录
         task = AgentTask(
@@ -307,6 +309,20 @@ class AgentService:
             raise SpaceNotFoundError(f"学习空间不存在: {space_id}")
         except _AccessDenied:
             raise SpaceAccessDeniedError(f"无权访问该学习空间: {space_id}")
+
+    async def _verify_graph_edit_access(self, space_id: UUID, user_id: UUID) -> None:
+        from spaces.authorization import verify_space_graph_edit_access as _verify
+        from spaces.authorization import (
+            SpaceAccessDeniedError as _AccessDenied,
+            SpaceNotFoundError as _NotFound,
+        )
+
+        try:
+            await _verify(self.db, space_id, user_id)
+        except _NotFound:
+            raise SpaceNotFoundError(f"学习空间不存在: {space_id}")
+        except _AccessDenied:
+            raise SpaceAccessDeniedError("学生不能修改共享课程知识图谱结构")
 
     async def _run_knowledge_graph_task(
         self,
@@ -598,6 +614,9 @@ class AgentService:
                         for item in request.test_struct
                     ],
                     on_progress=on_progress,
+                    user_id=user_id,
+                    space_id=space_id,
+                    billable=True,
                 )
 
                 # 更新状态为 done（包含调试日志，带大小限制）
@@ -680,7 +699,7 @@ class AgentService:
             ValueError: 节点不存在
         """
         # 1. 验证 space 存在且属于当前用户
-        await self._verify_space_ownership(space_id, user_id)
+        await self._verify_graph_edit_access(space_id, user_id)
 
         # 2. 验证节点存在
         result = await self.db.execute(
@@ -910,6 +929,16 @@ class AgentService:
                 logger.info("开始执行 Artifact 生成任务: task_id=%s", task_id)
 
                 agent = ArtifactGenerationAgent()
+                agent.llm_client.usage_context = UsageContext(
+                    user_id=user_id,
+                    usage_type=UsageType.AGENT_LLM,
+                    source_module="agents",
+                    source_operation="artifact_generation",
+                    billable=True,
+                    space_id=space_id,
+                    conversation_id=conversation_id,
+                    metadata={"task_id": str(task_id), "note_id": str(note_id)},
+                )
                 pending_delta = ""
                 last_emit_at = time.monotonic()
 

@@ -218,6 +218,9 @@ async def delete_document(
             file_to_delete = file_path
 
     # 先删除数据库记录
+    from rag.service import DocumentProcessingService
+
+    await DocumentProcessingService(db).delete_document_chunks(document.id)
     await db.delete(document)
     await db.commit()
 

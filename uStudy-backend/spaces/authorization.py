@@ -67,10 +67,30 @@ async def verify_space_ownership(
     return space
 
 
+async def verify_space_graph_edit_access(
+    db: AsyncSession, space_id: UUID, user_id: UUID
+) -> Space:
+    """Allow structural graph edits only for the owner or delegated editors."""
+    space = await verify_space_access(db, space_id, user_id)
+    if space.user_id == user_id:
+        return space
+    can_edit = await db.scalar(
+        select(SpaceMember.can_edit_graph).where(
+            SpaceMember.space_id == space_id,
+            SpaceMember.user_id == user_id,
+        )
+    )
+    if not can_edit:
+        raise SpaceAccessDeniedError(
+            f"Graph structure is read-only for user {user_id} in space {space_id}"
+        )
+    return space
+
+
 async def get_user_role_in_space(
     db: AsyncSession, space_id: UUID, user_id: UUID
 ) -> str | None:
-    """Get user's role in a space. Returns 'owner', 'member', or None."""
+    """Get user's role in a space. Returns 'owner', 'teacher', 'member', or None."""
     result = await db.execute(select(Space).where(Space.id == space_id))
     space = result.scalar_one_or_none()
     if not space:

@@ -56,6 +56,10 @@ class TestExtractScore:
         response = "完全错误，最终得分 {0}"
         assert extract_score_from_evaluation(response) == 0
 
+    def test_extract_score_none(self):
+        """空响应时返回 0，避免上游空 content 导致异常"""
+        assert extract_score_from_evaluation(None) == 0
+
 
 @pytest.mark.integration
 class TestEvaluateShortAnswer:
@@ -121,6 +125,34 @@ class TestEvaluateShortAnswer:
         for i, result in enumerate(results):
             assert isinstance(result, ShortAnswerEvaluationResult)
             print(f"\n题目 {i + 1} 评估结果：{result.score}/{result.max_score}")
+
+    @pytest.mark.asyncio
+    async def test_evaluate_short_answer_empty_content_fallback(self, monkeypatch):
+        """LLM 返回空 content 时应降级，不抛 500"""
+        captured: dict[str, str | None] = {}
+
+        class DummySettings:
+            quiz_evaluation_model = "z-ai/glm-4.7-flash"
+
+        class DummyClient:
+            def __init__(self, model_override=None):
+                captured["model_override"] = model_override
+
+            async def complete(self, messages, temperature=0.3, max_tokens=1024):
+                return None
+
+        monkeypatch.setattr("quiz.evaluator.get_settings", lambda: DummySettings())
+        monkeypatch.setattr("quiz.evaluator.LLMClient", DummyClient)
+
+        result = await evaluate_short_answer(
+            question_stem="什么是递归？",
+            reference_answer="递归是指函数直接或间接调用自身。",
+            user_answer="函数自己调用自己。",
+        )
+
+        assert captured["model_override"] == "z-ai/glm-4.7-flash"
+        assert result.score == 0
+        assert "AI 评分服务暂时不可用" in result.ai_evaluation
 
 
 if __name__ == "__main__":

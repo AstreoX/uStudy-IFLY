@@ -1,0 +1,80 @@
+name: ustudy-dev-local
+
+services:
+  db:
+    container_name: ustudy-dev-db
+    ports: !override
+      - "127.0.0.1:5433:5432"
+
+  redis:
+    container_name: ustudy-dev-redis
+    ports: !override
+      - "127.0.0.1:6380:6379"
+
+  crawl4ai:
+    container_name: ustudy-dev-crawl4ai
+    ports: !override
+      - "127.0.0.1:9222:11235"
+    environment:
+      # Docker Desktop resolves public hosts through an fdfe:: synthetic DNS
+      # range, which Crawl4AI otherwise mistakes for an SSRF target.
+      CRAWL4AI_ALLOW_INTERNAL_URLS: "true"
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: ustudy-dev-searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./deploy/searxng/settings.local.yml:/etc/searxng/settings.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    container_name: ustudy-dev-backend
+    ports: !override
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      searxng:
+        condition: service_healthy
+    environment:
+      # Enables the synthetic teacher-dashboard seed CLI only in the isolated
+      # local Compose environment. Never copy this flag to remote deployments.
+      DEMO_SEED_ALLOWED: "true"
+      UVICORN_WORKERS: "1"
+      UVICORN_LIMIT_CONCURRENCY: "100"
+      DB_POOL_SIZE: "3"
+      DB_MAX_OVERFLOW: "2"
+      CORS_ALLOW_LOCAL_NETWORK: "true"
+      CRAWL4AI_API_URL: http://crawl4ai:11235
+      CRAWL4AI_ENABLED: "true"
+      SEARXNG_BASE_URL: http://searxng:8080
+      SEARXNG_ENABLED: "true"
+      PRESENTATION_AGENT_GATEWAY_BASE_URL: http://backend:8000/api/internal/presentation-agent/runs
+      PRESENTATION_PRIVATE_DIR: /app/private-presentations
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"
+      interval: 10s
+      timeout: 6s
+      retries: 18
+      start_period: 20s
+
+  presentation-sandbox-manager:
+    container_name: ustudy-dev-presentation-sandbox-manager
+    environment:
+      PRESENTATION_GATEWAY_ALLOWED_HOSTS: backend,ustudy-dev-backend
+      # Set both variables to absolute paths visible to the Docker Desktop
+      # daemon before starting a real presentation run.
+      PRESENTATION_SKILL_HOST_DIR: ${PRESENTATION_SKILL_HOST_DIR:-}
+      PRESENTATION_RUNTIME_NODE_MODULES_HOST_DIR: ${PRESENTATION_RUNTIME_NODE_MODULES_HOST_DIR:-}
+      PRESENTATION_RUNTIME_BIN_HOST_DIR: ${PRESENTATION_RUNTIME_BIN_HOST_DIR:-}
+    ports:
+      - "127.0.0.1:8090:8090"

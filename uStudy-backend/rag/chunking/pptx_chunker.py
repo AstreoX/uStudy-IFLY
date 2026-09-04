@@ -92,7 +92,8 @@ class PowerPointChunker(BaseChunker):
             yield chunk
 
     async def enrich(
-        self, chunks: list[Chunk], content: bytes, filename: str | None = None
+        self, chunks: list[Chunk], content: bytes, filename: str | None = None,
+        on_progress=None,
     ) -> list[Chunk]:
         """
         VLM 逐页处理：PPTX → PDF → PNG → VLM OCR。
@@ -134,12 +135,8 @@ class PowerPointChunker(BaseChunker):
             if slide_num is not None:
                 text_by_slide[slide_num] = chunk.content
 
-        max_images = settings.vlm_max_images_per_document
-
         try:
             for page_idx in range(len(doc)):
-                if len(vlm_tasks) >= max_images:
-                    break
 
                 slide_num = page_idx + 1
                 page = doc[page_idx]
@@ -170,7 +167,7 @@ class PowerPointChunker(BaseChunker):
         # 3. VLM 批量处理
         logger.info("PPT VLM 处理: %d 个页面 (文件: %s)", len(vlm_tasks), filename)
         try:
-            results = await vlm.process_batch(vlm_tasks)
+            results = await vlm.process_batch(vlm_tasks, on_progress=on_progress)
         except Exception as e:
             logger.error("VLM 批量处理失败，降级返回 text extraction 结果: %s", e)
             return chunks

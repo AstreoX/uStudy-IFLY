@@ -1,49 +1,125 @@
-"""RAG document processing service."""
+"""RAG document processing service (plaintext - no embedding)."""
 
 from __future__ import annotations
 
 import asyncio
-import json
+import io
 import logging
-import queue
-import threading
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncIterator, Iterable, Optional
+from typing import Optional
 
 import aiofiles
-from sqlalchemy import func, select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from db.models import (
-    DocumentChunk,
+    DocumentImage,
     DocumentProcessingTask,
+    DocumentText,
     DocumentType,
     ProcessingStatus,
     SpaceDocument,
 )
-from rag.chunking import Chunk, get_chunker
-from rag.embedding import EmbeddingClient
+from rag.chunking import get_chunker
 from rag.parsing import NormalizedDocument, normalize_legacy_document, resolve_document_format
 from rag.retrieval.text_segmentation import segment_for_search
 from rag.utils import has_visual_content
+from usage.metering import UsageContext
+from usage.models import UsageType
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+PDF_MIME_TYPE = "application/pdf"
+PDF_SCAN_TEXT_THRESHOLD = 20
+PDF_SCAN_SAMPLE_PAGES = 10
+
+
+def should_run_visual_enhancement(mime_type: str | None) -> bool:
+    """Return whether upload-time VLM image enhancement should run."""
+    return bool(settings.vlm_processing_enabled and (mime_type or "").lower() != PDF_MIME_TYPE)
+
+
+@dataclass(frozen=True)
+class PDFScanDetection:
+    """Lightweight result for deciding whether a PDF should be handled page-by-page."""
+
+    is_scanned: bool
+    page_count: int
+    sampled_pages: int
+    scanned_like_pages: int
+    textful_pages: int
+
+
+def detect_scanned_pdf(content: bytes) -> PDFScanDetection:
+    """
+    Detect image-only / scanned PDFs before text processing.
+
+    A scanned-like page is "very little extractable text + embedded image".  The
+    whole document is treated as scanned only when that pattern dominates the
+    sampled pages, or when there are no textful pages at all.  This avoids
+    classifying ordinary PDFs with a single image cover as scanned.
+    """
+    try:
+        import fitz
+    except ImportError:
+        logger.warning("PyMuPDF (fitz) 未安装，无法检测 PDF 是否为扫描件")
+        return PDFScanDetection(False, 0, 0, 0, 0)
+
+    try:
+        doc = fitz.open(stream=io.BytesIO(content), filetype="pdf")
+    except Exception as exc:
+        logger.warning("PDF 打开失败，跳过扫描件检测: %s", exc)
+        return PDFScanDetection(False, 0, 0, 0, 0)
+
+    try:
+        page_count = len(doc)
+        if page_count == 0:
+            return PDFScanDetection(False, 0, 0, 0, 0)
+
+        sample_count = min(page_count, PDF_SCAN_SAMPLE_PAGES)
+        if sample_count == page_count:
+            sample_indexes = list(range(page_count))
+        else:
+            step = (page_count - 1) / (sample_count - 1)
+            sample_indexes = sorted({round(i * step) for i in range(sample_count)})
+
+        scanned_like_pages = 0
+        textful_pages = 0
+        for page_index in sample_indexes:
+            page = doc[page_index]
+            text_len = len(page.get_text("text").strip())
+            has_images = bool(page.get_images(full=False))
+
+            if text_len >= PDF_SCAN_TEXT_THRESHOLD:
+                textful_pages += 1
+            if text_len < PDF_SCAN_TEXT_THRESHOLD and has_images:
+                scanned_like_pages += 1
+
+        sampled_pages = len(sample_indexes)
+        scanned_ratio = scanned_like_pages / sampled_pages if sampled_pages else 0
+        is_scanned = scanned_like_pages > 0 and (
+            scanned_ratio >= 0.5 or textful_pages == 0
+        )
+        return PDFScanDetection(
+            is_scanned=is_scanned,
+            page_count=page_count,
+            sampled_pages=sampled_pages,
+            scanned_like_pages=scanned_like_pages,
+            textful_pages=textful_pages,
+        )
+    finally:
+        doc.close()
 
 
 class DocumentProcessingService:
-    """文档处理服务 - 负责格式解析、切片、向量化与增强流程。"""
+    """文档处理服务 - 负责格式解析、切片与全文存储流程。"""
 
-    def __init__(
-        self,
-        db: AsyncSession,
-        embedding_client: EmbeddingClient | None = None,
-    ) -> None:
+    def __init__(self, db: AsyncSession) -> None:
         self.db = db
-        self.embedding_client = embedding_client or EmbeddingClient()
 
     async def create_processing_task(
         self, document_id: uuid.UUID
@@ -70,23 +146,14 @@ class DocumentProcessingService:
         return result.scalar_one_or_none()
 
     async def process_document(self, document_id: uuid.UUID) -> None:
-        """
-        处理文档：
-        1. 基础阶段：detect -> normalize -> iter_chunks -> embedding -> insert
-        2. 增强阶段：OCR/VLM 追加 enriched chunks
-        """
-        try:
-            await self._process_document_inner(document_id)
-        finally:
-            # 关闭持久化 HTTP 连接
-            await self.embedding_client.aclose()
+        """处理文档：解析全文并写入 document_texts 表。"""
+        await self._process_document_inner(document_id)
 
     async def _process_document_inner(self, document_id: uuid.UUID) -> None:
         result = await self.db.execute(
             select(SpaceDocument).where(SpaceDocument.id == document_id)
         )
         document = result.scalar_one_or_none()
-
         if not document:
             logger.error("文档不存在: %s", document_id)
             return
@@ -96,58 +163,75 @@ class DocumentProcessingService:
             task = await self.create_processing_task(document_id)
 
         await self._update_task_status(
-            task.id,
-            ProcessingStatus.PROCESSING,
-            started_at=datetime.utcnow(),
-            error_message=None,
+            task.id, ProcessingStatus.PROCESSING, started_at=datetime.utcnow(), error_message=None
         )
 
-        # Link documents have no local file — handle separately
         if document.doc_type == DocumentType.LINK:
             await self._process_link_document(document, task)
             return
 
-        normalized_document: NormalizedDocument | None = None
-        chunker = None
-        base_chunk_count = 0
-
         try:
-            logger.info("开始处理文档: %s (%s)", document.title, document.mime_type)
             content = await self._read_document_content(document)
             if not content:
                 raise ValueError("文档内容为空")
 
-            normalized_document = await self._resolve_and_normalize_document(
-                document,
-                content,
-            )
-            document.mime_type = normalized_document.resolved_format.mime_type
+            normalized = await self._resolve_and_normalize_document(document, content)
+            document.mime_type = normalized.resolved_format.mime_type
 
-            chunker = get_chunker(normalized_document.resolved_format.mime_type)
+            if document.mime_type == PDF_MIME_TYPE:
+                scan = await asyncio.to_thread(detect_scanned_pdf, normalized.content)
+                if scan.is_scanned:
+                    await self._delete_document_text(document.id)
+                    await self._write_document_text(
+                        document,
+                        self._build_scanned_pdf_placeholder(document, scan),
+                    )
+                    await self.db.commit()
 
-            await self._delete_document_chunks_no_commit(document.id)
+                    logger.info(
+                        "扫描件 PDF 已跳过文本/OCR 处理: %s (pages=%d, scanned_like=%d/%d)",
+                        document.title,
+                        scan.page_count,
+                        scan.scanned_like_pages,
+                        scan.sampled_pages,
+                    )
+                    await self._update_task_status(
+                        task.id,
+                        ProcessingStatus.COMPLETED,
+                        chunk_count=0,
+                        completed_at=datetime.utcnow(),
+                    )
+                    return
 
-            base_chunk_count = await self._process_base_chunks(
-                document=document,
-                normalized_document=normalized_document,
-                chunker=chunker,
-                task_id=task.id,
-            )
-            if base_chunk_count == 0:
-                raise ValueError("切片结果为空")
+            chunker = get_chunker(normalized.resolved_format.mime_type)
+            chunks = list(chunker.chunk(normalized.content, normalized.filename))
+            full_text = "\n\n".join(chunk.content for chunk in chunks if chunk.content.strip())
+            if not full_text.strip():
+                raise ValueError("提取的文本内容为空")
 
+            await self._delete_document_text(document.id)
+            doc_text = await self._write_document_text(document, full_text)
             await self.db.commit()
+
+            logger.info("文档全文写入完成: %s (%d chars)", document.title, len(full_text))
+
+            if should_run_visual_enhancement(document.mime_type) and has_visual_content(
+                normalized.content,
+                document.mime_type,
+            ):
+                await self._extract_and_store_images(document, content, normalized.resolved_format.mime_type, doc_text)
+                await self.db.commit()
+
             await self._update_task_status(
                 task.id,
                 ProcessingStatus.COMPLETED,
-                chunk_count=base_chunk_count,
+                chunk_count=1,
                 completed_at=datetime.utcnow(),
             )
-            logger.info("文档基础处理完成: %s (%d chunks)", document.title, base_chunk_count)
 
         except Exception as exc:
             await self.db.rollback()
-            logger.error("文档处理失败: %s - %s", document_id, str(exc), exc_info=True)
+            logger.error("文档处理失败: %s - %s", document_id, exc, exc_info=True)
             await self._update_task_status(
                 task.id,
                 ProcessingStatus.FAILED,
@@ -155,121 +239,44 @@ class DocumentProcessingService:
                 completed_at=datetime.utcnow(),
             )
             raise
-
-        if (
-            normalized_document is not None
-            and chunker is not None
-            and settings.vlm_processing_enabled
-        ):
-            # 快速预检测：跳过纯文本文档的 VLM 增强阶段
-            if has_visual_content(normalized_document.content, document.mime_type):
-                await self._run_enrichment_stage(
-                    document=document,
-                    normalized_document=normalized_document,
-                    chunker=chunker,
-                )
-            else:
-                logger.info("文档无视觉内容，跳过 VLM 增强: %s", document.title)
 
     async def _process_link_document(
         self,
         document: SpaceDocument,
         task: DocumentProcessingTask,
     ) -> None:
-        """Process a LINK-type document: fetch URL content, chunk, embed, store."""
+        """Process LINK-type document: fetch URL content, write full text."""
         from rag.url_fetcher import URLContentFetcher, URLFetchError
 
         try:
             fetcher = URLContentFetcher()
             result = await fetcher.fetch(document.url)
+            full_text = result.content
+            if not full_text.strip():
+                raise ValueError("链接内容为空")
 
-            logger.info(
-                "URL 内容获取成功: %s (%s, %d chars)",
-                document.url,
-                result.content_type,
-                len(result.content),
-            )
-
-            # Update document title if it was generic
             if result.title and document.title in (document.url, ""):
                 document.title = result.title
 
-            # Choose chunker based on content type
-            mime_hint = "text/markdown" if result.content_type == "webpage" else "text/plain"
-            chunker = get_chunker(mime_hint)
-            content_bytes = result.content.encode("utf-8")
-
-            await self._delete_document_chunks_no_commit(document.id)
-
-            chunk_count = 0
-            total_embedding_tokens = 0
-            batch_size = max(1, self.embedding_client.batch_size)
-
-            async for chunk_batch in self._iter_chunk_batches(
-                chunker=chunker,
-                content=content_bytes,
-                filename=None,
-                batch_size=batch_size,
-            ):
-                if not chunk_batch:
-                    continue
-
-                # Annotate with link-specific metadata
-                for chunk in chunk_batch:
-                    chunk.metadata["source_type"] = result.content_type
-                    chunk.metadata["source_url"] = result.source_url
-                    chunk.metadata["stage"] = "base"
-                    if result.metadata:
-                        chunk.metadata.update(result.metadata)
-
-                chunk_texts = [c.content for c in chunk_batch]
-                emb_result = await self.embedding_client.embed_batch(chunk_texts)
-
-                await self._insert_chunk_batch(
-                    document_id=document.id,
-                    space_id=document.space_id,
-                    chunks=chunk_batch,
-                    embeddings=emb_result.embeddings,
-                )
-                chunk_count += len(chunk_batch)
-                total_embedding_tokens += emb_result.token_count
-                await self._update_processed_chunks(task.id, chunk_count)
-
-            if chunk_count == 0:
-                raise ValueError("切片结果为空")
-
+            await self._delete_document_text(document.id)
+            await self._write_document_text(document, full_text)
             await self.db.commit()
+
             await self._update_task_status(
-                task.id,
-                ProcessingStatus.COMPLETED,
-                chunk_count=chunk_count,
-                completed_at=datetime.utcnow(),
+                task.id, ProcessingStatus.COMPLETED, chunk_count=1, completed_at=datetime.utcnow()
             )
-            logger.info(
-                "链接文档处理完成: %s (%d chunks, %d embedding tokens)",
-                document.title,
-                chunk_count,
-                total_embedding_tokens,
-            )
+            logger.info("链接文档处理完成: %s (%d chars)", document.title, len(full_text))
 
         except URLFetchError as exc:
             await self.db.rollback()
-            logger.error("URL 内容获取失败: %s - %s", document.url, str(exc))
             await self._update_task_status(
-                task.id,
-                ProcessingStatus.FAILED,
-                error_message=str(exc),
-                completed_at=datetime.utcnow(),
+                task.id, ProcessingStatus.FAILED, error_message=str(exc), completed_at=datetime.utcnow()
             )
             raise
         except Exception as exc:
             await self.db.rollback()
-            logger.error("链接文档处理失败: %s - %s", document.id, str(exc), exc_info=True)
             await self._update_task_status(
-                task.id,
-                ProcessingStatus.FAILED,
-                error_message=str(exc),
-                completed_at=datetime.utcnow(),
+                task.id, ProcessingStatus.FAILED, error_message=str(exc), completed_at=datetime.utcnow()
             )
             raise
 
@@ -293,270 +300,6 @@ class DocumentProcessingService:
         )
         return normalized
 
-    async def _process_base_chunks(
-        self,
-        *,
-        document: SpaceDocument,
-        normalized_document: NormalizedDocument,
-        chunker,
-        task_id: uuid.UUID | None = None,
-    ) -> int:
-        """Process base chunks in two phases for visible progress.
-
-        Phase 1: Collect all chunks (PDF parsing / text extraction).
-        Phase 2: Embed + insert batch by batch, updating progress after each.
-        """
-        batch_size = max(1, self.embedding_client.batch_size)
-
-        # Phase 1: 收集所有 chunks（解析阶段，耗时最长）
-        all_chunks: list[Chunk] = []
-        async for chunk_batch in self._iter_chunk_batches(
-            chunker=chunker,
-            content=normalized_document.content,
-            filename=normalized_document.filename,
-            batch_size=batch_size,
-        ):
-            if chunk_batch:
-                self._annotate_chunks(
-                    chunk_batch,
-                    normalized_document=normalized_document,
-                    stage="base",
-                )
-                all_chunks.extend(chunk_batch)
-
-        if not all_chunks:
-            return 0
-
-        total_to_process = len(all_chunks)
-
-        # 提前写入 chunk_count，前端可以显示 "X / Y 块"
-        if task_id:
-            await self.db.execute(
-                update(DocumentProcessingTask)
-                .where(DocumentProcessingTask.id == task_id)
-                .values(chunk_count=total_to_process)
-            )
-            await self.db.commit()
-
-        # Phase 2: 逐 batch embedding + 插入，每 batch 更新进度
-        processed = 0
-        total_embedding_tokens = 0
-
-        for i in range(0, total_to_process, batch_size):
-            batch = all_chunks[i : i + batch_size]
-            chunk_texts = [c.content for c in batch]
-            emb_result = await self.embedding_client.embed_batch(chunk_texts)
-
-            await self._insert_chunk_batch(
-                document_id=document.id,
-                space_id=document.space_id,
-                chunks=batch,
-                embeddings=emb_result.embeddings,
-            )
-            processed += len(batch)
-            total_embedding_tokens += emb_result.token_count
-
-            if task_id:
-                await self._update_processed_chunks(task_id, processed)
-
-        logger.info(
-            "基础切片与向量化完成: document=%s chunks=%d embedding_tokens=%d",
-            document.id,
-            processed,
-            total_embedding_tokens,
-        )
-        return processed
-
-    async def _embed_and_insert_group(
-        self,
-        batch_group: list[list[Chunk]],
-        document: SpaceDocument,
-        *,
-        task_id: uuid.UUID | None = None,
-        current_total: int = 0,
-    ) -> tuple[int, int]:
-        """Embed a group of chunk batches concurrently and insert into DB.
-
-        Updates processed_chunks after each batch insert for real-time progress.
-
-        Returns:
-            (chunk_count, embedding_token_count)
-        """
-        # 并发发送所有 embedding 请求
-        embed_tasks = [
-            self.embedding_client.embed_batch([c.content for c in batch])
-            for batch in batch_group
-        ]
-        embedding_results = await asyncio.gather(
-            *embed_tasks, return_exceptions=True
-        )
-
-        # 检查是否有失败的批次
-        errors = [r for r in embedding_results if isinstance(r, BaseException)]
-        if errors:
-            raise errors[0]
-
-        # 顺序写入 DB，每个 batch 后更新进度
-        chunk_count = 0
-        token_count = 0
-        for chunks, emb_result in zip(batch_group, embedding_results):
-            await self._insert_chunk_batch(
-                document_id=document.id,
-                space_id=document.space_id,
-                chunks=chunks,
-                embeddings=emb_result.embeddings,
-            )
-            chunk_count += len(chunks)
-            token_count += emb_result.token_count
-
-            if task_id:
-                await self._update_processed_chunks(
-                    task_id, current_total + chunk_count
-                )
-
-        return chunk_count, token_count
-
-    async def _run_enrichment_stage(
-        self,
-        *,
-        document: SpaceDocument,
-        normalized_document: NormalizedDocument,
-        chunker,
-    ) -> None:
-        """Append enriched OCR/VLM chunks without affecting completed status."""
-        try:
-            base_chunks = await self._load_chunks(document.id)
-            if not base_chunks:
-                return
-
-            enriched_result = await chunker.enrich(
-                base_chunks,
-                normalized_document.content,
-                filename=normalized_document.filename,
-            )
-            new_chunks = self._extract_enriched_chunks(
-                base_chunks=base_chunks,
-                enriched_chunks=enriched_result,
-                normalized_document=normalized_document,
-            )
-            if not new_chunks:
-                return
-
-            embedding_result = await self.embedding_client.embed_batch(
-                [chunk.content for chunk in new_chunks]
-            )
-            await self._insert_chunk_batch(
-                document_id=document.id,
-                space_id=document.space_id,
-                chunks=new_chunks,
-                embeddings=embedding_result.embeddings,
-            )
-            await self.db.commit()
-            logger.info(
-                "文档增强处理完成: document=%s added_chunks=%d",
-                document.id,
-                len(new_chunks),
-            )
-        except Exception as exc:
-            await self.db.rollback()
-            logger.warning("文档增强处理失败，保留基础可检索结果: %s", exc)
-
-    def _extract_enriched_chunks(
-        self,
-        *,
-        base_chunks: list[Chunk],
-        enriched_chunks: list[Chunk],
-        normalized_document: NormalizedDocument,
-    ) -> list[Chunk]:
-        """Select only VLM/OCR chunks and reindex them for append-only storage."""
-        candidates = [
-            chunk
-            for chunk in enriched_chunks
-            if chunk.metadata.get("vlm_type")
-        ]
-        if not candidates:
-            return []
-
-        next_index = max((chunk.index for chunk in base_chunks), default=-1) + 1
-        prepared: list[Chunk] = []
-        for offset, chunk in enumerate(candidates):
-            prepared_chunk = Chunk(
-                content=chunk.content,
-                index=next_index + offset,
-                token_count=chunk.token_count,
-                metadata=dict(chunk.metadata),
-            )
-            prepared.append(prepared_chunk)
-
-        self._annotate_chunks(
-            prepared,
-            normalized_document=normalized_document,
-            stage="enriched",
-        )
-        return prepared
-
-    def _annotate_chunks(
-        self,
-        chunks: Iterable[Chunk],
-        *,
-        normalized_document: NormalizedDocument,
-        stage: str,
-    ) -> None:
-        """Attach shared metadata used by retrieval and debugging."""
-        resolved = normalized_document.resolved_format
-        for chunk in chunks:
-            chunk.metadata.setdefault("source_type", resolved.canonical_type)
-            chunk.metadata["canonical_type"] = resolved.canonical_type
-            chunk.metadata["parser_backend"] = resolved.parser_backend
-            chunk.metadata["stage"] = stage
-            if normalized_document.filename:
-                chunk.metadata.setdefault("filename", normalized_document.filename)
-
-    async def _iter_chunk_batches(
-        self,
-        *,
-        chunker,
-        content: bytes,
-        filename: str | None,
-        batch_size: int,
-    ) -> AsyncIterator[list[Chunk]]:
-        """Run sync chunk generation in a worker thread and stream back batches."""
-        item_queue: queue.Queue[object] = queue.Queue(maxsize=4)
-        sentinel = object()
-        errors: list[Exception] = []
-
-        def producer() -> None:
-            batch: list[Chunk] = []
-            try:
-                for chunk in chunker.iter_chunks(content, filename=filename):
-                    batch.append(chunk)
-                    if len(batch) >= batch_size:
-                        item_queue.put(batch)
-                        batch = []
-                if batch:
-                    item_queue.put(batch)
-            except Exception as exc:  # pragma: no cover - forwarded to async caller
-                errors.append(exc)
-            finally:
-                item_queue.put(sentinel)
-
-        thread = threading.Thread(
-            target=producer,
-            name=f"chunker-{chunker.__class__.__name__}",
-            daemon=True,
-        )
-        thread.start()
-
-        while True:
-            item = await asyncio.to_thread(item_queue.get)
-            if item is sentinel:
-                break
-            yield item  # type: ignore[misc]
-
-        thread.join()
-        if errors:
-            raise errors[0]
-
     async def _read_document_content(self, document: SpaceDocument) -> bytes:
         """读取文档内容。"""
         relative_path = document.url.lstrip("/")
@@ -567,77 +310,6 @@ class DocumentProcessingService:
 
         async with aiofiles.open(file_path, "rb") as f:
             return await f.read()
-
-    async def _insert_chunk_batch(
-        self,
-        *,
-        document_id: uuid.UUID,
-        space_id: uuid.UUID,
-        chunks: list[Chunk],
-        embeddings: list[list[float]],
-    ) -> None:
-        """使用 raw SQL 批量写入 chunk 与 embedding。
-
-        注意：asyncpg 的 executemany 不支持 SQLAlchemy func 对象作为参数值，
-        因此 to_tsvector 必须写在 SQL 文本中，而非作为 Python 对象传递。
-        """
-        if not chunks:
-            return
-
-        from sqlalchemy import text
-
-        stmt = text("""
-            INSERT INTO document_chunks
-                (id, document_id, space_id, chunk_index, content,
-                 token_count, chunk_metadata, embedding, content_tsv)
-            VALUES
-                (:id, :document_id, :space_id, :chunk_index, :content,
-                 :token_count, :chunk_metadata, :embedding,
-                 to_tsvector('simple', :search_text))
-        """)
-
-        rows = [
-            {
-                "id": str(uuid.uuid4()),
-                "document_id": str(document_id),
-                "space_id": str(space_id),
-                "chunk_index": chunk.index,
-                "content": chunk.content,
-                "token_count": chunk.token_count,
-                "chunk_metadata": json.dumps(chunk.metadata),
-                "embedding": str(embedding),
-                "search_text": segment_for_search(chunk.content),
-            }
-            for chunk, embedding in zip(chunks, embeddings)
-        ]
-        for row in rows:
-            await self.db.execute(stmt, row)
-
-    async def _load_chunks(self, document_id: uuid.UUID) -> list[Chunk]:
-        """Load already stored chunks back into chunk objects."""
-        result = await self.db.execute(
-            select(DocumentChunk)
-            .where(DocumentChunk.document_id == document_id)
-            .order_by(DocumentChunk.chunk_index.asc())
-        )
-        records = result.scalars().all()
-        return [
-            Chunk(
-                content=record.content,
-                index=record.chunk_index,
-                token_count=record.token_count,
-                metadata=dict(record.chunk_metadata or {}),
-            )
-            for record in records
-        ]
-
-    async def _delete_document_chunks_no_commit(self, document_id: uuid.UUID) -> None:
-        """Delete document chunks without committing the transaction."""
-        await self.db.execute(
-            DocumentChunk.__table__.delete().where(
-                DocumentChunk.document_id == document_id
-            )
-        )
 
     async def _update_task_status(
         self,
@@ -668,20 +340,132 @@ class DocumentProcessingService:
         )
         await self.db.commit()
 
-    async def _update_processed_chunks(
-        self, task_id: uuid.UUID, processed_chunks: int
-    ) -> None:
-        """更新已处理切片数（轻量级，不 commit 主事务）。"""
-        await self.db.execute(
-            update(DocumentProcessingTask)
-            .where(DocumentProcessingTask.id == task_id)
-            .values(processed_chunks=processed_chunks)
+    async def _write_document_text(self, document: SpaceDocument, full_text: str) -> DocumentText:
+        """Write full text to document_texts and update tsvector."""
+        from sqlalchemy import text as sa_text
+        word_count = len(full_text.split())
+        doc_text = DocumentText(
+            document_id=document.id,
+            space_id=document.space_id,
+            content=full_text,
+            word_count=word_count,
         )
-        await self.db.commit()
+        self.db.add(doc_text)
+        await self.db.flush()
+
+        tokens = segment_for_search(full_text)
+        token_str = " ".join(tokens.split()[:500]) if tokens else ""
+        await self.db.execute(
+            sa_text(
+                "UPDATE document_texts SET content_tsv = to_tsvector('simple', :tokens) WHERE id = :id"
+            ),
+            {"tokens": token_str, "id": str(doc_text.id)},
+        )
+        return doc_text
+
+    def _build_scanned_pdf_placeholder(
+        self,
+        document: SpaceDocument,
+        scan: PDFScanDetection,
+    ) -> str:
+        filename = document.original_filename or document.title
+        return (
+            f"《{filename}》是扫描件 PDF，共 {scan.page_count} 页。"
+            "系统已跳过自动 OCR、文本切片和图片描述处理。"
+            "如需阅读内容，请先使用 list_documents 获取 document_id，"
+            "再使用 view_document_page 按页查看 PDF 页面图片，"
+            "根据页面内容决定下一步继续查看哪一页。"
+        )
+
+    async def _delete_document_text(self, document_id: uuid.UUID) -> None:
+        """Remove existing document_texts entry (images cascade)."""
+        from sqlalchemy import delete as sa_delete
+        await self.db.execute(
+            sa_delete(DocumentText).where(DocumentText.document_id == document_id)
+        )
+
+    async def _extract_and_store_images(
+        self,
+        document: SpaceDocument,
+        content: bytes,
+        mime_type: str,
+        doc_text: DocumentText,
+    ) -> None:
+        """Extract images, run VLM, store files + DB rows, update content placeholders."""
+        from rag.image_extractor import ImageExtractor
+        from rag.vlm_processor import VLMProcessor
+        from sqlalchemy import text as sa_text
+
+        extractor = ImageExtractor()
+        raw_images = extractor.extract(content, mime_type)
+        if not raw_images:
+            return
+
+        vlm = VLMProcessor(
+            usage_context=UsageContext(
+                user_id=document.creator_user_id,
+                usage_type=UsageType.AGENT_LLM,
+                source_module="rag",
+                source_operation="document_image_vlm",
+                billable=bool(document.creator_user_id),
+                space_id=document.space_id,
+                metadata={"document_id": str(document.id)},
+            )
+        )
+        upload_dir = Path(settings.upload_dir) / "images" / str(document.space_id) / str(document.id)
+        upload_dir.mkdir(parents=True, exist_ok=True)
+
+        updated_content = doc_text.content
+
+        for img in raw_images:
+            img_id = uuid.uuid4()
+            file_path = upload_dir / f"{img_id}.{img.ext}"
+
+            async with aiofiles.open(file_path, "wb") as f:
+                await f.write(img.image_bytes)
+
+            description: Optional[str] = None
+            try:
+                description = await vlm.describe_image(img.image_bytes, context="")
+            except Exception as exc:
+                logger.warning("VLM 描述失败，跳过: %s", exc)
+
+            db_image = DocumentImage(
+                id=img_id,
+                document_id=document.id,
+                space_id=document.space_id,
+                document_text_id=doc_text.id,
+                page_num=img.page_num,
+                image_index=img.image_index,
+                file_path=str(file_path),
+                vlm_description=description,
+            )
+            self.db.add(db_image)
+
+            placeholder = f"[IMAGE:{img_id}]"
+            desc_text = f"\n{description}\n" if description else ""
+            updated_content += f"\n\n{placeholder}{desc_text}"
+
+        doc_text.content = updated_content
+        doc_text.word_count = len(updated_content.split())
+
+        tokens = segment_for_search(updated_content)
+        token_str = " ".join(tokens.split()[:500]) if tokens else ""
+        await self.db.execute(
+            sa_text(
+                "UPDATE document_texts SET content = :content, content_tsv = to_tsvector('simple', :tokens), word_count = :wc WHERE id = :id"
+            ),
+            {
+                "content": updated_content,
+                "tokens": token_str,
+                "wc": doc_text.word_count,
+                "id": str(doc_text.id),
+            },
+        )
 
     async def delete_document_chunks(self, document_id: uuid.UUID) -> None:
-        """删除文档的所有切片。"""
-        await self._delete_document_chunks_no_commit(document_id)
+        """删除文档的全文存储记录。"""
+        await self._delete_document_text(document_id)
         await self.db.commit()
 
 

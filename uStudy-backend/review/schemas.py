@@ -56,3 +56,36 @@ class CompleteReviewRequest(BaseModel):
     """标记复习完成请求"""
 
     review_id: UUID
+
+
+class ReviewPlanItem(BaseModel):
+    """复习计划页条目"""
+
+    id: UUID
+    activity_id: UUID
+    title: str
+    subject_name: str | None = None
+    space_name: str | None = None
+    review_number: int
+    scheduled_date: date
+    status: str
+    study_depth: str | None = None
+    days_overdue: int = 0
+    activity_time: datetime
+    completed_at: datetime | None = None
+
+
+class ReviewPlanStats(BaseModel):
+    """复习计划页统计"""
+
+    total: int
+    today_pending: int
+    today_completed: int
+    streak: int
+
+
+class ReviewPlanResponse(BaseModel):
+    """复习计划页聚合响应"""
+
+    stats: ReviewPlanStats
+    items: list[ReviewPlanItem]

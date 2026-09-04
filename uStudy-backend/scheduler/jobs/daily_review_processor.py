@@ -4,15 +4,14 @@
 1. 收集所有用户的到期复习事项
 2. 按 (user, space) 分组
 3. AI 规划 + 生成复习测试题
-4. 发送个性化复习提醒邮件
-5. 检测不活跃用户并发送关怀邮件
+4. 创建站内复习提醒
 """
 
 import asyncio
 import hashlib
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -25,9 +24,9 @@ from db.models import (
     AgentTask,
     AgentTaskStatus,
     AgentTaskType,
+    DailyStudyRecord,
     DifficultyLevel,
     Quiz,
-    ReviewEmailLog,
     ReviewSchedule,
     Space,
     StudyActivityLog,
@@ -79,6 +78,23 @@ class UserReviewData:
     user_email: str
     nickname: str
     space_groups: list[SpaceReviewGroup] = field(default_factory=list)
+
+
+def _coerce_date(value: date | datetime | None) -> date | None:
+    """统一转为 date，datetime 按 UTC 日期处理。"""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.date()
+        return value.astimezone(timezone.utc).date()
+    return value
+
+
+def _resolve_last_activity_date(*activity_dates: date | datetime | None) -> date | None:
+    """取多个活跃日期中的最新值。"""
+    normalized = [d for d in (_coerce_date(v) for v in activity_dates) if d is not None]
+    return max(normalized) if normalized else None
 
 
 async def process_daily_reviews() -> None:
@@ -179,12 +195,8 @@ async def process_daily_reviews() -> None:
                     "process_user failed for user=%s: %s", ud.user_id, result,
                 )
 
-        # Phase 3: 所有测试题生成完成后，统一发送通知和邮件
+        # Phase 3: 所有测试题生成完成后，统一发送站内通知
         await _send_notifications(user_reviews, generation_results)
-        await _send_review_emails(user_reviews, generation_results)
-
-        # Phase 4: 不活跃关怀检测
-        await _check_inactivity(today_utc)
 
         logger.info("Daily review processor completed successfully")
 
@@ -327,6 +339,9 @@ async def _generate_review_quiz(
             space_name=group.space_name,
             learning_preferences=group.learning_preferences,
             review_items=review_items,
+            user_id=user_id,
+            space_id=group.space_id,
+            billable=False,
         )
 
         # 第 2 级：TestGenerationAgent
@@ -372,6 +387,9 @@ async def _generate_review_quiz(
                 topic=plan["topic"],
                 difficulty=plan["difficulty_level"],
                 test_struct=plan["test_struct"],
+                user_id=user_id,
+                space_id=group.space_id,
+                billable=False,
             )
 
             # 更新 AgentTask 为 done
@@ -462,185 +480,5 @@ async def _send_notifications(
                 "Failed to create notification for user=%s",
                 user_data.user_id, exc_info=True,
             )
-
-
-async def _send_review_emails(
-    user_reviews: list[UserReviewData],
-    generation_results: dict[UUID, list[dict]],
-) -> None:
-    """为每个有 review_mode=3 空间的用户发送邮件。"""
-    from scheduler.email.review_email_service import ReviewEmailService
-
-    email_service = ReviewEmailService()
-
-    for user_data in user_reviews:
-        # 检查是否有任一空间的 review_mode == 3
-        has_email_space = any(g.review_mode == 3 for g in user_data.space_groups)
-        if not has_email_space:
-            continue
-
-        summaries = generation_results.get(user_data.user_id, [])
-        # 仅包含 review_mode == 3 的空间
-        email_summaries = [
-            s for s in summaries
-            if any(
-                g.review_mode == 3 and str(g.space_id) == s["space_id"]
-                for g in user_data.space_groups
-            )
-        ]
-
-        if not email_summaries:
-            continue
-
-        try:
-            success = await email_service.send_review_email(
-                user_email=user_data.user_email,
-                nickname=user_data.nickname,
-                review_summaries=email_summaries,
-            )
-
-            if success:
-                # 记录邮件日志
-                async with get_scoped_session() as db:
-                    log = ReviewEmailLog(
-                        user_id=user_data.user_id,
-                        email_type="daily_review",
-                        spaces_included=[s["space_id"] for s in email_summaries],
-                        quiz_ids=[s["quiz_id"] for s in email_summaries if s.get("quiz_id")],
-                    )
-                    db.add(log)
-                    await db.commit()
-
-                logger.info("Sent review email to user=%s", user_data.user_id)
-            else:
-                logger.warning("Failed to send review email to user=%s", user_data.user_id)
-
-        except Exception:
-            logger.exception("Error sending review email to user=%s", user_data.user_id)
-
-
-async def _check_inactivity(today: Any) -> None:
-    """检测连续 2+ 天未复习的用户，发送关怀邮件。"""
-    from scheduler.email.review_email_service import ReviewEmailService
-
-    two_days_ago = today - timedelta(days=2)
-    three_days_ago = today - timedelta(days=3)
-
-    try:
-        async with get_scoped_session() as db:
-            # 查找有 pending review 且 scheduled_date <= 2天前的用户
-            # 排除最近 3 天内已发过 inactivity_care 邮件的用户
-            inactive_users_stmt = (
-                select(
-                    User.id,
-                    User.email,
-                    User.nickname,
-                    func.min(ReviewSchedule.scheduled_date).label("earliest_due"),
-                )
-                .join(ReviewSchedule, ReviewSchedule.user_id == User.id)
-                .where(
-                    ReviewSchedule.status == "pending",
-                    ReviewSchedule.scheduled_date <= two_days_ago,
-                )
-                .group_by(User.id, User.email, User.nickname)
-            )
-            result = await db.execute(inactive_users_stmt)
-            inactive_candidates = result.all()
-
-            if not inactive_candidates:
-                return
-
-            # 批量排除最近发过关怀邮件的用户
-            candidate_ids = [c.id for c in inactive_candidates]
-            recent_emails_stmt = (
-                select(ReviewEmailLog.user_id)
-                .where(
-                    ReviewEmailLog.user_id.in_(candidate_ids),
-                    ReviewEmailLog.email_type == "inactivity_care",
-                    ReviewEmailLog.sent_at >= datetime.combine(
-                        three_days_ago, datetime.min.time(), tzinfo=timezone.utc,
-                    ),
-                )
-                .distinct()
-            )
-            recent_result = await db.execute(recent_emails_stmt)
-            already_emailed = {row[0] for row in recent_result.all()}
-
-            # 获取待复习主题
-            eligible = [c for c in inactive_candidates if c.id not in already_emailed]
-
-        if not eligible:
-            return
-
-        email_service = ReviewEmailService()
-
-        for candidate in eligible:
-            # 获取该用户的待复习主题
-            async with get_scoped_session() as db:
-                topics_stmt = (
-                    select(StudyActivityLog.title)
-                    .join(ReviewSchedule, ReviewSchedule.activity_id == StudyActivityLog.id)
-                    .where(
-                        ReviewSchedule.user_id == candidate.id,
-                        ReviewSchedule.status == "pending",
-                    )
-                    .distinct()
-                    .limit(5)
-                )
-                topics_result = await db.execute(topics_stmt)
-                pending_topics = [row[0] for row in topics_result.all() if row[0]]
-
-            if not pending_topics:
-                continue
-
-            days_inactive = (today - candidate.earliest_due).days if candidate.earliest_due else 2
-
-            try:
-                # 创建应用内通知
-                try:
-                    from db.models import NotificationType
-                    from notifications.service import NotificationService
-
-                    topics_preview = "、".join(pending_topics[:3])
-                    await NotificationService.create_and_push(
-                        user_id=candidate.id,
-                        notification_type=NotificationType.INACTIVITY_CARE,
-                        title="好久不见",
-                        body=f"之前学过的{topics_preview}等知识还记得吗？适当回顾一下可以巩固记忆",
-                        data={"action": "go_review"},
-                    )
-                except Exception:
-                    logger.warning(
-                        "Failed to create inactivity notification for user=%s",
-                        candidate.id, exc_info=True,
-                    )
-
-                success = await email_service.send_inactivity_care_email(
-                    user_email=candidate.email,
-                    nickname=candidate.nickname or "同学",
-                    days_inactive=days_inactive,
-                    pending_topics=pending_topics,
-                )
-
-                if success:
-                    async with get_scoped_session() as db:
-                        log = ReviewEmailLog(
-                            user_id=candidate.id,
-                            email_type="inactivity_care",
-                            spaces_included=None,
-                            quiz_ids=None,
-                        )
-                        db.add(log)
-                        await db.commit()
-
-                    logger.info(
-                        "Sent inactivity care email to user=%s (inactive %d days)",
-                        candidate.id, days_inactive,
-                    )
-            except Exception:
-                logger.exception("Error sending inactivity email to user=%s", candidate.id)
-
-    except Exception:
-        logger.exception("Error in inactivity check")
 
 

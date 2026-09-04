@@ -1,6 +1,7 @@
 """Tests for document upload service."""
 
 import io
+import base64
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
@@ -10,7 +11,13 @@ from fastapi import UploadFile
 from starlette.datastructures import Headers
 
 from documents.service import upload_document
+from rag import service as rag_service
 from rag.parsing.formats import OLE_MAGIC
+
+
+_ONE_PIXEL_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+)
 
 
 @pytest.mark.asyncio
@@ -116,3 +123,48 @@ async def test_upload_document_rejects_oversized_file_without_loading_into_memor
     assert "最大 1MB" in excinfo.value.detail
     temp_dir = tmp_path / "uploads" / "tmp"
     assert not temp_dir.exists() or not any(temp_dir.iterdir())
+
+
+def test_pdf_upload_skips_visual_enhancement(monkeypatch):
+    monkeypatch.setattr(rag_service.settings, "vlm_processing_enabled", True)
+
+    assert rag_service.should_run_visual_enhancement("application/pdf") is False
+    assert rag_service.should_run_visual_enhancement("APPLICATION/PDF") is False
+    assert rag_service.should_run_visual_enhancement("image/png") is True
+
+
+def test_detect_scanned_pdf_for_image_only_pages():
+    fitz = pytest.importorskip("fitz")
+    pdf = fitz.open()
+    for _ in range(3):
+        page = pdf.new_page(width=200, height=200)
+        page.insert_image(fitz.Rect(0, 0, 200, 200), stream=_ONE_PIXEL_PNG)
+    content = pdf.tobytes()
+    pdf.close()
+
+    result = rag_service.detect_scanned_pdf(content)
+
+    assert result.is_scanned is True
+    assert result.page_count == 3
+    assert result.scanned_like_pages == 3
+
+
+def test_detect_scanned_pdf_ignores_single_image_cover():
+    fitz = pytest.importorskip("fitz")
+    pdf = fitz.open()
+    cover = pdf.new_page(width=200, height=200)
+    cover.insert_image(fitz.Rect(0, 0, 200, 200), stream=_ONE_PIXEL_PNG)
+    for _ in range(3):
+        page = pdf.new_page(width=300, height=300)
+        page.insert_text(
+            (36, 72),
+            "Database Systems Concepts " * 8,
+            fontsize=12,
+        )
+    content = pdf.tobytes()
+    pdf.close()
+
+    result = rag_service.detect_scanned_pdf(content)
+
+    assert result.is_scanned is False
+    assert result.scanned_like_pages == 1

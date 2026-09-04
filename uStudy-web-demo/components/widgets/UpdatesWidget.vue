@@ -8,7 +8,13 @@
     </view>
 
     <!-- Scrollable content -->
-    <scroll-view scroll-y :show-scrollbar="false" class="timeline-scroll">
+    <scroll-view
+      scroll-y
+      :show-scrollbar="false"
+      class="timeline-scroll"
+      :lower-threshold="80"
+      @scrolltolower="handleScrollToLower"
+    >
       <view class="timeline-body">
         <!-- Vertical line -->
         <view class="timeline-line"></view>
@@ -86,6 +92,12 @@
             </view>
           </view>
         </template>
+
+        <view v-if="!loading && groupedItems.length && (loadingMore || !hasMore)" class="timeline-footer">
+          <text class="timeline-footer-text">
+            {{ loadingMore ? '正在加载更早的学习事项...' : '已经到底了' }}
+          </text>
+        </view>
       </view>
     </scroll-view>
   </view>
@@ -132,8 +144,9 @@ function _cleanOldSuggestionCache(currentKey) {
   } catch (_) {}
 }
 
-const TIMELINE_CACHE_KEY = 'timeline_cache_v1'
+const TIMELINE_CACHE_KEY = 'timeline_cache_v2'
 const TIMELINE_CACHE_TTL = 5 * 60 * 1000
+const TIMELINE_PAGE_SIZE = 20
 
 // Inline SVG paths (Phosphor icons) replacing mobile image references
 const ICON_PATHS = {
@@ -169,6 +182,10 @@ export default {
       items: [],
       aiSuggestion: null,
       loading: true,
+      loadingMore: false,
+      page: 1,
+      total: 0,
+      hasMore: true,
       suggestionLoading: true,
       expandedIds: {}
     }
@@ -265,8 +282,8 @@ export default {
       try {
         const rawTimeline = localStorage.getItem(TIMELINE_CACHE_KEY)
         if (rawTimeline) {
-          const { data, ts } = JSON.parse(rawTimeline)
-          if (Date.now() - ts < TIMELINE_CACHE_TTL) cachedTimeline = data
+          const cached = JSON.parse(rawTimeline)
+          if (Date.now() - cached.ts < TIMELINE_CACHE_TTL) cachedTimeline = cached
         }
       } catch (_) {}
       try {
@@ -275,7 +292,12 @@ export default {
       } catch (_) {}
 
       if (cachedTimeline) {
-        this.items = cachedTimeline
+        this.items = cachedTimeline.items || []
+        this.page = cachedTimeline.page || 1
+        this.total = cachedTimeline.total || this.items.length
+        this.hasMore = typeof cachedTimeline.hasMore === 'boolean'
+          ? cachedTimeline.hasMore
+          : this.items.length < this.total
         this.loading = false
       }
       if (cachedSuggestion) {
@@ -285,32 +307,77 @@ export default {
 
       // 2. 未命中的部分并行请求 API
       const requests = []
-      if (!cachedTimeline) requests.push(getActivityTimeline(1, 15).then(r => ({ type: 'timeline', r })))
-      if (!cachedSuggestion) requests.push(getStudySuggestion().then(r => ({ type: 'suggestion', r })))
+      if (!cachedTimeline) requests.push(this.loadTimelinePage({ reset: true }))
+      if (!cachedSuggestion) {
+        requests.push(
+          getStudySuggestion().then(r => {
+            this.aiSuggestion = r
+            try {
+              localStorage.setItem(slotKey, JSON.stringify(r))
+              _cleanOldSuggestionCache(slotKey)
+            } catch (_) {}
+            this.suggestionLoading = false
+          })
+        )
+      }
 
       if (requests.length === 0) return
 
-      const results = await Promise.allSettled(requests)
-      for (const res of results) {
-        if (res.status !== 'fulfilled') continue
-        const { type, r } = res.value
-        if (type === 'timeline') {
-          this.items = r.items || []
-          try { localStorage.setItem(TIMELINE_CACHE_KEY, JSON.stringify({ data: this.items, ts: Date.now() })) } catch (_) {}
-          this.loading = false
-        } else {
-          this.aiSuggestion = r
-          try {
-            localStorage.setItem(slotKey, JSON.stringify(r))
-            _cleanOldSuggestionCache(slotKey)
-          } catch (_) {}
-          this.suggestionLoading = false
-        }
-      }
+      await Promise.allSettled(requests)
 
       // 确保 loading 状态最终归位
       this.loading = false
       this.suggestionLoading = false
+    },
+
+    async loadTimelinePage({ reset = false } = {}) {
+      if (!reset && (this.loading || this.loadingMore || !this.hasMore)) return
+
+      if (reset) {
+        this.loading = true
+      } else {
+        this.loadingMore = true
+      }
+
+      const nextPage = reset ? 1 : this.page + 1
+      try {
+        const result = await getActivityTimeline(nextPage, TIMELINE_PAGE_SIZE)
+        const incomingItems = result.items || []
+        const mergedItems = reset ? incomingItems : [...this.items, ...incomingItems]
+        const total = typeof result.total === 'number' ? result.total : mergedItems.length
+
+        this.items = mergedItems
+        this.page = result.page || nextPage
+        this.total = total
+        this.hasMore = mergedItems.length < total
+
+        try {
+          localStorage.setItem(
+            TIMELINE_CACHE_KEY,
+            JSON.stringify({
+              items: this.items,
+              page: this.page,
+              total: this.total,
+              hasMore: this.hasMore,
+              ts: Date.now()
+            })
+          )
+        } catch (_) {}
+      } catch (_) {
+        if (reset) {
+          this.items = []
+          this.page = 1
+          this.total = 0
+          this.hasMore = false
+        }
+      } finally {
+        this.loading = false
+        this.loadingMore = false
+      }
+    },
+
+    handleScrollToLower() {
+      this.loadTimelinePage({ reset: false })
     },
 
     getIconPath(type) {
@@ -450,6 +517,18 @@ export default {
 .timeline-body {
   position: relative;
   padding-left: 34px;
+}
+
+.timeline-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+
+.timeline-footer-text {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
 }
 
 .timeline-line {

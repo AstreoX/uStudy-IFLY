@@ -110,6 +110,10 @@ class SearchToolExecutor:
         self.semantic_scholar_timeout = settings.semantic_scholar_timeout
         self.wikipedia_timeout = settings.wikipedia_timeout
         self.bilibili_search_timeout = settings.bilibili_search_timeout
+        self.user_agent = (
+            f"uStudy/1.0 ({settings.public_web_base_url}; "
+            f"{settings.support_contact_email}) httpx/0.27"
+        )
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> ToolResult:
         """Execute a search tool and return result."""
@@ -171,7 +175,7 @@ class SearchToolExecutor:
             "select": "title,authorships,publication_year,cited_by_count,doi,primary_location",
         }
         headers = {
-            "User-Agent": "uStudy/1.0 (https://ustudy.top; contact@ustudy.top) httpx/0.27",
+            "User-Agent": self.user_agent,
         }
 
         async with httpx.AsyncClient(timeout=self.semantic_scholar_timeout, headers=headers) as client:
@@ -219,7 +223,7 @@ class SearchToolExecutor:
             "fields": "title,authors,year,citationCount,url,abstract",
         }
         headers = {
-            "User-Agent": "uStudy/1.0 (https://ustudy.top; contact@ustudy.top) httpx/0.27",
+            "User-Agent": self.user_agent,
         }
 
         async with httpx.AsyncClient(timeout=self.semantic_scholar_timeout, headers=headers) as client:
@@ -283,7 +287,7 @@ class SearchToolExecutor:
         }
 
         headers = {
-            "User-Agent": "uStudy/1.0 (https://ustudy.top; contact@ustudy.top) httpx/0.27",
+            "User-Agent": self.user_agent,
         }
 
         async with httpx.AsyncClient(timeout=self.wikipedia_timeout, headers=headers) as client:

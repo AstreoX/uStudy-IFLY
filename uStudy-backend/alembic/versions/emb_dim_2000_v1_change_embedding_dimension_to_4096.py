@@ -45,8 +45,8 @@ def upgrade() -> None:
     op.execute(
         """
         UPDATE document_processing_tasks
-        SET status = 'PENDING', error_message = NULL, started_at = NULL, completed_at = NULL
-        WHERE status = 'COMPLETED'
+        SET status = 'pending', error_message = NULL, started_at = NULL, completed_at = NULL
+        WHERE status = 'completed'
         """
     )
 

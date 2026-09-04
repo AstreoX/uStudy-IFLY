@@ -13,23 +13,10 @@
       @toggle="sidebarCollapsed = !sidebarCollapsed"
       @navigate="handleNavigate"
       @select-space="handleSelectSpace"
-      @create-space="handleCreateSpace"
     />
 
     <!-- Main Content -->
     <view class="main-content">
-      <!-- 订阅到期提醒 -->
-      <view
-        v-if="showExpiryBanner"
-        class="expiry-banner"
-        @click="goToActivation"
-      >
-        <text class="expiry-banner-text">
-          你的 {{ expiryTierLabel }} 订阅将于 {{ expiryDateStr }} 到期，续费可继续享受完整功能
-        </text>
-        <text class="expiry-banner-close" @click.stop="dismissExpiryBanner">✕</text>
-      </view>
-
       <!-- Header + Daily Quote Bar -->
       <DailyQuoteBar>
         <template #left>
@@ -98,12 +85,6 @@
       </view>
     </view>
 
-    <ActivationModal
-      :visible="showActivationModal"
-      :mandatory="true"
-      @success="handleActivationSuccess"
-      @close="handleActivationClose"
-    />
   </view>
 </template>
 
@@ -111,18 +92,13 @@
 import HomeSidebar from '@/components/layout/HomeSidebar.vue'
 import WidgetGrid from '@/components/widgets/WidgetGrid.vue'
 import DailyQuoteBar from '@/components/widgets/DailyQuoteBar.vue'
-import ActivationModal from '@/components/activation-modal/activation-modal.vue'
-import { getMe } from '@/api/auth'
-import { useUserStore } from '@/store/user'
 import { useWidgetStore, WIDGET_CATALOG } from '@/store/widgets'
-import { getTokens } from '@/utils/storage'
 
 export default {
   components: {
     HomeSidebar,
     WidgetGrid,
-    DailyQuoteBar,
-    ActivationModal
+    DailyQuoteBar
   },
   data() {
     return {
@@ -130,75 +106,11 @@ export default {
       selectedSpaceId: null,
       editMode: false,
       showPicker: false,
-      showActivationModal: false,
-      expiryBannerDismissed: false,
       widgetStore: useWidgetStore(),
       catalog: WIDGET_CATALOG
     }
   },
-  computed: {
-    userStore() {
-      return useUserStore()
-    },
-    subscriptionExpiryInfo() {
-      const user = this.userStore?.user
-      if (!user?.subscription_expires_at) return null
-      const tier = (user.subscription_tier || 'FREE').toUpperCase()
-      if (tier === 'FREE') return null
-      const expiresAt = new Date(user.subscription_expires_at)
-      if (isNaN(expiresAt.getTime())) return null
-      const now = new Date()
-      const daysLeft = Math.ceil((expiresAt - now) / (1000 * 60 * 60 * 24))
-      if (daysLeft <= 0 || daysLeft > 7) return null
-      const tierMap = { BASIC: 'Plus', PREMIUM: 'Ultra', PLUS: 'Plus', ULTRA: 'Ultra', ALPHA: 'Alpha' }
-      return { daysLeft, label: tierMap[tier] || tier, dateStr: expiresAt.toISOString().slice(0, 10) }
-    },
-    showExpiryBanner() {
-      return this.subscriptionExpiryInfo && !this.expiryBannerDismissed
-    },
-    expiryTierLabel() {
-      return this.subscriptionExpiryInfo?.label || ''
-    },
-    expiryDateStr() {
-      return this.subscriptionExpiryInfo?.dateStr || ''
-    }
-  },
-  onShow() {
-    this.syncActivationState()
-  },
   methods: {
-    isActivatedTier(tier) {
-      return typeof tier === 'string' && tier.toUpperCase() === 'ALPHA'
-    },
-    async syncActivationState() {
-      const tokens = getTokens()
-      if (!tokens || !tokens.access_token) {
-        this.showActivationModal = false
-        return
-      }
-
-      try {
-        const user = await getMe()
-        const userStore = useUserStore()
-        userStore.setUser(user)
-        this.showActivationModal = false
-      } catch (error) {
-        this.showActivationModal = false
-      }
-    },
-    handleActivationSuccess(response) {
-      const userStore = useUserStore()
-      userStore.updateSubscription(
-        response.subscription_tier,
-        response.subscription_expires_at
-      )
-      this.showActivationModal = false
-    },
-    handleActivationClose() {
-      const userStore = useUserStore()
-      const tier = userStore.user?.subscription_tier
-      this.showActivationModal = !this.isActivatedTier(tier)
-    },
     toggleEditMode() {
       this.editMode = !this.editMode
       if (!this.editMode) {
@@ -225,7 +137,6 @@ export default {
     handleNavigate(id) {
       const routes = {
         home: '/pages/index/index',
-        direct: '/pages/index/index',
         setting: '/pages/index/index'
       }
       const url = routes[id]
@@ -238,15 +149,6 @@ export default {
       uni.navigateTo({
         url: `/pages/study/study?spaceId=${spaceId}`
       })
-    },
-    handleCreateSpace() {
-      uni.navigateTo({ url: '/pages/createSpace/createSpace' })
-    },
-    dismissExpiryBanner() {
-      this.expiryBannerDismissed = true
-    },
-    goToActivation() {
-      uni.navigateTo({ url: '/pages/activation/activation' })
     }
   }
 }

@@ -2,6 +2,10 @@
 
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,15 +16,52 @@ from auth.exceptions import AppleAuthError
 from auth.schemas import RegisterRequest
 from auth.service import register
 from auth.verification import create_verification_token
+from config import get_settings
 from core.jwt import create_access_token, create_refresh_token
+from core.security import hash_password
 from db.database import get_db
-from db.models import VerificationCode, VerificationCodePurpose
-from main import app
+from db.models import SubscriptionTier, User, VerificationCode, VerificationCodePurpose
+from auth.router import router as auth_router
+
+
+app = FastAPI()
+app.include_router(auth_router)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    if request.url.path in {
+        "/api/auth/register",
+        "/api/auth/register-with-code",
+        "/api/auth/reset-password",
+    }:
+        for error in exc.errors():
+            if any(field in ("password", "new_password") for field in error.get("loc", [])):
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "detail": {
+                            "code": "WEAK_PASSWORD",
+                            "message": error.get("msg", "密码强度不足"),
+                        }
+                    },
+                )
+    return await request_validation_exception_handler(request, exc)
 
 
 @pytest_asyncio.fixture
 async def client(db_session: AsyncSession):
     """创建测试客户端"""
+
+    settings = get_settings()
+    original_registration = settings.public_registration_enabled
+    original_auth_email = settings.auth_email_enabled
+    original_apple_login = settings.apple_login_enabled
+    original_email = settings.email_enabled
+    settings.public_registration_enabled = True
+    settings.auth_email_enabled = True
+    settings.apple_login_enabled = True
+    settings.email_enabled = False
 
     async def override_get_db():
         yield db_session
@@ -34,6 +75,10 @@ async def client(db_session: AsyncSession):
         yield ac
 
     app.dependency_overrides.clear()
+    settings.public_registration_enabled = original_registration
+    settings.auth_email_enabled = original_auth_email
+    settings.apple_login_enabled = original_apple_login
+    settings.email_enabled = original_email
 
 
 class TestRegisterEndpoint:
@@ -166,6 +211,95 @@ class TestLoginEndpoint:
             },
         )
         assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_login_with_username(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        db_session.add(
+            User(
+                username="exp001",
+                email="exp001@experiment.invalid",
+                nickname="Experiment 001",
+                password_hash=hash_password("Password123"),
+                subscription_tier=SubscriptionTier.ALPHA,
+                subscription_expires_at=None,
+            )
+        )
+        await db_session.commit()
+
+        response = await client.post(
+            "/api/auth/login",
+            json={"identifier": "EXP001", "password": "Password123"},
+        )
+        assert response.status_code == 200
+        assert response.json()["access_token"]
+
+
+class TestExperimentFeatureFlags:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("path", "payload"),
+        [
+            (
+                "/api/auth/register",
+                {
+                    "email": "disabled@example.com",
+                    "password": "Password123",
+                    "nickname": "Disabled",
+                },
+            ),
+            (
+                "/api/auth/send-code",
+                {"email": "disabled@example.com", "purpose": "registration"},
+            ),
+            (
+                "/api/auth/verify-code",
+                {
+                    "email": "disabled@example.com",
+                    "code": "123456",
+                    "purpose": "registration",
+                },
+            ),
+            (
+                "/api/auth/reset-password",
+                {
+                    "email": "disabled@example.com",
+                    "verification_token": "disabled-token",
+                    "new_password": "Password123",
+                },
+            ),
+        ],
+    )
+    async def test_public_account_features_return_404(
+        self, client: AsyncClient, path: str, payload: dict
+    ):
+        get_settings().public_registration_enabled = False
+        response = await client.post(path, json=payload)
+        assert response.status_code == 404
+        assert response.json()["detail"]["code"] == "FEATURE_DISABLED"
+
+    @pytest.mark.asyncio
+    async def test_apple_login_remains_disabled(self, client: AsyncClient):
+        get_settings().apple_login_enabled = False
+        response = await client.post(
+            "/api/auth/apple",
+            json={"id_token": "disabled.token"},
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"]["code"] == "FEATURE_DISABLED"
+
+    @pytest.mark.asyncio
+    async def test_auth_email_flow_can_be_disabled_independently(
+        self, client: AsyncClient
+    ):
+        get_settings().auth_email_enabled = False
+        response = await client.post(
+            "/api/auth/send-code",
+            json={"email": "disabled@example.com", "purpose": "registration"},
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"]["code"] == "FEATURE_DISABLED"
 
 
 class TestRefreshEndpoint:

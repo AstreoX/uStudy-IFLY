@@ -12,7 +12,6 @@
       :collapsed="sidebarCollapsed"
       @toggle="sidebarCollapsed = !sidebarCollapsed"
       @select-space="handleSelectSpace"
-      @create-space="() => {}"
     />
 
     <!-- Main Content -->
@@ -87,27 +86,13 @@
             <text class="content-title">账户与安全</text>
             <text class="content-desc">管理你的账户信息和安全设置</text>
             <view class="card">
-              <view class="card-row card-row-clickable" @click="handleChangePassword">
+              <view class="card-row">
                 <view class="row-main">
                   <view class="row-text">
-                    <text class="row-label">修改密码</text>
-                    <text class="row-desc">更新登录密码</text>
+                    <text class="row-label">实验账号</text>
+                    <text class="row-desc">账号和密码由实验管理员统一维护</text>
                   </view>
                 </view>
-                <svg viewBox="0 0 256 256" width="16" height="16" class="row-arrow">
-                  <polyline points="96 48 176 128 96 208" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-                </svg>
-              </view>
-              <view class="card-row card-row-clickable" @click="handleSubscription">
-                <view class="row-main">
-                  <view class="row-text">
-                    <text class="row-label">订阅管理</text>
-                    <text class="row-desc">查看和管理订阅计划</text>
-                  </view>
-                </view>
-                <svg viewBox="0 0 256 256" width="16" height="16" class="row-arrow">
-                  <polyline points="96 48 176 128 96 208" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
-                </svg>
               </view>
             </view>
           </view>
@@ -187,14 +172,6 @@ export default {
   methods: {
     handleSelectSpace(spaceId) {
       uni.reLaunch({ url: `/pages/study/study?spaceId=${spaceId}` })
-    },
-
-    handleChangePassword() {
-      uni.navigateTo({ url: '/pages/resetPassword/resetPassword' })
-    },
-
-    handleSubscription() {
-      uni.navigateTo({ url: '/pages/activation/activation' })
     },
 
     async loadSettings() {

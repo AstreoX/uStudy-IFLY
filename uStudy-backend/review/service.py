@@ -6,10 +6,12 @@ import math
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, cast, func, or_, select, update
+from sqlalchemy.types import Date as SQLDate
 
 from db.database import get_scoped_session
 from db.models import ReviewSchedule, Space, StudyActivityLog
+from review.schemas import ReviewPlanItem, ReviewPlanResponse, ReviewPlanStats
 from review.sm2 import score_to_quality, should_graduate, sm2_next_review
 
 logger = logging.getLogger(__name__)
@@ -463,6 +465,153 @@ async def complete_reviews_by_activity(user_id: UUID, activity_id: UUID) -> int:
                 f"Completed {count} due reviews for activity {activity_id} (user={user_id})"
             )
         return count
+
+
+async def get_plan_items(
+    user_id: UUID,
+) -> list[tuple[ReviewSchedule, StudyActivityLog, str | None]]:
+    """复习计划页条目：今日到期/逾期的 pending + 今日已完成。"""
+    today = datetime.now(timezone.utc).date()
+    today_start = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+    today_end = today_start + timedelta(days=1)
+
+    async with get_scoped_session() as session:
+        result = await session.execute(
+            select(ReviewSchedule, StudyActivityLog, Space.name)
+            .join(
+                StudyActivityLog,
+                ReviewSchedule.activity_id == StudyActivityLog.id,
+            )
+            .outerjoin(
+                Space,
+                StudyActivityLog.space_id == Space.id,
+            )
+            .where(
+                ReviewSchedule.user_id == user_id,
+                or_(
+                    and_(
+                        ReviewSchedule.status == "pending",
+                        ReviewSchedule.scheduled_date <= today,
+                    ),
+                    and_(
+                        ReviewSchedule.status == "completed",
+                        ReviewSchedule.completed_at >= today_start,
+                        ReviewSchedule.completed_at < today_end,
+                    ),
+                ),
+            )
+            .order_by(
+                ReviewSchedule.scheduled_date.asc(),
+                ReviewSchedule.review_number.asc(),
+                ReviewSchedule.id.asc(),
+            )
+        )
+        rows = result.all()
+        # Eagerly access attributes before session closes
+        for r, a, space_name in rows:
+            _ = (
+                r.id,
+                r.activity_id,
+                r.review_number,
+                r.scheduled_date,
+                r.status,
+                r.completed_at,
+                r.study_depth,
+                a.title,
+                a.subject_name,
+                a.activity_time,
+                space_name,
+            )
+        return list(rows)
+
+
+async def get_plan_stats(user_id: UUID) -> ReviewPlanStats:
+    """复习计划页统计：总数 / 今日待复习 / 今日已完成 / 连续天数。"""
+    today = datetime.now(timezone.utc).date()
+    today_start = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+    today_end = today_start + timedelta(days=1)
+
+    async with get_scoped_session() as session:
+        total_res = await session.execute(
+            select(func.count(ReviewSchedule.id)).where(
+                ReviewSchedule.user_id == user_id,
+            )
+        )
+        total = int(total_res.scalar() or 0)
+
+        pending_res = await session.execute(
+            select(func.count(ReviewSchedule.id)).where(
+                ReviewSchedule.user_id == user_id,
+                ReviewSchedule.status == "pending",
+                ReviewSchedule.scheduled_date <= today,
+            )
+        )
+        today_pending = int(pending_res.scalar() or 0)
+
+        completed_res = await session.execute(
+            select(func.count(ReviewSchedule.id)).where(
+                ReviewSchedule.user_id == user_id,
+                ReviewSchedule.status == "completed",
+                ReviewSchedule.completed_at >= today_start,
+                ReviewSchedule.completed_at < today_end,
+            )
+        )
+        today_completed = int(completed_res.scalar() or 0)
+
+        # 取最近 60 天内有完成记录的天（去重），Python 侧计算连续天数
+        window_start = today_start - timedelta(days=60)
+        days_res = await session.execute(
+            select(cast(ReviewSchedule.completed_at, SQLDate))
+            .where(
+                ReviewSchedule.user_id == user_id,
+                ReviewSchedule.status == "completed",
+                ReviewSchedule.completed_at >= window_start,
+            )
+            .distinct()
+        )
+        completed_days = {row[0] for row in days_res.all() if row[0] is not None}
+
+        streak = 0
+        cursor = today
+        while cursor in completed_days:
+            streak += 1
+            cursor = cursor - timedelta(days=1)
+
+    return ReviewPlanStats(
+        total=total,
+        today_pending=today_pending,
+        today_completed=today_completed,
+        streak=streak,
+    )
+
+
+async def get_review_plan(user_id: UUID) -> ReviewPlanResponse:
+    """聚合复习计划页数据（统计 + 条目）。"""
+    stats = await get_plan_stats(user_id)
+    rows = await get_plan_items(user_id)
+
+    today = datetime.now(timezone.utc).date()
+    items: list[ReviewPlanItem] = []
+    for r, activity, space_name in rows:
+        days_overdue = (today - r.scheduled_date).days
+        items.append(
+            ReviewPlanItem(
+                id=r.id,
+                activity_id=r.activity_id,
+                title=activity.title,
+                subject_name=activity.subject_name,
+                space_name=space_name,
+                review_number=r.review_number,
+                scheduled_date=r.scheduled_date,
+                status=r.status,
+                study_depth=r.study_depth,
+                days_overdue=max(0, days_overdue),
+                activity_time=activity.activity_time,
+                completed_at=r.completed_at,
+            )
+        )
+
+    return ReviewPlanResponse(stats=stats, items=items)
 
 
 def format_due_reviews_for_prompt(

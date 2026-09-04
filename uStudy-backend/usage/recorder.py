@@ -19,8 +19,9 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
     "google/gemini-2.0-flash-001": (0.10, 0.40),
     "google/gemini-3-flash-preview": (0.10, 0.40),
     "minimax/minimax-m2.5": (0.30, 1.20),
-    "bytedance-seed/seed-2.0-lite": (0.80, 3.20),
-    "moonshotai/kimi-k2.5": (1.00, 4.00),
+    "qwen/qwen3.6-plus": (0.80, 3.20),
+    # Reuse the public GLM 5 Turbo rate until the exact 5V Turbo OpenRouter price is confirmed.
+    "z-ai/glm-5v-turbo": (1.20, 4.00),
     "google/gemini-3.1-pro-preview": (1.25, 10.00),
     "qwen/qwen3-8b": (0.06, 0.06),
     "google/gemini-3-pro-preview": (1.25, 10.00),

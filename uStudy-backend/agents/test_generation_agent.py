@@ -7,11 +7,13 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agents.llm.client import OpenRouterClient
+from agents.llm.client import LLMClient
 from agents.llm.prompts import build_test_generation_prompt
 from agents.tools.quiz_tools import QUIZ_TOOLS, CreatedQuestion, QuizToolExecutor
 from config import get_settings
 from db.models import Question, Quiz
+from usage.metering import UsageContext
+from usage.models import UsageType
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,7 @@ class TestGenerationAgent:
         self.db = db
         self.settings = get_settings()
         # 使用 Gemini 模型
-        self.llm_client = OpenRouterClient(model_override=self.settings.gemini_model)
+        self.llm_client = LLMClient(model_override=self.settings.gemini_model)
         self.tool_executor = QuizToolExecutor()
         # 调试日志收集
         self.debug_logs: list[dict[str, Any]] = []
@@ -42,6 +44,9 @@ class TestGenerationAgent:
         difficulty: str,
         test_struct: list[dict[str, Any]],
         on_progress: Any = None,
+        user_id: UUID | None = None,
+        space_id: UUID | None = None,
+        billable: bool = True,
     ) -> tuple[int, int, list[dict[str, Any]]]:
         """
         生成测试题
@@ -65,6 +70,16 @@ class TestGenerationAgent:
             topic,
             difficulty,
         )
+        usage_context = UsageContext(
+            user_id=user_id,
+            usage_type=UsageType.AGENT_LLM,
+            source_module="agents",
+            source_operation="test_generation",
+            billable=bool(user_id and billable),
+            space_id=space_id,
+            metadata={"quiz_id": str(quiz_id), "topic": topic},
+        )
+        self.llm_client.usage_context = usage_context
 
         # 清空调试日志
         self.debug_logs = []
@@ -80,7 +95,10 @@ class TestGenerationAgent:
         if needs_reasoning:
             selected_model = self.settings.quiz_reasoning_model
             logger.info("主题「%s」判定为推理型，切换到 %s", topic, selected_model)
-            llm_client = OpenRouterClient(model_override=selected_model)
+            llm_client = LLMClient(
+                model_override=selected_model,
+                usage_context=usage_context,
+            )
         else:
             selected_model = self.settings.gemini_model
             logger.info("主题「%s」判定为常识型，使用默认模型 %s", topic, selected_model)

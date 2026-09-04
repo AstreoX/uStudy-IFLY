@@ -1,10 +1,16 @@
 """简答题评估器"""
 
+import logging
 import re
 from dataclasses import dataclass
 
-from agents.llm import OpenRouterClient
+from agents.llm import LLMClient
 from agents.llm.evaluation_prompts import build_short_answer_evaluation_prompt
+from config import get_settings
+from usage.metering import UsageContext
+from usage.models import UsageType
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -16,7 +22,7 @@ class ShortAnswerEvaluationResult:
     ai_evaluation: str  # AI 评估完整文本
 
 
-def extract_score_from_evaluation(ai_response: str, max_score: int = 10) -> int:
+def extract_score_from_evaluation(ai_response: str | None, max_score: int = 10) -> int:
     """
     从 AI 响应中提取分数
 
@@ -27,6 +33,9 @@ def extract_score_from_evaluation(ai_response: str, max_score: int = 10) -> int:
     Returns:
         提取的分数（0 到 max_score 之间的整数）
     """
+    if not ai_response:
+        return 0
+
     # 匹配 {数字} 格式，取最后一个匹配（即最终得分）
     matches = re.findall(r"\{(\d+)\}", ai_response)
     if matches:
@@ -40,6 +49,8 @@ async def evaluate_short_answer(
     reference_answer: str,
     user_answer: str,
     max_score: int = 10,
+    user_id=None,
+    space_id=None,
 ) -> ShortAnswerEvaluationResult:
     """
     评估单道简答题
@@ -61,13 +72,32 @@ async def evaluate_short_answer(
         max_score=max_score,
     )
 
-    # 2. 调用 OpenRouter LLM API（复用现有客户端）
-    client = OpenRouterClient()
-    ai_response = await client.complete(
-        messages=messages,
-        temperature=0.3,  # 评估任务用较低温度，保证一致性
-        max_tokens=1024,
+    # 2. 调用 OpenRouter LLM API。
+    # 评估固定使用 quiz_evaluation_model，避免落到全局默认对话模型。
+    client = LLMClient(
+        model_override=get_settings().quiz_evaluation_model or None,
+        usage_context=UsageContext(
+            user_id=user_id,
+            usage_type=UsageType.AGENT_LLM,
+            source_module="quiz",
+            source_operation="short_answer_evaluation",
+            billable=bool(user_id),
+            space_id=space_id,
+        ),
     )
+    try:
+        ai_response = await client.complete(
+            messages=messages,
+            temperature=0.3,  # 评估任务用较低温度，保证一致性
+            max_tokens=1024,
+        )
+    except Exception as exc:
+        logger.warning("Short answer evaluation failed: %s", exc, exc_info=True)
+        ai_response = None
+
+    if not ai_response:
+        logger.warning("Short answer evaluation returned empty content")
+        ai_response = "AI 评分服务暂时不可用，未返回有效评语。该题暂按 0 分处理，请稍后重试。"
 
     # 3. 提取分数
     score = extract_score_from_evaluation(ai_response, max_score)

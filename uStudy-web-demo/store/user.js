@@ -25,15 +25,6 @@ export const useUserStore = defineStore('user', {
         spacesStore.clear(nextUserKey)
       }
     },
-    updateSubscription(subscription_tier, subscription_expires_at) {
-      if (!this.user) return
-      this.user = {
-        ...this.user,
-        subscription_tier,
-        subscription_expires_at
-      }
-      persistUser(this.user)
-    },
     clear() {
       this.user = null
       clearAuth()

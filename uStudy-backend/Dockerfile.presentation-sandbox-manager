@@ -1,0 +1,17 @@
+# The manager is intentionally the only component with Docker socket access.
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
+
+RUN apt-get update && apt-get install -y --no-install-recommends docker.io ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir fastapi==0.116.1 uvicorn==0.35.0 pydantic==2.11.7
+
+WORKDIR /app
+COPY presentation_agent /app/presentation_agent
+RUN mkdir -p /var/lib/presentation-manager
+
+EXPOSE 8090
+CMD ["uvicorn", "presentation_agent.manager.app:app", "--host", "0.0.0.0", "--port", "8090"]

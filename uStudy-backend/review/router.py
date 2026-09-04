@@ -11,12 +11,14 @@ from review.schemas import (
     CompleteReviewRequest,
     DueReviewItem,
     DueReviewsResponse,
+    ReviewPlanResponse,
     ReviewScheduleItem,
 )
 from review.service import (
     complete_review,
     get_due_reviews,
     get_due_reviews_total,
+    get_review_plan,
     get_reviews_for_activity,
 )
 
@@ -60,6 +62,12 @@ async def get_due_reviews_endpoint(
             )
         )
     return DueReviewsResponse(items=items, total=total)
+
+
+@router.get("/plan", response_model=ReviewPlanResponse)
+async def get_review_plan_endpoint(user: CurrentUser):
+    """获取复习计划页聚合数据（统计卡片 + 今日列表）。"""
+    return await get_review_plan(user.id)
 
 
 @router.post("/complete")

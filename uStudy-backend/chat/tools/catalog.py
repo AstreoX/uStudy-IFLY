@@ -19,6 +19,7 @@ from chat.tools.rag_tools import RAG_TOOLS
 from chat.tools.vector_memory_tools import VECTOR_MEMORY_TOOLS
 from chat.tools.time_tools import TIME_TOOLS
 from chat.tools.review_tools import REVIEW_TOOLS
+from chat.tools.agent_todo_tools import AGENT_TODO_TOOLS
 from chat.tools.note_tools import NOTE_TOOLS
 from chat.tools.artifact_tools import ARTIFACT_TOOLS
 from chat.tools.image_tools import IMAGE_TOOLS
@@ -45,6 +46,7 @@ def _build_registry() -> dict[str, dict]:
         VECTOR_MEMORY_TOOLS,
         TIME_TOOLS,
         REVIEW_TOOLS,
+        AGENT_TODO_TOOLS,
         NOTE_TOOLS,
         IMAGE_TOOLS,
         ARTIFACT_TOOLS,
@@ -110,8 +112,12 @@ TOOL_CATALOG: list[ToolCatalogEntry] = [
     ToolCatalogEntry("delete_schedule", "日程", "删除日程事件"),
     ToolCatalogEntry("update_schedule", "日程", "更新日程事件"),
 
-    # ── 文档检索 (1) ──
-    ToolCatalogEntry("search_documents", "文档检索", "搜索用户上传的文档"),
+    # ── 文档检索 (5) ──
+    ToolCatalogEntry("search_keywords", "文档检索", "知识库全文关键词搜索（BM25）"),
+    ToolCatalogEntry("search_regex", "文档检索", "知识库正则表达式搜索"),
+    ToolCatalogEntry("list_documents", "文档检索", "列出知识库中所有文档"),
+    ToolCatalogEntry("read_document", "文档检索", "读取指定文档全文"),
+    ToolCatalogEntry("view_document_page", "文档检索", "按页渲染 PDF 页面给主 AI 查看"),
 
     # ── 记忆 (4) ──
     ToolCatalogEntry("remember", "记忆", "写入长期记忆（跨空间持久）"),
@@ -126,6 +132,12 @@ TOOL_CATALOG: list[ToolCatalogEntry] = [
     ToolCatalogEntry("get_review_events", "复习", "查看到期/逾期的待复习项"),
     ToolCatalogEntry("mark_review_completed", "复习", "标记复习完成"),
 
+    # ── Agent Todo (4) ──
+    ToolCatalogEntry("create_todo", "Agent Todo", "为当前对话创建一个或多个 agent todo 步骤"),
+    ToolCatalogEntry("update_todo", "Agent Todo", "更新已有 agent todo 的标题或备注"),
+    ToolCatalogEntry("complete_todo", "Agent Todo", "将指定 agent todo 标记为完成"),
+    ToolCatalogEntry("delete_todo", "Agent Todo", "删除不再需要的 agent todo"),
+
     # ── 笔记 (5) ──
     ToolCatalogEntry("create_note", "笔记", "创建学习笔记卡片（支持 Markdown 和图片）"),
     ToolCatalogEntry("list_notes", "笔记", "查看某节点下的笔记列表（标题概览）"),
@@ -133,8 +145,8 @@ TOOL_CATALOG: list[ToolCatalogEntry] = [
     ToolCatalogEntry("update_note", "笔记", "更新笔记内容（支持按行号局部替换）"),
     ToolCatalogEntry("delete_note", "笔记", "删除指定笔记"),
 
-    # ── 图表生成 (1) ──
-    ToolCatalogEntry("generate_chart", "图表生成", "根据描述生成图表或图片"),
+    # ── 图片生成 (1) ──
+    ToolCatalogEntry("generate_image", "图片生成", "根据详细描述生成图片、配图、机制图、流程图、示意图、信息图或数据图"),
 
     # ── 互动演示 (2) ──
     ToolCatalogEntry("create_artifact", "互动演示", "创建交互式 HTML 演示（每个对话仅限一个，禁止在一个对话session中重复调用）"),
@@ -148,6 +160,12 @@ TOOL_CATALOG: list[ToolCatalogEntry] = [
 
     # ── 知识库管理 (1) ──
     ToolCatalogEntry("save_to_knowledge_base", "知识库管理", "将网页保存到学习空间知识库（自动 RAG 索引）"),
+
+    # ── 上下文检索（始终可用，无需 get_tool_details） ──
+    ToolCatalogEntry("get_context_memories", "上下文", "获取与当前话题相关的用户记忆（后台已在检索中）"),
+    ToolCatalogEntry("get_context_documents", "上下文", "获取相关文档片段（后台已在检索中）"),
+    ToolCatalogEntry("get_previous_context", "上下文", "获取上一次对话摘要（仅新对话有内容）"),
+    ToolCatalogEntry("get_guidance", "上下文", "获取详细行为指导（节奏控制、引导方式、对话状态等）"),
 ]
 
 # 按分类组织的目录（用于 API 返回和前端展示）

@@ -38,6 +38,7 @@ from spaces.schemas import (
     SpaceResponse,
     SpaceUpdate,
 )
+from experiment.default_course import DEFAULT_SPACE_ID, SYSTEM_USER_ID
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,8 @@ class SpaceService:
             .where(SpaceMember.user_id == user_id)
             .order_by(Space.updated_at.desc())
         )
+        if get_settings().app_env == "experiment":
+            stmt = stmt.where(Space.id == DEFAULT_SPACE_ID)
         result = await self.db.execute(stmt)
         rows = result.all()
 
@@ -114,6 +117,8 @@ class SpaceService:
     ) -> SpaceResponse:
         """更新学习空间"""
         space = await verify_space_access(self.db, space_id, user_id)
+        if space_id == DEFAULT_SPACE_ID and user_id != SYSTEM_USER_ID:
+            raise SpaceAccessDeniedError("默认数据结构课程不允许学生修改")
 
         if request.name is not None:
             space.name = request.name
@@ -132,6 +137,9 @@ class SpaceService:
     async def delete_space(self, user_id: UUID, space_id: UUID) -> None:
         """删除学习空间 — owner 删除空间，member 退出空间"""
         space = await verify_space_access(self.db, space_id, user_id)
+
+        if space_id == DEFAULT_SPACE_ID and user_id != SYSTEM_USER_ID:
+            raise SpaceAccessDeniedError("默认数据结构课程不允许退出或删除")
 
         if space.user_id != user_id:
             # Non-owner member: leave instead of delete
@@ -276,7 +284,7 @@ class SpaceService:
     # ---- Membership ----
 
     async def get_space_members(self, user_id: UUID, space_id: UUID) -> list[dict]:
-        """获取协作空间的成员列表"""
+        """获取协作空间的学生成员列表（教师不出现在学生筛选器中）。"""
         await verify_space_access(self.db, space_id, user_id)
 
         from db.models import User
@@ -284,7 +292,11 @@ class SpaceService:
         stmt = (
             select(SpaceMember, User.nickname, User.avatar_url)
             .join(User, User.id == SpaceMember.user_id)
-            .where(SpaceMember.space_id == space_id)
+            .where(
+                SpaceMember.space_id == space_id,
+                SpaceMember.user_id != SYSTEM_USER_ID,
+                SpaceMember.role == SpaceMemberRole.MEMBER,
+            )
             .order_by(SpaceMember.joined_at)
         )
         result = await self.db.execute(stmt)
@@ -308,6 +320,8 @@ class SpaceService:
     ) -> None:
         """移除成员 (owner removes member, or member leaves)"""
         space = await verify_space_access(self.db, space_id, requesting_user_id)
+        if space_id == DEFAULT_SPACE_ID and target_user_id != SYSTEM_USER_ID:
+            raise SpaceAccessDeniedError("默认数据结构课程成员不能退出")
         is_owner = space.user_id == requesting_user_id
         is_self_leaving = requesting_user_id == target_user_id
 
@@ -367,7 +381,11 @@ class SpaceService:
         stmt = (
             select(SpaceMember, User.nickname, User.avatar_url)
             .join(User, User.id == SpaceMember.user_id)
-            .where(SpaceMember.space_id == space_id)
+            .where(
+                SpaceMember.space_id == space_id,
+                SpaceMember.user_id != SYSTEM_USER_ID,
+                SpaceMember.role == SpaceMemberRole.MEMBER,
+            )
             .order_by(SpaceMember.joined_at)
         )
         result = await self.db.execute(stmt)

@@ -11,7 +11,7 @@
 
     <!-- Navigation -->
     <view class="sidebar-nav">
-      <template v-for="item in menuItems" :key="item.id">
+      <template v-for="item in visibleMenuItems" :key="item.id">
         <view
           class="nav-item"
           :class="{ active: item.id === activeId }"
@@ -22,8 +22,9 @@
             <svg v-if="item.id === 'home'" viewBox="0 0 256 256"><rect width="256" height="256" fill="none"/><path d="M104,216V152h48v64h64V120a8,8,0,0,0-2.34-5.66l-80-80a8,8,0,0,0-11.32,0l-80,80A8,8,0,0,0,40,120v96Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>
             <!-- graduation-cap -->
             <svg v-else-if="item.id === 'study'" viewBox="0 0 256 256"><rect width="256" height="256" fill="none"/><polygon points="8 96 128 32 248 96 128 160 8 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><polyline points="128 96 184 125.87 184 240" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><path d="M216,113.07v53.22a8,8,0,0,1-2,5.31c-11.3,12.59-38.9,36.4-86,36.4s-74.68-23.81-86-36.4a8,8,0,0,1-2-5.31V113.07" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>
-            <!-- chat -->
-            <svg v-else-if="item.id === 'direct'" viewBox="0 0 256 256"><path d="M216,48H40A16,16,0,0,0,24,64V224a15.84,15.84,0,0,0,9.25,14.5A16.05,16.05,0,0,0,40,240a15.89,15.89,0,0,0,10.25-3.78l.09-.07L83,208H216a16,16,0,0,0,16-16V64A16,16,0,0,0,216,48ZM216,192H80a8,8,0,0,0-5.23,1.95L40,224V64H216Z" fill="currentColor"/></svg>
+            <svg v-else-if="item.id === 'teacher'" viewBox="0 0 256 256"><rect x="32" y="32" width="192" height="192" rx="12" fill="none" stroke="currentColor" stroke-width="16"/><line x1="72" y1="184" x2="72" y2="136" stroke="currentColor" stroke-width="16" stroke-linecap="round"/><line x1="128" y1="184" x2="128" y2="96" stroke="currentColor" stroke-width="16" stroke-linecap="round"/><line x1="184" y1="184" x2="184" y2="64" stroke="currentColor" stroke-width="16" stroke-linecap="round"/></svg>
+            <svg v-else-if="item.id === 'teacher-assistant'" viewBox="0 0 256 256"><rect x="28" y="48" width="200" height="144" rx="12" fill="none" stroke="currentColor" stroke-width="16"/><line x1="72" y1="224" x2="184" y2="224" stroke="currentColor" stroke-width="16" stroke-linecap="round"/><line x1="128" y1="192" x2="128" y2="224" stroke="currentColor" stroke-width="16"/><path d="M72 144l34-38 26 24 39-48 25 32" fill="none" stroke="currentColor" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg v-else-if="item.id === 'teacher-assignments'" viewBox="0 0 256 256"><rect x="48" y="32" width="160" height="192" rx="12" fill="none" stroke="currentColor" stroke-width="16"/><path d="M88 80h80M88 120h80M88 160h48" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round"/><path d="m156 184 12 12 24-28" fill="none" stroke="currentColor" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <!-- calendar -->
             <svg v-else-if="item.id === 'calendar'" viewBox="0 0 256 256"><rect width="256" height="256" fill="none"/><rect x="40" y="40" width="176" height="176" rx="8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="176" y1="24" x2="176" y2="56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="80" y1="24" x2="80" y2="56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><line x1="40" y1="88" x2="216" y2="88" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>
           </view>
@@ -69,13 +70,6 @@
               <text class="space-progress">{{ spaceProgress[space.id] || 0 }}%</text>
             </view>
           </view>
-          <view class="submenu-footer">
-            <view class="submenu-divider"></view>
-            <view class="submenu-create" @tap="handleCreateSpace">
-              <text class="submenu-create-plus">+</text>
-              <text class="submenu-create-text">New Space</text>
-            </view>
-          </view>
         </view>
       </template>
     </view>
@@ -98,12 +92,9 @@
           </view>
           <view class="account-info">
             <text class="account-name">{{ userDisplayName }}</text>
-            <view class="account-badge" :class="subscriptionClass">
-              <text class="account-badge-text">{{ subscriptionLabel }}</text>
-            </view>
+            <text class="account-identifier">{{ userIdentifier }}</text>
           </view>
         </view>
-
         <!-- Account menu (teleported to body to escape sidebar overflow:hidden + backdrop-filter clipping) -->
         <Teleport to="body">
           <view v-if="accountMenuOpen" class="account-menu-backdrop" @tap="closeAccountMenu"></view>
@@ -122,15 +113,11 @@
                 </view>
                 <view class="account-menu-user">
                   <text class="account-menu-name">{{ userDisplayName }}</text>
-                  <text class="account-menu-email">{{ maskedEmail }}</text>
+                  <text class="account-menu-email">{{ userIdentifier }}</text>
                 </view>
               </view>
               <view class="account-menu-divider"></view>
               <!-- Menu items -->
-              <view class="account-menu-item" @tap="handleSubscription">
-                <svg viewBox="0 0 256 256" class="account-menu-icon" fill="currentColor"><path d="M216,72H180.92c.39-.33.79-.65,1.17-1A29.53,29.53,0,0,0,192,49.57,32.62,32.62,0,0,0,158.44,16,29.53,29.53,0,0,0,137,25.91a54.94,54.94,0,0,0-9,14.48,54.94,54.94,0,0,0-9-14.48A29.53,29.53,0,0,0,97.56,16,32.62,32.62,0,0,0,64,49.57,29.53,29.53,0,0,0,73.91,71c.38.33.78.65,1.17,1H40A16,16,0,0,0,24,88v32a16,16,0,0,0,16,16v64a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V136a16,16,0,0,0,16-16V88A16,16,0,0,0,216,72ZM149,36.51a13.69,13.69,0,0,1,10-4.5h.49A16.62,16.62,0,0,1,176,49.08a13.69,13.69,0,0,1-4.5,10c-9.49,8.4-25.24,11.36-35,12.4C137.7,60.89,141,45.5,149,36.51Zm-64.09.36A16.63,16.63,0,0,1,96.59,32h.49a13.69,13.69,0,0,1,10,4.5c8.39,9.48,11.35,25.2,12.39,34.92-9.72-1-25.44-4-34.92-12.39a13.69,13.69,0,0,1-4.5-10A16.6,16.6,0,0,1,84.87,36.87ZM40,88h80v32H40Zm16,48h64v64H56Zm144,64H136V136h64Zm16-80H136V88h80v32Z"/></svg>
-                <text class="account-menu-item-text">升级订阅</text>
-              </view>
               <view class="account-menu-item" @tap="handleSettings">
                 <svg viewBox="0 0 256 256" class="account-menu-icon"><rect width="256" height="256" fill="none"/><circle cx="128" cy="128" r="40" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/><path d="M41.43,178.09A99.14,99.14,0,0,1,31.36,153.8l16.78-21a81.59,81.59,0,0,1,0-9.64l-16.77-21a99.43,99.43,0,0,1,10.05-24.3l26.71-3a81,81,0,0,1,6.81-6.81l3-26.7A99.14,99.14,0,0,1,102.2,31.36l21,16.78a81.59,81.59,0,0,1,9.64,0l21-16.77a99.43,99.43,0,0,1,24.3,10.05l3,26.71a81,81,0,0,1,6.81,6.81l26.7,3a99.14,99.14,0,0,1,10.07,24.29l-16.78,21a81.59,81.59,0,0,1,0,9.64l16.77,21a99.43,99.43,0,0,1-10,24.3l-26.71,3a81,81,0,0,1-6.81,6.81l-3,26.7a99.14,99.14,0,0,1-24.29,10.07l-21-16.78a81.59,81.59,0,0,1-9.64,0l-21,16.77a99.43,99.43,0,0,1-24.3-10l-3-26.71a81,81,0,0,1-6.81-6.81Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/></svg>
                 <text class="account-menu-item-text">偏好设置</text>
@@ -190,7 +177,7 @@ export default {
       default: false
     }
   },
-  emits: ['toggle', 'navigate', 'select-space', 'create-space'],
+  emits: ['toggle', 'navigate', 'select-space'],
   created() {
     this.userStore = useUserStore()
     this.spacesStore = useSpacesStore()
@@ -206,8 +193,10 @@ export default {
       showLogoutModal: false,
       menuItems: [
         { id: 'home',    label: '首页',      expandable: false, route: '/pages/index/index' },
-        { id: 'study',   label: '学习空间',  expandable: true },
-        { id: 'direct',  label: '快速对话',  expandable: false, route: '/pages/quickChat/quickChat' },
+        { id: 'study',   label: '数据结构',  expandable: true },
+        { id: 'teacher', label: '教学看板',  expandable: false, route: '/pages/teacherDashboard/teacherDashboard' },
+        { id: 'teacher-assignments', label: '作业管理', expandable: false, route: '/pages/teacherAssignments/teacherAssignments' },
+        { id: 'teacher-assistant', label: '教学助教', expandable: false, route: '/pages/teacherAssistant/teacherAssistant' },
         { id: 'calendar', label: '日程',     expandable: false, route: '/pages/calendar/calendar' }
       ]
     }
@@ -224,6 +213,12 @@ export default {
     },
     spacesLoading() {
       return this.spacesStore.loading
+    },
+    teacherSpace() {
+      return this.spaces.find(space => space.user_role === 'teacher') || null
+    },
+    visibleMenuItems() {
+      return this.menuItems.filter(item => !['teacher', 'teacher-assignments', 'teacher-assistant'].includes(item.id) || this.teacherSpace)
     },
     userInitial() {
       const nickname = this.user?.nickname || this.user?.email || 'U'
@@ -247,32 +242,11 @@ export default {
       }
       return { background: this.avatarGradient }
     },
-    subscriptionClass() {
-      const tier = (this.user?.subscription_tier || 'FREE').toUpperCase()
-      const alias = {
-        BASIC: 'PLUS',
-        PREMIUM: 'ULTRA'
-      }
-      const normalized = alias[tier] || tier
-      return `badge-${normalized.toLowerCase()}`
-    },
-    subscriptionLabel() {
-      const tier = (this.user?.subscription_tier || 'FREE').toUpperCase()
-      const labels = {
-        FREE: 'Free',
-        PLUS: 'Plus',
-        ULTRA: 'Ultra',
-        ALPHA: 'Alpha'
-      }
-      const alias = {
-        BASIC: 'PLUS',
-        PREMIUM: 'ULTRA'
-      }
-      const normalized = alias[tier] || tier
-      return labels[normalized] || normalized
-    },
     userDisplayName() {
       return this.user?.nickname || 'User'
+    },
+    userIdentifier() {
+      return this.user?.username || this.user?.email || '实验账号'
     },
     maskedEmail() {
       const email = this.user?.email || ''
@@ -282,7 +256,7 @@ export default {
       const local = email.substring(0, atIndex)
       const domain = email.substring(atIndex)
       return `${local.charAt(0)}***${domain}`
-    }
+    },
   },
   watch: {
     collapsed(newVal) {
@@ -333,7 +307,7 @@ export default {
       const currentRoute = this.normalizeRoutePath(rawRoute)
       if (!currentRoute) return
 
-      const matchedItem = this.menuItems.find(item => item.route && this.normalizeRoutePath(item.route) === currentRoute)
+      const matchedItem = this.visibleMenuItems.find(item => item.route && this.normalizeRoutePath(item.route) === currentRoute)
       if (matchedItem) {
         this.activeId = matchedItem.id
         if (matchedItem.id !== 'study') {
@@ -343,7 +317,7 @@ export default {
       }
 
       // Treat all learning-space related pages as "study".
-      if (currentRoute.startsWith('/pages/study/') || currentRoute.startsWith('/pages/createSpace/')) {
+      if (currentRoute.startsWith('/pages/study/')) {
         this.activeId = 'study'
       }
     },
@@ -362,6 +336,10 @@ export default {
       this.studyExpanded = false
       this.activeId = item.id
       this.$emit('navigate', item.id)
+      if (['teacher', 'teacher-assignments', 'teacher-assistant'].includes(item.id) && this.teacherSpace) {
+        uni.reLaunch({ url: `${item.route}?spaceId=${encodeURIComponent(this.teacherSpace.id)}` })
+        return
+      }
       if (item.route) {
         uni.reLaunch({ url: item.route })
       }
@@ -369,9 +347,6 @@ export default {
     handleSpaceTap(space) {
       this.selectedSpaceId = space.id
       this.$emit('select-space', space.id)
-    },
-    handleCreateSpace() {
-      this.$emit('create-space')
     },
     toggleAccountMenu() {
       if (this.collapsed) return
@@ -402,12 +377,6 @@ export default {
         this.closeAccountMenu()
       }
     },
-    handleSubscription() {
-      this.accountMenuOpen = false
-      uni.navigateTo({
-        url: '/pages/activation/activation'
-      })
-    },
     handleSettings() {
       this.accountMenuOpen = false
       uni.navigateTo({
@@ -428,7 +397,7 @@ export default {
     },
     refreshSpaces() {
       this.spacesStore.loadSpaces(true)
-    }
+    },
   }
 }
 </script>
@@ -803,6 +772,14 @@ export default {
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1.3;
+}
+
+.account-identifier {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.48);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .account-badge {

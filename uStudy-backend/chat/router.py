@@ -17,21 +17,24 @@ from chat.schemas import (
     SendMessageRequest,
     CreateConversationRequest,
     UpdateConversationRequest,
+    UpdateConversationTodoStatusRequest,
     ConversationResponse,
     ConversationDetailResponse,
+    ConversationTodoListResponse,
     ConversationListResponse,
     ConversationSearchResponse,
     ToolCallRequest,
     ToolCallExecuteResponse,
-    ToolConfirmRequest,
-    ToolConfirmResponse,
-    QuickChatToolTaskStatusResponse,
-    QuickChatToolTaskListResponse,
-    QuickChatToolTaskBindResponse,
     ClientToolResultRequest,
     ClientToolResultResponse,
     RollbackResponse,
     StopStreamResponse,
+)
+from chat.agent_todo_service import (
+    AgentTodoService,
+    ConversationTodoNotFoundError,
+    ConversationTodoAccessDeniedError,
+    AgentTodoItemNotFoundError,
 )
 from chat.models_config import get_available_models, validate_model_id
 from chat.service import (
@@ -43,12 +46,10 @@ from chat.service import (
     SpaceAccessDeniedError,
 )
 from chat.tools.graph_tools import GraphToolExecutor
-from chat.tools.learning_space_executor import LearningSpaceToolExecutor
-from chat.tools.learning_space_tools import get_allowed_tool_names
 from chat.streaming_cache import get_streaming_state
 from db.database import get_db, get_scoped_session
-from db.models import Conversation, Message, MessageRole, User
-from quota.service import check_daily_message_quota, check_model_access, get_effective_tier
+from db.models import Conversation, ConversationKind, Message, MessageRole, User
+from quota.service import check_model_access, get_effective_tier
 from spaces.service import SpaceService, SpaceNotFoundError as SpaceServiceNotFoundError, SpaceAccessDeniedError as SpaceServiceAccessDeniedError
 
 logger = logging.getLogger(__name__)
@@ -160,6 +161,76 @@ async def get_conversation_detail(
 
 
 @router.get(
+    "/conversations/{conversation_id}/todos",
+    response_model=ConversationTodoListResponse,
+    summary="获取对话级 agent todo 列表",
+    description="返回当前对话的完整 agent todo 列表",
+)
+async def get_conversation_todos(
+    conversation_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ConversationTodoListResponse:
+    """Get the normalized agent todo list for a conversation."""
+    service = AgentTodoService(db)
+
+    try:
+        payload = await service.get_todos(user.id, conversation_id)
+        return ConversationTodoListResponse.model_validate(payload)
+    except ConversationTodoNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
+        )
+    except ConversationTodoAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "ACCESS_DENIED", "message": "无权访问该对话"},
+        )
+
+
+@router.patch(
+    "/conversations/{conversation_id}/todos/{task_id}",
+    response_model=ConversationTodoListResponse,
+    summary="更新对话级 agent todo 完成状态",
+    description="允许用户手动切换某个对话级 agent todo 的完成状态",
+)
+async def update_conversation_todo_status(
+    conversation_id: UUID,
+    task_id: str,
+    payload: UpdateConversationTodoStatusRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ConversationTodoListResponse:
+    """Update the completion state of a conversation todo item."""
+    service = AgentTodoService(db)
+
+    try:
+        result = await service.set_todo_completion(
+            user.id,
+            conversation_id,
+            task_id,
+            payload.completed,
+        )
+        return ConversationTodoListResponse.model_validate(result)
+    except ConversationTodoNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
+        )
+    except ConversationTodoAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "ACCESS_DENIED", "message": "无权访问该对话"},
+        )
+    except AgentTodoItemNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "TODO_NOT_FOUND", "message": "待办不存在"},
+        )
+
+
+@router.get(
     "/conversations/{conversation_id}/reply-status",
     summary="检查AI回复状态",
     description="轻量级端点，供前端后台轮询检查 AI 是否已完成回复",
@@ -173,7 +244,10 @@ async def check_reply_status(
     """Check if AI has replied after a given timestamp. For background polling."""
     # Validate ownership
     result = await db.execute(
-        select(Conversation).where(Conversation.id == conversation_id)
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.kind == ConversationKind.LEARNING,
+        )
     )
     conv = result.scalar_one_or_none()
     if not conv or conv.user_id != user.id:
@@ -224,7 +298,10 @@ async def get_streaming_status(
     """
     # Validate ownership
     result = await db.execute(
-        select(Conversation).where(Conversation.id == conversation_id)
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.kind == ConversationKind.LEARNING,
+        )
     )
     conv = result.scalar_one_or_none()
     if not conv or conv.user_id != user.id:
@@ -271,7 +348,10 @@ async def stop_stream(
 ) -> StopStreamResponse:
     """Stop an in-flight AI streaming response for the conversation."""
     result = await db.execute(
-        select(Conversation).where(Conversation.id == conversation_id)
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.kind == ConversationKind.LEARNING,
+        )
     )
     conv = result.scalar_one_or_none()
     if not conv or conv.user_id != user.id:
@@ -314,7 +394,10 @@ async def resume_stream(
     """Resume streaming from a specific offset after disconnection."""
     # Validate ownership
     result = await db.execute(
-        select(Conversation).where(Conversation.id == conversation_id)
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.kind == ConversationKind.LEARNING,
+        )
     )
     conv = result.scalar_one_or_none()
     if not conv or conv.user_id != user.id:
@@ -457,10 +540,8 @@ async def send_message(
             },
         )
 
-    # Quota checks: model access (pure config) + daily message count (DB)
+    # Quota checks: model access preflight
     check_model_access(user, request.model_id)
-    async with get_scoped_session() as db:
-        await check_daily_message_quota(db, user)
 
     # Validate conversation AND space binding with a short-lived session
     validated_space_id = None
@@ -837,378 +918,3 @@ async def rollback_last_message(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "ACCESS_DENIED", "message": "无权访问该对话"},
         )
-
-
-# ==================== Quick Chat Endpoints ====================
-
-
-@router.post(
-    "/quick-chat/conversations",
-    response_model=ConversationResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="创建快速对话",
-    description="创建不绑定学习空间的快速对话",
-)
-async def create_quick_chat_conversation(
-    request: CreateConversationRequest,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> ConversationResponse:
-    """Create a quick chat conversation (no space binding)"""
-    service = ChatService(db)
-    return await service.create_quick_chat_conversation(user.id, request.title)
-
-
-@router.get(
-    "/quick-chat/conversations",
-    response_model=ConversationListResponse,
-    summary="获取快速对话列表",
-    description="获取当前用户的快速对话列表（space_id 为空的对话）",
-)
-async def list_quick_chat_conversations(
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> ConversationListResponse:
-    """List quick chat conversations (no space binding)"""
-    service = ChatService(db)
-    return await service.list_quick_chat_conversations(user.id)
-
-
-@router.get(
-    "/quick-chat/conversations/search",
-    response_model=ConversationSearchResponse,
-    summary="搜索快速对话历史",
-    description="在快速对话（不绑定学习空间）中搜索对话历史，支持按标题、消息内容或全部范围搜索。",
-)
-async def search_quick_chat_conversations(
-    q: str = Query(..., min_length=1, max_length=200, description="搜索关键词"),
-    scope: str = Query("all", pattern="^(title|content|all)$", description="搜索范围: title | content | all"),
-    page: int = Query(1, ge=1, description="页码"),
-    page_size: int = Query(20, ge=1, le=50, description="每页条数（最大 50）"),
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> ConversationSearchResponse:
-    """Search quick chat conversations by title and/or message content."""
-    service = ChatService(db)
-    return await service.search_quick_chat_conversations(
-        user.id, q, scope=scope, page=page, page_size=page_size
-    )
-
-
-@router.post(
-    "/quick-chat/conversations/{conversation_id}/messages",
-    summary="快速对话发送消息（SSE）",
-    description="""
-    在快速对话中发送消息并接收流式响应。
-
-    ## SSE 事件类型
-
-    - `text_delta`: 增量文本内容 `{"content": "..."}`
-    - `done`: 完成信号 `{"content": "完整响应"}`
-    - `error`: 错误信号 `{"message": "..."}`
-
-    ## 示例
-
-    ```
-    event: text_delta
-    data: {"content": "你好，"}
-
-    event: text_delta
-    data: {"content": "我可以帮你解答问题。"}
-
-    event: done
-    data: {"content": "你好，我可以帮你解答问题。"}
-    ```
-    """,
-    responses={
-        200: {
-            "description": "SSE 流式响应",
-            "content": {"text/event-stream": {}},
-        },
-        403: {"description": "无权访问"},
-        404: {"description": "对话不存在"},
-    },
-)
-async def send_quick_chat_message(
-    conversation_id: UUID,
-    request: SendMessageRequest,
-    user: User = Depends(get_current_user),
-) -> StreamingResponse:
-    """
-    Send message in quick chat mode (SSE streaming).
-    Does NOT hold a DB session during streaming.
-    """
-    t_start = time.monotonic()
-
-    # Validate model_id early (before entering SSE stream)
-    if request.model_id is not None and not validate_model_id(request.model_id):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "code": "INVALID_MODEL",
-                "message": f"无效的模型ID: {request.model_id}",
-                "available_models": [m["id"] for m in get_available_models()],
-            },
-        )
-
-    # Quota checks: model access (pure config) + daily message count (DB)
-    check_model_access(user, request.model_id)
-    async with get_scoped_session() as db:
-        await check_daily_message_quota(db, user)
-
-    # Validate conversation access with a short-lived session
-    async with get_scoped_session() as db:
-        service = ChatService(db)
-        try:
-            await service.validate_conversation_access(
-                user.id, conversation_id, require_space=False
-            )
-        except ConversationNotFoundError:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
-            )
-        except ConversationAccessDeniedError:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "ACCESS_DENIED", "message": "无权访问该对话"},
-            )
-    # DB session released before SSE stream starts
-
-    logger.info(f"[Perf] QuickChat router validation: {(time.monotonic() - t_start)*1000:.0f}ms")
-
-    # Static method: manages its own short-lived DB sessions internally
-    event_generator = ChatService.send_quick_chat_message(
-        user.id,
-        conversation_id,
-        request.content,
-        request.attachment_ids,
-        model_id=request.model_id,
-        validated=True,
-        thinking=request.thinking,
-    )
-
-    logger.info(f"[Perf] QuickChat router total: {(time.monotonic() - t_start)*1000:.0f}ms")
-    return StreamingResponse(
-        sse_generator(event_generator),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@router.post(
-    "/quick-chat/conversations/{conversation_id}/tools/{tool_call_id}/confirm",
-    response_model=ToolConfirmResponse,
-    summary="确认或拒绝工具执行",
-    description="""
-    确认或拒绝需要用户确认的工具调用（如绑定学习空间、创建学习空间）。
-
-    ## 请求参数
-
-    - `tool_name`: 工具名称
-    - `arguments`: 工具参数
-    - `confirmed`: true 确认执行，false 拒绝执行
-
-    ## 响应
-
-    - `status`: "executed" 已执行 / "rejected" 已拒绝 / "accepted" 异步受理
-    - `success`: 执行是否成功（仅当 status=executed）
-    - `data`: 执行结果数据
-    - `message`: 结果消息
-    """,
-)
-async def confirm_tool_execution(
-    conversation_id: UUID,
-    tool_call_id: str,
-    request: ToolConfirmRequest,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> ToolConfirmResponse:
-    """Confirm or reject a pending tool execution in quick chat mode."""
-    service = ChatService(db)
-
-    # Validate conversation access
-    try:
-        await service.validate_conversation_access(
-            user.id, conversation_id, require_space=False
-        )
-    except ConversationNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
-        )
-    except ConversationAccessDeniedError:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "ACCESS_DENIED", "message": "无权访问该对话"},
-        )
-
-    # If user rejected, return immediately
-    if not request.confirmed:
-        return ToolConfirmResponse(
-            status="rejected",
-            success=None,
-            data=None,
-            message="用户取消了操作",
-        )
-
-    # Validate tool name against allowed list
-    allowed_tools = get_allowed_tool_names()
-    if request.tool_name not in allowed_tools:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "INVALID_TOOL", "message": "无效的工具名称"},
-        )
-
-    # Execute the tool
-    executor = LearningSpaceToolExecutor(user.id, conversation_id)
-    tool_result = await executor.execute(
-        request.tool_name,
-        request.arguments,
-        tool_call_id=tool_call_id,
-    )
-
-    response_status = "executed"
-    action = (
-        tool_result.data.get("action")
-        if isinstance(tool_result.data, dict)
-        else None
-    )
-    if (
-        request.tool_name == "create_learning_space"
-        and action in {"async_create_learning_space", "existing_running_task"}
-    ):
-        response_status = "accepted"
-
-    return ToolConfirmResponse(
-        status=response_status,
-        success=tool_result.success,
-        data=tool_result.data,
-        message=tool_result.message,
-    )
-
-
-@router.get(
-    "/quick-chat/conversations/{conversation_id}/tools/tasks",
-    response_model=QuickChatToolTaskListResponse,
-    summary="获取快速对话工具任务列表",
-    description="用于页面刷新/重开后恢复 create_learning_space 异步任务跟踪。",
-)
-async def list_quick_chat_tool_tasks(
-    conversation_id: UUID,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> QuickChatToolTaskListResponse:
-    """List async quick-chat create_learning_space tasks for current conversation."""
-    service = ChatService(db)
-
-    # Validate conversation access
-    try:
-        await service.validate_conversation_access(
-            user.id, conversation_id, require_space=False
-        )
-    except ConversationNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
-        )
-    except ConversationAccessDeniedError:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "ACCESS_DENIED", "message": "无权访问该对话"},
-        )
-
-    executor = LearningSpaceToolExecutor(user.id, conversation_id)
-    tool_result = await executor.list_tool_tasks()
-
-    return QuickChatToolTaskListResponse(
-        success=tool_result.success,
-        data=tool_result.data or {"tasks": [], "count": 0},
-        message=tool_result.message,
-    )
-
-
-@router.get(
-    "/quick-chat/conversations/{conversation_id}/tools/{tool_call_id}/status",
-    response_model=QuickChatToolTaskStatusResponse,
-    summary="获取快速对话工具任务状态",
-    description="查询并同步指定 create_learning_space 异步任务状态（含阶段推进与失败原因）。",
-)
-async def get_quick_chat_tool_task_status(
-    conversation_id: UUID,
-    tool_call_id: str,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> QuickChatToolTaskStatusResponse:
-    """Get async create-space task status by tool_call_id."""
-    service = ChatService(db)
-
-    # Validate conversation access
-    try:
-        await service.validate_conversation_access(
-            user.id, conversation_id, require_space=False
-        )
-    except ConversationNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
-        )
-    except ConversationAccessDeniedError:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "ACCESS_DENIED", "message": "无权访问该对话"},
-        )
-
-    executor = LearningSpaceToolExecutor(user.id, conversation_id)
-    tool_result = await executor.get_tool_task_status(tool_call_id)
-
-    return QuickChatToolTaskStatusResponse(
-        success=tool_result.success,
-        data=tool_result.data,
-        message=tool_result.message,
-    )
-
-
-@router.post(
-    "/quick-chat/conversations/{conversation_id}/tools/{tool_call_id}/bind",
-    response_model=QuickChatToolTaskBindResponse,
-    summary="绑定快速对话异步创建的学习空间",
-    description="在知识图谱完成后执行会话绑定；失败时返回阶段化错误信息。",
-)
-async def bind_quick_chat_tool_task(
-    conversation_id: UUID,
-    tool_call_id: str,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> QuickChatToolTaskBindResponse:
-    """Bind conversation to the space created by async create_learning_space task."""
-    service = ChatService(db)
-
-    # Validate conversation access
-    try:
-        await service.validate_conversation_access(
-            user.id, conversation_id, require_space=False
-        )
-    except ConversationNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "CONVERSATION_NOT_FOUND", "message": "对话不存在"},
-        )
-    except ConversationAccessDeniedError:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "ACCESS_DENIED", "message": "无权访问该对话"},
-        )
-
-    executor = LearningSpaceToolExecutor(user.id, conversation_id)
-    tool_result = await executor.bind_tool_task(tool_call_id)
-
-    return QuickChatToolTaskBindResponse(
-        success=tool_result.success,
-        data=tool_result.data,
-        message=tool_result.message,
-    )

@@ -1,6 +1,5 @@
 """Auth 路由"""
 
-import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -36,7 +35,6 @@ from auth.schemas import (
     VerifyCodeResponse,
 )
 from auth.email_service import get_email_provider
-from auth.registration_notification import send_registration_notification
 from auth.service import (
     apple_login,
     get_user_by_email,
@@ -51,6 +49,11 @@ from auth.service import (
 from auth.verification import send_verification_code, verify_code
 from config import get_settings
 from core.audit import log_auth_event
+from core.features import (
+    require_apple_login_enabled,
+    require_auth_email_enabled,
+    require_public_registration_enabled,
+)
 from core.jwt import create_access_token, create_refresh_token, decode_token
 from db.database import get_db
 from db.models import User
@@ -105,6 +108,7 @@ async def get_current_user_from_header(
     response_model=TokenResponse,
     status_code=status.HTTP_201_CREATED,
     summary="邮箱注册",
+    dependencies=[Depends(require_public_registration_enabled)],
 )
 async def register_endpoint(
     request: RegisterRequest,
@@ -119,21 +123,18 @@ async def register_endpoint(
     - 返回 access_token 和 refresh_token
     """
     try:
-        user = await register(db, request)
+        user = await register(
+            db,
+            request,
+            ip_address=http_request.client.host if http_request else None,
+            user_agent=http_request.headers.get("user-agent") if http_request else None,
+        )
         await log_auth_event(
             event_type="register",
             email=request.email,
             ip_address=http_request.client.host if http_request else None,
             user_agent=http_request.headers.get("user-agent") if http_request else None,
             success=True,
-        )
-        asyncio.create_task(
-            send_registration_notification(
-                settings=get_settings(),
-                user_email=user.email,
-                user_nickname=user.nickname or "",
-                registration_method="email",
-            )
         )
         return TokenResponse(
             access_token=create_access_token(str(user.id)),
@@ -157,7 +158,7 @@ async def register_endpoint(
 @router.post(
     "/login",
     response_model=TokenResponse,
-    summary="邮箱登录",
+    summary="实验账号登录",
 )
 async def login_endpoint(
     request: LoginRequest,
@@ -165,16 +166,16 @@ async def login_endpoint(
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     """
-    邮箱登录
+    账号名或邮箱登录
 
-    - 验证邮箱和密码
+    - 验证账号标识和密码
     - 返回 access_token 和 refresh_token
     """
     try:
         result = await login(db, request)
         await log_auth_event(
             event_type="login_success",
-            email=request.email,
+            email=request.identifier,
             ip_address=http_request.client.host if http_request else None,
             user_agent=http_request.headers.get("user-agent") if http_request else None,
             success=True,
@@ -183,7 +184,7 @@ async def login_endpoint(
     except AccountLockedError as exc:
         await log_auth_event(
             event_type="login_failed",
-            email=request.email,
+            email=request.identifier,
             ip_address=http_request.client.host if http_request else None,
             user_agent=http_request.headers.get("user-agent") if http_request else None,
             success=False,
@@ -196,14 +197,14 @@ async def login_endpoint(
     except InvalidCredentialsError:
         await log_auth_event(
             event_type="login_failed",
-            email=request.email,
+            email=request.identifier,
             ip_address=http_request.client.host if http_request else None,
             user_agent=http_request.headers.get("user-agent") if http_request else None,
             success=False,
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "INVALID_CREDENTIALS", "message": "邮箱或密码错误"},
+            detail={"code": "INVALID_CREDENTIALS", "message": "账号或密码错误"},
         )
 
 
@@ -211,6 +212,7 @@ async def login_endpoint(
     "/apple",
     response_model=TokenResponse,
     summary="Apple 登录",
+    dependencies=[Depends(require_apple_login_enabled)],
 )
 async def apple_login_endpoint(
     request: AppleLoginRequest,
@@ -227,7 +229,12 @@ async def apple_login_endpoint(
 
     """
     try:
-        result = await apple_login(db, request)
+        result = await apple_login(
+            db,
+            request,
+            ip_address=http_request.client.host if http_request else None,
+            user_agent=http_request.headers.get("user-agent") if http_request else None,
+        )
         await log_auth_event(
             event_type="apple_login",
             email="apple_user",
@@ -317,6 +324,7 @@ async def get_me(
     effective_tier = get_effective_tier(user)
     return UserProfile(
         id=user.id,
+        username=user.username,
         email=user.email,
         nickname=user.nickname,
         avatar_url=user.avatar_url,
@@ -347,6 +355,10 @@ async def update_me(
 @router.post(
     "/send-code",
     summary="发送验证码",
+    dependencies=[
+        Depends(require_public_registration_enabled),
+        Depends(require_auth_email_enabled),
+    ],
 )
 async def send_code_endpoint(
     request: SendCodeRequest,
@@ -387,6 +399,10 @@ async def send_code_endpoint(
     "/verify-code",
     response_model=VerifyCodeResponse,
     summary="验证验证码",
+    dependencies=[
+        Depends(require_public_registration_enabled),
+        Depends(require_auth_email_enabled),
+    ],
 )
 async def verify_code_endpoint(
     request: VerifyCodeRequest,
@@ -422,6 +438,10 @@ async def verify_code_endpoint(
     "/register-with-code",
     response_model=TokenResponse,
     summary="验证码注册",
+    dependencies=[
+        Depends(require_public_registration_enabled),
+        Depends(require_auth_email_enabled),
+    ],
 )
 async def register_with_code_endpoint(
     request: RegisterWithCodeRequest,
@@ -429,21 +449,18 @@ async def register_with_code_endpoint(
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     try:
-        result = await register_with_code(db, request)
+        result = await register_with_code(
+            db,
+            request,
+            ip_address=http_request.client.host if http_request else None,
+            user_agent=http_request.headers.get("user-agent") if http_request else None,
+        )
         await log_auth_event(
             event_type="register",
             email=request.email,
             ip_address=http_request.client.host if http_request else None,
             user_agent=http_request.headers.get("user-agent") if http_request else None,
             success=True,
-        )
-        asyncio.create_task(
-            send_registration_notification(
-                settings=get_settings(),
-                user_email=request.email,
-                user_nickname=request.nickname or "",
-                registration_method="code",
-            )
         )
         return result
     except EmailAlreadyExistsError:
@@ -474,6 +491,10 @@ async def register_with_code_endpoint(
 @router.post(
     "/reset-password",
     summary="重置密码",
+    dependencies=[
+        Depends(require_public_registration_enabled),
+        Depends(require_auth_email_enabled),
+    ],
 )
 async def reset_password_endpoint(
     request: ResetPasswordRequest,

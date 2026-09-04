@@ -228,7 +228,8 @@ class DocxChunker(BaseChunker):
         return chunks
 
     async def enrich(
-        self, chunks: list[Chunk], content: bytes, filename: str | None = None
+        self, chunks: list[Chunk], content: bytes, filename: str | None = None,
+        on_progress=None,
     ) -> list[Chunk]:
         """VLM 后处理：提取 DOCX 中嵌入图片并生成描述"""
         settings = get_settings()
@@ -244,13 +245,9 @@ class DocxChunker(BaseChunker):
             return chunks
 
         vlm_tasks: list[VLMTask] = []
-        images_processed = 0
-        max_images = settings.vlm_max_images_per_document
 
         # 遍历文档关系中的图片
         for rel in doc.part.rels.values():
-            if images_processed >= max_images:
-                break
 
             if "image" not in rel.reltype:
                 continue
@@ -268,7 +265,6 @@ class DocxChunker(BaseChunker):
                     image_bytes=img_bytes,
                     task_type="describe",
                 ))
-                images_processed += 1
             except Exception as e:
                 logger.warning("DOCX 图片提取失败: %s", e)
 
@@ -279,7 +275,7 @@ class DocxChunker(BaseChunker):
         vlm = VLMProcessor()
 
         try:
-            results = await vlm.process_batch(vlm_tasks)
+            results = await vlm.process_batch(vlm_tasks, on_progress=on_progress)
         except Exception as e:
             logger.error("VLM 批量处理失败，降级返回原始 chunks: %s", e)
             return chunks

@@ -26,9 +26,12 @@ env/
 .coverage
 htmlcov/
 .tox/
+tests/
 
 # Local files
 uploads/
+outputs/
+tmp/
 *.log
 *.sqlite3
 

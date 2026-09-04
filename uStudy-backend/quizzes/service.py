@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -21,8 +22,10 @@ from quizzes.schemas import (
     QuestionResultResponse,
     QuizAttemptResponse,
     QuizDetailResponse,
+    QuizDraftSaveResponse,
     QuizListItemResponse,
     QuizSubmitAsyncResponse,
+    UserAnswerResponseItem,
     UserAnswerItem,
 )
 
@@ -52,6 +55,12 @@ class QuizAlreadyAttemptedError(Exception):
 
 class QuizAttemptNotFoundError(Exception):
     """作答记录不存在"""
+
+    pass
+
+
+class QuizAttemptLockedError(Exception):
+    """作答状态已锁定，不能继续修改"""
 
     pass
 
@@ -89,6 +98,116 @@ class QuizService:
         except (SpaceNotFoundError, SpaceAccessDeniedError):
             raise QuizAccessDeniedError(f"无权操作该空间: {space_id}")
 
+    async def _get_quiz(
+        self,
+        quiz_id: UUID,
+        *,
+        with_questions: bool = False,
+        with_space: bool = False,
+    ) -> Quiz:
+        options = []
+        if with_questions:
+            options.append(selectinload(Quiz.questions))
+        if with_space:
+            options.append(selectinload(Quiz.space))
+
+        result = await self.db.execute(
+            select(Quiz).options(*options).where(Quiz.id == quiz_id)
+        )
+        quiz = result.scalar_one_or_none()
+        if not quiz:
+            raise QuizNotFoundError(f"测试不存在: {quiz_id}")
+        return quiz
+
+    async def _get_existing_attempt(
+        self,
+        quiz_id: UUID,
+        user_id: UUID,
+    ) -> QuizAttempt | None:
+        result = await self.db.execute(
+            select(QuizAttempt).where(
+                QuizAttempt.quiz_id == quiz_id,
+                QuizAttempt.user_id == user_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    def _serialize_user_answers(
+        self,
+        answers: list[UserAnswerItem],
+    ) -> dict[str, Any]:
+        serialized: dict[str, Any] = {}
+        for item in answers:
+            if item.answer is None:
+                continue
+            serialized[str(item.question_id)] = item.answer
+        return serialized
+
+    def _build_draft_answers_response(
+        self,
+        questions: list[Any],
+        user_answers_raw: dict[str, Any] | None,
+    ) -> list[UserAnswerResponseItem]:
+        if not user_answers_raw:
+            return []
+
+        response_items: list[UserAnswerResponseItem] = []
+        for question in questions:
+            answer = user_answers_raw.get(str(question.id))
+            if answer is None:
+                continue
+            response_items.append(
+                UserAnswerResponseItem(
+                    question_id=question.id,
+                    answer=answer,
+                )
+            )
+        return response_items
+
+    def _serialize_question_results(
+        self,
+        evaluation_result: FullQuizEvaluationResult,
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "question_id": str(qr.question_id),
+                "order": qr.order,
+                "question_type": qr.question_type,
+                "title": qr.question_stem,
+                "options": qr.options,
+                "status": qr.status,
+                "score": qr.score,
+                "max_score": qr.max_score,
+                "user_answer": qr.user_answer,
+                "correct_answer": qr.correct_answer,
+                "ai_evaluation": qr.ai_evaluation,
+            }
+            for qr in evaluation_result.question_results
+        ]
+
+    def _serialize_debug_info(
+        self,
+        evaluation_result: FullQuizEvaluationResult,
+    ) -> dict[str, Any] | None:
+        if not evaluation_result.debug_info:
+            return None
+
+        return {
+            "steps": [
+                {
+                    "step_number": s.step_number,
+                    "step_name": s.step_name,
+                    "status": s.status,
+                    "duration_ms": s.duration_ms,
+                    "details": s.details,
+                    "metadata": s.metadata,
+                }
+                for s in evaluation_result.debug_info.steps
+            ],
+            "model_name": evaluation_result.debug_info.model_name,
+            "total_duration_ms": evaluation_result.debug_info.total_duration_ms,
+        }
+
     async def get_quiz_detail(
         self,
         user_id: UUID,
@@ -108,16 +227,7 @@ class QuizService:
             QuizNotFoundError: 测试不存在
             QuizAccessDeniedError: 无权访问
         """
-        # 查询 Quiz 并预加载 questions
-        result = await self.db.execute(
-            select(Quiz)
-            .options(selectinload(Quiz.questions))
-            .where(Quiz.id == quiz_id)
-        )
-        quiz = result.scalar_one_or_none()
-
-        if not quiz:
-            raise QuizNotFoundError(f"测试不存在: {quiz_id}")
+        quiz = await self._get_quiz(quiz_id, with_questions=True)
 
         # 验证用户权限（owner 或 collaborative member）
         await self._check_space_access(quiz.space_id, user_id)
@@ -138,6 +248,21 @@ class QuizService:
             for q in sorted_questions
         ]
 
+        existing_attempt = await self._get_existing_attempt(quiz_id, user_id)
+        draft_answers = []
+        current_question_index = 0
+        draft_updated_at = None
+        attempt_status = None
+        if existing_attempt:
+            attempt_status = existing_attempt.status
+            current_question_index = existing_attempt.current_question_index or 0
+            draft_updated_at = existing_attempt.draft_updated_at
+            if existing_attempt.status == "in_progress":
+                draft_answers = self._build_draft_answers_response(
+                    sorted_questions,
+                    existing_attempt.user_answers_raw,
+                )
+
         return QuizDetailResponse(
             id=quiz.id,
             space_id=quiz.space_id,
@@ -145,8 +270,63 @@ class QuizService:
             topic=quiz.topic,
             difficulty=quiz.difficulty.value,
             total_questions=quiz.total_questions,
+            is_review_quiz=quiz.is_review_quiz,
+            attempt_status=attempt_status,
+            draft_answers=draft_answers,
+            current_question_index=current_question_index,
+            draft_updated_at=draft_updated_at,
             questions=question_responses,
             created_at=quiz.created_at,
+        )
+
+    async def save_draft(
+        self,
+        user_id: UUID,
+        quiz_id: UUID,
+        answers: list[UserAnswerItem],
+        current_question_index: int,
+    ) -> QuizDraftSaveResponse:
+        quiz = await self._get_quiz(quiz_id)
+        await self._check_space_access(quiz.space_id, user_id)
+
+        user_answers = self._serialize_user_answers(answers)
+        clamped_question_index = max(0, current_question_index)
+
+        attempt = await self._get_existing_attempt(quiz_id, user_id)
+        if attempt and attempt.status != "in_progress":
+            raise QuizAttemptLockedError(f"该测试状态已锁定: {quiz_id} -> {attempt.status}")
+
+        if not attempt:
+            attempt = QuizAttempt(
+                quiz_id=quiz_id,
+                user_id=user_id,
+                status="in_progress",
+                user_answers_raw=user_answers,
+                current_question_index=clamped_question_index,
+                score=0,
+                total_score=0,
+                strengths=[],
+                weaknesses=[],
+                suggestions=[],
+                question_results=[],
+                submitted_at=datetime.now(timezone.utc),
+                draft_updated_at=datetime.now(timezone.utc),
+            )
+            self.db.add(attempt)
+        else:
+            attempt.user_answers_raw = user_answers
+            attempt.current_question_index = clamped_question_index
+            attempt.draft_updated_at = datetime.now(timezone.utc)
+
+        await self.db.commit()
+        await self.db.refresh(attempt)
+
+        return QuizDraftSaveResponse(
+            quiz_id=quiz_id,
+            attempt_id=attempt.id,
+            status=attempt.status,
+            draft_updated_at=attempt.draft_updated_at,
+            message="草稿已暂存",
         )
 
     async def submit_and_evaluate(
@@ -170,16 +350,7 @@ class QuizService:
             QuizNotFoundError: 测试不存在
             QuizAccessDeniedError: 无权访问
         """
-        # 查询 Quiz 并预加载 questions 和 space
-        result = await self.db.execute(
-            select(Quiz)
-            .options(selectinload(Quiz.questions), selectinload(Quiz.space))
-            .where(Quiz.id == quiz_id)
-        )
-        quiz = result.scalar_one_or_none()
-
-        if not quiz:
-            raise QuizNotFoundError(f"测试不存在: {quiz_id}")
+        quiz = await self._get_quiz(quiz_id, with_questions=True, with_space=True)
 
         # 验证用户权限（owner 或 collaborative member）
         await self._check_space_access(quiz.space_id, user_id)
@@ -201,16 +372,10 @@ class QuizService:
         ]
 
         # 构建答案映射 {question_id: answer}
-        user_answers = {str(item.question_id): item.answer for item in answers}
+        user_answers = self._serialize_user_answers(answers)
 
-        # 检查是否已经作答过
-        existing_attempt = await self.db.execute(
-            select(QuizAttempt).where(
-                QuizAttempt.quiz_id == quiz_id,
-                QuizAttempt.user_id == user_id,
-            )
-        )
-        if existing_attempt.scalar_one_or_none():
+        existing_attempt = await self._get_existing_attempt(quiz_id, user_id)
+        if existing_attempt and existing_attempt.status != "in_progress":
             raise QuizAlreadyAttemptedError(f"该测试已经作答过: {quiz_id}")
 
         # 调用评估服务（传递 space_id, user_id, is_collaborative 以支持掌握分更新）
@@ -227,55 +392,36 @@ class QuizService:
             user_answers=user_answers,
         )
 
-        # 持久化作答记录
-        question_results_data = [
-            {
-                "question_id": str(qr.question_id),
-                "order": qr.order,
-                "question_type": qr.question_type,
-                "title": qr.question_stem,
-                "options": qr.options,
-                "status": qr.status,
-                "score": qr.score,
-                "max_score": qr.max_score,
-                "user_answer": qr.user_answer,
-                "correct_answer": qr.correct_answer,
-                "ai_evaluation": qr.ai_evaluation,
-            }
-            for qr in evaluation_result.question_results
-        ]
+        question_results_data = self._serialize_question_results(evaluation_result)
+        debug_info_data = self._serialize_debug_info(evaluation_result)
 
-        # 序列化 debug_info
-        debug_info_data = None
-        if evaluation_result.debug_info:
-            debug_info_data = {
-                "steps": [
-                    {
-                        "step_number": s.step_number,
-                        "step_name": s.step_name,
-                        "status": s.status,
-                        "duration_ms": s.duration_ms,
-                        "details": s.details,
-                        "metadata": s.metadata,
-                    }
-                    for s in evaluation_result.debug_info.steps
-                ],
-                "model_name": evaluation_result.debug_info.model_name,
-                "total_duration_ms": evaluation_result.debug_info.total_duration_ms,
-            }
-
-        attempt = QuizAttempt(
+        attempt = existing_attempt or QuizAttempt(
             quiz_id=quiz_id,
             user_id=user_id,
-            score=evaluation_result.score,
-            total_score=evaluation_result.total_score,
-            strengths=evaluation_result.strengths,
-            weaknesses=evaluation_result.weaknesses,
-            suggestions=evaluation_result.suggestions,
-            question_results=question_results_data,
-            debug_info=debug_info_data,
+            score=0,
+            total_score=0,
+            strengths=[],
+            weaknesses=[],
+            suggestions=[],
+            question_results=[],
+            submitted_at=datetime.now(timezone.utc),
+            draft_updated_at=datetime.now(timezone.utc),
         )
-        self.db.add(attempt)
+        if not existing_attempt:
+            self.db.add(attempt)
+
+        attempt.status = "completed"
+        attempt.user_answers_raw = user_answers
+        attempt.current_question_index = max(len(sorted_questions) - 1, 0)
+        attempt.score = evaluation_result.score
+        attempt.total_score = evaluation_result.total_score
+        attempt.strengths = evaluation_result.strengths
+        attempt.weaknesses = evaluation_result.weaknesses
+        attempt.suggestions = evaluation_result.suggestions
+        attempt.question_results = question_results_data
+        attempt.debug_info = debug_info_data
+        attempt.submitted_at = datetime.now(timezone.utc)
+        attempt.draft_updated_at = datetime.now(timezone.utc)
         await self.db.commit()
 
         # 记录测验活动（fire-and-forget）
@@ -331,32 +477,13 @@ class QuizService:
             QuizAccessDeniedError: 无权访问
             QuizAlreadyAttemptedError: 已作答
         """
-        # 查询 Quiz 并预加载 questions 和 space
-        result = await self.db.execute(
-            select(Quiz)
-            .options(selectinload(Quiz.questions), selectinload(Quiz.space))
-            .where(Quiz.id == quiz_id)
-        )
-        quiz = result.scalar_one_or_none()
-
-        if not quiz:
-            raise QuizNotFoundError(f"测试不存在: {quiz_id}")
+        quiz = await self._get_quiz(quiz_id, with_questions=True, with_space=True)
 
         # 验证用户权限（owner 或 collaborative member）
         await self._check_space_access(quiz.space_id, user_id)
 
-        # 检查是否已经作答过
-        existing_attempt = await self.db.execute(
-            select(QuizAttempt).where(
-                QuizAttempt.quiz_id == quiz_id,
-                QuizAttempt.user_id == user_id,
-            )
-        )
-        if existing_attempt.scalar_one_or_none():
-            raise QuizAlreadyAttemptedError(f"该测试已经作答过: {quiz_id}")
-
         # 构建答案映射
-        user_answers = {str(item.question_id): item.answer for item in answers}
+        user_answers = self._serialize_user_answers(answers)
 
         # 快照题目数据（避免 DB session 跨边界）
         questions_snapshot = [
@@ -379,20 +506,40 @@ class QuizService:
         quiz_difficulty = quiz.difficulty.value
         quiz_is_review = quiz.is_review_quiz
 
-        # 创建 pending attempt
-        attempt = QuizAttempt(
+        existing_attempt = await self._get_existing_attempt(quiz_id, user_id)
+        if existing_attempt and existing_attempt.status != "in_progress":
+            raise QuizAlreadyAttemptedError(f"该测试已经作答过: {quiz_id}")
+
+        attempt = existing_attempt or QuizAttempt(
             quiz_id=quiz_id,
             user_id=user_id,
             status="pending",
             user_answers_raw=user_answers,
+            current_question_index=max(len(questions_snapshot) - 1, 0),
             score=0,
             total_score=0,
             strengths=[],
             weaknesses=[],
             suggestions=[],
             question_results=[],
+            submitted_at=datetime.now(timezone.utc),
+            draft_updated_at=datetime.now(timezone.utc),
         )
-        self.db.add(attempt)
+        if not existing_attempt:
+            self.db.add(attempt)
+
+        attempt.status = "pending"
+        attempt.user_answers_raw = user_answers
+        attempt.current_question_index = max(len(questions_snapshot) - 1, 0)
+        attempt.score = 0
+        attempt.total_score = 0
+        attempt.strengths = []
+        attempt.weaknesses = []
+        attempt.suggestions = []
+        attempt.question_results = []
+        attempt.debug_info = None
+        attempt.submitted_at = datetime.now(timezone.utc)
+        attempt.draft_updated_at = datetime.now(timezone.utc)
         await self.db.commit()
         await self.db.refresh(attempt)
 
@@ -457,13 +604,15 @@ class QuizService:
 
         # 查询用户在这些测验中的作答记录
         quiz_ids = [q.id for q in quizzes]
-        attempts_result = await self.db.execute(
-            select(QuizAttempt).where(
-                QuizAttempt.quiz_id.in_(quiz_ids),
-                QuizAttempt.user_id == user_id,
+        attempts: dict[UUID, QuizAttempt] = {}
+        if quiz_ids:
+            attempts_result = await self.db.execute(
+                select(QuizAttempt).where(
+                    QuizAttempt.quiz_id.in_(quiz_ids),
+                    QuizAttempt.user_id == user_id,
+                )
             )
-        )
-        attempts = {a.quiz_id: a for a in attempts_result.scalars().all()}
+            attempts = {a.quiz_id: a for a in attempts_result.scalars().all()}
 
         # 构建响应
         response_items = []
@@ -482,6 +631,16 @@ class QuizService:
                     attempt_score=attempt.score if attempt else None,
                     attempt_total_score=attempt.total_score if attempt else None,
                     attempt_status=attempt.status if attempt else None,
+                    draft_answer_count=(
+                        len(attempt.user_answers_raw or {})
+                        if attempt and attempt.status == "in_progress"
+                        else None
+                    ),
+                    draft_updated_at=(
+                        attempt.draft_updated_at
+                        if attempt and attempt.status == "in_progress"
+                        else None
+                    ),
                 )
             )
 
@@ -642,6 +801,7 @@ async def _run_background_evaluation(
                 logger.error("Background eval: attempt %s not found", attempt_id)
                 return
             attempt.status = "evaluating"
+            attempt.draft_updated_at = datetime.now(timezone.utc)
             await session.commit()
 
         # 调用 AI 评估（与同步流程相同的服务）
@@ -708,6 +868,7 @@ async def _run_background_evaluation(
             attempt.suggestions = evaluation_result.suggestions
             attempt.question_results = question_results_data
             attempt.debug_info = debug_info_data
+            attempt.draft_updated_at = datetime.now(timezone.utc)
             await session.commit()
 
         # 推送通知
@@ -771,6 +932,7 @@ async def _run_background_evaluation(
                 attempt = result.scalar_one_or_none()
                 if attempt:
                     attempt.status = "failed"
+                    attempt.draft_updated_at = datetime.now(timezone.utc)
                     await session.commit()
         except Exception:
             logger.exception("Failed to mark attempt as failed: %s", attempt_id)

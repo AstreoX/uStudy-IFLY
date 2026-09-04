@@ -72,49 +72,6 @@ REVIEW_TOOL_METADATA: dict[str, dict[str, Any]] = {
 }
 
 
-# Quick chat mode: cross-space review tools
-QUICK_CHAT_REVIEW_TOOLS: list[dict[str, Any]] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_review_events",
-            "description": (
-                "查看用户所有学习空间中到期或逾期的待复习学习事件列表。"
-                "当用户表达复习意愿、询问有哪些需要复习的内容时调用此工具。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {},
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "mark_review_completed",
-            "description": (
-                "标记用户的某个学习事件的复习为已完成。"
-                "仅在用户已充分展示对该学习事件所涉知识点的理解后调用。"
-                "使用 activity_id 参数（从 get_review_events 结果中获取）。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "activity_id": {
-                        "type": "string",
-                        "description": "学习事件 ID（UUID），批量标记该事件所有到期待复习项为已完成",
-                    },
-                    "review_id": {
-                        "type": "string",
-                        "description": "复习计划 ID（UUID），精确标记单条复习。仅在需要精确控制时使用",
-                    },
-                },
-            },
-        },
-    },
-]
-
-
 class ReviewToolExecutor:
     """Executor for review tools - uses short-lived DB sessions per call"""
 

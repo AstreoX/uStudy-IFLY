@@ -1,4 +1,5 @@
 import { request } from '@/utils/request'
+import { connectSSE } from '@/utils/sse'
 import config from '@/config'
 import { getTokens } from '@/utils/storage'
 
@@ -17,18 +18,6 @@ export function deleteSpace(spaceId) {
   return request({
     url: `/api/spaces/${spaceId}`,
     method: 'DELETE'
-  })
-}
-
-/**
- * Create a learning space
- * @param {Object} data - { name, color, learning_preferences? }
- */
-export function createSpace(data) {
-  return request({
-    url: '/api/spaces',
-    method: 'POST',
-    data
   })
 }
 
@@ -63,6 +52,21 @@ export function getQuizDetail(quizId) {
   return request({
     url: `/api/quizzes/${quizId}`,
     method: 'GET'
+  })
+}
+
+/**
+ * 保存测验草稿
+ * @param {string} quizId
+ * @param {{answers: Array<{question_id: string, answer: any}>, current_question_index: number}} data
+ * @returns {Promise<{quiz_id: string, attempt_id: string, status: string, draft_updated_at: string, message: string}>}
+ */
+export function saveQuizDraft(quizId, data) {
+  return request({
+    url: `/api/quizzes/${quizId}/draft`,
+    method: 'PUT',
+    data,
+    timeout: 15000
   })
 }
 
@@ -434,6 +438,30 @@ export function updateMemberPermission(spaceId, userId, data) {
 export function getSpaceLeaderboard(spaceId) {
   return request({
     url: `/api/spaces/${spaceId}/leaderboard`,
+    method: 'GET'
+  })
+}
+
+/**
+ * 从文档流式生成知识图谱（SSE）
+ * @param {string} spaceId - 学习空间 ID
+ * @param {Object} data - { document_ids: string[], user_preference?: string }
+ * @param {Object} callbacks - { onEvent, onComplete, onConnectionError }
+ * @returns {Function} cancel - 取消函数
+ */
+export function streamKnowledgeGraphFromDocuments(spaceId, data, callbacks) {
+  return connectSSE({
+    url: `/api/agents/knowledge-graph-from-documents/stream?space_id=${spaceId}`,
+    method: 'POST',
+    data,
+    onEvent: callbacks.onEvent,
+    onComplete: callbacks.onComplete,
+    onConnectionError: callbacks.onConnectionError,
+  })
+}
+export function getDefaultSpace() {
+  return request({
+    url: '/api/spaces/default',
     method: 'GET'
   })
 }

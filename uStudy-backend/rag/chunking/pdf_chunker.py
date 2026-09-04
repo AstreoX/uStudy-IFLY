@@ -2,6 +2,7 @@
 
 import io
 import logging
+from functools import lru_cache
 from typing import TYPE_CHECKING, Iterator
 
 import fitz  # PyMuPDF
@@ -13,6 +14,37 @@ if TYPE_CHECKING:
     from rag.vlm_processor import VLMProcessor, VLMTask
 
 logger = logging.getLogger(__name__)
+
+# 页面文字少于此字符数视为扫描页，触发 OCR
+_SCAN_PAGE_THRESHOLD = 20
+
+
+@lru_cache(maxsize=1)
+def _get_ocr_engine():
+    """懒加载并缓存 RapidOCR 实例（进程级单例）。"""
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+        return RapidOCR()
+    except ImportError:
+        logger.warning("rapidocr-onnxruntime 未安装，扫描件将无法 OCR")
+        return None
+
+
+def _ocr_page(page: fitz.Page) -> str:
+    """将 PDF 页面渲染为图片后用 RapidOCR 识别文字。"""
+    ocr = _get_ocr_engine()
+    if ocr is None:
+        return ""
+    try:
+        pix = page.get_pixmap(dpi=200)
+        img_bytes = pix.tobytes("png")
+        result, _ = ocr(img_bytes)
+        if not result:
+            return ""
+        return "\n".join(line[1] for line in result if line and line[1])
+    except Exception as e:
+        logger.warning("OCR 识别失败 (page %d): %s", page.number + 1, e)
+        return ""
 
 
 class PDFChunker(BaseChunker):
@@ -42,12 +74,19 @@ class PDFChunker(BaseChunker):
             logger.error("无法打开 PDF 文件: %s", e)
             raise ValueError(f"无法解析 PDF 文件: {e}")
 
-        # 提取每页的文本（含表格检测）
+        # 提取每页的文本（含表格检测，扫描页自动 OCR）
         page_texts: list[tuple[int, str]] = []
         try:
             for page_num in range(len(doc)):
                 page = doc[page_num]
                 text = page.get_text("text")
+
+                # 扫描页：文字极少时用 RapidOCR 识别
+                if len(text.strip()) < _SCAN_PAGE_THRESHOLD:
+                    ocr_text = _ocr_page(page)
+                    if ocr_text.strip():
+                        logger.debug("OCR 识别第 %d 页 (%d chars)", page_num + 1, len(ocr_text))
+                        text = ocr_text
 
                 # 尝试检测并提取表格为 Markdown 格式
                 table_texts = self._extract_tables_from_page(page)
@@ -225,7 +264,8 @@ class PDFChunker(BaseChunker):
         return chunks
 
     async def enrich(
-        self, chunks: list[Chunk], content: bytes, filename: str | None = None
+        self, chunks: list[Chunk], content: bytes, filename: str | None = None,
+        on_progress=None,
     ) -> list[Chunk]:
         """
         VLM 后处理：扫描件 OCR + 嵌入图片描述
@@ -250,18 +290,15 @@ class PDFChunker(BaseChunker):
         except Exception:
             return chunks
 
-        images_processed = 0
-        max_images = settings.vlm_max_images_per_document
+        ocr_count = 0
+        image_desc_count = 0
 
         try:
             for page_num in range(len(doc)):
-                if images_processed >= max_images:
-                    break
-
                 page = doc[page_num]
                 page_text = page.get_text("text").strip()
 
-                # 扫描页检测: 文字极少 + 有图片
+                # 扫描页检测: 文字极少 + 有图片 → OCR（不受 max_images 限制）
                 if settings.vlm_ocr_enabled and len(page_text) < 20:
                     page_images = page.get_images(full=True)
                     if page_images:
@@ -277,7 +314,7 @@ class PDFChunker(BaseChunker):
                                 "type": "ocr",
                                 "page_num": page_num + 1,
                             })
-                            images_processed += 1
+                            ocr_count += 1
                         except Exception as e:
                             logger.warning("PDF 页面渲染失败 (page %d): %s", page_num + 1, e)
                         continue
@@ -285,8 +322,6 @@ class PDFChunker(BaseChunker):
                 # 嵌入图片提取
                 if settings.vlm_image_description_enabled:
                     for img_info in page.get_images(full=True):
-                        if images_processed >= max_images:
-                            break
 
                         xref = img_info[0]
                         try:
@@ -312,7 +347,7 @@ class PDFChunker(BaseChunker):
                                 "type": "describe",
                                 "page_num": page_num + 1,
                             })
-                            images_processed += 1
+                            image_desc_count += 1
                         except Exception as e:
                             logger.warning("PDF 图片提取失败 (xref %d): %s", xref, e)
         finally:
@@ -321,9 +356,12 @@ class PDFChunker(BaseChunker):
         if not vlm_tasks:
             return chunks
 
-        logger.info("PDF VLM 处理: %d 个任务 (文件: %s)", len(vlm_tasks), filename)
+        logger.info(
+            "PDF VLM 处理: %d 个任务 (OCR: %d 页, 图片描述: %d 张, 文件: %s)",
+            len(vlm_tasks), ocr_count, image_desc_count, filename,
+        )
         try:
-            results = await vlm.process_batch(vlm_tasks)
+            results = await vlm.process_batch(vlm_tasks, on_progress=on_progress)
         except Exception as e:
             logger.error("VLM 批量处理失败，降级返回原始 chunks: %s", e)
             return chunks

@@ -1,13 +1,7 @@
-"""Chat Module - Main Conversation Agent"""
+"""Chat package.
 
-from chat.tools import GRAPH_TOOLS, GraphToolExecutor, ToolResult
-from chat.prompt_builder import PromptBuilder
-from chat.orchestrator import LLMOrchestrator
+Keep package initialization lightweight so config-only imports do not pull in
+optional runtime dependencies such as Redis-backed tool executors.
+"""
 
-__all__ = [
-    "GRAPH_TOOLS",
-    "GraphToolExecutor",
-    "ToolResult",
-    "PromptBuilder",
-    "LLMOrchestrator",
-]
+__all__: list[str] = []

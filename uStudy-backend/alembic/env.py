@@ -9,8 +9,32 @@ from alembic import context
 
 # 导入模型和配置
 from db.database import Base
-from db.models import User, Space, Node, Edge, Conversation, Message, VerificationCode, RefreshToken, AgentTask, Quiz, Question, DailyStudyRecord, PaymentOrder, PaymentQrCode, Note, NoteAttachment  # noqa: F401
-from usage.models import ApiUsageLog, AppUsageDaily  # noqa: F401
+from db.models import (
+    Assignment,
+    AssignmentAnswer,
+    AssignmentGradeAudit,
+    AssignmentJob,
+    AssignmentOjRun,
+    AssignmentQuestion,
+    AssignmentRecipient,
+    AssignmentSubmission,
+    User,
+    Space,
+    Node,
+    Edge,
+    Conversation,
+    Message,
+    VerificationCode,
+    RefreshToken,
+    AgentTask,
+    Quiz,
+    Question,
+    DailyStudyRecord,
+    Note,
+    NoteAttachment,
+    UserMcpService,
+)  # noqa: F401
+from usage.models import AiRequestLog, ApiUsageLog, AppUsageDaily  # noqa: F401
 from scheduler.models import SchedulerState  # noqa: F401
 from config import get_settings
 

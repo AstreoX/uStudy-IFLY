@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from agents.llm.client import OpenRouterClient
+from agents.llm.client import LLMClient
 from chat.tools.graph_tools import (
     GraphToolExecutor,
     build_knowledge_tree_text,
@@ -24,6 +24,8 @@ from graph.path_expansion_prompts import (
     format_uncovered_nodes,
 )
 from graph.service import GraphService
+from usage.metering import UsageContext
+from usage.models import UsageType
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +74,17 @@ class LearningPathExpander:
 
         settings = get_settings()
         model_override = settings.learning_path_expand_model or None
-        self.llm_client = OpenRouterClient(model_override=model_override)
+        self.llm_client = LLMClient(
+            model_override=model_override,
+            usage_context=UsageContext(
+                user_id=user_id,
+                usage_type=UsageType.AGENT_LLM,
+                source_module="graph",
+                source_operation="path_expansion",
+                billable=bool(user_id),
+                space_id=space_id,
+            ),
+        )
         self.mastery_threshold = settings.learning_path_mastery_threshold
         self.ratio_threshold = settings.learning_path_ratio_threshold
 
@@ -147,7 +159,8 @@ class LearningPathExpander:
                     tool_results.append((tc, tool_result))
 
                     if tool_result.success:
-                        # Extract new node names (skip the first which is the junction node)
+                        # Track existing knowledge nodes appended to the personal path.
+                        # extend_learning_path rejects any name absent from the graph.
                         seq = tc.arguments.get("node_sequence", "")
                         names = seq if isinstance(seq, list) else [n.strip() for n in seq.split(",")]
                         new_path_nodes.extend(names[1:])  # Exclude junction node
@@ -199,7 +212,7 @@ class LearningPathExpander:
             await self._save_event(new_path_nodes, trigger_info)
 
             logger.info(
-                "Learning path expanded for space %s: %d new nodes (%s)",
+                "Learning path expanded for space %s: %d existing nodes appended (%s)",
                 self.space_id,
                 len(new_path_nodes),
                 ", ".join(new_path_nodes),

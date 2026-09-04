@@ -9,7 +9,9 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agents.llm.client import OpenRouterClient
+from agents.llm.client import LLMClient
+from usage.metering import UsageContext
+from usage.models import UsageType
 from db.models import ReviewSchedule, Space, StudyActivityLog
 
 logger = logging.getLogger(__name__)
@@ -320,7 +322,16 @@ async def get_ai_suggestion(
     try:
         from config import get_settings
         _settings = get_settings()
-        client = OpenRouterClient(model_override=_settings.suggestion_model or None)
+        client = LLMClient(
+            model_override=_settings.suggestion_model or None,
+            usage_context=UsageContext(
+                user_id=user_id,
+                usage_type=UsageType.AGENT_LLM,
+                source_module="activity",
+                source_operation="suggestion",
+                billable=True,
+            ),
+        )
         raw = await client.complete(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},

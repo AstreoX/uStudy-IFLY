@@ -1,4 +1,4 @@
-"""OpenRouter Embedding 异步客户端"""
+"""DashScope Embedding 异步客户端"""
 
 import asyncio
 import hashlib
@@ -43,7 +43,7 @@ class EmbeddingResult:
 
 
 class EmbeddingClient:
-    """OpenRouter Embedding API 异步客户端
+    """DashScope Embedding API 异步客户端
 
     支持两种使用模式：
     - 单次调用 (embed/embed_query): 每次创建临时 HTTP 客户端
@@ -54,13 +54,13 @@ class EmbeddingClient:
         self.settings = get_settings()
 
         # 验证 API Key 已配置
-        if not self.settings.openrouter_api_key:
+        if not self.settings.dashscope_api_key:
             raise EmbeddingClientError(
-                "OPENROUTER_API_KEY 未配置，请在 .env 文件中设置"
+                "DASHSCOPE_API_KEY 未配置，请在 .env 文件中设置"
             )
 
-        self.base_url = self.settings.openrouter_base_url
-        self.api_key = self.settings.openrouter_api_key
+        self.base_url = self.settings.dashscope_base_url
+        self.api_key = self.settings.dashscope_api_key
         self.model = model_override or self.settings.embedding_model
         self.dimension = self.settings.embedding_dimension
         self.batch_size = self.settings.embedding_batch_size
@@ -112,8 +112,6 @@ class EmbeddingClient:
         """获取请求头"""
         return {
             "Authorization": f"Bearer {self.api_key}",
-            "HTTP-Referer": "https://ustudy.app",
-            "X-Title": "uStudy",
             "Content-Type": "application/json",
         }
 
@@ -167,7 +165,6 @@ class EmbeddingClient:
                 "model": self.model,
                 "input": texts,
                 "dimensions": self.dimension,
-                "provider": {"allow_fallbacks": True},
             }
             response = await client.post(
                 f"{self.base_url}/embeddings",

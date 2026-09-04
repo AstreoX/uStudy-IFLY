@@ -31,28 +31,12 @@ def _register_jobs(sched: AsyncIOScheduler) -> None:
     """Register all scheduled jobs."""
     from apscheduler.triggers.interval import IntervalTrigger
 
-    from scheduler.jobs.daily_usage_report import send_daily_usage_report
-
     settings = get_settings()
 
     # Only register scheduler jobs in non-test environments
     if settings.app_env == "test":
         logger.info("Test environment detected, skipping job registration")
         return
-
-    # Daily usage report at 20:30 Beijing time
-    sched.add_job(
-        send_daily_usage_report,
-        trigger=CronTrigger(
-            hour=20,
-            minute=30,
-            timezone="Asia/Shanghai",
-        ),
-        id="daily_usage_report",
-        name="Daily Usage Report Email",
-        replace_existing=True,
-    )
-    logger.info("Registered daily_usage_report job for 20:30 Asia/Shanghai")
 
     # Cleanup expired client tool requests every 5 minutes
     async def _cleanup_expired_tool_requests():
@@ -72,25 +56,25 @@ def _register_jobs(sched: AsyncIOScheduler) -> None:
     )
     logger.info("Registered cleanup_expired_tool_requests job (every 5 min)")
 
-    # Expire stale payment orders every 5 minutes
-    async def _expire_stale_payment_orders():
-        from payment.service import expire_stale_orders
+    async def _recover_assignment_jobs():
+        from assignments.tasks import recover_assignment_jobs
 
         try:
-            await expire_stale_orders()
+            await recover_assignment_jobs()
         except Exception as e:
-            logger.error(f"Failed to expire stale payment orders: {e}")
+            logger.error("Failed to recover assignment jobs: %s", e, exc_info=True)
 
     sched.add_job(
-        _expire_stale_payment_orders,
-        trigger=IntervalTrigger(minutes=5),
-        id="expire_stale_payment_orders",
-        name="Expire Stale Payment Orders",
+        _recover_assignment_jobs,
+        trigger=IntervalTrigger(seconds=30),
+        id="recover_assignment_jobs",
+        name="Recover durable assignment generation/grading jobs",
         replace_existing=True,
     )
-    logger.info("Registered expire_stale_payment_orders job (every 5 min)")
+    logger.info("Registered recover_assignment_jobs job (every 30 sec)")
 
-    # Daily review quiz generation & email at 08:00 Beijing time
+    # Daily review quiz generation and in-app notifications at 08:00 Beijing time.
+    # Only spaces whose owners manually enable review_mode > 0 are processed.
     from scheduler.jobs.daily_review_processor import process_daily_reviews
 
     sched.add_job(
@@ -101,7 +85,7 @@ def _register_jobs(sched: AsyncIOScheduler) -> None:
             timezone="Asia/Shanghai",
         ),
         id="daily_review_processor",
-        name="Daily Review Quiz Generation & Email",
+        name="Daily Review Quiz Generation & In-App Notifications",
         replace_existing=True,
     )
     logger.info("Registered daily_review_processor job for 08:00 Asia/Shanghai")

@@ -24,18 +24,19 @@
 
       <!-- Form Section -->
       <view class="form-section">
-        <!-- Email Input -->
+        <!-- Experiment Account Input -->
         <view class="form-group">
-          <text class="form-label">邮箱</text>
+          <text class="form-label">账号或邮箱</text>
           <input
             class="form-input"
-            :class="{ error: errors.email }"
+            :class="{ error: errors.identifier }"
             type="text"
-            v-model="form.email"
-            placeholder="请输入邮箱地址"
-            @blur="validateEmail"
+            v-model="form.identifier"
+            placeholder="请输入实验账号或注册邮箱"
+            autocomplete="username"
+            @blur="validateIdentifier"
           />
-          <text v-if="errors.email" class="error-message">{{ errors.email }}</text>
+          <text v-if="errors.identifier" class="error-message">{{ errors.identifier }}</text>
         </view>
 
         <!-- Password Input -->
@@ -48,6 +49,7 @@
               :type="showPassword ? 'text' : 'password'"
               v-model="form.password"
               placeholder="请输入密码"
+              autocomplete="current-password"
               @blur="validatePassword"
               @confirm="handleLogin"
             />
@@ -77,7 +79,7 @@
 
         <view class="register-link" @tap="handleGoRegister">
           <text class="register-text">没有账户？</text>
-          <text class="register-text-highlight">注册</text>
+          <text class="register-text-highlight">邮箱注册</text>
         </view>
       </view>
 
@@ -93,21 +95,34 @@
 import { login, getMe } from '@/api/auth'
 import { getTokens, setTokens, clearAuth } from '@/utils/storage'
 import { useUserStore } from '@/store/user'
+import { openDefaultSpace } from '@/utils/default-space'
 
 export default {
   data() {
     return {
       form: {
-        email: '',
+        identifier: '',
         password: ''
       },
       errors: {
-        email: '',
+        identifier: '',
         password: ''
       },
       showPassword: false,
       isSubmitting: false,
-      toastMessage: ''
+      toastMessage: '',
+      redirectUrl: ''
+    }
+  },
+  onLoad(options) {
+    let candidate = ''
+    try {
+      candidate = decodeURIComponent(String(options?.redirect || ''))
+    } catch (_) {
+      candidate = ''
+    }
+    if (candidate.startsWith('/pages/') && !candidate.startsWith('/pages/login/')) {
+      this.redirectUrl = candidate
     }
   },
   async onShow() {
@@ -117,9 +132,11 @@ export default {
         const user = await getMe()
         const userStore = useUserStore()
         userStore.setUser(user)
-        uni.reLaunch({
-          url: '/pages/index/index'
-        })
+        if (this.redirectUrl) {
+          uni.reLaunch({ url: this.redirectUrl })
+        } else {
+          await openDefaultSpace()
+        }
       } catch (error) {
         clearAuth()
         const userStore = useUserStore()
@@ -132,17 +149,18 @@ export default {
       this.showPassword = !this.showPassword
     },
 
-    validateEmail() {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!this.form.email) {
-        this.errors.email = '请输入邮箱地址'
+    validateIdentifier() {
+      const identifier = this.form.identifier.trim()
+      if (!identifier) {
+        this.errors.identifier = '请输入账号或邮箱'
         return false
       }
-      if (!emailRegex.test(this.form.email)) {
-        this.errors.email = '请输入有效的邮箱地址'
+      if (identifier.length > 255) {
+        this.errors.identifier = '账号格式不正确'
         return false
       }
-      this.errors.email = ''
+      this.form.identifier = identifier
+      this.errors.identifier = ''
       return true
     },
 
@@ -156,9 +174,9 @@ export default {
     },
 
     validateForm() {
-      const emailValid = this.validateEmail()
+      const identifierValid = this.validateIdentifier()
       const passwordValid = this.validatePassword()
-      return emailValid && passwordValid
+      return identifierValid && passwordValid
     },
 
     showToast(message) {
@@ -188,7 +206,7 @@ export default {
 
       try {
         const tokenResp = await login({
-          email: this.form.email,
+          identifier: this.form.identifier,
           password: this.form.password
         })
 
@@ -203,11 +221,11 @@ export default {
 
         this.showToast('登录成功')
 
-        setTimeout(() => {
-          uni.reLaunch({
-            url: '/pages/index/index'
-          })
-        }, 800)
+        if (this.redirectUrl) {
+          setTimeout(() => uni.reLaunch({ url: this.redirectUrl }), 800)
+        } else {
+          await openDefaultSpace()
+        }
       } catch (error) {
         const message = this.getErrorMessage(error, '登录失败，请重试')
         this.showToast(message)
@@ -497,6 +515,15 @@ export default {
 .error-message {
   font-size: 24rpx;
   color: #EF4444;
+}
+
+.password-error {
+  margin-top: 8rpx;
+}
+
+.experiment-hint {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 /* Forgot Password */
