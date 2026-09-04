@@ -38,8 +38,6 @@ from db.models import (
     PresentationRevisionStatus,
     PresentationRunStatus,
     SpaceDocument,
-    SpaceMember,
-    SpaceMemberRole,
     TeacherPresentationAsset,
     TeacherPresentationEvent,
     TeacherPresentationProject,
@@ -48,6 +46,7 @@ from db.models import (
     TeacherPresentationRun,
 )
 from documents.service import schedule_document_processing
+from teacher.dependencies import has_course_teacher_access
 from teacher.presentations.manager import SandboxManagerClient, SandboxManagerError
 from teacher.service import TeacherAnalyticsService
 
@@ -438,13 +437,7 @@ async def verify_capability(
         or project.conversation_id is None
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="run scope 已失效")
-    role = await db.scalar(
-        select(SpaceMember.role).where(
-            SpaceMember.space_id == run.space_id,
-            SpaceMember.user_id == run.user_id,
-        )
-    )
-    if role != SpaceMemberRole.TEACHER:
+    if not await has_course_teacher_access(db, run.space_id, run.user_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="教师权限已失效")
     return run, project
 
@@ -1147,8 +1140,8 @@ async def execute_capability_tool(
 
     if tool_name == "get_class_knowledge_summary":
         days = int(arguments.get("days", 30))
-        if days not in {7, 30, 90}:
-            return {"success": False, "message": "days 仅支持 7、30、90"}
+        if days not in {7, 30, 90, 365}:
+            return {"success": False, "message": "days 仅支持 7、30、90、365"}
         data = await TeacherAnalyticsService(db, run.space_id, days).get_knowledge()
         return {"success": True, "data": data.model_dump(mode="json")}
 

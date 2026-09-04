@@ -11,8 +11,8 @@ from fastapi import HTTPException, UploadFile
 from sqlalchemy import select
 from starlette.datastructures import Headers
 
-from db.models import Space, SpaceDocument, User
-from documents.service import upload_document
+from db.models import Space, SpaceDocument, SpaceMember, SpaceMemberRole, User
+from documents.service import delete_document, upload_document
 from rag import service as rag_service
 from rag.parsing.formats import OLE_MAGIC
 
@@ -225,3 +225,43 @@ async def test_upload_enqueue_failure_does_not_commit_orphan_document(
     assert (await db_session.scalars(select(SpaceDocument))).all() == []
     documents_dir = tmp_path / "uploads" / "documents"
     assert not documents_dir.exists() or not any(documents_dir.iterdir())
+
+
+@pytest.mark.asyncio
+async def test_course_member_cannot_delete_shared_document(db_session):
+    owner = User(email=f"doc-owner-{uuid4().hex}@example.com", nickname="Owner")
+    member = User(email=f"doc-member-{uuid4().hex}@example.com", nickname="Member")
+    db_session.add_all([owner, member])
+    await db_session.flush()
+    space = Space(
+        user_id=owner.id,
+        name="Managed course material",
+        color="#123456",
+        is_collaborative=True,
+    )
+    db_session.add(space)
+    await db_session.flush()
+    db_session.add(
+        SpaceMember(
+            space_id=space.id,
+            user_id=member.id,
+            role=SpaceMemberRole.MEMBER,
+        )
+    )
+    document = SpaceDocument(
+        space_id=space.id,
+        creator_user_id=None,
+        doc_type="link",
+        title="Shared syllabus",
+        url="https://example.com/syllabus",
+    )
+    db_session.add(document)
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as excinfo:
+        await delete_document(db_session, space.id, document.id, member.id)
+    assert excinfo.value.status_code == 404
+    assert await db_session.get(SpaceDocument, document.id) is not None
+
+    await delete_document(db_session, space.id, document.id, owner.id)
+    assert await db_session.get(SpaceDocument, document.id) is None

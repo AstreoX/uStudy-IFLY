@@ -4,10 +4,23 @@ import math
 from datetime import date, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Conversation, DailyStudyRecord, Edge, EdgeType, Message, MessageRole, Node, QuizAttempt, ReviewSchedule, Space
+from db.models import (
+    Conversation,
+    DailyStudyRecord,
+    Edge,
+    EdgeType,
+    Message,
+    MessageRole,
+    Node,
+    NodeUserMastery,
+    QuizAttempt,
+    ReviewSchedule,
+    Space,
+    SpaceMember,
+)
 
 
 # ============ Pure Functions (no DB, easy to test) ============
@@ -432,6 +445,46 @@ def compute_review_score(
 # ============ DB Query Service ============
 
 
+async def _get_user_node_masteries(
+    db: AsyncSession, user_id: UUID
+) -> list[tuple[UUID, UUID, int | None]]:
+    """Resolve node mastery without mixing shared and per-user storage models."""
+
+    personal_rows = (
+        await db.execute(
+            select(Node.id, Node.space_id, Node.mastery)
+            .join(Space, Node.space_id == Space.id)
+            .where(
+                Space.user_id == user_id,
+                Space.is_collaborative.is_(False),
+            )
+        )
+    ).all()
+
+    membership_exists = exists(
+        select(SpaceMember.id).where(
+            SpaceMember.space_id == Space.id,
+            SpaceMember.user_id == user_id,
+        )
+    )
+    collaborative_rows = (
+        await db.execute(
+            select(Node.id, Node.space_id, NodeUserMastery.mastery)
+            .join(Space, Node.space_id == Space.id)
+            .outerjoin(
+                NodeUserMastery,
+                (NodeUserMastery.node_id == Node.id)
+                & (NodeUserMastery.user_id == user_id),
+            )
+            .where(
+                Space.is_collaborative.is_(True),
+                or_(Space.user_id == user_id, membership_exists),
+            )
+        )
+    ).all()
+    return [*personal_rows, *collaborative_rows]
+
+
 class ProfileStatsService:
     """Service for profile stats (study days, hours, mastery, coverage)."""
 
@@ -459,24 +512,17 @@ class ProfileStatsService:
         total_seconds = usage_result.scalar_one()
         total_study_hours = round(total_seconds / 3600, 1)
 
-        # Query 3: Mastery stats (single query)
-        mastery_result = await db.execute(
-            select(
-                func.avg(Node.mastery).filter(
-                    Node.mastery.isnot(None), Node.mastery > 0
-                ),
-                func.count(Node.id).filter(
-                    Node.mastery.isnot(None), Node.mastery > 0
-                ),
-                func.count(Node.id),
-            )
-            .join(Space, Node.space_id == Space.id)
-            .where(Space.user_id == user_id)
+        mastery_rows = await _get_user_node_masteries(db, user_id)
+        studied_masteries = [
+            mastery for _, _, mastery in mastery_rows if mastery is not None and mastery > 0
+        ]
+        avg_mastery = (
+            round(sum(studied_masteries) / len(studied_masteries), 1)
+            if studied_masteries
+            else 0.0
         )
-        mastery_row = mastery_result.one()
-        avg_mastery = round(float(mastery_row[0]), 1) if mastery_row[0] is not None else 0.0
-        nodes_with_mastery = mastery_row[1]
-        total_nodes = mastery_row[2]
+        nodes_with_mastery = len(studied_masteries)
+        total_nodes = len(mastery_rows)
 
         node_coverage_percent = (
             round(nodes_with_mastery / total_nodes * 100, 1)
@@ -678,20 +724,17 @@ class DepthService:
         conv_user_msg_counts = list(conv_counts.values())
         total_conversations = len(conv_counts)
 
-        # Query 2: Mastery data across all user's spaces
-        mastery_result = await db.execute(
-            select(
-                func.avg(Node.mastery),
-                func.count(Node.mastery),
-                func.count(Node.id),
-            )
-            .join(Space, Node.space_id == Space.id)
-            .where(Space.user_id == user_id)
+        mastery_rows = await _get_user_node_masteries(db, user_id)
+        recorded_masteries = [
+            mastery for _, _, mastery in mastery_rows if mastery is not None
+        ]
+        avg_mastery = (
+            sum(recorded_masteries) / len(recorded_masteries)
+            if recorded_masteries
+            else 0.0
         )
-        mastery_row = mastery_result.one()
-        avg_mastery = float(mastery_row[0]) if mastery_row[0] is not None else 0.0
-        studied_node_count = mastery_row[1]
-        total_node_count = mastery_row[2]
+        studied_node_count = len(recorded_masteries)
+        total_node_count = len(mastery_rows)
 
         depth = compute_depth_score(conv_user_msg_counts, all_lengths, avg_mastery)
 
@@ -729,18 +772,13 @@ class ComprehensionService:
         quiz_score_sum = int(quiz_row[0])
         quiz_total_score_sum = int(quiz_row[1])
 
-        # Query 2: Mastery ratio — COUNT(mastery >= 70), COUNT(all nodes)
-        mastery_result = await db.execute(
-            select(
-                func.count(Node.id).filter(Node.mastery >= 70),
-                func.count(Node.id),
-            )
-            .join(Space, Node.space_id == Space.id)
-            .where(Space.user_id == user_id)
+        mastery_rows = await _get_user_node_masteries(db, user_id)
+        high_mastery_count = sum(
+            1
+            for _, _, mastery in mastery_rows
+            if mastery is not None and mastery >= 70
         )
-        mastery_row = mastery_result.one()
-        high_mastery_count = mastery_row[0]
-        total_node_count = mastery_row[1]
+        total_node_count = len(mastery_rows)
 
         comp = compute_comprehension_score(
             quiz_score_sum, quiz_total_score_sum,
@@ -835,38 +873,38 @@ class KnowledgeStructureService:
 
         Returns dict matching KnowledgeStructureScoreResponse fields.
         """
-        # Query 1: All nodes with mastery
-        node_result = await db.execute(
-            select(Node.id, Node.mastery)
-            .join(Space, Node.space_id == Space.id)
-            .where(Space.user_id == user_id)
-        )
-        node_rows = node_result.all()
-        node_mastery: dict[UUID, int | None] = {row[0]: row[1] for row in node_rows}
+        mastery_rows = await _get_user_node_masteries(db, user_id)
+        node_mastery: dict[UUID, int | None] = {
+            node_id: mastery for node_id, _, mastery in mastery_rows
+        }
         total_node_count = len(node_mastery)
 
-        # Query 2: KNOWLEDGE_TREE edges
-        tree_result = await db.execute(
-            select(Edge.from_node_id, Edge.to_node_id)
-            .join(Space, Edge.space_id == Space.id)
-            .where(
-                Space.user_id == user_id,
-                Edge.type == EdgeType.KNOWLEDGE_TREE,
+        accessible_node_ids = list(node_mastery)
+        accessible_space_ids = {space_id for _, space_id, _ in mastery_rows}
+        if accessible_node_ids:
+            tree_result = await db.execute(
+                select(Edge.from_node_id, Edge.to_node_id).where(
+                    Edge.space_id.in_(accessible_space_ids),
+                    Edge.from_node_id.in_(accessible_node_ids),
+                    Edge.to_node_id.in_(accessible_node_ids),
+                    Edge.type == EdgeType.KNOWLEDGE_TREE,
+                )
             )
-        )
-        tree_rows = tree_result.all()
-
-        # Query 3: ADVANCED edge count
-        adv_result = await db.execute(
-            select(func.count())
-            .select_from(Edge)
-            .join(Space, Edge.space_id == Space.id)
-            .where(
-                Space.user_id == user_id,
-                Edge.type == EdgeType.ADVANCED,
+            tree_rows = tree_result.all()
+            adv_result = await db.execute(
+                select(func.count())
+                .select_from(Edge)
+                .where(
+                    Edge.space_id.in_(accessible_space_ids),
+                    Edge.from_node_id.in_(accessible_node_ids),
+                    Edge.to_node_id.in_(accessible_node_ids),
+                    Edge.type == EdgeType.ADVANCED,
+                )
             )
-        )
-        advanced_edge_count = adv_result.scalar_one()
+            advanced_edge_count = adv_result.scalar_one()
+        else:
+            tree_rows = []
+            advanced_edge_count = 0
 
         # Build parent → children mapping from KNOWLEDGE_TREE edges
         parent_children: dict[UUID, list[UUID]] = {}

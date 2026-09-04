@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Space, SpaceMember, SpaceMemberRole
+from experiment.course_catalog import is_managed_course
 
 
 class SpaceNotFoundError(Exception):
@@ -74,6 +75,10 @@ async def verify_space_graph_edit_access(
     space = await verify_space_access(db, space_id, user_id)
     if space.user_id == user_id:
         return space
+    if is_managed_course(space_id):
+        raise SpaceAccessDeniedError(
+            f"Managed course graph is owner-only for user {user_id} in space {space_id}"
+        )
     can_edit = await db.scalar(
         select(SpaceMember.can_edit_graph).where(
             SpaceMember.space_id == space_id,

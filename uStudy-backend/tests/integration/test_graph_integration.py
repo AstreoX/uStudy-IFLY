@@ -1,6 +1,7 @@
 """知识图谱集成测试"""
 
 import asyncio
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import pytest
@@ -12,6 +13,18 @@ from db.models import Node, Edge, EdgeType, Space, User
 from graph.service import GraphService
 from chat.tools.graph_tools import GraphToolExecutor
 from graph.exceptions import NodeNotFoundError
+import chat.tools.graph_tools as graph_tools
+
+
+@pytest.fixture(autouse=True)
+def use_graph_tool_test_session(db_session: AsyncSession, monkeypatch):
+    """Keep tool authorization and writes in the fixture database."""
+
+    @asynccontextmanager
+    async def scoped_session_override():
+        yield db_session
+
+    monkeypatch.setattr(graph_tools, "get_scoped_session", scoped_session_override)
 
 
 class TestGraphDBIntegration:
@@ -139,7 +152,11 @@ class TestAgentToolsIntegration:
         graph_test_space: Space,
     ):
         """工具链执行：add_node -> add_edge -> get_graph_overview"""
-        executor = GraphToolExecutor(graph_test_space.id)
+        executor = GraphToolExecutor(
+            graph_test_space.id,
+            user_id=graph_test_space.user_id,
+            is_collaborative=graph_test_space.is_collaborative,
+        )
 
         # 1. 添加节点
         result1 = await executor.execute("add_node", {"label": "节点A"})
@@ -169,7 +186,11 @@ class TestAgentToolsIntegration:
         graph_test_space: Space,
     ):
         """完整图谱操作流程"""
-        executor = GraphToolExecutor(graph_test_space.id)
+        executor = GraphToolExecutor(
+            graph_test_space.id,
+            user_id=graph_test_space.user_id,
+            is_collaborative=graph_test_space.is_collaborative,
+        )
 
         # 1. 验证初始为空
         r0 = await executor.execute("get_graph_overview", {})
@@ -229,7 +250,11 @@ class TestAgentToolsIntegration:
         graph_test_space: Space,
     ):
         """错误恢复测试"""
-        executor = GraphToolExecutor(graph_test_space.id)
+        executor = GraphToolExecutor(
+            graph_test_space.id,
+            user_id=graph_test_space.user_id,
+            is_collaborative=graph_test_space.is_collaborative,
+        )
 
         # 创建一个节点
         r1 = await executor.execute("add_node", {"label": "有效节点"})
@@ -324,7 +349,11 @@ class TestBoundaryConditions:
         empty_graph_space: Space,
     ):
         """空图谱操作"""
-        executor = GraphToolExecutor(empty_graph_space.id)
+        executor = GraphToolExecutor(
+            empty_graph_space.id,
+            user_id=empty_graph_space.user_id,
+            is_collaborative=empty_graph_space.is_collaborative,
+        )
 
         # 概览应该返回空
         r = await executor.execute("get_graph_overview", {})
@@ -338,7 +367,11 @@ class TestBoundaryConditions:
         graph_test_space: Space,
     ):
         """单节点操作"""
-        executor = GraphToolExecutor(graph_test_space.id)
+        executor = GraphToolExecutor(
+            graph_test_space.id,
+            user_id=graph_test_space.user_id,
+            is_collaborative=graph_test_space.is_collaborative,
+        )
 
         # 创建单个节点
         r1 = await executor.execute("add_node", {"label": "孤立节点"})

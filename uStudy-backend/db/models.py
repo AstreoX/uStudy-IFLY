@@ -407,6 +407,14 @@ class Folder(Base):
         Enum(FolderContentType, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
     )
+    creator_user_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    visibility: Mapped[str] = mapped_column(
+        String(16), default="shared", server_default="shared", nullable=False
+    )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -427,6 +435,15 @@ class Folder(Base):
     __table_args__ = (
         Index("ix_folders_space_id", "space_id"),
         Index("ix_folders_parent_id", "parent_id"),
+        Index("ix_folders_creator_user_id", "creator_user_id"),
+        CheckConstraint(
+            "visibility IN ('shared', 'private')",
+            name="ck_folders_visibility",
+        ),
+        CheckConstraint(
+            "visibility = 'shared' OR creator_user_id IS NOT NULL",
+            name="ck_folders_private_creator",
+        ),
     )
 
 
@@ -888,6 +905,14 @@ class Quiz(Base):
         ForeignKey("folders.id", ondelete="SET NULL"),
         nullable=True,
     )
+    creator_user_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    visibility: Mapped[str] = mapped_column(
+        String(16), default="shared", server_default="shared", nullable=False
+    )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     topic: Mapped[str] = mapped_column(String(500), nullable=False)
     difficulty: Mapped[DifficultyLevel] = mapped_column(
@@ -919,6 +944,15 @@ class Quiz(Base):
         Index("ix_quizzes_space_id", "space_id"),
         Index("ix_quizzes_agent_task_id", "agent_task_id"),
         Index("ix_quizzes_folder_id", "folder_id"),
+        Index("ix_quizzes_creator_user_id", "creator_user_id"),
+        CheckConstraint(
+            "visibility IN ('shared', 'private')",
+            name="ck_quizzes_visibility",
+        ),
+        CheckConstraint(
+            "visibility = 'shared' OR creator_user_id IS NOT NULL",
+            name="ck_quizzes_private_creator",
+        ),
     )
 
 
@@ -2997,6 +3031,9 @@ class Note(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    visibility: Mapped[str] = mapped_column(
+        String(16), default="shared", server_default="shared", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), nullable=False
     )
@@ -3016,6 +3053,14 @@ class Note(Base):
         Index("ix_notes_space_id", "space_id"),
         Index("ix_notes_node_id", "node_id"),
         Index("ix_notes_folder_id", "folder_id"),
+        CheckConstraint(
+            "visibility IN ('shared', 'private')",
+            name="ck_notes_visibility",
+        ),
+        CheckConstraint(
+            "visibility = 'shared' OR creator_user_id IS NOT NULL",
+            name="ck_notes_private_creator",
+        ),
     )
 
 

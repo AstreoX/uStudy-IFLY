@@ -5,14 +5,13 @@ from uuid import UUID
 
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import get_current_user
 from chat.tools.catalog import get_catalog_for_api
 from core.features import require_space_creation_enabled
 from db.database import get_db
-from db.models import LearningPathEvent, User
+from db.models import User
 from experiment.default_course import ensure_default_space_membership
 from spaces.schemas import (
     LearningPathEventResponse,
@@ -127,8 +126,6 @@ async def get_space(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "SPACE_ACCESS_DENIED", "message": "无权访问该学习空间"},
         )
-
-
 @router.patch(
     "/{space_id}",
     response_model=SpaceResponse,
@@ -326,15 +323,22 @@ async def get_space_leaderboard(
 )
 async def get_learning_path_events(
     space_id: UUID,
+    target_user_id: UUID | None = Query(
+        None, description="目标用户ID（仅课程教师可查看其他成员）"
+    ),
     limit: int = Query(default=10, ge=1, le=50),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[LearningPathEventResponse]:
-    """获取该空间的学习路径扩展事件历史"""
-    # Validate space ownership
+    """获取本人或教师所选学生的学习路径扩展事件历史"""
     service = SpaceService(db)
     try:
-        await service.get_space(user.id, space_id)
+        return await service.get_learning_path_events(
+            user.id,
+            space_id,
+            target_user_id=target_user_id,
+            limit=limit,
+        )
     except SpaceNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -346,11 +350,5 @@ async def get_learning_path_events(
             detail={"code": "SPACE_ACCESS_DENIED", "message": "无权访问该学习空间"},
         )
 
-    result = await db.execute(
-        select(LearningPathEvent)
-        .where(LearningPathEvent.space_id == space_id)
-        .order_by(LearningPathEvent.created_at.desc())
-        .limit(limit)
-    )
-    events = result.scalars().all()
-    return [LearningPathEventResponse.model_validate(e) for e in events]
+
+__all__ = ["router"]

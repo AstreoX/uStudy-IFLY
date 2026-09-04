@@ -20,7 +20,9 @@ class ExistingNodeGraphService:
     async def get_node_by_label(self, _space_id, label):
         return self.nodes.get(label)
 
-    async def get_graph(self, _space_id):
+    async def get_graph(self, _space_id, *, user_id=None, is_collaborative=False):
+        self.requested_user_id = user_id
+        self.requested_collaborative = is_collaborative
         return {
             "nodes": [
                 {"id": str(node.id), "label": node.label}
@@ -57,6 +59,8 @@ async def test_extend_learning_path_connects_existing_nodes_only():
 
     assert result.success is True
     assert service.created_node_ids == [service.nodes["B"].id, service.nodes["C"].id]
+    assert service.requested_user_id == executor.user_id
+    assert service.requested_collaborative is True
     assert "已有知识节点" in result.message
 
 

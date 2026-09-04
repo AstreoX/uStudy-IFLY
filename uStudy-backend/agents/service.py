@@ -575,6 +575,8 @@ class AgentService:
                 quiz = Quiz(
                     space_id=space_id,
                     agent_task_id=task_id,
+                    creator_user_id=user_id,
+                    visibility="shared",
                     title=f"{request.topic} 测试",
                     topic=request.topic,
                     difficulty=DifficultyLevel(request.difficulty_level.value),
@@ -894,7 +896,11 @@ class AgentService:
         async with AsyncSessionLocal() as session:
             try:
                 note_result = await session.execute(
-                    select(Note).where(Note.id == note_id)
+                    select(Note).where(
+                        Note.id == note_id,
+                        Note.space_id == space_id,
+                        Note.creator_user_id == user_id,
+                    )
                 )
                 note = note_result.scalar_one_or_none()
                 if not note:
@@ -1040,7 +1046,11 @@ class AgentService:
 
                 try:
                     note_result = await session.execute(
-                        select(Note).where(Note.id == note_id)
+                        select(Note).where(
+                            Note.id == note_id,
+                            Note.space_id == space_id,
+                            Note.creator_user_id == user_id,
+                        )
                     )
                     note = note_result.scalar_one_or_none()
                     if note:
@@ -1229,7 +1239,11 @@ class AgentService:
 
             if note_id and (artifact_title is None or (code_snapshot is None and task.status == AgentTaskStatus.DONE)):
                 note_result = await self.db.execute(
-                    select(Note).where(Note.id == note_id)
+                    select(Note).where(
+                        Note.id == note_id,
+                        Note.space_id == task.space_id,
+                        Note.creator_user_id == user_id,
+                    )
                 )
                 note = note_result.scalar_one_or_none()
                 if note:

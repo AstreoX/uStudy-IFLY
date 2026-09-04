@@ -5,11 +5,11 @@ import logging
 import time
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import exists, or_, select
 
 from config import get_settings
 from db.database import get_scoped_session
-from db.models import MemoryType, Space
+from db.models import MemoryType, Space, SpaceMember
 from memory.schemas import MemorySearchResult
 from memory.service import MemoryService
 
@@ -124,17 +124,28 @@ class MemoryRetriever:
         Returns:
             可检索的空间 ID 列表
         """
+        if self.space_id is None:
+            return []
         async with get_scoped_session() as db:
+            membership_exists = exists(
+                select(SpaceMember.id).where(
+                    SpaceMember.space_id == Space.id,
+                    SpaceMember.user_id == self.user_id,
+                )
+            )
             result = await db.execute(
                 select(Space.id).where(
-                    Space.user_id == self.user_id,
+                    Space.id != self.space_id,
+                    Space.memory_sharing_enabled.is_(True),
                     or_(
-                        Space.id == self.space_id,
-                        Space.memory_sharing_enabled == True,  # noqa: E712
+                        Space.user_id == self.user_id,
+                        membership_exists,
                     ),
                 )
             )
-            space_ids = list(result.scalars().all())
+            # The caller has already authorized the current conversation space.
+            # Include it even when course ownership belongs to the teacher.
+            space_ids = [self.space_id, *result.scalars().all()]
 
             if len(space_ids) > 1:
                 logger.debug(

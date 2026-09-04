@@ -15,6 +15,7 @@ from config import get_settings
 from db.models import (
     DocumentType,
     Edge,
+    LearningPathEvent,
     Node,
     ReviewSchedule,
     Space,
@@ -37,8 +38,11 @@ from spaces.schemas import (
     SpaceGraphResponse,
     SpaceResponse,
     SpaceUpdate,
+    LearningPathEventResponse,
 )
-from experiment.default_course import DEFAULT_SPACE_ID, SYSTEM_USER_ID
+from experiment.course_catalog import is_managed_course
+from experiment.default_course import SYSTEM_USER_ID
+from teacher.dependencies import has_course_teacher_access
 
 logger = logging.getLogger(__name__)
 
@@ -114,9 +118,9 @@ class SpaceService:
         self, user_id: UUID, space_id: UUID, request: SpaceUpdate
     ) -> SpaceResponse:
         """更新学习空间"""
-        space = await verify_space_access(self.db, space_id, user_id)
-        if space_id == DEFAULT_SPACE_ID and user_id != SYSTEM_USER_ID:
-            raise SpaceAccessDeniedError("默认数据结构课程不允许学生修改")
+        space = await verify_space_ownership(self.db, space_id, user_id)
+        if is_managed_course(space_id) and request.name is not None:
+            raise SpaceAccessDeniedError("固定课程不允许改名")
 
         if request.name is not None:
             space.name = request.name
@@ -124,6 +128,12 @@ class SpaceService:
             space.description = request.description
         if request.color is not None:
             space.color = request.color
+        if request.memory_sharing_enabled is not None:
+            space.memory_sharing_enabled = request.memory_sharing_enabled
+        if request.tool_mode is not None:
+            space.tool_mode = request.tool_mode
+        if request.enabled_tools is not None:
+            space.enabled_tools = request.enabled_tools
         if request.review_mode is not None:
             space.review_mode = request.review_mode
 
@@ -136,8 +146,8 @@ class SpaceService:
         """删除学习空间 — owner 删除空间，member 退出空间"""
         space = await verify_space_access(self.db, space_id, user_id)
 
-        if space_id == DEFAULT_SPACE_ID and user_id != SYSTEM_USER_ID:
-            raise SpaceAccessDeniedError("默认数据结构课程不允许退出或删除")
+        if is_managed_course(space_id):
+            raise SpaceAccessDeniedError("固定课程不允许退出或删除")
 
         if space.user_id != user_id:
             # Non-owner member: leave instead of delete
@@ -225,6 +235,13 @@ class SpaceService:
         """获取学习空间的知识图谱（节点和边）"""
         space = await verify_space_access(self.db, space_id, user_id)
 
+        if target_user_id is not None and target_user_id != user_id:
+            await self._verify_teacher_target_access(
+                requesting_user_id=user_id,
+                space=space,
+                target_user_id=target_user_id,
+            )
+
         if space.is_collaborative:
             effective_user_id = target_user_id or user_id
             # Use GraphService with per-user mastery
@@ -279,6 +296,59 @@ class SpaceService:
             ],
         )
 
+    async def get_learning_path_events(
+        self,
+        user_id: UUID,
+        space_id: UUID,
+        *,
+        target_user_id: UUID | None = None,
+        limit: int = 10,
+    ) -> list[LearningPathEventResponse]:
+        """Return only the caller's events unless a teacher selects a student."""
+
+        space = await verify_space_access(self.db, space_id, user_id)
+        effective_user_id = target_user_id or user_id
+        if effective_user_id != user_id:
+            await self._verify_teacher_target_access(
+                requesting_user_id=user_id,
+                space=space,
+                target_user_id=effective_user_id,
+            )
+        events = list(
+            (
+                await self.db.execute(
+                    select(LearningPathEvent)
+                    .where(
+                        LearningPathEvent.space_id == space_id,
+                        LearningPathEvent.user_id == effective_user_id,
+                    )
+                    .order_by(LearningPathEvent.created_at.desc())
+                    .limit(limit)
+                )
+            ).scalars()
+        )
+        return [LearningPathEventResponse.model_validate(event) for event in events]
+
+    async def _verify_teacher_target_access(
+        self,
+        *,
+        requesting_user_id: UUID,
+        space: Space,
+        target_user_id: UUID,
+    ) -> None:
+        if not await has_course_teacher_access(
+            self.db, space.id, requesting_user_id
+        ):
+            raise SpaceAccessDeniedError("仅课程教师可查看其他成员的学习数据")
+        target_is_member = await self.db.scalar(
+            select(SpaceMember.id).where(
+                SpaceMember.space_id == space.id,
+                SpaceMember.user_id == target_user_id,
+            )
+        )
+        if target_is_member is None and space.user_id != target_user_id:
+            raise SpaceAccessDeniedError("目标用户不是该课程成员")
+
     # ---- Membership ----
 
     async def get_space_members(self, user_id: UUID, space_id: UUID) -> list[dict]:
@@ -318,10 +388,11 @@ class SpaceService:
     ) -> None:
         """移除成员 (owner removes member, or member leaves)"""
         space = await verify_space_access(self.db, space_id, requesting_user_id)
-        if space_id == DEFAULT_SPACE_ID and target_user_id != SYSTEM_USER_ID:
-            raise SpaceAccessDeniedError("默认数据结构课程成员不能退出")
         is_owner = space.user_id == requesting_user_id
         is_self_leaving = requesting_user_id == target_user_id
+
+        if is_managed_course(space_id) and is_self_leaving:
+            raise SpaceAccessDeniedError("固定课程成员不能退出")
 
         if not is_owner and not is_self_leaving:
             raise SpaceAccessDeniedError("只有空间所有者可以移除其他成员")
@@ -364,6 +435,8 @@ class SpaceService:
             raise SpaceNotFoundError("该用户不是此空间的成员")
 
         if can_edit_graph is not None:
+            if is_managed_course(space_id) and can_edit_graph:
+                raise SpaceAccessDeniedError("固定课程仅真实所有者可以修改知识图谱")
             member.can_edit_graph = can_edit_graph
         await self.db.commit()
         await self.db.refresh(member)
@@ -426,6 +499,7 @@ class SpaceService:
             .join(Quiz, Quiz.id == QuizAttempt.quiz_id)
             .where(
                 Quiz.space_id == space_id,
+                Quiz.visibility == "shared",
                 QuizAttempt.user_id.in_(member_ids),
                 QuizAttempt.status == "completed",
             )
@@ -440,7 +514,11 @@ class SpaceService:
         # 5) Notes count per user
         notes_stmt = (
             select(Note.creator_user_id, func.count(Note.id).label("note_count"))
-            .where(Note.space_id == space_id, Note.creator_user_id.in_(member_ids))
+            .where(
+                Note.space_id == space_id,
+                Note.visibility == "shared",
+                Note.creator_user_id.in_(member_ids),
+            )
             .group_by(Note.creator_user_id)
         )
         notes_result = await self.db.execute(notes_stmt)
@@ -455,6 +533,8 @@ class SpaceService:
             .where(
                 StudyActivityLog.space_id == space_id,
                 StudyActivityLog.user_id.in_(member_ids),
+                StudyActivityLog.source != "quiz",
+                StudyActivityLog.activity_type != "测验",
                 StudyActivityLog.activity_time >= cutoff,
             )
             .group_by(StudyActivityLog.user_id)
@@ -518,6 +598,7 @@ class SpaceService:
             is_collaborative=space.is_collaborative,
             review_mode=space.review_mode,
             user_role=user_role,
+            is_managed_course=is_managed_course(space.id),
             created_at=space.created_at,
             updated_at=space.updated_at,
         )

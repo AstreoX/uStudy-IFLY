@@ -17,6 +17,11 @@ from graph.exceptions import (
     DuplicateNodeError,
     DuplicateEdgeError,
 )
+from spaces.authorization import (
+    SpaceAccessDeniedError,
+    SpaceNotFoundError,
+    verify_space_graph_edit_access,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -594,15 +599,28 @@ class GraphToolExecutor:
                 message=f"未知的工具: {tool_name}",
             )
 
-        if self.is_collaborative and not self.can_edit_graph and tool_name in self._STRUCTURE_TOOLS:
-            return ToolResult(
-                success=False,
-                data=None,
-                message="权限不足：只有空间管理员可以修改知识图谱结构（增删节点和边）。你可以更新掌握度或管理自己的学习路径。",
-            )
-
         try:
             async with get_scoped_session() as db:
+                if tool_name in self._STRUCTURE_TOOLS:
+                    if self.user_id is None:
+                        return ToolResult(
+                            success=False,
+                            data=None,
+                            message="权限不足：知识图谱结构写入缺少用户身份。",
+                        )
+                    try:
+                        await verify_space_graph_edit_access(
+                            db, self.space_id, self.user_id
+                        )
+                    except (SpaceAccessDeniedError, SpaceNotFoundError):
+                        return ToolResult(
+                            success=False,
+                            data=None,
+                            message=(
+                                "权限不足：只有空间管理员可以修改知识图谱结构"
+                                "（增删节点和边）。你可以更新掌握度或管理自己的学习路径。"
+                            ),
+                        )
                 graph_service = GraphService(db)
                 return await handler(arguments, graph_service)
         except NodeNotFoundError as e:
@@ -1040,7 +1058,11 @@ class GraphToolExecutor:
             node_ids.append(node.id)
 
         # Validate first node is a terminal node of the current learning path
-        graph = await graph_service.get_graph(self.space_id)
+        graph = await graph_service.get_graph(
+            self.space_id,
+            user_id=self.user_id,
+            is_collaborative=self.is_collaborative,
+        )
         lp_edges = [e for e in graph["edges"] if e.get("type") == "learning_path"]
 
         if not lp_edges:
@@ -1224,7 +1246,11 @@ class GraphToolExecutor:
             )
 
         # Get current learning path edges
-        graph = await graph_service.get_graph(self.space_id)
+        graph = await graph_service.get_graph(
+            self.space_id,
+            user_id=self.user_id,
+            is_collaborative=self.is_collaborative,
+        )
         lp_edges = [e for e in graph["edges"] if e.get("type") == "learning_path"]
 
         if not lp_edges:
@@ -1324,7 +1350,12 @@ class GraphToolExecutor:
             from uuid import UUID as _UUID
             delete_uuids = [_UUID(eid) for eid in edge_ids_to_delete]
             await graph_service.db.execute(
-                sa_delete(Edge).where(Edge.id.in_(delete_uuids))
+                sa_delete(Edge).where(
+                    Edge.id.in_(delete_uuids),
+                    Edge.space_id == self.space_id,
+                    Edge.type == EdgeType.LEARNING_PATH,
+                    Edge.user_id == self.user_id,
+                )
             )
 
         # Create new sub-path edges

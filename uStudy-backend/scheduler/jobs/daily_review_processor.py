@@ -370,6 +370,8 @@ async def _generate_review_quiz(
             quiz = Quiz(
                 space_id=group.space_id,
                 agent_task_id=task.id,
+                creator_user_id=user_id,
+                visibility="shared",
                 title=f"复习测试: {plan['topic'][:150]}",
                 topic=plan["topic"],
                 difficulty=DifficultyLevel(plan["difficulty_level"]),

@@ -275,7 +275,10 @@ class ShareService:
         # 4. Copy notes
         source_notes = await db.execute(
             select(Note)
-            .where(Note.space_id == source_space.id)
+            .where(
+                Note.space_id == source_space.id,
+                Note.visibility == "shared",
+            )
             .options(selectinload(Note.attachments))
         )
         for note in source_notes.scalars().all():
@@ -292,6 +295,7 @@ class ShareService:
                 metadata_=note.metadata_,
                 sort_order=note.sort_order,
                 creator_user_id=user_id,
+                visibility="shared",
             )
             db.add(new_note)
             await db.flush()

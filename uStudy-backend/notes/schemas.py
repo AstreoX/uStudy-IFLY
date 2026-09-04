@@ -1,7 +1,7 @@
 """笔记模块 Pydantic 模型"""
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -67,6 +67,7 @@ class NoteResponse(BaseModel):
     attachments: list[NoteAttachmentResponse] = []
     creator_user_id: Optional[UUID] = None
     creator_nickname: Optional[str] = None
+    visibility: Literal["shared", "private"] = "shared"
 
     model_config = {"from_attributes": True}
 
@@ -87,5 +88,6 @@ class NoteListItem(BaseModel):
     attachment_count: int = 0
     creator_user_id: Optional[UUID] = None
     creator_nickname: Optional[str] = None
+    visibility: Literal["shared", "private"] = "shared"
 
     model_config = {"from_attributes": True}

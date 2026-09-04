@@ -33,6 +33,7 @@
             </svg>
           </view>
           <view
+            v-if="canDeleteSpace"
             class="delete-space-btn"
             :class="{ 'delete-space-btn-disabled': !spaceId || isDeletingSpace }"
             @tap="handleDeleteSpace"
@@ -69,7 +70,7 @@
             </view>
 
             <!-- Collaborative User Filter -->
-            <view v-if="isCollaborative && activeTab === 'graph'" class="collab-user-filter">
+            <view v-if="isCollaborative && canInspectMemberGraphs && activeTab === 'graph'" class="collab-user-filter">
               <view class="filter-trigger" @tap="showMemberDropdown = !showMemberDropdown">
                 <view class="color-dot" :style="{ background: selectedMemberColor }"></view>
                 <text class="filter-label">{{ selectedMemberName }}</text>
@@ -97,7 +98,7 @@
                 :spaceId="spaceId"
                 :pathHighlight="isPathHighlightOn"
                 :generating="graphGenerating"
-                :targetUserId="selectedMemberUserId"
+                :targetUserId="graphTargetUserId"
                 :isForeignGraphView="isForeignGraphView"
                 :canEditGraph="canEditGraph"
                 :pathColor="selectedMemberColor"
@@ -313,7 +314,7 @@
                       <text v-if="m.role === 'owner'" class="manage-owner-badge">管理员</text>
                     </view>
                     <view v-if="m.role !== 'owner'" class="manage-member-actions">
-                      <view class="manage-toggle-row">
+                      <view v-if="!isManagedCourse" class="manage-toggle-row">
                         <text class="manage-toggle-text">可修改图谱</text>
                         <switch
                           :checked="m.can_edit_graph"
@@ -1435,6 +1436,7 @@ import { useUserStore } from '@/store/user'
 import { useSpacesStore } from '@/store/spaces'
 import config from '@/config'
 import { getAgentMessageSegments } from '@/utils/agent-stream-segments'
+import { isTeacherSpace } from '@/utils/teacher-space-selection'
 
 // Tool display name mapping
 const TOOL_DISPLAY_NAMES = {
@@ -1610,6 +1612,7 @@ export default {
     return {
       sidebarCollapsed: false,
       spaceId: null,
+      currentSpace: null,
       spaceName: 'Study',
       activeTab: 'graph',
       isPathHighlightOn: false,
@@ -1816,6 +1819,21 @@ export default {
       const displayName = this.deleteTargetSpaceName || this.spaceName || '当前学习空间'
       return `确定要删除「${displayName}」吗？该空间内的知识图谱、资料和测试会被永久删除。`
     },
+    isManagedCourse() {
+      return this.currentSpace?.is_managed_course === true
+    },
+    canDeleteSpace() {
+      return !!this.currentSpace && !this.isManagedCourse
+    },
+    canRenameSpace() {
+      return !!this.currentSpace && !this.isManagedCourse
+    },
+    canInspectMemberGraphs() {
+      return isTeacherSpace(this.currentSpace)
+    },
+    graphTargetUserId() {
+      return this.canInspectMemberGraphs ? this.selectedMemberUserId : null
+    },
     selectedMemberColor() {
       if (!this.selectedMemberUserId) {
         const self = this.spaceMembers.find(m => m.user_id === this.currentUserId)
@@ -1826,13 +1844,14 @@ export default {
     },
     canEditGraph() {
       if (!this.isCollaborative || this.userRole === 'owner') return true
+      if (this.isManagedCourse) return false
       const self = this.spaceMembers.find(
         m => String(m.user_id) === String(this.currentUserId || '')
       )
       return !!self?.can_edit_graph
     },
     isForeignGraphView() {
-      return !!this.selectedMemberUserId && String(this.selectedMemberUserId) !== String(this.currentUserId || '')
+      return !!this.graphTargetUserId && String(this.graphTargetUserId) !== String(this.currentUserId || '')
     },
     selectedMemberName() {
       if (!this.selectedMemberUserId || this.selectedMemberUserId === this.currentUserId) return '我'
@@ -2642,6 +2661,7 @@ export default {
 
     async loadSpaceInfo() {
       if (!this.spaceId) {
+        this.currentSpace = null
         this.spaceName = 'Study'
         this.isCollaborative = false
         this.userRole = null
@@ -2649,10 +2669,13 @@ export default {
         this.selectedMemberUserId = null
         return
       }
+      // Destructive actions stay hidden until the selected space metadata is known.
+      this.currentSpace = null
       try {
         const res = await getSpaces()
         const spaces = res.data || res || []
         const space = spaces.find(s => String(s.id) === String(this.spaceId))
+        this.currentSpace = space || null
         this.spaceName = space ? space.name : 'Study'
         this.isCollaborative = space ? !!space.is_collaborative : false
         this.userRole = space ? space.user_role : null
@@ -2703,6 +2726,11 @@ export default {
     },
 
     selectMemberFilter(member) {
+      if (!this.canInspectMemberGraphs) {
+        this.selectedMemberUserId = null
+        this.showMemberDropdown = false
+        return
+      }
       this.selectedMemberUserId = member.user_id
       this.showMemberDropdown = false
       // loadAndRender() is triggered by the targetUserId watcher in KnowledgeGraph
@@ -2710,6 +2738,10 @@ export default {
 
     async handleToggleGraphEdit(member, event) {
       const newVal = event.detail.value
+      if (this.isManagedCourse && newVal) {
+        member.can_edit_graph = false
+        return
+      }
       try {
         await updateMemberPermission(this.spaceId, member.user_id, { can_edit_graph: newVal })
         member.can_edit_graph = newVal
@@ -2997,7 +3029,7 @@ export default {
     },
 
     handleDeleteSpace() {
-      if (!this.spaceId || this.isDeletingSpace) return
+      if (!this.spaceId || this.isDeletingSpace || !this.canDeleteSpace) return
 
       this.deleteTargetSpaceId = this.spaceId
       this.deleteTargetSpaceName = this.spaceName || '当前学习空间'
@@ -3005,7 +3037,7 @@ export default {
     },
 
     async confirmDeleteSpace() {
-      if (!this.deleteTargetSpaceId || this.isDeletingSpace) return
+      if (!this.deleteTargetSpaceId || this.isDeletingSpace || !this.canDeleteSpace) return
 
       const deletingSpaceId = this.deleteTargetSpaceId
       const deletingSpaceName = this.deleteTargetSpaceName || '当前学习空间'

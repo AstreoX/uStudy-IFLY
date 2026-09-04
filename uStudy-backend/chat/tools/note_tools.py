@@ -220,7 +220,7 @@ class NoteToolExecutor:
         # 2. Resolve folder_id from folder_name (auto-create if missing)
         folder_id = None
         if folder_name:
-            from sqlalchemy import select as sa_select
+            from sqlalchemy import or_, select as sa_select
 
             from db.models import Folder, FolderContentType
             from folders.schemas import FolderCreate
@@ -232,6 +232,10 @@ class NoteToolExecutor:
                         Folder.space_id == self.space_id,
                         Folder.content_type == FolderContentType.NOTES,
                         Folder.name == folder_name,
+                        or_(
+                            Folder.visibility == "shared",
+                            Folder.creator_user_id == self.user_id,
+                        ),
                     )
                 )
                 existing = result.scalar_one_or_none()

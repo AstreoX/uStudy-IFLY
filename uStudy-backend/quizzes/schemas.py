@@ -91,6 +91,10 @@ class QuizDetailResponse(BaseModel):
     difficulty: str = Field(..., description="难度级别")
     total_questions: int = Field(..., description="题目总数")
     is_review_quiz: bool = Field(False, description="是否为复习测试题")
+    creator_user_id: UUID | None = Field(None, description="创建者用户 ID")
+    visibility: Literal["shared", "private"] = Field(
+        "shared", description="可见性"
+    )
     attempt_status: str | None = Field(None, description="当前用户该测验状态")
     draft_answers: list[UserAnswerResponseItem] = Field(
         default_factory=list, description="当前用户草稿答案"
@@ -167,6 +171,10 @@ class QuizListItemResponse(BaseModel):
     total_questions: int = Field(..., description="题目总数")
     is_review_quiz: bool = Field(False, description="是否为复习测试题")
     folder_id: UUID | None = Field(None, description="所属文件夹 ID")
+    creator_user_id: UUID | None = Field(None, description="创建者用户 ID")
+    visibility: Literal["shared", "private"] = Field(
+        "shared", description="可见性"
+    )
     created_at: datetime = Field(..., description="创建时间")
     has_attempt: bool = Field(..., description="是否已作答")
     attempt_score: int | None = Field(None, description="得分（已作答时）")

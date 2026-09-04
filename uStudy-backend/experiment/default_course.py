@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from uuid import UUID, uuid5
 
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, select, text
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import (
@@ -18,11 +20,15 @@ from db.models import (
     User,
 )
 from spaces.colors import get_next_color
+from experiment.course_catalog import (
+    DATA_STRUCTURES_SPACE_ID,
+    MANAGED_COURSE_IDS,
+)
 
 
 COURSE_NAMESPACE = UUID("6c56bf7a-7b73-4eb1-9ab2-c741f55d8f9e")
 SYSTEM_USER_ID = uuid5(COURSE_NAMESPACE, "system-user")
-DEFAULT_SPACE_ID = uuid5(COURSE_NAMESPACE, "data-structures-space")
+DEFAULT_SPACE_ID = DATA_STRUCTURES_SPACE_ID
 SYSTEM_USERNAME = "course_system"
 SYSTEM_EMAIL = "course-system@experiment.invalid"
 DEFAULT_COURSE_LABEL = "数据结构"
@@ -188,38 +194,127 @@ async def _acquire_seed_lock(db: AsyncSession) -> None:
         )
 
 
+def managed_course_membership_id(space_id: UUID, user_id: UUID) -> UUID:
+    """Build the stable identity used by automatic managed-course membership."""
+
+    return uuid5(COURSE_NAMESPACE, f"member:{space_id}:{user_id}")
+
+
+def _membership_insert(db: AsyncSession):
+    dialect = db.get_bind().dialect.name
+    if dialect == "postgresql":
+        return postgresql_insert(SpaceMember)
+    if dialect == "sqlite":
+        return sqlite_insert(SpaceMember)
+    return None
+
+
+async def ensure_managed_course_memberships(
+    db: AsyncSession, user_id: UUID
+) -> set[UUID]:
+    """Join a real user to every managed course that currently exists.
+
+    Inserts are conflict-safe so concurrent logins cannot create duplicate rows.
+    Existing rows are intentionally untouched, which preserves OWNER/TEACHER roles.
+    """
+
+    if user_id == SYSTEM_USER_ID:
+        return set()
+
+    spaces = list(
+        (
+            await db.execute(
+                select(Space)
+                .where(Space.id.in_(MANAGED_COURSE_IDS))
+                .order_by(Space.id)
+            )
+        ).scalars()
+    )
+    joined_space_ids: set[UUID] = set()
+    insert_factory = _membership_insert(db)
+    for space in spaces:
+        role = (
+            SpaceMemberRole.OWNER
+            if space.user_id == user_id
+            else SpaceMemberRole.MEMBER
+        )
+        values = {
+            "id": managed_course_membership_id(space.id, user_id),
+            "space_id": space.id,
+            "user_id": user_id,
+            "role": role,
+            "color": get_next_color(space.id.int ^ user_id.int),
+            "can_edit_graph": role == SpaceMemberRole.OWNER,
+        }
+        if insert_factory is not None:
+            statement = insert_factory.values(**values).on_conflict_do_nothing(
+                index_elements=["space_id", "user_id"]
+            )
+            await db.execute(statement)
+        else:
+            existing = await db.scalar(
+                select(SpaceMember.id).where(
+                    SpaceMember.space_id == space.id,
+                    SpaceMember.user_id == user_id,
+                )
+            )
+            if existing is None:
+                db.add(SpaceMember(**values))
+        joined_space_ids.add(space.id)
+    await db.flush()
+    return joined_space_ids
+
+
 async def ensure_default_space_membership(db: AsyncSession, user_id: UUID) -> bool:
-    """Ensure a real user is a read-only member of the fixed course."""
+    """Compatibility wrapper that now joins every available managed course."""
+
     if user_id == SYSTEM_USER_ID:
         return True
-    space_exists = await db.scalar(select(Space.id).where(Space.id == DEFAULT_SPACE_ID))
-    if not space_exists:
-        return False
-    existing = await db.scalar(
-        select(SpaceMember.id).where(
-            SpaceMember.space_id == DEFAULT_SPACE_ID,
-            SpaceMember.user_id == user_id,
+    joined_space_ids = await ensure_managed_course_memberships(db, user_id)
+    return DEFAULT_SPACE_ID in joined_space_ids
+
+
+async def _repair_owner_membership(db: AsyncSession, space: Space) -> None:
+    """Make ``Space.user_id`` the single owner membership for the default course."""
+
+    owner_member = await db.scalar(
+        select(SpaceMember).where(
+            SpaceMember.space_id == space.id,
+            SpaceMember.user_id == space.user_id,
         )
     )
-    if existing:
-        return True
-    member_count = await db.scalar(
-        select(func.count()).select_from(SpaceMember).where(
-            SpaceMember.space_id == DEFAULT_SPACE_ID
+    if owner_member is None:
+        db.add(
+            SpaceMember(
+                id=managed_course_membership_id(space.id, space.user_id),
+                space_id=space.id,
+                user_id=space.user_id,
+                role=SpaceMemberRole.OWNER,
+                color=get_next_color(0),
+                can_edit_graph=True,
+            )
         )
-    )
-    db.add(
-        SpaceMember(
-            id=uuid5(COURSE_NAMESPACE, f"member:{user_id}"),
-            space_id=DEFAULT_SPACE_ID,
-            user_id=user_id,
-            role=SpaceMemberRole.MEMBER,
-            color=get_next_color(int(member_count or 0)),
-            can_edit_graph=False,
+    else:
+        owner_member.role = SpaceMemberRole.OWNER
+        owner_member.can_edit_graph = True
+
+    if space.user_id != SYSTEM_USER_ID:
+        await db.execute(
+            delete(SpaceMember).where(
+                SpaceMember.space_id == space.id,
+                SpaceMember.user_id == SYSTEM_USER_ID,
+            )
         )
+    await db.execute(
+        SpaceMember.__table__.update()
+        .where(
+            SpaceMember.space_id == space.id,
+            SpaceMember.user_id != space.user_id,
+            SpaceMember.role == SpaceMemberRole.OWNER,
+        )
+        .values(role=SpaceMemberRole.MEMBER, can_edit_graph=False)
     )
     await db.flush()
-    return True
 
 
 async def ensure_default_course(db: AsyncSession) -> None:
@@ -260,23 +355,7 @@ async def ensure_default_course(db: AsyncSession) -> None:
         space.is_collaborative = True
     await db.flush()
 
-    owner_member = await db.scalar(
-        select(SpaceMember).where(
-            SpaceMember.space_id == DEFAULT_SPACE_ID,
-            SpaceMember.user_id == SYSTEM_USER_ID,
-        )
-    )
-    if owner_member is None:
-        db.add(
-            SpaceMember(
-                id=uuid5(COURSE_NAMESPACE, "member:system-owner"),
-                space_id=DEFAULT_SPACE_ID,
-                user_id=SYSTEM_USER_ID,
-                role=SpaceMemberRole.OWNER,
-                color=get_next_color(0),
-                can_edit_graph=True,
-            )
-        )
+    await _repair_owner_membership(db, space)
 
     existing_nodes = {
         node.label: node

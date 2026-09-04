@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -102,6 +102,7 @@ class QuizService:
         self,
         quiz_id: UUID,
         *,
+        user_id: UUID | None = None,
         with_questions: bool = False,
         with_space: bool = False,
     ) -> Quiz:
@@ -116,6 +117,12 @@ class QuizService:
         )
         quiz = result.scalar_one_or_none()
         if not quiz:
+            raise QuizNotFoundError(f"测试不存在: {quiz_id}")
+        if (
+            user_id is not None
+            and quiz.visibility == "private"
+            and quiz.creator_user_id != user_id
+        ):
             raise QuizNotFoundError(f"测试不存在: {quiz_id}")
         return quiz
 
@@ -227,7 +234,9 @@ class QuizService:
             QuizNotFoundError: 测试不存在
             QuizAccessDeniedError: 无权访问
         """
-        quiz = await self._get_quiz(quiz_id, with_questions=True)
+        quiz = await self._get_quiz(
+            quiz_id, user_id=user_id, with_questions=True
+        )
 
         # 验证用户权限（owner 或 collaborative member）
         await self._check_space_access(quiz.space_id, user_id)
@@ -271,6 +280,8 @@ class QuizService:
             difficulty=quiz.difficulty.value,
             total_questions=quiz.total_questions,
             is_review_quiz=quiz.is_review_quiz,
+            creator_user_id=quiz.creator_user_id,
+            visibility=quiz.visibility,
             attempt_status=attempt_status,
             draft_answers=draft_answers,
             current_question_index=current_question_index,
@@ -286,7 +297,7 @@ class QuizService:
         answers: list[UserAnswerItem],
         current_question_index: int,
     ) -> QuizDraftSaveResponse:
-        quiz = await self._get_quiz(quiz_id)
+        quiz = await self._get_quiz(quiz_id, user_id=user_id)
         await self._check_space_access(quiz.space_id, user_id)
 
         user_answers = self._serialize_user_answers(answers)
@@ -350,7 +361,12 @@ class QuizService:
             QuizNotFoundError: 测试不存在
             QuizAccessDeniedError: 无权访问
         """
-        quiz = await self._get_quiz(quiz_id, with_questions=True, with_space=True)
+        quiz = await self._get_quiz(
+            quiz_id,
+            user_id=user_id,
+            with_questions=True,
+            with_space=True,
+        )
 
         # 验证用户权限（owner 或 collaborative member）
         await self._check_space_access(quiz.space_id, user_id)
@@ -477,7 +493,12 @@ class QuizService:
             QuizAccessDeniedError: 无权访问
             QuizAlreadyAttemptedError: 已作答
         """
-        quiz = await self._get_quiz(quiz_id, with_questions=True, with_space=True)
+        quiz = await self._get_quiz(
+            quiz_id,
+            user_id=user_id,
+            with_questions=True,
+            with_space=True,
+        )
 
         # 验证用户权限（owner 或 collaborative member）
         await self._check_space_access(quiz.space_id, user_id)
@@ -595,7 +616,17 @@ class QuizService:
         await self._check_space_access(space_id, user_id)
 
         # 查询空间内所有测验
-        stmt = select(Quiz).where(Quiz.space_id == space_id).order_by(Quiz.created_at.desc())
+        stmt = (
+            select(Quiz)
+            .where(
+                Quiz.space_id == space_id,
+                or_(
+                    Quiz.visibility == "shared",
+                    Quiz.creator_user_id == user_id,
+                ),
+            )
+            .order_by(Quiz.created_at.desc())
+        )
         if folder_id is not None:
             stmt = stmt.where(Quiz.folder_id == folder_id)
 
@@ -626,6 +657,8 @@ class QuizService:
                     difficulty=quiz.difficulty.value,
                     total_questions=quiz.total_questions,
                     folder_id=quiz.folder_id,
+                    creator_user_id=quiz.creator_user_id,
+                    visibility=quiz.visibility,
                     created_at=quiz.created_at,
                     has_attempt=attempt is not None,
                     attempt_score=attempt.score if attempt else None,
@@ -667,13 +700,7 @@ class QuizService:
             QuizAttemptNotFoundError: 作答记录不存在
         """
         # 验证测验存在且有权限
-        quiz_result = await self.db.execute(
-            select(Quiz).where(Quiz.id == quiz_id)
-        )
-        quiz = quiz_result.scalar_one_or_none()
-
-        if not quiz:
-            raise QuizNotFoundError(f"测试不存在: {quiz_id}")
+        quiz = await self._get_quiz(quiz_id, user_id=user_id)
 
         await self._check_space_access(quiz.space_id, user_id)
 
@@ -757,15 +784,10 @@ class QuizService:
             QuizAccessDeniedError: 无权访问
         """
         # 验证测验存在且有权限（仅 owner 可删除）
-        quiz_result = await self.db.execute(
-            select(Quiz).where(Quiz.id == quiz_id)
-        )
-        quiz = quiz_result.scalar_one_or_none()
-
-        if not quiz:
-            raise QuizNotFoundError(f"测试不存在: {quiz_id}")
-
-        await self._check_space_ownership(quiz.space_id, user_id)
+        quiz = await self._get_quiz(quiz_id, user_id=user_id)
+        await self._check_space_access(quiz.space_id, user_id)
+        if quiz.visibility != "private":
+            await self._check_space_ownership(quiz.space_id, user_id)
 
         # 删除测验（关联的 questions 和 attempts 会级联删除）
         await self.db.execute(delete(Quiz).where(Quiz.id == quiz_id))

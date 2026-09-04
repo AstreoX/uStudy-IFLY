@@ -40,7 +40,7 @@ from teacher.schemas import (
 )
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
-ALLOWED_DAYS = {7, 30, 90}
+ALLOWED_DAYS = {7, 30, 90, 365}
 
 
 @dataclass(frozen=True)
@@ -75,7 +75,7 @@ class PeriodWindow:
 
 def build_period(days: int, now: datetime | None = None) -> PeriodWindow:
     if days not in ALLOWED_DAYS:
-        raise ValueError("days must be one of 7, 30, or 90")
+        raise ValueError("days must be one of 7, 30, 90, or 365")
     local_now = (now or datetime.now(timezone.utc)).astimezone(SHANGHAI)
     end_local = datetime.combine(local_now.date() + timedelta(days=1), time.min, SHANGHAI)
     start_local = end_local - timedelta(days=days)
@@ -578,6 +578,7 @@ class TeacherAnalyticsService:
                 .join(Quiz, Quiz.id == QuizAttempt.quiz_id)
                 .where(
                     Quiz.space_id == self.space_id,
+                    Quiz.visibility == "shared",
                     QuizAttempt.user_id == student_id,
                     QuizAttempt.status == "completed",
                     QuizAttempt.submitted_at >= self.period.start_utc,
@@ -607,6 +608,8 @@ class TeacherAnalyticsService:
                     .where(
                         StudyActivityLog.space_id == self.space_id,
                         StudyActivityLog.user_id == student_id,
+                        StudyActivityLog.source != "quiz",
+                        StudyActivityLog.activity_type != "测验",
                         StudyActivityLog.activity_time >= self.period.start_utc,
                         StudyActivityLog.activity_time < self.period.end_utc,
                     )

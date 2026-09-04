@@ -167,7 +167,11 @@ class ArtifactToolExecutor:
                     )
 
             result = await db.execute(
-                select(Conversation).where(Conversation.id == self.conversation_id)
+                select(Conversation).where(
+                    Conversation.id == self.conversation_id,
+                    Conversation.user_id == self.user_id,
+                    Conversation.space_id == self.space_id,
+                )
             )
             conv = result.scalar_one_or_none()
             if not conv:
@@ -176,7 +180,11 @@ class ArtifactToolExecutor:
             # Reuse existing artifact note if conversation already has one
             if conv.artifact_note_id:
                 result = await db.execute(
-                    select(Note).where(Note.id == conv.artifact_note_id)
+                    select(Note).where(
+                        Note.id == conv.artifact_note_id,
+                        Note.space_id == self.space_id,
+                        Note.creator_user_id == self.user_id,
+                    )
                 )
                 existing_note = result.scalar_one_or_none()
                 if existing_note:
@@ -205,6 +213,8 @@ class ArtifactToolExecutor:
                 await self._complete_note_with_html(
                     db,
                     note_id=note_id,
+                    user_id=self.user_id,
+                    space_id=self.space_id,
                     html=finalized_html,
                     libraries=libraries,
                 )
@@ -255,13 +265,21 @@ class ArtifactToolExecutor:
         db,
         *,
         note_id: UUID,
+        user_id: UUID,
+        space_id: UUID,
         html: str,
         libraries: list,
     ) -> None:
         """Persist already-generated HTML without launching a second generation."""
         from sqlalchemy import select
 
-        result = await db.execute(select(Note).where(Note.id == note_id))
+        result = await db.execute(
+            select(Note).where(
+                Note.id == note_id,
+                Note.space_id == space_id,
+                Note.creator_user_id == user_id,
+            )
+        )
         note = result.scalar_one_or_none()
         if not note:
             raise ValueError("演示笔记不存在")
@@ -290,6 +308,7 @@ class ArtifactToolExecutor:
             note_type="interactive_html",
             metadata_={"generating": True, "libraries": libraries, "version": 1},
             creator_user_id=user_id,
+            visibility="shared",
         )
         db.add(note)
         await db.flush()
@@ -325,7 +344,11 @@ class ArtifactToolExecutor:
         async with get_scoped_session() as db:
             from sqlalchemy import select
             result = await db.execute(
-                select(Conversation).where(Conversation.id == self.conversation_id)
+                select(Conversation).where(
+                    Conversation.id == self.conversation_id,
+                    Conversation.user_id == self.user_id,
+                    Conversation.space_id == self.space_id,
+                )
             )
             conv = result.scalar_one_or_none()
             if not conv or not conv.artifact_note_id:
@@ -337,7 +360,11 @@ class ArtifactToolExecutor:
             note_id = conv.artifact_note_id
 
             result = await db.execute(
-                select(Note).where(Note.id == note_id)
+                select(Note).where(
+                    Note.id == note_id,
+                    Note.space_id == self.space_id,
+                    Note.creator_user_id == self.user_id,
+                )
             )
             note = result.scalar_one_or_none()
             if not note:

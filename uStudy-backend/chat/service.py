@@ -40,9 +40,31 @@ from db.models import (
     MessageResponseStatus,
     MessageRole,
     Space,
+    SpaceMember,
 )
+from experiment.course_catalog import is_managed_course
 
 logger = logging.getLogger(__name__)
+
+
+async def _resolve_space_graph_edit_permission(
+    db: AsyncSession, space: Space, user_id: UUID
+) -> bool:
+    """Resolve graph-edit access without trusting a stale membership snapshot."""
+
+    if space.user_id == user_id:
+        return True
+    if is_managed_course(space.id):
+        return False
+    if not space.is_collaborative:
+        return False
+    can_edit = await db.scalar(
+        select(SpaceMember.can_edit_graph).where(
+            SpaceMember.space_id == space.id,
+            SpaceMember.user_id == user_id,
+        )
+    )
+    return bool(can_edit)
 
 
 def _extract_snippet(content: str, query: str, max_len: int = 200) -> str:
@@ -745,18 +767,9 @@ class ChatService:
             space_tool_mode = getattr(space, "tool_mode", "auto") or "auto"
             space_enabled_tools = getattr(space, "enabled_tools", None)
             space_is_collaborative = getattr(space, "is_collaborative", False) or False
-            space_is_owner = (space.user_id == user_id)
-            if space_is_collaborative and not space_is_owner:
-                from db.models import SpaceMember
-                member_result = await db.execute(
-                    select(SpaceMember.can_edit_graph).where(
-                        SpaceMember.space_id == space_id,
-                        SpaceMember.user_id == user_id,
-                    )
-                )
-                space_can_edit_graph = member_result.scalar_one_or_none() or False
-            else:
-                space_can_edit_graph = True  # owner always can edit
+            space_can_edit_graph = await _resolve_space_graph_edit_permission(
+                db, space, user_id
+            )
             logger.info(f"[Perf] Load space info: {(time.monotonic()-t0)*1000:.0f}ms")
 
             # 6. 对话连续性：检测新对话并加载上一次对话上下文

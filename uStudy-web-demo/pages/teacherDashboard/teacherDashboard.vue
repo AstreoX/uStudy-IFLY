@@ -29,7 +29,7 @@
               class="range-option"
               :class="{ active: days === option }"
               @tap="changeDays(option)"
-            >{{ option }} 天</view>
+            >{{ formatDayOption(option) }}</view>
           </view>
           <view class="refresh-button" :class="{ spinning: loading }" @tap="refreshCurrent">↻</view>
         </view>
@@ -284,6 +284,7 @@ import TeacherSpaceSelector from '@/components/teacher/TeacherSpaceSelector.vue'
 import { getTeacherKnowledge, getTeacherOverview, getTeacherStudentDetail, getTeacherStudents } from '@/api/teacher'
 import { useSpacesStore } from '@/store/spaces'
 import {
+  getTeacherSpaces,
   resolveTeacherSpace,
   rememberTeacherSpace,
   TEACHER_SPACE_TOOLS
@@ -309,7 +310,7 @@ export default {
       days: 7,
       heatmapMetric: 'active_rate',
       selectedCalendarDate: null,
-      dayOptions: [7, 30, 90],
+      dayOptions: [7, 30, 90, 365],
       tabs: [
         { id: 'overview', label: '班级概览' },
         { id: 'knowledge', label: '知识点' },
@@ -336,7 +337,7 @@ export default {
   },
   computed: {
     teacherSpaces() {
-      return this.spacesStore.spaces.filter(space => space.user_role === 'teacher')
+      return getTeacherSpaces(this.spacesStore.spaces)
     },
     selectedSpace() {
       return this.teacherSpaces.find(space => String(space.id) === String(this.spaceId)) || null
@@ -427,6 +428,9 @@ export default {
       this.detailOpen = false
       rememberTeacherSpace(TEACHER_SPACE_TOOLS.DASHBOARD, space.id)
       uni.reLaunch({ url: `${TEACHER_ROUTE}?spaceId=${encodeURIComponent(space.id)}` })
+    },
+    formatDayOption(days) {
+      return days === 365 ? '近 1 年' : `${days} 天`
     },
     metric(value) {
       return value === null || value === undefined ? '暂无数据' : `${Number(value).toFixed(1)}%`

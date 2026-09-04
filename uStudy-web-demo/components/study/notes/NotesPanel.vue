@@ -429,6 +429,7 @@ export default {
 
     canEditNote(note) {
       if (!this.isCollaborative) return true
+      if (note?.visibility === 'private' && note?.creator_user_id !== this.currentUserId) return false
       if (this.userRole === 'owner') return true
       return note?.creator_user_id === this.currentUserId
     },

@@ -1,7 +1,7 @@
 """文件夹模块 Pydantic 模型"""
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -25,6 +25,8 @@ class FolderResponse(BaseModel):
     parent_id: Optional[UUID] = None
     content_type: FolderContentType
     name: str
+    creator_user_id: Optional[UUID] = None
+    visibility: Literal["shared", "private"] = "shared"
     sort_order: int = 0
     created_at: datetime
     updated_at: datetime

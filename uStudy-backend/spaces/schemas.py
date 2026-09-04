@@ -86,6 +86,7 @@ class SpaceResponse(BaseModel):
     is_collaborative: bool = False
     review_mode: int = 0
     user_role: Optional[str] = None
+    is_managed_course: bool = False
     created_at: datetime
     updated_at: datetime
 

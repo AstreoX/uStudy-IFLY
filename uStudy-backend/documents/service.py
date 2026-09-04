@@ -212,7 +212,7 @@ async def delete_document(
     user_id: uuid.UUID,
 ) -> None:
     """删除文档或链接"""
-    await verify_space_ownership(db, space_id, user_id)
+    space = await verify_space_ownership(db, space_id, user_id)
 
     result = await db.execute(
         select(SpaceDocument).where(
@@ -222,6 +222,8 @@ async def delete_document(
     document = result.scalar_one_or_none()
 
     if not document:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    if space.user_id != user_id and document.creator_user_id != user_id:
         raise HTTPException(status_code=404, detail="文档不存在")
 
     # Invalidate the current generation before deleting.  Every publish and

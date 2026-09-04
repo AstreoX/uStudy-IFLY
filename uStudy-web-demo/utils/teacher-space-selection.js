@@ -7,6 +7,7 @@ export const TEACHER_SPACE_TOOLS = Object.freeze({
 })
 
 const STORAGE_PREFIX = 'ustudy_teacher_space'
+const TEACHER_SPACE_ROLES = new Set(['owner', 'teacher'])
 
 function normalizedId(value) {
   return value === undefined || value === null ? '' : String(value).trim()
@@ -24,9 +25,14 @@ function storageKey(tool, userId = '') {
   return `${STORAGE_PREFIX}:${tool}:${ownerId}`
 }
 
+export function isTeacherSpace(space) {
+  const role = String(space?.user_role || '').trim().toLowerCase()
+  return !!normalizedId(space?.id) && TEACHER_SPACE_ROLES.has(role)
+}
+
 export function getTeacherSpaces(spaces) {
   return Array.isArray(spaces)
-    ? spaces.filter(space => space?.user_role === 'teacher' && normalizedId(space.id))
+    ? spaces.filter(isTeacherSpace)
     : []
 }
 

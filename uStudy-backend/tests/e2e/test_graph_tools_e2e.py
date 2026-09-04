@@ -4,6 +4,7 @@
 需要数据库环境，但使用 mock LLM 客户端。
 """
 
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import pytest
@@ -12,6 +13,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Space, User
 from chat.tools.graph_tools import GraphToolExecutor, GRAPH_TOOLS
+import chat.tools.graph_tools as graph_tools
+
+
+@pytest.fixture(autouse=True)
+def use_graph_tool_test_session(db_session: AsyncSession, monkeypatch):
+    """Keep tool authorization and writes in the fixture database."""
+
+    @asynccontextmanager
+    async def scoped_session_override():
+        yield db_session
+
+    monkeypatch.setattr(graph_tools, "get_scoped_session", scoped_session_override)
 
 
 class TestKnowledgeGraphE2E:
@@ -21,7 +34,11 @@ class TestKnowledgeGraphE2E:
     async def executor(
         self, db_session: AsyncSession, graph_test_space: Space
     ) -> GraphToolExecutor:
-        return GraphToolExecutor(graph_test_space.id)
+        return GraphToolExecutor(
+            graph_test_space.id,
+            user_id=graph_test_space.user_id,
+            is_collaborative=graph_test_space.is_collaborative,
+        )
 
     @pytest.mark.asyncio
     async def test_build_data_structure_knowledge_graph(
@@ -256,7 +273,11 @@ class TestToolChainE2E:
     async def executor(
         self, db_session: AsyncSession, graph_test_space: Space
     ) -> GraphToolExecutor:
-        return GraphToolExecutor(graph_test_space.id)
+        return GraphToolExecutor(
+            graph_test_space.id,
+            user_id=graph_test_space.user_id,
+            is_collaborative=graph_test_space.is_collaborative,
+        )
 
     @pytest.mark.asyncio
     async def test_all_10_tools_integration(

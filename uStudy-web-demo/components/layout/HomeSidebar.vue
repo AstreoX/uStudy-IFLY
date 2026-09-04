@@ -158,6 +158,7 @@ import { useUserStore } from '@/store/user'
 import { useSpacesStore } from '@/store/spaces'
 import config from '@/config'
 import UModal from '@/components/u-modal/u-modal.vue'
+import { getTeacherSpaces } from '@/utils/teacher-space-selection'
 
 const AVATAR_GRADIENTS = [
   'linear-gradient(135deg, #0F6FFF 0%, #B1DD8B 100%)',
@@ -215,7 +216,7 @@ export default {
       return this.spacesStore.loading
     },
     teacherSpaces() {
-      return this.spaces.filter(space => space.user_role === 'teacher')
+      return getTeacherSpaces(this.spaces)
     },
     visibleMenuItems() {
       return this.menuItems.filter(item => !['teacher', 'teacher-assignments', 'teacher-assistant'].includes(item.id) || this.teacherSpaces.length > 0)

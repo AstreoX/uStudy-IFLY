@@ -27,10 +27,10 @@ router.include_router(presentations_router)
 
 
 def _service(db: AsyncSession, space_id: UUID, days: int) -> TeacherAnalyticsService:
-    if days not in {7, 30, 90}:
+    if days not in {7, 30, 90, 365}:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "INVALID_PERIOD", "message": "days 仅支持 7、30 或 90"},
+            detail={"code": "INVALID_PERIOD", "message": "days 仅支持 7、30、90 或 365"},
         )
     return TeacherAnalyticsService(db, space_id, days)
 

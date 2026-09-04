@@ -271,6 +271,7 @@ import TeacherOjProblemEditor from '@/components/teacher/TeacherOjProblemEditor.
 import TeacherSpaceSelector from '@/components/teacher/TeacherSpaceSelector.vue'
 import { useSpacesStore } from '@/store/spaces'
 import {
+  getTeacherSpaces,
   resolveTeacherSpace,
   rememberTeacherSpace,
   TEACHER_SPACE_TOOLS
@@ -327,7 +328,7 @@ export default {
     }
   },
   computed: {
-    teacherSpaces() { return this.spacesStore.spaces.filter(space => space.user_role === 'teacher') },
+    teacherSpaces() { return getTeacherSpaces(this.spacesStore.spaces) },
     selectedSpace() { return this.teacherSpaces.find(space => String(space.id) === String(this.spaceId)) || null },
     selectedSpaceName() { return this.selectedSpace?.name || '课程空间' },
     spaceSelectorDisabled() { return this.submitting || this.detailLoading || this.submissionsLoading || this.submissionLoading },

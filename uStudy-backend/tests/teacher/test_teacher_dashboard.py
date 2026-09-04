@@ -79,6 +79,9 @@ def test_period_uses_shanghai_calendar_and_rejects_unknown_days():
     period = build_period(7, datetime(2026, 8, 25, 16, 30, tzinfo=timezone.utc))
     assert period.start_local.date().isoformat() == "2026-08-20"
     assert (period.end_local.date()).isoformat() == "2026-08-27"
+    yearly = build_period(365, datetime(2026, 8, 25, 16, 30, tzinfo=timezone.utc))
+    assert yearly.days == 365
+    assert yearly.start_local.date().isoformat() == "2025-08-27"
     with pytest.raises(ValueError):
         build_period(14)
 
@@ -93,7 +96,7 @@ async def test_teacher_authorization_excludes_students(db_session: AsyncSession)
 
 
 @pytest.mark.asyncio
-async def test_teacher_authorization_accepts_any_space_but_only_exact_teacher_role(
+async def test_teacher_authorization_accepts_real_owner_or_exact_teacher_role(
     db_session: AsyncSession,
 ):
     owner = User(email="owner-role@example.com", nickname="Owner")
@@ -132,8 +135,9 @@ async def test_teacher_authorization_accepts_any_space_but_only_exact_teacher_ro
     )
     await db_session.commit()
 
+    assert await require_course_teacher(course.id, owner, db_session) is owner
     assert await require_course_teacher(course.id, teacher, db_session) is teacher
-    for unauthorized in (owner, member, other_teacher):
+    for unauthorized in (member, other_teacher):
         with pytest.raises(HTTPException) as exc_info:
             await require_course_teacher(course.id, unauthorized, db_session)
         assert exc_info.value.status_code == 403
@@ -488,7 +492,7 @@ async def test_teacher_is_excluded_from_student_members_and_leaderboard(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("days", [7, 30, 90])
+@pytest.mark.parametrize("days", [7, 30, 90, 365])
 async def test_activity_calendar_is_always_90_contiguous_days(
     db_session: AsyncSession,
     days: int,

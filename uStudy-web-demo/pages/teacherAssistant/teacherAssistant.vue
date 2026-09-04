@@ -95,6 +95,7 @@ import PresentationConversation from '@/components/teacher/presentation/Presenta
 import PresentationPreview from '@/components/teacher/presentation/PresentationPreview.vue'
 import { useSpacesStore } from '@/store/spaces'
 import {
+  getTeacherSpaces,
   resolveTeacherSpace,
   rememberTeacherSpace,
   TEACHER_SPACE_TOOLS
@@ -172,7 +173,7 @@ export default {
   },
   computed: {
     teacherSpaces() {
-      return this.spacesStore.spaces.filter(space => space.user_role === 'teacher')
+      return getTeacherSpaces(this.spacesStore.spaces)
     },
     selectedSpace() {
       return this.teacherSpaces.find(space => String(space.id) === String(this.spaceId)) || null
