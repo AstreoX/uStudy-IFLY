@@ -59,7 +59,7 @@
               </view>
               <text class="quiz-title">{{ assignment.title }}</text>
               <view class="quiz-meta">
-                <text class="quiz-topic">{{ assignment.topic || '数据结构' }}</text>
+                <text class="quiz-topic">{{ assignment.topic || '当前课程空间' }}</text>
                 <view class="quiz-difficulty assignment-difficulty">
                   <text class="quiz-difficulty-text assignment-difficulty-text">{{ difficultyLabel(assignment.difficulty) }}</text>
                 </view>

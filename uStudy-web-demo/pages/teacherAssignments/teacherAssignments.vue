@@ -2,16 +2,26 @@
   <view class="assignment-page">
     <view class="ambient ambient-a"></view>
     <view class="ambient ambient-b"></view>
-    <home-sidebar :collapsed="sidebarCollapsed" @toggle="sidebarCollapsed = !sidebarCollapsed" />
+    <home-sidebar
+      :collapsed="sidebarCollapsed"
+      @toggle="sidebarCollapsed = !sidebarCollapsed"
+      @select-space="openStudySpace"
+    />
 
     <view class="workspace">
       <view class="topbar">
         <view class="title-block">
           <text class="eyebrow">TEACHING · ASSIGNMENTS</text>
           <text class="page-title">作业管理</text>
-          <text class="page-subtitle">生成、发布并复核「数据结构」课程作业</text>
+          <text class="page-subtitle">生成、发布并复核「{{ selectedSpaceName }}」课程空间作业</text>
         </view>
         <view class="top-actions">
+          <TeacherSpaceSelector
+            :spaces="teacherSpaces"
+            :space-id="spaceId"
+            :disabled="spaceSelectorDisabled"
+            @change="handleTeacherSpaceChange"
+          />
           <view class="quiet-button" :class="{ spinning: loading }" @tap="loadAssignments">↻</view>
           <view class="primary-button" @tap="openGenerator"><text>＋</text><text>布置作业</text></view>
         </view>
@@ -32,7 +42,7 @@
                 {{ item.label }} <text>{{ countByStatus(item.value) }}</text>
               </view>
             </view>
-            <text class="course-note">课程 · 数据结构</text>
+            <text class="course-note">课程空间 · {{ selectedSpaceName }}</text>
           </view>
 
           <view v-if="loading && !assignments.length" class="state-view">
@@ -258,7 +268,13 @@
 <script>
 import HomeSidebar from '@/components/layout/HomeSidebar.vue'
 import TeacherOjProblemEditor from '@/components/teacher/TeacherOjProblemEditor.vue'
+import TeacherSpaceSelector from '@/components/teacher/TeacherSpaceSelector.vue'
 import { useSpacesStore } from '@/store/spaces'
+import {
+  resolveTeacherSpace,
+  rememberTeacherSpace,
+  TEACHER_SPACE_TOOLS
+} from '@/utils/teacher-space-selection'
 import {
   listTeacherAssignments, generateTeacherAssignment, getAssignmentJob, getTeacherAssignment,
   updateTeacherAssignment, deleteTeacherAssignment, publishTeacherAssignment, closeTeacherAssignment,
@@ -274,6 +290,9 @@ const TYPE_OPTIONS = [
   { value: 'short_answer', label: '简答题', note: 'AI 初评，支持教师复核' },
   { value: 'code', label: '编程题', note: '公开样例试运行，隐藏测试组计分' }
 ]
+
+const TEACHER_ROUTE = '/pages/teacherAssignments/teacherAssignments'
+const ACTIVE_GENERATION_STATUSES = new Set(['queued', 'pending', 'running', 'retrying'])
 
 function localDateTime(value) {
   if (!value) return ''
@@ -293,20 +312,29 @@ function makeGenerator() {
 }
 
 export default {
-  components: { HomeSidebar, TeacherOjProblemEditor },
+  components: { HomeSidebar, TeacherOjProblemEditor, TeacherSpaceSelector },
   data() {
     return {
-      sidebarCollapsed: false, spaceId: '', loading: false, errorMessage: '', assignments: [], filter: 'all',
+      spacesStore: useSpacesStore(), sidebarCollapsed: false, spaceId: '', loading: false, errorMessage: '', assignments: [], filter: 'all',
       filters: [{ value: 'all', label: '全部' }, { value: 'draft', label: '草稿' }, { value: 'published', label: '进行中' }, { value: 'closed', label: '已关闭' }],
       questionTypes: TYPE_OPTIONS, difficultyOptions: [{ value: 'easy', label: '基础' }, { value: 'medium', label: '适中' }, { value: 'hard', label: '挑战' }],
       panelOpen: false, panelMode: 'generate', detailTab: 'overview', detailLoading: false, submissionsLoading: false, submissionLoading: false, submitting: false,
-      generator: makeGenerator(), generationJob: null, generationError: '', jobTimer: null, retryingQuestionIndex: null,
+      generator: makeGenerator(), generationJob: null, generationError: '', jobTimer: null, jobPollVersion: 0, retryingQuestionIndex: null,
       selectedAssignment: null, submissions: [], activeSubmission: null,
       deadlineModal: { open: false, student: null, value: '' },
-      ojCapabilities: { enabled: false, languages: [] }, ojCapabilitiesLoaded: false
+      ojCapabilities: { enabled: false, languages: [] }, ojCapabilitiesLoaded: false,
+      requestVersion: 0
     }
   },
   computed: {
+    teacherSpaces() { return this.spacesStore.spaces.filter(space => space.user_role === 'teacher') },
+    selectedSpace() { return this.teacherSpaces.find(space => String(space.id) === String(this.spaceId)) || null },
+    selectedSpaceName() { return this.selectedSpace?.name || '课程空间' },
+    spaceSelectorDisabled() { return this.submitting || this.detailLoading || this.submissionsLoading || this.submissionLoading },
+    hasActiveGeneration() {
+      return this.retryingQuestionIndex !== null
+        || (!!this.generationJob && ACTIVE_GENERATION_STATUSES.has(String(this.generationJob.status || '').toLowerCase()))
+    },
     publishedCount() { return this.assignments.filter(item => ['published', 'active'].includes(item.status)).length },
     totalReviewRequired() { return this.assignments.reduce((sum, item) => sum + item.review_required_count, 0) },
     averageSubmissionRate() {
@@ -340,21 +368,58 @@ export default {
     availableQuestionTypes() { return this.ojEnabled ? this.questionTypes : this.questionTypes.filter(type => type.value !== 'code') }
   },
   async onLoad(options) {
-    this.spaceId = options?.spaceId || ''
-    if (!this.spaceId) {
-      const spacesStore = useSpacesStore()
-      await spacesStore.loadSpaces(true)
-      this.spaceId = spacesStore.spaces.find(space => space.user_role === 'teacher')?.id || ''
+    await this.spacesStore.loadSpaces(true)
+    const resolved = resolveTeacherSpace({
+      spaces: this.spacesStore.spaces,
+      requestedSpaceId: options?.spaceId,
+      tool: TEACHER_SPACE_TOOLS.ASSIGNMENTS
+    })
+    if (resolved.invalidRequested) {
+      uni.showToast({ title: '指定课程空间无效或已无权限', icon: 'none' })
     }
-    if (!this.spaceId) {
-      uni.showToast({ title: '当前账号没有教师权限', icon: 'none' })
+    if (!resolved.space) {
+      uni.showToast({ title: '当前账号没有可管理的课程空间', icon: 'none' })
       setTimeout(() => uni.reLaunch({ url: '/pages/index/index' }), 600)
+      return
+    }
+    this.spaceId = String(resolved.space.id)
+    if (resolved.shouldCanonicalize) {
+      uni.reLaunch({ url: `${TEACHER_ROUTE}?spaceId=${encodeURIComponent(this.spaceId)}` })
       return
     }
     await Promise.all([this.loadOjCapabilities(), this.loadAssignments()])
   },
-  beforeUnmount() { this.stopJobPolling() },
+  beforeUnmount() { this.requestVersion += 1; this.stopJobPolling() },
   methods: {
+    handleTeacherSpaceChange(space) {
+      if (!space?.id || String(space.id) === String(this.spaceId) || this.spaceSelectorDisabled) return
+      if (this.hasActiveGeneration) {
+        uni.showModal({
+          title: '切换课程空间？',
+          content: '当前作业生成会继续在后台运行。切换后可返回此课程空间查看结果。',
+          confirmText: '继续切换',
+          success: result => { if (result.confirm) this.commitTeacherSpaceChange(space.id) }
+        })
+        return
+      }
+      this.commitTeacherSpaceChange(space.id)
+    },
+    commitTeacherSpaceChange(spaceId) {
+      this.requestVersion += 1
+      this.stopJobPolling()
+      this.panelOpen = false
+      this.deadlineModal.open = false
+      this.assignments = []
+      this.selectedAssignment = null
+      this.submissions = []
+      this.activeSubmission = null
+      this.generationJob = null
+      rememberTeacherSpace(TEACHER_SPACE_TOOLS.ASSIGNMENTS, spaceId)
+      uni.reLaunch({ url: `${TEACHER_ROUTE}?spaceId=${encodeURIComponent(spaceId)}` })
+    },
+    openStudySpace(spaceId) {
+      uni.reLaunch({ url: `/pages/study/study?spaceId=${encodeURIComponent(spaceId)}` })
+    },
     async loadOjCapabilities() {
       try {
         const response = await getOjCapabilities()
@@ -368,10 +433,13 @@ export default {
     },
     async loadAssignments() {
       if (this.loading || !this.spaceId) return
+      const version = ++this.requestVersion
+      const requestedSpaceId = this.spaceId
       this.loading = true; this.errorMessage = ''
       try {
-        const assignments = await listTeacherAssignments(this.spaceId)
-        const statistics = await Promise.allSettled(assignments.map(item => item.status === 'draft' ? Promise.resolve(null) : listAssignmentSubmissions(this.spaceId, item.id)))
+        const assignments = await listTeacherAssignments(requestedSpaceId)
+        const statistics = await Promise.allSettled(assignments.map(item => item.status === 'draft' ? Promise.resolve(null) : listAssignmentSubmissions(requestedSpaceId, item.id)))
+        if (version !== this.requestVersion || requestedSpaceId !== this.spaceId) return
         this.assignments = assignments.map((item, index) => {
           const payload = statistics[index].status === 'fulfilled' ? statistics[index].value : null
           if (!payload) return item
@@ -383,13 +451,15 @@ export default {
             review_required_count: payload.submissions.filter(submission => submission.review_required).length
           }
         })
+        this.resumeActiveGeneration()
       }
       catch (error) {
+        if (version !== this.requestVersion) return
         if ([403, 404].includes(error?.statusCode)) {
           uni.showToast({ title: '当前账号没有作业管理权限', icon: 'none' })
           setTimeout(() => uni.reLaunch({ url: `/pages/study/study?spaceId=${encodeURIComponent(this.spaceId)}` }), 600)
         } else this.errorMessage = error?.message || '作业加载失败，请稍后重试'
-      } finally { this.loading = false }
+      } finally { if (version === this.requestVersion) this.loading = false }
     },
     countByStatus(status) { return status === 'all' ? this.assignments.length : status === 'published' ? this.publishedCount : this.assignments.filter(item => item.status === status).length },
     submissionRate(item) { return item.recipient_count ? Math.round((item.submitted_count / item.recipient_count) * 100) : 0 },
@@ -458,11 +528,43 @@ export default {
       } catch (error) { this.generationError = error?.message || '提交生成任务失败，请稍后重试' }
       finally { this.submitting = false }
     },
-    pollJob() { this.stopJobPolling(); this.checkJob(); this.jobTimer = setInterval(this.checkJob, 2000) },
-    async checkJob() {
+    resumeActiveGeneration() {
+      if (this.jobTimer) return
+      const activeAssignment = this.assignments.find(item => {
+        const status = String(item.generation_progress?.status || '').toLowerCase()
+        return item.status === 'draft' && ACTIVE_GENERATION_STATUSES.has(status)
+      })
+      if (!activeAssignment) return
+      const progress = activeAssignment.generation_progress
+      this.generationJob = {
+        ...progress,
+        id: String(progress.job_id || ''),
+        assignment_id: activeAssignment.id,
+        status: progress.status || 'pending'
+      }
+      if (!this.generationJob.id) return
+      this.panelMode = 'generate'
+      this.panelOpen = true
+      this.pollJob()
+    },
+    pollJob() {
+      this.stopJobPolling()
+      const pollVersion = this.jobPollVersion
+      const run = async () => {
+        await this.checkJob(pollVersion)
+        if (pollVersion !== this.jobPollVersion || !this.hasActiveGeneration) return
+        this.jobTimer = setTimeout(run, 2000)
+      }
+      run()
+    },
+    async checkJob(pollVersion = this.jobPollVersion) {
       if (!this.generationJob?.id) return
+      const version = this.requestVersion
+      const requestedSpaceId = this.spaceId
+      const requestedJobId = this.generationJob.id
       try {
-        const payload = await getAssignmentJob(this.spaceId, this.generationJob.id)
+        const payload = await getAssignmentJob(requestedSpaceId, requestedJobId)
+        if (pollVersion !== this.jobPollVersion || version !== this.requestVersion || requestedSpaceId !== this.spaceId || requestedJobId !== this.generationJob?.id) return
         const job = payload?.job || payload
         this.generationJob = { ...this.generationJob, ...job, id: String(job?.id || job?.job_id || this.generationJob.id) }
         if (this.selectedAssignment && String(this.generationJob.assignment_id || job?.assignment_id || job?.output_data?.assignment_id || '') === String(this.selectedAssignment.id)) {
@@ -476,20 +578,33 @@ export default {
         } else if (['failed', 'error', 'partial_failed'].includes(job?.status)) {
           this.stopJobPolling(); this.generationError = job.error || job.error_message || 'AI 生成失败，请修改要求后重试'; this.retryingQuestionIndex = null
         }
-      } catch (error) { this.stopJobPolling(); this.retryingQuestionIndex = null; this.generationError = error?.message || '生成状态读取失败，请重新尝试' }
+      } catch (error) {
+        if (pollVersion !== this.jobPollVersion || version !== this.requestVersion) return
+        this.stopJobPolling(); this.retryingQuestionIndex = null; this.generationError = error?.message || '生成状态读取失败，请重新尝试'
+      }
     },
     async retryGenerationQuestion(index) {
       const jobId = this.generationJob?.id || this.selectedAssignment?.generation_job_id
       if (this.retryingQuestionIndex !== null || !jobId) return
+      const version = this.requestVersion
+      const requestedSpaceId = this.spaceId
       this.retryingQuestionIndex = index; this.generationError = ''
       try {
-        const payload = await retryAssignmentQuestion(this.spaceId, jobId, index)
+        const payload = await retryAssignmentQuestion(requestedSpaceId, jobId, index)
+        if (version !== this.requestVersion || requestedSpaceId !== this.spaceId) return
         const job = payload?.job || payload
         this.generationJob = { ...(this.generationJob || {}), ...job, id: String(job?.id || job?.job_id || jobId) }
         this.pollJob()
-      } catch (error) { this.generationError = error?.message || '题目重试提交失败，请稍后再试'; this.retryingQuestionIndex = null }
+      } catch (error) {
+        if (version !== this.requestVersion) return
+        this.generationError = error?.message || '题目重试提交失败，请稍后再试'; this.retryingQuestionIndex = null
+      }
     },
-    stopJobPolling() { if (this.jobTimer) clearInterval(this.jobTimer); this.jobTimer = null },
+    stopJobPolling() {
+      this.jobPollVersion += 1
+      if (this.jobTimer) clearTimeout(this.jobTimer)
+      this.jobTimer = null
+    },
     async finishGeneration(assignmentId) { this.stopJobPolling(); await this.loadAssignments(); await this.openAssignment({ id: assignmentId }) },
     applyGenerationProgress(assignment, source) {
       const wrapper = source || assignment?.generation_progress || {}
@@ -741,8 +856,8 @@ export default {
 .spinning { animation: spin .8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } } @keyframes load { from { transform: translateX(-100%); } to { transform: translateX(250%); } } @keyframes reveal { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } } @keyframes aurora-drift-a { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(50px,35px) scale(1.06); } 66% { transform: translate(-25px,15px) scale(.97); } } @keyframes aurora-drift-b { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(-40px,30px) scale(1.05); } 66% { transform: translate(20px,-25px) scale(.98); } } @keyframes aurora-drift-c { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(30px,-35px) scale(1.07); } 66% { transform: translate(-20px,20px) scale(.96); } }
 .submission-oj-summary { min-height: 44px; display: flex; align-items: center; gap: 9px; border-top: 1px solid rgba(148,163,184,.09); border-bottom: 1px solid rgba(148,163,184,.09); }.submission-oj-summary strong { color: #d7dce7; font-size: 10px; }.submission-oj-summary text { color: #536175; font-size: 8px; }.validation-dot.validation-accepted { background: #34d399; }.validation-dot.validation-system_error { background: #f59e0b; }.submission-oj-groups { border-bottom: 1px solid rgba(148,163,184,.09); }.submission-oj-groups > view { min-height: 42px; display: flex; align-items: center; justify-content: space-between; }.submission-oj-groups > view > view { display: flex; align-items: center; gap: 8px; }.submission-oj-groups strong { color: #cbd5e1; font-size: 9px; }.submission-oj-groups text { color: #64748b; font-size: 8px; }.code-band { align-items: stretch !important; flex-direction: column; }.review-code { width: 100%; max-height: 320px; margin: 7px 0 0; padding: 12px; overflow: auto; box-sizing: border-box; color: #cbd5e1; font: 9px/1.6 "SFMono-Regular",Consolas,monospace; white-space: pre-wrap; background: #0d0e16; border: 1px solid rgba(148,163,184,.09); border-radius: 5px; }.compile-output { color: #fda4af; border-left: 2px solid rgba(251,113,133,.5); }
 .oj-disabled-panel { margin-top: 16px; padding: 13px 0; display: flex; flex-direction: column; gap: 5px; border-top: 1px solid rgba(245,158,11,.18); border-bottom: 1px solid rgba(245,158,11,.12); }.oj-disabled-panel strong { color: #fbbf24; font-size: 10px; }.oj-disabled-panel text { color: #64748b; font-size: 9px; line-height: 1.6; }
-@media (max-width: 900px) { .metric-strip { grid-template-columns: 1fr 1fr; }.metric:nth-child(2) { border-right: 0; }.metric:nth-child(-n+2) { border-bottom: 1px solid rgba(148,163,184,.1); }.assignment-row { grid-template-columns: 3px minmax(0,1fr); }.submission-progress { grid-column: 2; width: 100%; padding: 0 18px 20px 0; box-sizing: border-box; }.options-editor { grid-template-columns: 1fr; } }
-@media (max-width: 680px) { .topbar { min-height: 104px; padding: 20px 18px 16px; align-items: flex-start; }.page-subtitle,.course-note { display: none; }.page-title { font-size: 23px; }.content-shell { padding: 20px 18px 0; }.metric { padding-left: 12px; min-height: 78px; }.metric strong { font-size: 22px; }.filter-row { overflow-x: auto; }.filters { gap: 20px; }.assignment-row { gap: 14px; }.field-grid { grid-template-columns: 1fr; }.type-row { grid-template-columns: 1fr 74px 105px; }.panel-header,.panel-body,.panel-footer { padding-left: 18px; padding-right: 18px; }.assignment-summary { grid-template-columns: 1fr; }.summary-field { padding-left: 0; border-right: 0; border-bottom: 1px solid rgba(148,163,184,.08); }.submission-row { grid-template-columns: 34px minmax(0,1fr) 74px; }.row-actions { grid-column: 2 / -1; padding-bottom: 10px; }.panel-footer { flex-wrap: wrap; }.primary-button.wide { flex: 1; } }
+@media (max-width: 900px) { .assignment-page :deep(.sidebar) { display: none; }.topbar { align-items: flex-start; flex-direction: column; }.top-actions { width: 100%; flex-wrap: wrap; justify-content: flex-end; }.top-actions :deep(.teacher-space-selector) { margin-right: auto; }.metric-strip { grid-template-columns: 1fr 1fr; }.metric:nth-child(2) { border-right: 0; }.metric:nth-child(-n+2) { border-bottom: 1px solid rgba(148,163,184,.1); }.assignment-row { grid-template-columns: 3px minmax(0,1fr); }.submission-progress { grid-column: 2; width: 100%; padding: 0 18px 20px 0; box-sizing: border-box; }.options-editor { grid-template-columns: 1fr; } }
+@media (max-width: 680px) { .topbar { min-height: 104px; padding: 20px 18px 16px; align-items: flex-start; flex-direction: column; }.top-actions { width: 100%; flex-wrap: wrap; justify-content: flex-end; }.top-actions :deep(.teacher-space-selector) { margin-right: auto; }.page-subtitle,.course-note { display: none; }.page-title { font-size: 23px; }.content-shell { padding: 20px 18px 0; }.metric { padding-left: 12px; min-height: 78px; }.metric strong { font-size: 22px; }.filter-row { overflow-x: auto; }.filters { gap: 20px; }.assignment-row { gap: 14px; }.field-grid { grid-template-columns: 1fr; }.type-row { grid-template-columns: 1fr 74px 105px; }.panel-header,.panel-body,.panel-footer { padding-left: 18px; padding-right: 18px; }.assignment-summary { grid-template-columns: 1fr; }.summary-field { padding-left: 0; border-right: 0; border-bottom: 1px solid rgba(148,163,184,.08); }.submission-row { grid-template-columns: 34px minmax(0,1fr) 74px; }.row-actions { grid-column: 2 / -1; padding-bottom: 10px; }.panel-footer { flex-wrap: wrap; }.primary-button.wide { flex: 1; } }
 .side-panel { background: rgba(42,42,60,.78); border-left-color: rgba(255,255,255,.16); backdrop-filter: blur(24px); }
 .panel-footer { background: rgba(42,42,60,.72); border-top-color: rgba(255,255,255,.12); backdrop-filter: blur(18px); }
 .modal { background: rgba(42,42,60,.82); border-color: rgba(255,255,255,.16); backdrop-filter: blur(24px); }

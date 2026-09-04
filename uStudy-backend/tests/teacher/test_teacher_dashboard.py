@@ -1,6 +1,5 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -10,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import scripts.manage_experiment_accounts as account_script
 from agents.mastery_update_agent import MasteryUpdateAgent
 from db.models import (
+    Edge,
+    EdgeType,
     Node,
     NodeMasteryEvent,
     NodeUserMastery,
@@ -23,9 +24,9 @@ from db.models import (
 )
 from experiment.default_course import DEFAULT_SPACE_ID
 from graph.service import GraphService
+from spaces.service import SpaceService
 from teacher.dependencies import require_course_teacher
 from teacher.service import TeacherAnalyticsService, build_period
-from spaces.service import SpaceService
 
 
 async def seed_course(db: AsyncSession):
@@ -89,6 +90,169 @@ async def test_teacher_authorization_excludes_students(db_session: AsyncSession)
     with pytest.raises(HTTPException) as exc_info:
         await require_course_teacher(space.id, student, db_session)
     assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_teacher_authorization_accepts_any_space_but_only_exact_teacher_role(
+    db_session: AsyncSession,
+):
+    owner = User(email="owner-role@example.com", nickname="Owner")
+    teacher = User(email="teacher-role@example.com", nickname="Teacher")
+    member = User(email="member-role@example.com", nickname="Member")
+    other_teacher = User(email="other-teacher@example.com", nickname="Other Teacher")
+    db_session.add_all([owner, teacher, member, other_teacher])
+    await db_session.flush()
+    course = Space(user_id=owner.id, name="算法", color="#123456")
+    other_course = Space(user_id=owner.id, name="数据库", color="#654321")
+    db_session.add_all([course, other_course])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            SpaceMember(
+                space_id=course.id,
+                user_id=owner.id,
+                role=SpaceMemberRole.OWNER,
+            ),
+            SpaceMember(
+                space_id=course.id,
+                user_id=teacher.id,
+                role=SpaceMemberRole.TEACHER,
+            ),
+            SpaceMember(
+                space_id=course.id,
+                user_id=member.id,
+                role=SpaceMemberRole.MEMBER,
+            ),
+            SpaceMember(
+                space_id=other_course.id,
+                user_id=other_teacher.id,
+                role=SpaceMemberRole.TEACHER,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    assert await require_course_teacher(course.id, teacher, db_session) is teacher
+    for unauthorized in (owner, member, other_teacher):
+        with pytest.raises(HTTPException) as exc_info:
+            await require_course_teacher(course.id, unauthorized, db_session)
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == "TEACHER_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_chapter_map_uses_top_level_children_of_a_single_generic_root(
+    db_session: AsyncSession,
+):
+    teacher = User(email="chapter-teacher@example.com", nickname="Teacher")
+    db_session.add(teacher)
+    await db_session.flush()
+    course = Space(user_id=teacher.id, name="算法", color="#123456")
+    db_session.add(course)
+    await db_session.flush()
+    root = Node(space_id=course.id, label="算法课程")
+    sorting = Node(space_id=course.id, label="排序")
+    quicksort = Node(space_id=course.id, label="快速排序")
+    graph = Node(space_id=course.id, label="图算法")
+    db_session.add_all([root, sorting, quicksort, graph])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Edge(
+                space_id=course.id,
+                from_node_id=root.id,
+                to_node_id=sorting.id,
+                type=EdgeType.KNOWLEDGE_TREE,
+            ),
+            Edge(
+                space_id=course.id,
+                from_node_id=sorting.id,
+                to_node_id=quicksort.id,
+                type=EdgeType.KNOWLEDGE_TREE,
+            ),
+            Edge(
+                space_id=course.id,
+                from_node_id=root.id,
+                to_node_id=graph.id,
+                type=EdgeType.KNOWLEDGE_TREE,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    chapter_map = await TeacherAnalyticsService(db_session, course.id, 7)._chapter_map(
+        [(node.id, node.label) for node in (root, sorting, quicksort, graph)]
+    )
+
+    assert chapter_map == {
+        root.id: "算法课程",
+        sorting.id: "排序",
+        quicksort.id: "排序",
+        graph.id: "图算法",
+    }
+
+
+@pytest.mark.asyncio
+async def test_chapter_map_handles_forests_isolates_and_cycles(
+    db_session: AsyncSession,
+):
+    teacher = User(email="forest-teacher@example.com", nickname="Teacher")
+    db_session.add(teacher)
+    await db_session.flush()
+    course = Space(user_id=teacher.id, name="综合课程", color="#123456")
+    db_session.add(course)
+    await db_session.flush()
+    root_a = Node(space_id=course.id, label="甲章")
+    child_a = Node(space_id=course.id, label="甲节")
+    root_b = Node(space_id=course.id, label="乙章")
+    child_b = Node(space_id=course.id, label="乙节")
+    isolated = Node(space_id=course.id, label="独立主题")
+    cycle_a = Node(space_id=course.id, label="循环甲")
+    cycle_b = Node(space_id=course.id, label="循环乙")
+    nodes = [root_a, child_a, root_b, child_b, isolated, cycle_a, cycle_b]
+    db_session.add_all(nodes)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Edge(
+                space_id=course.id,
+                from_node_id=root_a.id,
+                to_node_id=child_a.id,
+                type=EdgeType.KNOWLEDGE_TREE,
+            ),
+            Edge(
+                space_id=course.id,
+                from_node_id=root_b.id,
+                to_node_id=child_b.id,
+                type=EdgeType.KNOWLEDGE_TREE,
+            ),
+            Edge(
+                space_id=course.id,
+                from_node_id=cycle_a.id,
+                to_node_id=cycle_b.id,
+                type=EdgeType.KNOWLEDGE_TREE,
+            ),
+            Edge(
+                space_id=course.id,
+                from_node_id=cycle_b.id,
+                to_node_id=cycle_a.id,
+                type=EdgeType.KNOWLEDGE_TREE,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    chapter_map = await TeacherAnalyticsService(db_session, course.id, 7)._chapter_map(
+        [(node.id, node.label) for node in nodes]
+    )
+
+    assert chapter_map[root_a.id] == "甲章"
+    assert chapter_map[child_a.id] == "甲章"
+    assert chapter_map[root_b.id] == "乙章"
+    assert chapter_map[child_b.id] == "乙章"
+    assert chapter_map[isolated.id] == "独立主题"
+    assert chapter_map[cycle_a.id] == chapter_map[cycle_b.id]
+    assert chapter_map[cycle_a.id] in {"循环甲", "循环乙"}
 
 
 @pytest.mark.asyncio

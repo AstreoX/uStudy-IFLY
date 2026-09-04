@@ -10,6 +10,18 @@
     />
 
     <view class="assistant-workspace">
+      <view class="assistant-topbar">
+        <view class="assistant-context-copy">
+          <text class="assistant-eyebrow">TEACHING · PRESENTATIONS</text>
+          <text class="assistant-title">教学助教</text>
+        </view>
+        <TeacherSpaceSelector
+          :spaces="teacherSpaces"
+          :space-id="spaceId"
+          :disabled="spaceSelectorDisabled"
+          @change="handleTeacherSpaceChange"
+        />
+      </view>
       <view class="mobile-bar">
         <view class="mobile-project-button" @tap="projectRailOpen = true">
           <svg viewBox="0 0 256 256"><line x1="40" y1="72" x2="216" y2="72" stroke="currentColor" stroke-width="16" stroke-linecap="round"/><line x1="40" y1="128" x2="216" y2="128" stroke="currentColor" stroke-width="16" stroke-linecap="round"/><line x1="40" y1="184" x2="216" y2="184" stroke="currentColor" stroke-width="16" stroke-linecap="round"/></svg>
@@ -24,6 +36,7 @@
       <view class="workspace-grid">
         <view class="rail-column" :class="{ open: projectRailOpen }">
           <PresentationProjectRail
+            :space-name="selectedSpaceName"
             :projects="projects"
             :revisions="revisions"
             :selected-project-id="selectedProjectId"
@@ -76,10 +89,16 @@
 
 <script>
 import HomeSidebar from '@/components/layout/HomeSidebar.vue'
+import TeacherSpaceSelector from '@/components/teacher/TeacherSpaceSelector.vue'
 import PresentationProjectRail from '@/components/teacher/presentation/PresentationProjectRail.vue'
 import PresentationConversation from '@/components/teacher/presentation/PresentationConversation.vue'
 import PresentationPreview from '@/components/teacher/presentation/PresentationPreview.vue'
 import { useSpacesStore } from '@/store/spaces'
+import {
+  resolveTeacherSpace,
+  rememberTeacherSpace,
+  TEACHER_SPACE_TOOLS
+} from '@/utils/teacher-space-selection'
 import {
   appendAgentText,
   applyAgentStreamEvent,
@@ -108,10 +127,12 @@ import {
 } from '@/api/teacher-presentations'
 
 const MAX_SOURCE_BYTES = 40 * 1024 * 1024
+const TEACHER_ROUTE = '/pages/teacherAssistant/teacherAssistant'
 
 export default {
   components: {
     HomeSidebar,
+    TeacherSpaceSelector,
     PresentationProjectRail,
     PresentationConversation,
     PresentationPreview
@@ -131,6 +152,7 @@ export default {
       previewUrl: '',
       previewLoadingState: false,
       previewRequestVersion: 0,
+      revisionRequestVersion: 0,
       projectsLoading: false,
       projectLoading: false,
       creatingProject: false,
@@ -144,10 +166,23 @@ export default {
       reconnectAttempts: 0,
       projectRailOpen: false,
       mobilePane: 'chat',
-      requestVersion: 0
+      requestVersion: 0,
+      contextVersion: 0
     }
   },
   computed: {
+    teacherSpaces() {
+      return this.spacesStore.spaces.filter(space => space.user_role === 'teacher')
+    },
+    selectedSpace() {
+      return this.teacherSpaces.find(space => String(space.id) === String(this.spaceId)) || null
+    },
+    selectedSpaceName() {
+      return this.selectedSpace?.name || '课程空间'
+    },
+    spaceSelectorDisabled() {
+      return this.creatingProject || this.uploading || this.actionBusy
+    },
     selectedProject() {
       return this.projects.find(project => project.id === this.selectedProjectId) || null
     },
@@ -159,39 +194,91 @@ export default {
     }
   },
   async onLoad(options) {
-    await this.resolveTeacherSpace(options?.spaceId)
-    if (!this.spaceId) return
+    await this.spacesStore.loadSpaces(true)
+    const resolved = resolveTeacherSpace({
+      spaces: this.spacesStore.spaces,
+      requestedSpaceId: options?.spaceId,
+      tool: TEACHER_SPACE_TOOLS.PRESENTATIONS
+    })
+    if (resolved.invalidRequested) {
+      uni.showToast({ title: '指定课程空间无效或已无权限', icon: 'none' })
+    }
+    if (!resolved.space) {
+      uni.showToast({ title: '当前账号没有可管理的课程空间', icon: 'none' })
+      setTimeout(() => uni.reLaunch({ url: '/pages/index/index' }), 600)
+      return
+    }
+    this.spaceId = String(resolved.space.id)
+    if (resolved.shouldCanonicalize) {
+      uni.reLaunch({ url: `${TEACHER_ROUTE}?spaceId=${encodeURIComponent(this.spaceId)}` })
+      return
+    }
     await this.loadProjects()
   },
   beforeUnmount() {
-    this.streamAbort?.()
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    this.contextVersion += 1
+    this.requestVersion += 1
+    this.previewRequestVersion += 1
+    this.revisionRequestVersion += 1
+    this.detachPresentationStream()
     this.releasePreviewUrl()
   },
   methods: {
-    async resolveTeacherSpace(requestedSpaceId) {
-      await this.spacesStore.loadSpaces(true)
-      const teacherSpaces = this.spacesStore.spaces.filter(space => space.user_role === 'teacher')
-      const allowed = requestedSpaceId
-        ? teacherSpaces.find(space => String(space.id) === String(requestedSpaceId))
-        : teacherSpaces[0]
-      if (!allowed) {
-        uni.showToast({ title: '仅课程教师可以使用教学助教', icon: 'none' })
-        uni.reLaunch({ url: '/pages/index/index' })
+    handleTeacherSpaceChange(space) {
+      if (!space?.id || String(space.id) === String(this.spaceId) || this.spaceSelectorDisabled) return
+      if (this.running) {
+        uni.showModal({
+          title: '切换课程空间？',
+          content: '当前课件任务会继续在后台运行。切换后可返回此课程空间恢复查看。',
+          confirmText: '继续切换',
+          success: result => { if (result.confirm) this.commitTeacherSpaceChange(space.id) }
+        })
         return
       }
-      this.spaceId = String(allowed.id)
+      this.commitTeacherSpaceChange(space.id)
+    },
+    commitTeacherSpaceChange(spaceId) {
+      this.contextVersion += 1
+      this.requestVersion += 1
+      this.previewRequestVersion += 1
+      this.revisionRequestVersion += 1
+      this.detachPresentationStream()
+      this.releasePreviewUrl()
+      this.projects = []
+      this.revisions = []
+      this.messages = []
+      this.sources = []
+      this.selectedProjectId = ''
+      this.selectedRevisionId = ''
+      this.selectedSlide = 1
+      this.projectRailOpen = false
+      this.progress = {}
+      rememberTeacherSpace(TEACHER_SPACE_TOOLS.PRESENTATIONS, spaceId)
+      uni.reLaunch({ url: `${TEACHER_ROUTE}?spaceId=${encodeURIComponent(spaceId)}` })
+    },
+    detachPresentationStream() {
+      this.running = false
+      const abort = this.streamAbort
+      this.streamAbort = null
+      if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+      this.reconnectAttempts = 0
+      abort?.()
     },
     async loadProjects(preferredProjectId = '') {
+      const contextVersion = this.contextVersion
+      const requestedSpaceId = this.spaceId
       this.projectsLoading = true
       try {
-        this.projects = await listPresentationProjects(this.spaceId)
+        const projects = await listPresentationProjects(requestedSpaceId)
+        if (contextVersion !== this.contextVersion || requestedSpaceId !== this.spaceId) return
+        this.projects = projects
         const targetId = preferredProjectId || this.selectedProjectId || this.projects[0]?.id || ''
         if (targetId) await this.selectProject(targetId)
       } catch (error) {
-        this.showError(error, '无法加载课件项目')
+        if (contextVersion === this.contextVersion) this.showError(error, '无法加载课件项目')
       } finally {
-        this.projectsLoading = false
+        if (contextVersion === this.contextVersion) this.projectsLoading = false
       }
     },
     async createProject(title) {
@@ -225,6 +312,7 @@ export default {
     async selectProject(projectId) {
       if (!projectId) return
       const version = ++this.requestVersion
+      this.revisionRequestVersion += 1
       if (this.streamAbort && projectId !== this.selectedProjectId) {
         this.streamAbort()
         this.streamAbort = null
@@ -269,7 +357,17 @@ export default {
     },
     async refreshRevisions(preferredId = '') {
       if (!this.selectedProjectId) return
-      const revisions = await listPresentationRevisions(this.spaceId, this.selectedProjectId)
+      const contextVersion = this.contextVersion
+      const requestVersion = ++this.revisionRequestVersion
+      const requestedSpaceId = this.spaceId
+      const requestedProjectId = this.selectedProjectId
+      const revisions = await listPresentationRevisions(requestedSpaceId, requestedProjectId)
+      if (
+        contextVersion !== this.contextVersion
+        || requestVersion !== this.revisionRequestVersion
+        || requestedSpaceId !== this.spaceId
+        || requestedProjectId !== this.selectedProjectId
+      ) return
       this.revisions = this.sortRevisions(revisions)
       const preferred = this.revisions.find(revision =>
         revision.id === String(preferredId || this.selectedRevisionId)
@@ -315,6 +413,7 @@ export default {
         if (requestVersion !== this.previewRequestVersion || projectId !== this.selectedProjectId || revisionId !== this.selectedRevisionId || slide !== this.selectedSlide) return
         this.previewUrl = URL.createObjectURL(blob)
       } catch (error) {
+        if (requestVersion !== this.previewRequestVersion) return
         this.previewUrl = ''
         this.showError(error, '预览读取失败')
       } finally {
@@ -401,11 +500,17 @@ export default {
       this.currentRunId = ''
       this.updateProjectStatus(project.id, 'running')
 
+      const streamContextVersion = this.contextVersion
+      const streamSpaceId = this.spaceId
+      const isCurrentStream = () => streamContextVersion === this.contextVersion && streamSpaceId === this.spaceId
       const updateAssistant = (updater) => {
+        if (!isCurrentStream()) return
         this.messages = this.messages.map(message => message.id === assistantMessage.id ? updater({ ...message }) : message)
       }
       const streamCallbacks = {
-        onConnectionError: () => this.scheduleRunReconnect(project.id, assistantMessage.id, streamCallbacks),
+        onConnectionError: () => {
+          if (isCurrentStream()) this.scheduleRunReconnect(project.id, assistantMessage.id, streamCallbacks)
+        },
         onThinkingDelta: (text, event = {}) => updateAssistant(message => applyAgentStreamEvent(
           message,
           'thinking_delta',
@@ -417,6 +522,7 @@ export default {
           { ...event, content: text }
         )),
         onToolCall: (event) => {
+          if (!isCurrentStream()) return
           const toolId = event.tool_call_id || event.id || `${event.tool || 'tool'}-${Date.now()}`
           updateAssistant(message => {
             const hasOptimistic = message.streamSegments?.some(segment =>
@@ -445,6 +551,7 @@ export default {
           this.updateToolProgress(event)
         },
         onProgress: (event) => {
+          if (!isCurrentStream()) return
           this.currentRunId = String(event.run_id || event.runId || this.currentRunId || '')
           if (this.currentRunId) {
             updateAssistant(message => ({ ...message, runId: this.currentRunId }))
@@ -456,9 +563,10 @@ export default {
             label: event.label || event.message || ''
           }
         },
-        onRevision: (event) => this.handleRevisionEvent(event),
-        onReady: (event) => this.handleRevisionEvent(event, true),
+        onRevision: (event) => { if (isCurrentStream()) this.handleRevisionEvent(event) },
+        onReady: (event) => { if (isCurrentStream()) this.handleRevisionEvent(event, true) },
         onDone: (event) => {
+          if (!isCurrentStream()) return
           const terminalStatus = String(event?.status || 'completed').toLowerCase()
           const artifactReady = event?.artifact_ready !== false
           const finalText = event?.content || event?.message || ''
@@ -479,6 +587,7 @@ export default {
           }
         },
         onError: (message, event = {}) => {
+          if (!isCurrentStream()) return
           updateAssistant(item => ({
             ...finalizeAgentMessage(
               item.content || item.streamSegments?.length ? item : appendAgentText(item, `任务未完成：${message}`),
@@ -492,7 +601,7 @@ export default {
           this.finishRun('failed')
         },
         onComplete: () => {
-          if (this.running) this.finishRun('idle')
+          if (isCurrentStream() && this.running) this.finishRun('idle')
         }
       }
       this.streamAbort = sendPresentationMessage(this.spaceId, project.id, {
@@ -542,13 +651,19 @@ export default {
       this.running = true
       this.currentRunId = String(runId)
       this.progress = { phase: 'running', percent: 0, label: '正在恢复课件任务' }
+      const streamContextVersion = this.contextVersion
+      const streamSpaceId = this.spaceId
+      const isCurrentStream = () => streamContextVersion === this.contextVersion && streamSpaceId === this.spaceId
       const updateAssistant = updater => {
+        if (!isCurrentStream()) return
         this.messages = this.messages.map(message => message.id === assistantMessage.id
           ? updater({ ...message })
           : message)
       }
       const streamCallbacks = {
-          onConnectionError: () => this.scheduleRunReconnect(this.selectedProjectId, assistantMessage.id, streamCallbacks, runId),
+          onConnectionError: () => {
+            if (isCurrentStream()) this.scheduleRunReconnect(this.selectedProjectId, assistantMessage.id, streamCallbacks, runId)
+          },
           onThinkingDelta: (text, event = {}) => updateAssistant(message => applyAgentStreamEvent(
             message,
             'thinking_delta',
@@ -560,6 +675,7 @@ export default {
             { ...event, content: text }
           )),
           onToolCall: event => {
+            if (!isCurrentStream()) return
             updateAssistant(message => {
               const tool = event.tool || event.name
               const hasOptimistic = message.streamSegments?.some(segment =>
@@ -584,6 +700,7 @@ export default {
             this.updateToolProgress(event)
           },
           onProgress: event => {
+            if (!isCurrentStream()) return
             this.progress = {
               ...event,
               phase: event.phase || event.stage || this.progress.phase,
@@ -591,9 +708,10 @@ export default {
               label: event.label || event.message || ''
             }
           },
-          onRevision: event => this.handleRevisionEvent(event),
-          onReady: event => this.handleRevisionEvent(event, true),
+          onRevision: event => { if (isCurrentStream()) this.handleRevisionEvent(event) },
+          onReady: event => { if (isCurrentStream()) this.handleRevisionEvent(event, true) },
           onDone: event => {
+            if (!isCurrentStream()) return
             const status = String(event?.status || 'completed').toLowerCase()
             const artifactReady = event?.artifact_ready !== false
             updateAssistant(message => {
@@ -611,6 +729,7 @@ export default {
             }
           },
           onError: (message, event = {}) => {
+            if (!isCurrentStream()) return
             updateAssistant(item => ({
               ...finalizeAgentMessage(
                 item.content || item.streamSegments?.length ? item : appendAgentText(item, `任务未完成：${message}`),
@@ -624,7 +743,7 @@ export default {
             this.finishRun('failed')
           },
           onComplete: () => {
-            if (this.running) this.finishRun('idle')
+            if (isCurrentStream() && this.running) this.finishRun('idle')
           }
         }
       this.streamAbort = resumePresentationRun(
@@ -798,7 +917,7 @@ export default {
         title: replacing ? '更新课程资料？' : '发布到课程资料？',
         content: replacing
           ? '将用当前版本更新资料库中的同一份课件，并重新建立学生可检索内容。'
-          : '发布后，学生可以在“数据结构”资料库中查看并在学习对话中检索这份课件。',
+          : `发布后，学生可以在“${this.selectedSpaceName}”资料库中查看并在学习对话中检索这份课件。`,
         confirmText: replacing ? '确认更新' : '确认发布',
         success: async result => { if (result.confirm) await this.publishRevision() }
       })
@@ -848,8 +967,12 @@ export default {
 .ambient-one { width: 760px; height: 760px; left: -10%; top: -28%; background: radial-gradient(circle, rgba(59,130,246,.32) 0%, rgba(59,130,246,.12) 45%, transparent 75%); filter: blur(90px); animation: aurora-drift-a 12s ease-in-out infinite; }
 .ambient-two { width: 620px; height: 620px; right: -12%; top: 8%; background: radial-gradient(circle, rgba(249,115,22,.22) 0%, rgba(249,115,22,.09) 45%, transparent 75%); filter: blur(70px); animation: aurora-drift-b 10s ease-in-out infinite; }
 .assistant-page::after { content: ''; position: absolute; z-index: 0; width: 700px; height: 700px; left: 28%; bottom: -34%; border-radius: 50%; background: radial-gradient(circle, rgba(79,70,229,.2) 0%, rgba(79,70,229,.08) 45%, transparent 75%); filter: blur(90px); pointer-events: none; animation: aurora-drift-c 14s ease-in-out infinite; }
-.assistant-workspace { flex: 1; min-width: 0; height: 100vh; position: relative; z-index: 1; }
-.workspace-grid { width: 100%; height: 100%; display: grid; grid-template-columns: 250px minmax(350px, .88fr) minmax(430px, 1.24fr); }
+.assistant-workspace { flex: 1; min-width: 0; height: 100vh; display: flex; flex-direction: column; position: relative; z-index: 1; }
+.assistant-topbar { min-height: 76px; padding: 12px 22px 11px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid rgba(255,255,255,.1); background: rgba(24,24,37,.34); backdrop-filter: blur(20px); }
+.assistant-context-copy { display: flex; flex-direction: column; gap: 4px; }
+.assistant-eyebrow { color: #60a5fa; font-size: 9px; font-weight: 700; letter-spacing: .13em; }
+.assistant-title { color: #f8fafc; font-size: 20px; font-weight: 650; }
+.workspace-grid { width: 100%; flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(350px, .88fr) minmax(430px, 1.24fr); }
 .rail-column, .chat-column, .preview-column { min-width: 0; min-height: 0; border-right: 1px solid rgba(255,255,255,.12); }
 .preview-column { border-right: 0; }
 .mobile-bar, .rail-backdrop { display: none; }
@@ -858,8 +981,11 @@ export default {
 }
 @media (max-width: 900px) {
   .assistant-page :deep(.sidebar) { display: none; }
-  .assistant-workspace { height: 100svh; padding-top: 54px; box-sizing: border-box; }
-  .mobile-bar { position: absolute; z-index: 20; inset: 0 0 auto 0; height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; box-sizing: border-box; border-bottom: 1px solid rgba(255,255,255,.12); background: rgba(24,24,37,.72); backdrop-filter: blur(20px); }
+  .assistant-workspace { height: 100svh; }
+  .assistant-topbar { min-height: 62px; padding: 7px 12px; }
+  .assistant-context-copy { display: none; }
+  .assistant-topbar :deep(.teacher-space-selector) { width: 100%; }
+  .mobile-bar { z-index: 20; height: 54px; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; padding: 0 12px; box-sizing: border-box; border-bottom: 1px solid rgba(255,255,255,.12); background: rgba(24,24,37,.72); backdrop-filter: blur(20px); }
   .mobile-project-button { min-width: 0; display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,.74); font-size: 12px; }
   .mobile-project-button svg { width: 18px; height: 18px; flex-shrink: 0; }
   .mobile-project-button text { max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

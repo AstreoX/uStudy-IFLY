@@ -1,7 +1,9 @@
 """Fixed collaborative Data Structures course tests."""
 
+from datetime import datetime, timezone
+
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.schemas import LoginRequest, RegisterRequest
@@ -15,20 +17,19 @@ from db.models import (
     NodeUserMastery,
     Space,
     SpaceMember,
+    SpaceMemberRole,
     SubscriptionTier,
     User,
 )
 from experiment.default_course import (
-    ADVANCED_CONNECTIONS,
     DEFAULT_SPACE_ID,
-    KNOWLEDGE_TREE,
     SYSTEM_USER_ID,
-    TREE_CONNECTIONS,
+    _parse_course_definition,
     ensure_default_course,
 )
 from graph.service import GraphService
-from spaces.schemas import SpaceUpdate
 from spaces.authorization import verify_space_graph_edit_access
+from spaces.schemas import SpaceUpdate
 from spaces.service import SpaceAccessDeniedError, SpaceService
 
 
@@ -57,9 +58,7 @@ async def test_default_course_seed_is_exact_and_idempotent(db_session: AsyncSess
     assert space is not None
     assert space.name == "数据结构"
     assert space.is_collaborative is True
-    assert len(KNOWLEDGE_TREE) == 73
-    assert len(TREE_CONNECTIONS) == 65
-    assert len(ADVANCED_CONNECTIONS) == 15
+    course_graph = _parse_course_definition()
 
     nodes = (
         await db_session.execute(select(Node).where(Node.space_id == DEFAULT_SPACE_ID))
@@ -67,15 +66,18 @@ async def test_default_course_seed_is_exact_and_idempotent(db_session: AsyncSess
     edges = (
         await db_session.execute(select(Edge).where(Edge.space_id == DEFAULT_SPACE_ID))
     ).scalars().all()
-    assert len(nodes) == 73
+    assert len(nodes) == 74
     assert all(node.mastery is None for node in nodes)
-    assert sum(edge.type == EdgeType.KNOWLEDGE_TREE for edge in edges) == 65
+    assert sum(edge.type == EdgeType.KNOWLEDGE_TREE for edge in edges) == 73
     assert sum(edge.type == EdgeType.ADVANCED for edge in edges) == 15
     assert sum(edge.type == EdgeType.LEARNING_PATH for edge in edges) == 0
 
     labels = {node.label for node in nodes}
-    assert labels == {label for _, label in KNOWLEDGE_TREE}
-    assert all(source in labels and target in labels for source, target in ADVANCED_CONNECTIONS)
+    assert labels == {node.label for node in course_graph.nodes}
+    assert all(
+        edge.source_label in labels and edge.target_label in labels
+        for edge in course_graph.edges
+    )
 
     members = (
         await db_session.execute(
@@ -187,6 +189,80 @@ async def test_registration_and_login_auto_join_default_course(db_session: Async
         )
     )
     assert login_membership is not None
+
+
+@pytest.mark.asyncio
+async def test_experiment_space_list_returns_all_memberships_in_updated_order(
+    db_session: AsyncSession,
+):
+    viewer = await add_student(db_session, "spaces-viewer@example.com", "Viewer")
+    await ensure_default_course(db_session)
+    other = await add_student(db_session, "spaces-owner@example.com", "Other Owner")
+
+    default_space = await db_session.get(Space, DEFAULT_SPACE_ID)
+    default_space.updated_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    owned = Space(
+        user_id=viewer.id,
+        name="Owned",
+        color="#111111",
+        updated_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+    )
+    taught = Space(
+        user_id=other.id,
+        name="Taught",
+        color="#222222",
+        updated_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+    )
+    joined = Space(
+        user_id=other.id,
+        name="Joined",
+        color="#333333",
+        updated_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+    )
+    hidden = Space(
+        user_id=other.id,
+        name="Hidden",
+        color="#444444",
+        updated_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+    )
+    db_session.add_all([owned, taught, joined, hidden])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            SpaceMember(
+                space_id=owned.id,
+                user_id=viewer.id,
+                role=SpaceMemberRole.OWNER,
+            ),
+            SpaceMember(
+                space_id=taught.id,
+                user_id=viewer.id,
+                role=SpaceMemberRole.TEACHER,
+            ),
+            SpaceMember(
+                space_id=joined.id,
+                user_id=viewer.id,
+                role=SpaceMemberRole.MEMBER,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    spaces = await SpaceService(db_session).get_user_spaces(viewer.id)
+
+    assert [space.id for space in spaces] == [
+        owned.id,
+        taught.id,
+        joined.id,
+        DEFAULT_SPACE_ID,
+    ]
+    assert {space.id: space.user_role for space in spaces} == {
+        owned.id: "owner",
+        taught.id: "teacher",
+        joined.id: "member",
+        DEFAULT_SPACE_ID: "member",
+    }
+    assert hidden.id not in {space.id for space in spaces}
 
 
 @pytest.mark.asyncio

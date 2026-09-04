@@ -55,9 +55,11 @@ const activeFiles = [
   'pages/openQuiz/openQuiz.vue',
   'pages/teacherDashboard/teacherDashboard.vue',
   'pages/teacherAssistant/teacherAssistant.vue',
+  'pages/teacherAssignments/teacherAssignments.vue',
   'api/teacher.js',
   'api/teacher-presentations.js',
   'components/teacher/TeacherEChart.vue',
+  'components/teacher/TeacherSpaceSelector.vue',
   'components/teacher/presentation/PresentationProjectRail.vue',
   'components/teacher/presentation/PresentationConversation.vue',
   'components/teacher/presentation/PresentationPreview.vue',
@@ -66,6 +68,7 @@ const activeFiles = [
   'utils/agent-stream-segments.js',
   'utils/teacher-echarts.js',
   'utils/teacher-chart-options.js',
+  'utils/teacher-space-selection.js',
   'components/layout/HomeSidebar.vue',
   'components/study/StudyMaterialsPanel.vue'
 ]
@@ -93,7 +96,8 @@ const login = read('pages/login/login.vue')
 assert(login.includes('identifier: this.form.identifier'), 'login does not submit identifier')
 assert(login.includes('handleGoRegister'), 'login does not expose email registration')
 assert(login.includes('handleForgotPassword'), 'login does not expose password recovery')
-assert(login.includes('openDefaultSpace'), 'login does not open the default course')
+assert(login.includes("'/pages/index/index'"), 'login does not return to the home page')
+assert(!login.includes('openDefaultSpace'), 'login still forces the default course')
 assert(login.includes('登录教师示例账户'), 'teacher example login shortcut is missing')
 assert(login.includes('登录学生示例账户'), 'student example login shortcut is missing')
 assert(login.includes("loginAsExample('teacher')"), 'teacher example shortcut is not wired')
@@ -104,15 +108,18 @@ assert(login.includes('EXAMPLE_LOGIN_ENABLED = true'), 'experiment build must en
 const register = read('pages/register/register.vue')
 assert(register.includes("purpose: 'registration'"), 'registration verification flow is missing')
 assert(!register.includes('@/api/invite'), 'registration must not call the disabled invite API')
+assert(register.includes("'/pages/index/index'"), 'registration does not return to the home page')
+assert(!register.includes('openDefaultSpace'), 'registration still forces the default course')
 
 const forgotPassword = read('pages/forgotPassword/forgotPassword.vue')
 assert(forgotPassword.includes("purpose: 'password_reset'"), 'password recovery flow is missing')
 
-const defaultSpace = read('utils/default-space.js')
-assert(defaultSpace.includes('/pages/study/study?spaceId='), 'default course redirect is missing')
-
 const sidebar = read('components/layout/HomeSidebar.vue')
 assert(sidebar.includes("space.user_role === 'teacher'"), 'teacher navigation is not role-gated')
+assert(sidebar.includes("label: '学习空间'"), 'learning-space navigation label was not restored')
+assert(sidebar.includes('studyExpanded: true'), 'learning-space navigation is not expanded by default')
+assert(!sidebar.includes("matchedItem.id !== 'study'"), 'route sync still collapses learning spaces on entry')
+assert(!sidebar.includes('?spaceId=${encodeURIComponent(this.teacherSpace.id)}'), 'teacher navigation still forces the first course space')
 assert(sidebar.includes("id: 'teacher-assistant'"), 'teacher assistant navigation is missing')
 assert(
   sidebar.includes('/pages/teacherAssistant/teacherAssistant'),
@@ -124,12 +131,34 @@ assert(teacherDashboard.includes('activity_calendar'), '90-day teacher activity 
 assert(teacherDashboard.includes('TeacherEChart'), 'teacher dashboard is not using the ECharts host')
 assert(!teacherDashboard.includes('email'), 'teacher dashboard must not render student email')
 assert(!teacherDashboard.includes('user_answers_raw'), 'teacher dashboard must not render raw answers')
+assert(teacherDashboard.includes('TeacherSpaceSelector'), 'teacher dashboard course-space selector is missing')
+assert(teacherDashboard.includes('TEACHER_SPACE_TOOLS.DASHBOARD'), 'teacher dashboard selection is not independently persisted')
+assert(!teacherDashboard.includes('数据结构 · 教师视图'), 'teacher dashboard still hardcodes the default course')
 
 const teacherAssistant = read('pages/teacherAssistant/teacherAssistant.vue')
 assert(teacherAssistant.includes('sendPresentationMessage'), 'teacher assistant SSE messaging is not wired')
 assert(teacherAssistant.includes('fetchPresentationPreview'), 'teacher assistant authenticated preview is not wired')
 assert(teacherAssistant.includes('confirmPublish'), 'teacher assistant explicit publish confirmation is missing')
 assert(teacherAssistant.includes('restorePresentationRevision'), 'teacher assistant revision restore is not wired')
+assert(teacherAssistant.includes('TeacherSpaceSelector'), 'teacher assistant course-space selector is missing')
+assert(teacherAssistant.includes('TEACHER_SPACE_TOOLS.PRESENTATIONS'), 'teacher assistant selection is not independently persisted')
+assert(!teacherAssistant.includes('“数据结构”资料库'), 'teacher assistant publish confirmation still hardcodes the default course')
+const teacherAssignments = read('pages/teacherAssignments/teacherAssignments.vue')
+assert(teacherAssignments.includes('TeacherSpaceSelector'), 'teacher assignments course-space selector is missing')
+assert(teacherAssignments.includes('TEACHER_SPACE_TOOLS.ASSIGNMENTS'), 'teacher assignments selection is not independently persisted')
+assert(!teacherAssignments.includes('课程 · 数据结构'), 'teacher assignments still hardcodes the default course')
+assert(teacherAssignments.includes('resumeActiveGeneration'), 'teacher assignments cannot resume a background generation job')
+assert(teacherAssignments.includes('setTimeout(run, 2000)'), 'teacher assignment polling is not serialized')
+assert(!teacherAssignments.includes('setInterval(this.checkJob'), 'teacher assignment polling can overlap requests')
+assert(teacherAssignments.includes('.assignment-page :deep(.sidebar) { display: none; }'), 'teacher assignments mobile layout still keeps the fixed sidebar')
+assert(teacherAssistant.includes('revisionRequestVersion'), 'teacher assistant revision responses are not guarded across context switches')
+assert(teacherDashboard.includes('.teacher-page :deep(.sidebar) { display: none; }'), 'teacher dashboard mobile layout still keeps the fixed sidebar')
+const teacherSpaceSelector = read('components/teacher/TeacherSpaceSelector.vue')
+assert(teacherSpaceSelector.includes('课程空间'), 'teacher selector label is incorrect')
+const teacherSpaceSelection = read('utils/teacher-space-selection.js')
+for (const tool of ['dashboard', 'assignments', 'presentations']) {
+  assert(teacherSpaceSelection.includes(`'${tool}'`), `teacher selection namespace is missing: ${tool}`)
+}
 const teacherPresentationsApi = read('api/teacher-presentations.js')
 assert(teacherPresentationsApi.includes('connectSSE'), 'presentation API must use the shared SSE client')
 assert(teacherPresentationsApi.includes('deletePresentationSource'), 'uploaded presentation sources must be removable')

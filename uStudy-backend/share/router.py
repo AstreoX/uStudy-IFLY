@@ -8,10 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.dependencies import get_current_user
 from db.database import get_db
 from db.models import User
-from share.schemas import GenerateShareCodeRequest, ImportSpaceRequest, ShareCodeResponse
-from share.service import ShareCodeError, ShareService
+from share.schemas import (
+    GenerateShareCodeRequest,
+    ImportSpaceRequest,
+    ShareCodeResponse,
+)
+from share.service import ShareCodeError, ShareFeatureDisabledError, ShareService
 from spaces.schemas import SpaceResponse
-
 
 router = APIRouter(prefix="/api/spaces", tags=["share"])
 
@@ -44,6 +47,11 @@ async def import_space(
     """通过分享码导入学习空间"""
     try:
         response = await ShareService.import_space(db, current_user.id, request.share_code)
+    except ShareFeatureDisabledError as e:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "FEATURE_DISABLED", "message": str(e)},
+        )
     except ShareCodeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

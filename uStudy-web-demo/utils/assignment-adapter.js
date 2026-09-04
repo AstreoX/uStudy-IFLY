@@ -78,7 +78,7 @@ export function normalizeAssignmentListItem(item) {
     id: item?.id ? String(item.id) : '',
     item_kind: 'assignment',
     title: item?.title || '未命名作业',
-    topic: item?.instructions || item?.description || item?.requirements || item?.topic || '数据结构',
+    topic: item?.instructions || item?.description || item?.requirements || item?.topic || '当前课程空间',
     difficulty: item?.difficulty || '',
     total_questions: finiteNumber(item?.total_questions, item?.question_count) || 0,
     created_at: item?.published_at || item?.created_at || '',

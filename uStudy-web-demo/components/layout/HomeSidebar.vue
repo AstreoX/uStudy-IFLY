@@ -185,7 +185,7 @@ export default {
   data() {
     return {
       activeId: 'home',
-      studyExpanded: false,
+      studyExpanded: true,
       pendingStudyExpand: false,
       selectedSpaceId: null,
       accountMenuOpen: false,
@@ -193,7 +193,7 @@ export default {
       showLogoutModal: false,
       menuItems: [
         { id: 'home',    label: '首页',      expandable: false, route: '/pages/index/index' },
-        { id: 'study',   label: '数据结构',  expandable: true },
+        { id: 'study',   label: '学习空间',  expandable: true },
         { id: 'teacher', label: '教学看板',  expandable: false, route: '/pages/teacherDashboard/teacherDashboard' },
         { id: 'teacher-assignments', label: '作业管理', expandable: false, route: '/pages/teacherAssignments/teacherAssignments' },
         { id: 'teacher-assistant', label: '教学助教', expandable: false, route: '/pages/teacherAssistant/teacherAssistant' },
@@ -214,11 +214,11 @@ export default {
     spacesLoading() {
       return this.spacesStore.loading
     },
-    teacherSpace() {
-      return this.spaces.find(space => space.user_role === 'teacher') || null
+    teacherSpaces() {
+      return this.spaces.filter(space => space.user_role === 'teacher')
     },
     visibleMenuItems() {
-      return this.menuItems.filter(item => !['teacher', 'teacher-assignments', 'teacher-assistant'].includes(item.id) || this.teacherSpace)
+      return this.menuItems.filter(item => !['teacher', 'teacher-assignments', 'teacher-assistant'].includes(item.id) || this.teacherSpaces.length > 0)
     },
     userInitial() {
       const nickname = this.user?.nickname || this.user?.email || 'U'
@@ -310,9 +310,6 @@ export default {
       const matchedItem = this.visibleMenuItems.find(item => item.route && this.normalizeRoutePath(item.route) === currentRoute)
       if (matchedItem) {
         this.activeId = matchedItem.id
-        if (matchedItem.id !== 'study') {
-          this.studyExpanded = false
-        }
         return
       }
 
@@ -336,10 +333,6 @@ export default {
       this.studyExpanded = false
       this.activeId = item.id
       this.$emit('navigate', item.id)
-      if (['teacher', 'teacher-assignments', 'teacher-assistant'].includes(item.id) && this.teacherSpace) {
-        uni.reLaunch({ url: `${item.route}?spaceId=${encodeURIComponent(this.teacherSpace.id)}` })
-        return
-      }
       if (item.route) {
         uni.reLaunch({ url: item.route })
       }

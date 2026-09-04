@@ -147,7 +147,6 @@
 import { sendCode, verifyCode, registerWithCode, getMe } from '@/api/auth'
 import { setTokens } from '@/utils/storage'
 import { useUserStore } from '@/store/user'
-import { openDefaultSpace } from '@/utils/default-space'
 
 export default {
   data() {
@@ -409,7 +408,7 @@ export default {
 
         this.showToast('注册成功')
 
-        await openDefaultSpace()
+        setTimeout(() => uni.reLaunch({ url: '/pages/index/index' }), 800)
       } catch (error) {
         const message = this.getErrorMessage(error, '注册失败，请重试')
         this.showToast(message)

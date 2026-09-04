@@ -459,9 +459,3 @@ export function streamKnowledgeGraphFromDocuments(spaceId, data, callbacks) {
     onConnectionError: callbacks.onConnectionError,
   })
 }
-export function getDefaultSpace() {
-  return request({
-    url: '/api/spaces/default',
-    method: 'GET'
-  })
-}

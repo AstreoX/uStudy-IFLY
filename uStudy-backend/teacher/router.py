@@ -1,4 +1,4 @@
-"""Teacher-only analytics endpoints for the fixed Data Structures course."""
+"""Teacher-only analytics endpoints for course spaces."""
 
 from typing import Literal
 from uuid import UUID
@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.database import get_db
 from db.models import User
 from teacher.dependencies import require_course_teacher
+from teacher.presentations.router import router as presentations_router
 from teacher.schemas import (
     KnowledgeResponse,
     OverviewResponse,
@@ -16,8 +17,6 @@ from teacher.schemas import (
     StudentListResponse,
 )
 from teacher.service import TeacherAnalyticsService
-from teacher.presentations.router import router as presentations_router
-
 
 router = APIRouter(prefix="/api/teacher", tags=["teacher"])
 
@@ -85,6 +84,6 @@ async def get_student_detail(
     if detail is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "STUDENT_NOT_FOUND", "message": "该学生不属于数据结构课程"},
+            detail={"code": "STUDENT_NOT_FOUND", "message": "该学生不属于当前课程空间"},
         )
     return detail

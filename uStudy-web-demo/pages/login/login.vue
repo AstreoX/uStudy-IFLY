@@ -117,7 +117,6 @@
 import { login, getMe } from '@/api/auth'
 import { getTokens, setTokens, clearAuth } from '@/utils/storage'
 import { useUserStore } from '@/store/user'
-import { openDefaultSpace } from '@/utils/default-space'
 
 const EXAMPLE_ACCOUNTS = Object.freeze({
   teacher: Object.freeze({
@@ -176,7 +175,7 @@ export default {
         if (this.redirectUrl) {
           uni.reLaunch({ url: this.redirectUrl })
         } else {
-          await openDefaultSpace()
+          uni.reLaunch({ url: '/pages/index/index' })
         }
       } catch (error) {
         clearAuth()
@@ -282,7 +281,7 @@ export default {
         if (this.redirectUrl) {
           setTimeout(() => uni.reLaunch({ url: this.redirectUrl }), 800)
         } else {
-          await openDefaultSpace()
+          setTimeout(() => uni.reLaunch({ url: '/pages/index/index' }), 800)
         }
       } catch (error) {
         const message = this.getErrorMessage(error, '登录失败，请重试')

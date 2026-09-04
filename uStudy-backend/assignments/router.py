@@ -1,4 +1,4 @@
-"""Student and fixed-course teacher assignment APIs."""
+"""Student and course-space teacher assignment APIs."""
 
 from uuid import UUID
 

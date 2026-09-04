@@ -1,1 +1,1 @@
-"""Teacher analytics for the fixed experiment course."""
+"""Teacher analytics and teaching tools for course spaces."""

@@ -96,8 +96,6 @@ class SpaceService:
             .where(SpaceMember.user_id == user_id)
             .order_by(Space.updated_at.desc())
         )
-        if get_settings().app_env == "experiment":
-            stmt = stmt.where(Space.id == DEFAULT_SPACE_ID)
         result = await self.db.execute(stmt)
         rows = result.all()
 

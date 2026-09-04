@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from assignments.schemas import (
     AnswerReviewItem,
+    AssignmentGenerateRequest,
     AssignmentQuestionWrite,
     AssignmentUpdateRequest,
     SubmissionReviewRequest,
@@ -81,7 +82,7 @@ async def assignment_context(db_session):
     db_session.add_all([teacher, student_a, student_b, excluded_teacher])
     await db_session.flush()
     space = Space(
-        id=uuid4(), user_id=teacher.id, name="数据结构", color="#123456", is_collaborative=True
+        id=uuid4(), user_id=teacher.id, name="操作系统", color="#123456", is_collaborative=True
     )
     db_session.add(space)
     await db_session.flush()
@@ -106,6 +107,52 @@ async def assignment_context(db_session):
     ))
     await db_session.flush()
     return teacher, student_a, student_b, excluded_teacher, space, assignment
+
+
+def _generation_request() -> AssignmentGenerateRequest:
+    return AssignmentGenerateRequest(
+        title="进程调度练习",
+        instructions="覆盖常见调度算法",
+        difficulty="medium",
+        due_at=utc_now() + timedelta(days=1),
+        question_configs=[
+            {"question_type": "single_choice", "count": 1, "score": 5},
+        ],
+    )
+
+
+@pytest.mark.asyncio
+async def test_generation_job_snapshots_target_space_name(db_session, assignment_context):
+    teacher, _, _, _, space, _ = assignment_context
+
+    job = await AssignmentService(db_session).create_generation_job(
+        space.id, teacher.id, _generation_request()
+    )
+
+    assert job.input_data["space_name"] == "操作系统"
+    generated_assignment = await db_session.get(Assignment, job.assignment_id)
+    assert generated_assignment is not None
+    assert generated_assignment.space_id == space.id
+
+    space.name = "操作系统（新名称）"
+    await db_session.commit()
+    persisted_job = await db_session.get(type(job), job.id)
+    assert persisted_job.input_data["space_name"] == "操作系统"
+
+
+@pytest.mark.asyncio
+async def test_generation_job_rejects_missing_space_with_existing_error_semantics(
+    db_session, assignment_context
+):
+    teacher, _, _, _, _, _ = assignment_context
+
+    with pytest.raises(AssignmentError) as exc_info:
+        await AssignmentService(db_session).create_generation_job(
+            uuid4(), teacher.id, _generation_request()
+        )
+
+    assert exc_info.value.code == "SPACE_NOT_FOUND"
+    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio

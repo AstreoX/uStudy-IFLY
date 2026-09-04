@@ -8,6 +8,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from config import get_settings
 from db.models import (
     Edge,
     EdgeType,
@@ -32,6 +33,10 @@ SHARE_CODE_CHARSET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
 
 class ShareCodeError(Exception):
     pass
+
+
+class ShareFeatureDisabledError(ShareCodeError):
+    """Raised when a share operation would bypass a disabled feature."""
 
 
 class ShareService:
@@ -136,8 +141,9 @@ class ShareService:
             return await ShareService._import_collaborative(
                 db, user_id, source_space
             )
-        else:
-            return await ShareService._import_clone(db, user_id, source_space)
+        if not get_settings().space_creation_enabled:
+            raise ShareFeatureDisabledError("新建学习空间功能在实验环境中不可用")
+        return await ShareService._import_clone(db, user_id, source_space)
 
     @staticmethod
     async def _import_collaborative(

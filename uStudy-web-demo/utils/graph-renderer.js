@@ -1,10 +1,10 @@
-import { getMasteryColor, getMasteryGlowColor } from './mastery-colors'
+import { getMasteryColor, getMasteryGlowColor } from './mastery-colors.js'
 import {
   UNMASTERED_NODE_COLOR, UNMASTERED_NODE_GLOW, UNMASTERED_NODE_OUTLINE,
   KNOWLEDGE_EDGE_COLOR, KNOWLEDGE_EDGE_WIDTH,
   LABEL_LAYOUT_CONFIG,
   getNodeBaseRadius, getLabelBoxByPosition, clamp
-} from './graph-layout'
+} from './graph-layout.js'
 
 const FOREIGN_GRAPH_NODE_ALPHA = 0.56
 const FOREIGN_GRAPH_SELECTED_NODE_ALPHA = 0.70
@@ -19,12 +19,17 @@ export function drawEdges(ctx, edgeBuckets, options = {}) {
     visibleNodeIds,
     viewportNodeIds,
     isForeignGraphView = false,
-    pathColor = '#0088FF'
+    pathColor = '#0088FF',
+    opacity = 1,
+    edgeColor = KNOWLEDGE_EDGE_COLOR,
+    advancedEdgeColor = 'rgba(139, 92, 246, 0.5)',
+    edgeWidth = KNOWLEDGE_EDGE_WIDTH,
+    advancedEdgeWidth = 1.5
   } = options
   const buckets = edgeBuckets || { treeEdges: [], advancedEdges: [], pathEdges: [] }
   let renderedCount = 0
-  const regularEdgeAlpha = isPathHighlightOn ? 0.15 : (isForeignGraphView ? FOREIGN_GRAPH_EDGE_ALPHA : 1)
-  const pathEdgeAlpha = isForeignGraphView ? FOREIGN_GRAPH_PATH_EDGE_ALPHA : 1
+  const regularEdgeAlpha = opacity * (isPathHighlightOn ? 0.15 : (isForeignGraphView ? FOREIGN_GRAPH_EDGE_ALPHA : 1))
+  const pathEdgeAlpha = opacity * (isForeignGraphView ? FOREIGN_GRAPH_PATH_EDGE_ALPHA : 1)
 
   ctx.globalAlpha = regularEdgeAlpha
 
@@ -40,8 +45,8 @@ export function drawEdges(ctx, edgeBuckets, options = {}) {
     ctx.beginPath()
     ctx.moveTo(fromNode.x, fromNode.y)
     ctx.lineTo(toNode.x, toNode.y)
-    ctx.strokeStyle = KNOWLEDGE_EDGE_COLOR
-    ctx.lineWidth = KNOWLEDGE_EDGE_WIDTH
+    ctx.strokeStyle = edgeColor
+    ctx.lineWidth = edgeWidth
     ctx.setLineDash([])
     ctx.stroke()
     renderedCount++
@@ -60,8 +65,8 @@ export function drawEdges(ctx, edgeBuckets, options = {}) {
       ctx.beginPath()
       ctx.moveTo(fromNode.x, fromNode.y)
       ctx.lineTo(toNode.x, toNode.y)
-      ctx.strokeStyle = 'rgba(139, 92, 246, 0.5)'
-      ctx.lineWidth = 1.5
+      ctx.strokeStyle = advancedEdgeColor
+      ctx.lineWidth = advancedEdgeWidth
       ctx.setLineDash([5, 5])
       ctx.stroke()
       ctx.setLineDash([])
@@ -134,7 +139,12 @@ export function drawRoundedRect(ctx, x, y, width, height, radius) {
 // --- Node label block ---
 
 export function drawNodeLabelBlock(ctx, node, options = {}) {
-  const { alpha = 1 } = options
+  const {
+    alpha = 1,
+    labelBackground = LABEL_LAYOUT_CONFIG.background,
+    labelBorderColor = LABEL_LAYOUT_CONFIG.borderColor,
+    labelTextColor = '#E2E8F0'
+  } = options
   const layout = node.labelSize
   if (!layout) return
 
@@ -169,14 +179,14 @@ export function drawNodeLabelBlock(ctx, node, options = {}) {
 
   // Background rounded rect
   drawRoundedRect(ctx, labelBox.x, labelBox.y, labelBox.width, labelBox.height, LABEL_LAYOUT_CONFIG.cornerRadius)
-  ctx.fillStyle = LABEL_LAYOUT_CONFIG.background
+  ctx.fillStyle = labelBackground
   ctx.fill()
-  ctx.strokeStyle = LABEL_LAYOUT_CONFIG.borderColor
+  ctx.strokeStyle = labelBorderColor
   ctx.lineWidth = 1
   ctx.stroke()
 
   // Text lines
-  ctx.fillStyle = '#E2E8F0'
+  ctx.fillStyle = labelTextColor
   ctx.font = `${layout.fontSize}px sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
@@ -198,7 +208,11 @@ export function drawNode(ctx, node, options = {}) {
     isPathHighlightOn,
     learningPathSet,
     isForeignGraphView = false,
-    pathColor = '#0088FF'
+    pathColor = '#0088FF',
+    opacity = 1,
+    labelBackground = LABEL_LAYOUT_CONFIG.background,
+    labelBorderColor = LABEL_LAYOUT_CONFIG.borderColor,
+    labelTextColor = '#E2E8F0'
   } = options
   const radius = getNodeBaseRadius(node)
   const isSelected = selectedNodeId === node.id
@@ -211,7 +225,7 @@ export function drawNode(ctx, node, options = {}) {
       : 1)
   const pathRingAlpha = isForeignGraphView ? FOREIGN_GRAPH_PATH_EDGE_ALPHA : 1
 
-  ctx.globalAlpha = nodeAlpha
+  ctx.globalAlpha = nodeAlpha * clamp(opacity, 0, 1)
 
   const fillColor = node.fillColor || (node.mastery == null ? UNMASTERED_NODE_COLOR : getMasteryColor(node.mastery))
   const glowColor = node.glowColor || (node.mastery == null ? UNMASTERED_NODE_GLOW : getMasteryGlowColor(node.mastery, 0.5))
@@ -261,7 +275,7 @@ export function drawNode(ctx, node, options = {}) {
 
   // Label
   const labelAlpha = isDimmed ? 0.25 : 1
-  drawNodeLabelBlock(ctx, node, { alpha: labelAlpha })
+  drawNodeLabelBlock(ctx, node, { alpha: labelAlpha, labelBackground, labelBorderColor, labelTextColor })
 
   // Badge for collapsed nodes
   if (node.collapsed && node.childCount > 0) {

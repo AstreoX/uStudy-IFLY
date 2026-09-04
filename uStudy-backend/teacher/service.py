@@ -1,4 +1,4 @@
-"""Source-backed aggregates for the fixed-course teacher dashboard."""
+"""Source-backed aggregates for course teacher dashboards."""
 
 from __future__ import annotations
 
@@ -38,7 +38,6 @@ from teacher.schemas import (
     StudentListItem,
     StudentListResponse,
 )
-
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 ALLOWED_DAYS = {7, 30, 90}
@@ -349,6 +348,7 @@ class TeacherAnalyticsService:
 
     async def _chapter_map(self, nodes: list[tuple[UUID, str]]) -> dict[UUID, str]:
         label_by_id = dict(nodes)
+        node_ids = set(label_by_id)
         edge_rows = (
             await self.db.execute(
                 select(Edge.from_node_id, Edge.to_node_id).where(
@@ -357,19 +357,46 @@ class TeacherAnalyticsService:
                 )
             )
         ).all()
-        parent_by_child = {row.to_node_id: row.from_node_id for row in edge_rows}
-        root_ids = [node_id for node_id, label in nodes if label == "数据结构"]
-        root_id = root_ids[0] if root_ids else None
+
+        # A knowledge graph is expected to be a tree, but imported or hand-edited
+        # spaces can contain a forest, multiple parents, dangling edges, or cycles.
+        # Keep chapter assignment deterministic and total for all of those shapes.
+        parents_by_child: dict[UUID, set[UUID]] = defaultdict(set)
+        for row in edge_rows:
+            if row.from_node_id in node_ids and row.to_node_id in node_ids:
+                parents_by_child[row.to_node_id].add(row.from_node_id)
+
+        def node_key(node_id: UUID) -> tuple[str, str]:
+            return (label_by_id[node_id].casefold(), str(node_id))
+
+        roots = [node_id for node_id in node_ids if not parents_by_child[node_id]]
+        sole_root = roots[0] if len(roots) == 1 else None
         result: dict[UUID, str] = {}
         for node_id, label in nodes:
+            path: list[UUID] = []
+            position: dict[UUID, int] = {}
             cursor = node_id
-            parent = parent_by_child.get(cursor)
-            seen: set[UUID] = set()
-            while parent is not None and parent != root_id and parent not in seen:
-                seen.add(parent)
-                cursor = parent
-                parent = parent_by_child.get(cursor)
-            result[node_id] = label_by_id.get(cursor, label)
+            while True:
+                if cursor in position:
+                    cycle = path[position[cursor] :]
+                    chapter_id = min(cycle, key=node_key)
+                    break
+
+                position[cursor] = len(path)
+                path.append(cursor)
+                parents = parents_by_child.get(cursor)
+                if not parents:
+                    # With one root, its direct children are the useful chapter
+                    # headings. In a forest, each component root is its chapter.
+                    chapter_id = (
+                        path[-2]
+                        if sole_root == cursor and len(path) > 1
+                        else cursor
+                    )
+                    break
+                cursor = min(parents, key=node_key)
+
+            result[node_id] = label_by_id.get(chapter_id, label)
         return result
 
     def _knowledge_nodes(

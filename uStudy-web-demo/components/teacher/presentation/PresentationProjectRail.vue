@@ -2,7 +2,7 @@
   <view class="project-rail">
     <view class="rail-header">
       <view>
-        <text class="rail-eyebrow">数据结构</text>
+        <text class="rail-eyebrow">{{ spaceName }}</text>
         <text class="rail-title">课件项目</text>
       </view>
       <view class="new-button" :class="{ disabled: creating }" @tap="!creating && $emit('create')">
@@ -62,6 +62,7 @@
 <script>
 export default {
   props: {
+    spaceName: { type: String, default: '课程空间' },
     projects: { type: Array, default: () => [] },
     revisions: { type: Array, default: () => [] },
     selectedProjectId: { type: String, default: '' },
@@ -95,7 +96,7 @@ export default {
 <style scoped>
 .project-rail { height: 100%; min-height: 0; display: flex; flex-direction: column; color: #fff; background: rgba(42,42,60,.42); backdrop-filter: blur(20px); }
 .rail-header { height: 76px; box-sizing: border-box; padding: 16px 16px 14px 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,.07); }
-.rail-eyebrow { display: block; color: rgba(255,255,255,.4); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+.rail-eyebrow { display: block; max-width: 124px; overflow: hidden; color: rgba(255,255,255,.4); font-size: 10px; letter-spacing: .12em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .rail-title { display: block; margin-top: 3px; font-size: 17px; font-weight: 650; }
 .new-button { display: flex; align-items: center; gap: 4px; padding: 7px 10px; border-radius: 8px; background: #e7f0ff; color: #121722; font-size: 12px; font-weight: 650; cursor: pointer; transition: transform .16s ease, opacity .16s ease; }
 .new-button:hover { transform: translateY(-1px); }

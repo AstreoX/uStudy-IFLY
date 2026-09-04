@@ -1,4 +1,4 @@
-"""Business rules and serialization for teacher assignments."""
+"""Business rules and serialization for course assignments."""
 
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ from db.models import (
     AssignmentQuestion,
     AssignmentRecipient,
     AssignmentSubmission,
+    Space,
     SpaceMember,
     SpaceMemberRole,
     User,
@@ -154,6 +155,9 @@ class AssignmentService:
     async def create_generation_job(
         self, space_id: UUID, teacher_id: UUID, request: AssignmentGenerateRequest
     ) -> AssignmentJob:
+        space = await self.db.get(Space, space_id)
+        if space is None:
+            raise AssignmentError("SPACE_NOT_FOUND", "学习空间不存在", 404)
         if any(item.question_type == "code" and item.count for item in request.question_configs):
             from config import get_settings
 
@@ -178,6 +182,7 @@ class AssignmentService:
             job_type="generation",
             status="pending",
             input_data={
+                "space_name": space.name,
                 "title": request.title,
                 "instructions": request.instructions,
                 "difficulty": request.difficulty,

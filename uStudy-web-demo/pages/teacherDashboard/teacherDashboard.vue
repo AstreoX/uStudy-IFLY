@@ -12,11 +12,16 @@
     <view class="workspace">
       <view class="topbar">
         <view class="title-block">
-          <text class="eyebrow">数据结构 · 教师视图</text>
+          <text class="eyebrow">{{ selectedSpaceName }} · 教师视图</text>
           <text class="page-title">教学复盘</text>
           <text class="page-subtitle">按真实学习记录观察参与、覆盖和理解变化</text>
         </view>
         <view class="topbar-controls">
+          <TeacherSpaceSelector
+            :spaces="teacherSpaces"
+            :space-id="spaceId"
+            @change="handleTeacherSpaceChange"
+          />
           <view class="range-switch" aria-label="统计周期">
             <view
               v-for="option in dayOptions"
@@ -275,8 +280,14 @@
 <script>
 import HomeSidebar from '@/components/layout/HomeSidebar.vue'
 import TeacherEChart from '@/components/teacher/TeacherEChart.vue'
+import TeacherSpaceSelector from '@/components/teacher/TeacherSpaceSelector.vue'
 import { getTeacherKnowledge, getTeacherOverview, getTeacherStudentDetail, getTeacherStudents } from '@/api/teacher'
 import { useSpacesStore } from '@/store/spaces'
+import {
+  resolveTeacherSpace,
+  rememberTeacherSpace,
+  TEACHER_SPACE_TOOLS
+} from '@/utils/teacher-space-selection'
 import {
   buildActivityDonutOption,
   buildActivityTrendOption,
@@ -286,8 +297,10 @@ import {
   buildTrendOption
 } from '@/utils/teacher-chart-options'
 
+const TEACHER_ROUTE = '/pages/teacherDashboard/teacherDashboard'
+
 export default {
-  components: { HomeSidebar, TeacherEChart },
+  components: { HomeSidebar, TeacherEChart, TeacherSpaceSelector },
   data() {
     return {
       sidebarCollapsed: false,
@@ -309,6 +322,7 @@ export default {
       loading: false,
       errorMessage: '',
       requestVersion: 0,
+      detailRequestVersion: 0,
       studentSearch: '',
       studentPage: 1,
       sortKeys: ['last_active', 'coverage', 'mastery', 'quiz_accuracy'],
@@ -321,6 +335,15 @@ export default {
     }
   },
   computed: {
+    teacherSpaces() {
+      return this.spacesStore.spaces.filter(space => space.user_role === 'teacher')
+    },
+    selectedSpace() {
+      return this.teacherSpaces.find(space => String(space.id) === String(this.spaceId)) || null
+    },
+    selectedSpaceName() {
+      return this.selectedSpace?.name || '课程空间'
+    },
     activeData() {
       return this.activeTab === 'overview' ? this.overview : this.activeTab === 'knowledge' ? this.knowledge : this.students
     },
@@ -371,18 +394,40 @@ export default {
     }
   },
   async onLoad(options) {
-    this.spaceId = options?.spaceId || ''
-    if (!this.spaceId) {
-      await this.spacesStore.loadSpaces(true)
-      this.spaceId = this.spacesStore.spaces.find(space => space.user_role === 'teacher')?.id || ''
+    await this.spacesStore.loadSpaces(true)
+    const resolved = resolveTeacherSpace({
+      spaces: this.spacesStore.spaces,
+      requestedSpaceId: options?.spaceId,
+      tool: TEACHER_SPACE_TOOLS.DASHBOARD
+    })
+    if (resolved.invalidRequested) {
+      uni.showToast({ title: '指定课程空间无效或已无权限', icon: 'none' })
     }
-    if (!this.spaceId) {
-      uni.reLaunch({ url: '/pages/index/index' })
+    if (!resolved.space) {
+      uni.showToast({ title: '当前账号没有可管理的课程空间', icon: 'none' })
+      setTimeout(() => uni.reLaunch({ url: '/pages/index/index' }), 600)
+      return
+    }
+    this.spaceId = String(resolved.space.id)
+    if (resolved.shouldCanonicalize) {
+      uni.reLaunch({ url: `${TEACHER_ROUTE}?spaceId=${encodeURIComponent(this.spaceId)}` })
       return
     }
     this.loadActive()
   },
+  beforeUnmount() {
+    this.requestVersion += 1
+    this.detailRequestVersion += 1
+  },
   methods: {
+    handleTeacherSpaceChange(space) {
+      if (!space?.id || String(space.id) === String(this.spaceId)) return
+      this.requestVersion += 1
+      this.detailRequestVersion += 1
+      this.detailOpen = false
+      rememberTeacherSpace(TEACHER_SPACE_TOOLS.DASHBOARD, space.id)
+      uni.reLaunch({ url: `${TEACHER_ROUTE}?spaceId=${encodeURIComponent(space.id)}` })
+    },
     metric(value) {
       return value === null || value === undefined ? '暂无数据' : `${Number(value).toFixed(1)}%`
     },
@@ -502,17 +547,25 @@ export default {
       this.loadStudentDetail(student.user_id)
     },
     async loadStudentDetail(studentId) {
+      const version = ++this.detailRequestVersion
+      const requestedSpaceId = this.spaceId
       this.detailLoading = true
       try {
-        this.studentDetail = await getTeacherStudentDetail(this.spaceId, studentId, this.days)
+        const detail = await getTeacherStudentDetail(requestedSpaceId, studentId, this.days)
+        if (version === this.detailRequestVersion && requestedSpaceId === this.spaceId) {
+          this.studentDetail = detail
+        }
       } catch (_) {
-        uni.showToast({ title: '学生详情加载失败', icon: 'none' })
+        if (version === this.detailRequestVersion) {
+          uni.showToast({ title: '学生详情加载失败', icon: 'none' })
+        }
       } finally {
-        this.detailLoading = false
+        if (version === this.detailRequestVersion) this.detailLoading = false
       }
     },
     closeDetail() {
       this.detailOpen = false
+      this.detailRequestVersion += 1
     }
   }
 }
@@ -635,6 +688,9 @@ export default {
 @keyframes aurora-drift-b { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(-40px,30px) scale(1.05); } 66% { transform: translate(20px,-25px) scale(.98); } }
 @keyframes aurora-drift-c { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(30px,-35px) scale(1.07); } 66% { transform: translate(-20px,20px) scale(.96); } }
 @media (max-width: 1000px) {
+  .teacher-page :deep(.sidebar) { display: none; }
+  .topbar { align-items: flex-start; flex-direction: column; }
+  .topbar-controls { width: 100%; flex-wrap: wrap; }
   .metric-strip { grid-template-columns: 1fr 1fr; }
   .metric-cell:nth-child(2) { border-right: 0; }
   .metric-cell:nth-child(-n+2) { border-bottom: 1px solid rgba(148,163,184,.13); }
@@ -647,7 +703,8 @@ export default {
 @media (max-width: 720px) {
   .topbar { padding: 20px 18px 16px; align-items: flex-start; flex-direction: column; }
   .page-subtitle { display: none; }
-  .topbar-controls { width: 100%; justify-content: space-between; }
+  .topbar-controls { width: 100%; flex-wrap: wrap; justify-content: space-between; }
+  .topbar-controls :deep(.teacher-space-selector) { width: 100%; }
   .section-tabs { padding: 0 18px; gap: 22px; }
   .view-content { padding: 22px 18px 0; }
   .calendar-heading { align-items: flex-start; flex-direction: column; }
