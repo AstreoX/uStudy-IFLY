@@ -149,6 +149,20 @@ export function getSpaceDocuments(spaceId) {
 }
 
 /**
+ * 获取 Agent 实际查看的 PDF 页面缩略图
+ * @param {string|number} spaceId
+ * @param {string} documentId
+ * @param {string} pages - 页面范围，例如 1-4,5-8
+ * @returns {Promise<{document_id: string, title: string, pages: Array, missing_ranges: Array}>}
+ */
+export function getPdfPagePreviews(spaceId, documentId, pages) {
+  return request({
+    url: `/api/spaces/${spaceId}/documents/${documentId}/pdf-page-previews?pages=${encodeURIComponent(pages)}`,
+    method: 'GET'
+  })
+}
+
+/**
  * 添加链接到学习空间
  * @param {string|number} spaceId
  * @param {{title: string, url: string}} data

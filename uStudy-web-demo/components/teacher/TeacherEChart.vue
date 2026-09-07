@@ -9,6 +9,26 @@
 <script>
 import echarts from '@/utils/teacher-echarts'
 
+// ECharts, ResizeObserver and animation handles own mutable browser state. Keep
+// them outside Vue's component data so Vue never proxies or traverses them.
+const chartInstances = new WeakMap()
+const resizeObservers = new WeakMap()
+const resizeHandlers = new WeakMap()
+const pendingFrames = new WeakMap()
+const renderVersions = new WeakMap()
+const unmountedComponents = new WeakSet()
+
+function cancelPendingFrame(component) {
+  const pending = pendingFrames.get(component)
+  if (!pending) return
+  if (pending.type === 'raf' && typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(pending.id)
+  } else {
+    clearTimeout(pending.id)
+  }
+  pendingFrames.delete(component)
+}
+
 export default {
   props: {
     option: { type: Object, default: () => ({}) },
@@ -19,9 +39,6 @@ export default {
     emptyText: { type: String, default: '暂无足够数据' }
   },
   emits: ['chart-click'],
-  data() {
-    return { chart: null, resizeObserver: null, resizeHandler: null }
-  },
   computed: {
     shellStyle() {
       const height = typeof this.height === 'number' ? `${this.height}px` : this.height
@@ -30,54 +47,127 @@ export default {
     }
   },
   watch: {
-    option: { deep: true, handler() { this.renderChart() } },
-    empty(value) { if (!value) this.$nextTick(() => { this.ensureChart(); this.renderChart() }) }
+    option() { this.scheduleRender() },
+    loading(value) { if (!value) this.scheduleRender() },
+    empty(value) { if (!value) this.scheduleRender() }
   },
   mounted() {
-    this.$nextTick(() => {
-      this.ensureChart()
-      this.renderChart()
-      this.bindResize()
-    })
+    unmountedComponents.delete(this)
+    this.scheduleRender()
+    this.$nextTick(() => this.bindResize())
   },
   beforeUnmount() {
-    if (this.resizeObserver) this.resizeObserver.disconnect()
-    if (this.resizeHandler && typeof window !== 'undefined') window.removeEventListener('resize', this.resizeHandler)
-    if (this.chart) {
-      this.chart.off('click')
-      this.chart.dispose()
-      this.chart = null
-    }
+    unmountedComponents.add(this)
+    renderVersions.set(this, (renderVersions.get(this) || 0) + 1)
+    cancelPendingFrame(this)
+    const observer = resizeObservers.get(this)
+    if (observer) observer.disconnect()
+    resizeObservers.delete(this)
+    const resizeHandler = resizeHandlers.get(this)
+    if (resizeHandler && typeof window !== 'undefined') window.removeEventListener('resize', resizeHandler)
+    resizeHandlers.delete(this)
+    this.disposeChart()
   },
   methods: {
     rootElement() {
-      return this.$refs.chartRoot?.$el || this.$refs.chartRoot || null
+      const reference = this.$refs.chartRoot
+      const root = reference?.$el || reference || null
+      return root?.nodeType === 1 ? root : null
     },
     ensureChart() {
-      if (this.chart || this.empty) return
       const root = this.rootElement()
-      if (!root) return
-      this.chart = echarts.init(root, null, { renderer: 'canvas' })
-      this.chart.on('click', params => this.$emit('chart-click', params))
+      if (!root || !root.isConnected || this.empty || this.loading) return null
+
+      let chart = chartInstances.get(this)
+      if (chart) {
+        try {
+          if (!chart.isDisposed() && chart.getDom() === root) return chart
+        } catch (error) {
+          // A stale third-party instance is replaced below.
+        }
+        this.disposeChart()
+      }
+
+      const attached = echarts.getInstanceByDom(root)
+      if (attached && !attached.isDisposed()) attached.dispose()
+      chart = echarts.init(root, null, { renderer: 'canvas', useDirtyRect: false })
+      chart.on('click', params => this.$emit('chart-click', params))
+      chartInstances.set(this, chart)
+      return chart
+    },
+    scheduleRender() {
+      const version = (renderVersions.get(this) || 0) + 1
+      renderVersions.set(this, version)
+      cancelPendingFrame(this)
+      this.$nextTick(() => {
+        if (unmountedComponents.has(this) || renderVersions.get(this) !== version) return
+        const callback = () => {
+          pendingFrames.delete(this)
+          if (unmountedComponents.has(this) || renderVersions.get(this) !== version) return
+          this.renderChart()
+        }
+        if (typeof requestAnimationFrame === 'function') {
+          pendingFrames.set(this, { type: 'raf', id: requestAnimationFrame(callback) })
+        } else {
+          pendingFrames.set(this, { type: 'timeout', id: setTimeout(callback, 0) })
+        }
+      })
     },
     renderChart() {
       if (this.empty || this.loading) return
-      this.ensureChart()
-      if (!this.chart) return
-      this.chart.setOption(this.option || {}, { notMerge: true, lazyUpdate: false })
+      const chart = this.ensureChart()
+      if (!chart) return
+      try {
+        // Reuse component views instead of repeatedly destroying HTML tooltip
+        // nodes. replaceMerge still removes series that disappeared.
+        chart.setOption(this.option || {}, {
+          notMerge: false,
+          lazyUpdate: false,
+          replaceMerge: ['series']
+        })
+      } catch (error) {
+        this.disposeChart()
+        throw error
+      }
     },
     bindResize() {
       const root = this.rootElement()
-      if (!root) return
+      if (!root || resizeObservers.has(this) || resizeHandlers.has(this)) return
       if (typeof ResizeObserver !== 'undefined') {
-        this.resizeObserver = new ResizeObserver(() => this.chart?.resize())
-        this.resizeObserver.observe(root)
+        const observer = new ResizeObserver(entries => {
+          if (unmountedComponents.has(this)) return
+          const rect = entries[0]?.contentRect
+          if (!rect || rect.width <= 0 || rect.height <= 0) return
+          const chart = chartInstances.get(this)
+          if (chart && !chart.isDisposed()) chart.resize()
+        })
+        observer.observe(root)
+        resizeObservers.set(this, observer)
       } else if (typeof window !== 'undefined') {
-        this.resizeHandler = () => this.chart?.resize()
-        window.addEventListener('resize', this.resizeHandler)
+        const resizeHandler = () => {
+          const chart = chartInstances.get(this)
+          if (chart && !chart.isDisposed()) chart.resize()
+        }
+        resizeHandlers.set(this, resizeHandler)
+        window.addEventListener('resize', resizeHandler)
       }
     },
-    resize() { this.chart?.resize() }
+    disposeChart() {
+      const chart = chartInstances.get(this)
+      chartInstances.delete(this)
+      if (!chart) return
+      try {
+        chart.off()
+        if (!chart.isDisposed()) chart.dispose()
+      } catch (error) {
+        // The component is already leaving; never let third-party cleanup
+        // interrupt Vue's own unmount sequence.
+      }
+    },
+    resize() {
+      const chart = chartInstances.get(this)
+      if (chart && !chart.isDisposed()) chart.resize()
+    }
   }
 }
 </script>

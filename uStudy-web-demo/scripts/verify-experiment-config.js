@@ -197,6 +197,12 @@ assert(notesPanel.includes("note?.visibility === 'private'"), 'teacher UI still 
 assert(studyPage.includes('getAgentMessageSegments'), 'main chat must reuse the shared segment renderer')
 assert(studyPage.includes('AgentThinkingBlock'), 'main chat must reuse the shared thinking block')
 assert(studyPage.includes('AgentToolCard'), 'main chat generic tools must reuse the shared tool card')
+assert(studyPage.includes(':space-id="spaceId"'), 'study tool cards must receive the active space id')
+const agentToolCard = read('components/chat/AgentToolCard.vue')
+assert(agentToolCard.includes('getPdfPagePreviews'), 'PDF page cards must lazy-load page previews')
+assert(agentToolCard.includes('preview-list'), 'PDF page cards must render bounded preview lists')
+const spaceApi = read('api/space.js')
+assert(spaceApi.includes('getPdfPagePreviews'), 'space API must expose PDF page previews')
 
 const teacherEcharts = read('utils/teacher-echarts.js')
 assert(teacherEcharts.includes("from 'echarts/core'"), 'ECharts must use the modular core import')

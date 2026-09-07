@@ -883,18 +883,19 @@
                         <scroll-view
                           v-if="seg.toolCall.status === 'done' && seg.toolCall.success && getSearchToolResults(seg.toolCall).length && isSearchExpanded(seg.toolCall.id)"
                           class="search-sources-scroll"
-                          scroll-x
+                          scroll-y
                           :show-scrollbar="false"
                         >
-                          <view class="search-sources-row">
-                            <view v-for="(item, idx) in getSearchToolResults(seg.toolCall)" :key="idx" class="search-source-card" @click="openSearchResultUrl(item.url)">
-                              <view class="search-source-head">
-                                <view class="search-source-num">
-                                  <text class="search-source-num-text">{{ idx + 1 }}</text>
-                                </view>
+                          <view class="search-sources-list">
+                            <view v-for="(item, idx) in getVisibleSearchResults(seg.toolCall)" :key="idx" class="search-source-item" @click="openSearchResultUrl(item.url)">
+                              <view class="search-source-num">
+                                <text class="search-source-num-text">{{ idx + 1 }}</text>
+                              </view>
+                              <view class="search-source-content">
+                                <text class="search-source-title">{{ item.title || formatDisplayUrl(item.url) }}</text>
                                 <text class="search-source-site">{{ formatDisplayUrl(item.url) }}</text>
                               </view>
-                              <text class="search-source-title">{{ item.title }}</text>
+                              <text class="search-source-arrow">↗</text>
                             </view>
                           </view>
                         </scroll-view>
@@ -1220,7 +1221,7 @@
                       </view>
 
                       <!-- Remaining tools -->
-                      <AgentToolCard v-else :tool-call="withDefaultToolLabel(seg.toolCall)" />
+                      <AgentToolCard v-else :tool-call="withDefaultToolLabel(seg.toolCall)" :space-id="spaceId" />
                     </view>
                   </template>
 
@@ -1463,6 +1464,16 @@ const TOOL_DISPLAY_NAMES = {
   web_fetch: 'Fetch Page',
   web_crawl: 'Deep Crawl',
   search_documents: 'Search Documents',
+  search_keywords: '关键词检索',
+  search_regex: '正则检索',
+  list_documents: '读取资料列表',
+  read_document: '读取资料',
+  get_document_outline: '读取文档目录',
+  view_document_pages: '查看资料页面',
+  view_document_page: '查看资料页面',
+  get_context_memories: '召回相关记忆',
+  get_context_documents: '检索相关资料',
+  get_previous_context: '召回临时记忆',
   generate_test: 'Generate Test',
   view_quiz_results: 'View Quiz Results',
   view_quiz_attempt_detail: 'View Quiz Analysis',
@@ -4413,7 +4424,7 @@ export default {
     getVisibleSearchResults(toolCall) {
       const results = this.getSearchToolResults(toolCall)
       if (this.expandedSearchResults[toolCall.id]) return results
-      return results.slice(0, 5)
+      return results.slice(0, 4)
     },
 
     getFaviconUrl(url) {
@@ -7295,53 +7306,42 @@ export default {
 }
 
 .search-sources-scroll {
+  width: 100%;
+  max-height: 176px;
   margin-top: 4px;
-  white-space: nowrap;
-}
-
-.search-sources-row {
-  display: inline-flex;
-  gap: 10px;
-}
-
-.search-source-card {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 220px;
-  padding: 16px 18px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  cursor: pointer;
-  white-space: normal;
   box-sizing: border-box;
-  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.55);
+  padding-right: 2px;
 }
 
-.search-source-card:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.16);
-  transform: translateY(-2px);
-  box-shadow: 0 24px 45px rgba(0, 0, 0, 0.55);
+.search-sources-list {
+  display: flex;
+  flex-direction: column;
 }
 
-.search-source-card:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.12);
-}
-
-.search-source-head {
+.search-source-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  min-height: 40px;
+  padding: 7px 4px;
+  box-sizing: border-box;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 0.2s ease;
+}
+
+.search-source-item:last-child {
+  border-bottom: none;
+}
+
+.search-source-item:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .search-source-num {
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
   background: rgba(74, 108, 247, 0.14);
   display: flex;
   align-items: center;
@@ -7355,15 +7355,43 @@ export default {
   color: #60A5FA;
 }
 
+.search-source-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .search-source-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.86);
-  line-height: 1.45;
+  display: block;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.84);
+  line-height: 1.3;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.search-source-site {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.search-source-arrow {
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.32);
 }
 
 .search-tool-empty,

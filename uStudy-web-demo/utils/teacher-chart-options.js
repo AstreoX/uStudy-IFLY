@@ -43,6 +43,8 @@ function baseTooltip() {
     trigger: 'item',
     // The formatter returns HTML; force the DOM tooltip instead of canvas rich text.
     renderMode: 'html',
+    transitionDuration: 0,
+    hideDelay: 0,
     backgroundColor: 'rgba(10, 10, 18, 0.96)',
     borderColor: 'rgba(96, 165, 250, 0.28)',
     borderWidth: 1,
@@ -138,7 +140,6 @@ export function buildCalendarHeatmapOption(points, metric, selectedDate, student
       type: 'heatmap',
       coordinateSystem: 'calendar',
       data: values,
-      universalTransition: true,
       emphasis: { itemStyle: { borderColor: '#F8FAFC', borderWidth: 2 } }
     }]
   }
@@ -186,7 +187,6 @@ export function buildActivityTrendOption(points) {
       barMaxWidth: 24,
       data: points.map(item => item.activity_mix?.find(entry => entry.activity_type === type)?.count || 0),
       itemStyle: { borderRadius: index === types.length - 1 ? [3, 3, 0, 0] : 0 },
-      universalTransition: true,
       emphasis: { focus: 'series' }
     }))
   }
@@ -224,7 +224,6 @@ export function buildActivityDonutOption(items) {
       label: { show: false },
       itemStyle: { borderColor: COLORS.surface, borderWidth: 3, borderRadius: 3 },
       data: items.map(item => ({ name: item.activity_type, value: item.count })),
-      universalTransition: true,
       emphasis: { scaleSize: 5 }
     }]
   }
@@ -257,8 +256,7 @@ export function buildTrendOption(points, valueKey, suffix = '%') {
       symbolSize: 5,
       lineStyle: { width: 2.5, color: COLORS.blue },
       itemStyle: { color: COLORS.surface, borderColor: '#93C5FD', borderWidth: 2 },
-      areaStyle: { color: 'rgba(96, 165, 250, 0.08)' },
-      universalTransition: true
+      areaStyle: { color: 'rgba(96, 165, 250, 0.08)' }
     }]
   }
 }
@@ -304,7 +302,6 @@ export function buildKnowledgeLandscape(nodes) {
         type: 'scatter',
         data: valid.filter(item => item.chapter === chapter).map(item => [item.coverage_rate, item.avg_mastery, item.assessed_students, item.label]),
         symbolSize(value) { return Math.max(10, Math.min(30, 8 + Number(value[2] || 0) * 3)) },
-        universalTransition: true,
         emphasis: { focus: 'series', scale: 1.25 }
       }))
     }
@@ -334,7 +331,6 @@ export function buildHorizontalBarOption(items, labelField, valueField, suffix =
       barMaxWidth: 10,
       itemStyle: { color: COLORS.blue, borderRadius: [0, 4, 4, 0] },
       label: { show: true, position: 'right', color: COLORS.muted, fontSize: 9, formatter: `{c}${suffix}` },
-      universalTransition: true
     }]
   }
 }

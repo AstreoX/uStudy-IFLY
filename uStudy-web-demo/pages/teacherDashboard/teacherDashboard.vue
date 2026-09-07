@@ -426,8 +426,28 @@ export default {
       this.requestVersion += 1
       this.detailRequestVersion += 1
       this.detailOpen = false
+      this.studentDetail = null
+      this.selectedStudent = null
+      this.selectedCalendarDate = null
+      this.studentPage = 1
+      this.studentSearch = ''
+      this.spaceId = String(space.id)
       rememberTeacherSpace(TEACHER_SPACE_TOOLS.DASHBOARD, space.id)
-      uni.reLaunch({ url: `${TEACHER_ROUTE}?spaceId=${encodeURIComponent(space.id)}` })
+      this.replaceRouteSpaceId(this.spaceId)
+
+      // Keep the currently visible dataset in place until its replacement
+      // arrives. This avoids tearing down every ECharts instance while the
+      // native picker is still completing its close animation.
+      if (this.activeTab !== 'overview') this.overview = null
+      if (this.activeTab !== 'knowledge') this.knowledge = null
+      if (this.activeTab !== 'students') this.students = null
+      this.loadActive()
+    },
+    replaceRouteSpaceId(spaceId) {
+      if (typeof window === 'undefined' || !window.history?.replaceState) return
+      const url = new URL(window.location.href)
+      url.hash = `${TEACHER_ROUTE}?spaceId=${encodeURIComponent(spaceId)}`
+      window.history.replaceState(window.history.state, '', url.toString())
     },
     formatDayOption(days) {
       return days === 365 ? '近 1 年' : `${days} 天`
@@ -516,9 +536,9 @@ export default {
     changeDays(days) {
       if (this.days === days) return
       this.days = days
-      this.overview = null
-      this.knowledge = null
-      this.students = null
+      if (this.activeTab !== 'overview') this.overview = null
+      if (this.activeTab !== 'knowledge') this.knowledge = null
+      if (this.activeTab !== 'students') this.students = null
       this.studentPage = 1
       this.loadActive()
       if (this.detailOpen && this.selectedStudent) this.loadStudentDetail(this.selectedStudent.user_id)
