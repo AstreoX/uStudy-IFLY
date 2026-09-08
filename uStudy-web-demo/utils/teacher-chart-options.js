@@ -11,13 +11,11 @@ const COLORS = {
 
 const CATEGORY_COLORS = ['#60A5FA', '#F6C85F', '#A78BFA', '#38BDF8', '#94A3B8']
 
-function html(value) {
+function richText(value) {
   return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
+    .replace(/\{/g, '｛')
+    .replace(/\}/g, '｝')
+    .replace(/\|/g, '｜')
 }
 
 function shortDate(value) {
@@ -26,31 +24,40 @@ function shortDate(value) {
 }
 
 function tooltipShell(title, rows) {
-  return `<div style="min-width:180px;padding:4px 2px;color:${COLORS.text};font-size:12px;line-height:1.7">
-    <div style="font-weight:700;margin-bottom:5px">${html(title)}</div>${rows.join('')}
-  </div>`
+  return `{title|${richText(title)}}\n${rows.join('\n')}`
 }
 
 function tooltipRow(label, value, color = COLORS.blue) {
-  return `<div style="display:flex;justify-content:space-between;gap:20px">
-    <span style="color:${COLORS.muted}"><i style="display:inline-block;width:7px;height:7px;border-radius:2px;background:${color};margin-right:7px"></i>${html(label)}</span>
-    <strong style="color:${COLORS.text}">${html(value)}</strong>
-  </div>`
+  const markerIndex = Math.max(0, CATEGORY_COLORS.findIndex(item => item.toLowerCase() === String(color).toLowerCase()))
+  return `{marker${markerIndex}|●} {label|${richText(label)}}  {value|${richText(value)}}`
 }
 
 function baseTooltip() {
   return {
     trigger: 'item',
-    // The formatter returns HTML; force the DOM tooltip instead of canvas rich text.
-    renderMode: 'html',
+    // uni-app may expose mini-program environment flags on H5. A DOM tooltip then
+    // initializes without an API instance and crashes in TooltipHTMLContent.update.
+    renderMode: 'richText',
     transitionDuration: 0,
     hideDelay: 0,
     backgroundColor: 'rgba(10, 10, 18, 0.96)',
     borderColor: 'rgba(96, 165, 250, 0.28)',
     borderWidth: 1,
     padding: [10, 12],
-    textStyle: { color: COLORS.text, fontSize: 12 },
-    extraCssText: 'box-shadow:0 16px 50px rgba(0,0,0,.38);border-radius:8px;'
+    textStyle: {
+      color: COLORS.text,
+      fontSize: 12,
+      rich: {
+        title: { color: COLORS.text, fontSize: 12, fontWeight: 700, lineHeight: 24 },
+        label: { color: COLORS.muted, fontSize: 12, lineHeight: 20 },
+        value: { color: COLORS.text, fontSize: 12, fontWeight: 700, lineHeight: 20 },
+        marker0: { color: CATEGORY_COLORS[0], fontSize: 12, lineHeight: 20 },
+        marker1: { color: CATEGORY_COLORS[1], fontSize: 12, lineHeight: 20 },
+        marker2: { color: CATEGORY_COLORS[2], fontSize: 12, lineHeight: 20 },
+        marker3: { color: CATEGORY_COLORS[3], fontSize: 12, lineHeight: 20 },
+        marker4: { color: CATEGORY_COLORS[4], fontSize: 12, lineHeight: 20 }
+      }
+    }
   }
 }
 
@@ -175,7 +182,7 @@ export function buildActivityTrendOption(points) {
       }
     },
     legend: { top: 0, left: 0, icon: 'roundRect', itemWidth: 9, itemHeight: 9, textStyle: { color: COLORS.muted, fontSize: 10 } },
-    grid: { top: types.length ? 40 : 18, left: 36, right: 14, bottom: points.length > 31 ? 34 : 24, containLabel: true },
+    grid: { top: types.length ? 40 : 18, left: 36, right: 14, bottom: points.length > 31 ? 34 : 24, outerBoundsMode: 'same' },
     xAxis: { ...baseAxis(), type: 'category', data: points.map(item => item.date), axisLabel: { color: COLORS.muted, fontSize: 9, formatter: shortDate, hideOverlap: true }, splitLine: { show: false } },
     yAxis: { ...baseAxis(), type: 'value', min: 0, minInterval: 1, name: '活动次数', nameTextStyle: { color: COLORS.muted, fontSize: 9, padding: [0, 0, 0, 8] } },
     dataZoom,
@@ -243,7 +250,7 @@ export function buildTrendOption(points, valueKey, suffix = '%') {
         return tooltipShell(entry?.axisValue || '', [tooltipRow('数值', value == null ? '暂无数据' : `${Number(value).toFixed(1)}${suffix}`, COLORS.blue)])
       }
     },
-    grid: { top: 16, left: 36, right: 16, bottom: 26, containLabel: true },
+    grid: { top: 16, left: 36, right: 16, bottom: 26, outerBoundsMode: 'same' },
     xAxis: { ...baseAxis(), type: 'category', boundaryGap: false, data: points.map(item => item.date), axisLabel: { color: COLORS.muted, fontSize: 9, formatter: shortDate, hideOverlap: true }, splitLine: { show: false } },
     yAxis: { ...baseAxis(), type: 'value', min: 0, max: 100, axisLabel: { color: COLORS.muted, fontSize: 9, formatter: `{value}${suffix}` } },
     series: [{
@@ -293,7 +300,7 @@ export function buildKnowledgeLandscape(nodes) {
         }
       },
       legend: { top: 0, left: 0, type: 'scroll', icon: 'circle', itemWidth: 8, itemHeight: 8, textStyle: { color: COLORS.muted, fontSize: 9 } },
-      grid: { top: 42, left: 44, right: 22, bottom: 34, containLabel: true },
+      grid: { top: 42, left: 44, right: 22, bottom: 34, outerBoundsMode: 'same' },
       xAxis: { ...baseAxis(), type: 'value', min: 0, max: 100, name: '覆盖率', nameTextStyle: { color: COLORS.muted, fontSize: 9 }, axisLabel: { color: COLORS.muted, fontSize: 9, formatter: '{value}%' } },
       yAxis: { ...baseAxis(), type: 'value', min: 0, max: 100, name: '掌握度', nameTextStyle: { color: COLORS.muted, fontSize: 9 }, axisLabel: { color: COLORS.muted, fontSize: 9, formatter: '{value}%' } },
       series: chapters.map(chapter => ({
@@ -320,7 +327,7 @@ export function buildHorizontalBarOption(items, labelField, valueField, suffix =
         return tooltipShell(params.name, [tooltipRow(seriesName, `${Number(params.value).toFixed(1)}${suffix}`, params.color)])
       }
     },
-    grid: { top: 8, left: 18, right: 38, bottom: 8, containLabel: true },
+    grid: { top: 8, left: 18, right: 38, bottom: 8, outerBoundsMode: 'same' },
     xAxis: { ...baseAxis(), type: 'value', min: 0, max: valueField.includes('mastery') || valueField.includes('rate') ? 100 : undefined, axisLabel: { color: COLORS.muted, fontSize: 9, formatter: `{value}${suffix}` } },
     yAxis: { ...baseAxis(), type: 'category', inverse: true, data: items.map(item => item[labelField]), axisLabel: { color: COLORS.text, fontSize: 10, width: 130, overflow: 'truncate' }, splitLine: { show: false } },
     series: [{

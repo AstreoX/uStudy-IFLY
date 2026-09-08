@@ -620,16 +620,15 @@ export default {
 .section-tab.active::after { content: ''; position: absolute; height: 2px; left: 0; right: 0; bottom: -1px; background: #60a5fa; }
 .content-scroll { flex: 1; min-height: 0; }
 .view-content { padding: 30px 38px 0; max-width: 1480px; margin: 0 auto; box-sizing: border-box; }
-.metric-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid rgba(255,255,255,.12); border-bottom: 1px solid rgba(255,255,255,.12); background: rgba(42,42,60,.3); backdrop-filter: blur(18px); border-radius: 14px; }
-.metric-cell { min-height: 116px; padding: 20px 24px; display: flex; flex-direction: column; justify-content: center; border-right: 1px solid rgba(148,163,184,.13); }
-.metric-cell:first-child { padding-left: 0; }
+.metric-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: hidden; border-top: 1px solid rgba(255,255,255,.12); border-bottom: 1px solid rgba(255,255,255,.12); background: rgba(42,42,60,.3); backdrop-filter: blur(18px); border-radius: 14px; }
+.metric-cell { min-height: 116px; padding: 20px 24px; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; border-right: 1px solid rgba(148,163,184,.13); }
 .metric-cell:last-child { border-right: 0; }
 .metric-label, .comparison-label { color: #7c8aa0; font-size: 11px; letter-spacing: .03em; }
 .metric-value { margin-top: 8px; font-size: 30px; line-height: 1; font-weight: 650; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
 .metric-denominator { color: #64748b; font-size: 16px; font-weight: 500; }
 .metric-context { margin-top: 10px; color: #64748b; font-size: 11px; }
 .analysis-grid { margin-top: 34px; display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(280px, .75fr); gap: 38px; }
-.analysis-panel { min-width: 0; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.15); background: rgba(42,42,60,.22); backdrop-filter: blur(16px); border-radius: 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,.035); }
+.analysis-panel { min-width: 0; padding: 18px 20px 20px; box-sizing: border-box; border-top: 1px solid rgba(255,255,255,.15); background: rgba(42,42,60,.22); backdrop-filter: blur(16px); border-radius: 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,.035); }
 .calendar-panel { margin-top: 36px; padding-top: 20px; }
 .calendar-heading { align-items: center; }
 .calendar-scroll { width: 100%; }
@@ -654,7 +653,7 @@ export default {
 .comparison-delta { grid-column: 1 / -1; color: #64748b; font-size: 10px; }
 .trend-grid { grid-template-columns: 1fr 1fr; }
 .knowledge-landscape-panel { margin-top: 36px; }
-.table-section { margin-top: 40px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.15); background: rgba(42,42,60,.22); backdrop-filter: blur(16px); border-radius: 14px; }
+.table-section { margin-top: 40px; padding: 18px 20px 0; box-sizing: border-box; border-top: 1px solid rgba(255,255,255,.15); background: rgba(42,42,60,.22); backdrop-filter: blur(16px); border-radius: 14px; }
 .table-scroll { width: 100%; }
 .data-table { min-width: 980px; }
 .table-row { min-height: 48px; display: grid; align-items: center; gap: 18px; padding: 0 12px; border-bottom: 1px solid rgba(148,163,184,.08); color: #94a3b8; font-size: 12px; }
@@ -735,7 +734,7 @@ export default {
   .chart-toggle { width: 100%; box-sizing: border-box; }
   .chart-toggle-option { flex: 1; }
   .metric-strip { grid-template-columns: 1fr; }
-  .metric-cell { padding-left: 0; border-right: 0; border-bottom: 1px solid rgba(148,163,184,.13); }
+  .metric-cell { padding: 18px; border-right: 0; border-bottom: 1px solid rgba(148,163,184,.13); }
   .metric-cell:last-child { border-bottom: 0; }
   .comparison-band { grid-template-columns: 1fr; }
   .student-tools { align-items: stretch; flex-direction: column; }

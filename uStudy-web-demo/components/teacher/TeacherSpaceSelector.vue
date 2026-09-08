@@ -1,6 +1,5 @@
 <template>
   <view class="teacher-space-selector" :class="{ disabled: selectorDisabled }">
-    <text class="selector-label">课程空间</text>
     <picker
       class="selector-picker"
       :range="spaces"
@@ -55,13 +54,6 @@ export default {
   min-width: 190px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-}
-.selector-label {
-  color: #64748b;
-  font-size: 9px;
-  font-weight: 650;
-  letter-spacing: .1em;
 }
 .selector-picker { width: 100%; }
 .selector-control {
