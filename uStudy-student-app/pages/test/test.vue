@@ -5,7 +5,7 @@
       <view class="nav-left" @click="goBack">
         <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/regular/caret-left.svg" mode="aspectFit"></image>
       </view>
-      <text class="nav-title">测试题</text>
+      <text class="nav-title">{{ isAssignment ? (assignmentTitle || '教师测验') : '测试题' }}</text>
       <view class="nav-right" :class="{ 'nav-right-active': canSubmit }" @click="handleSubmit">
         <image class="nav-icon" src="/static/icons/phosphor-icons/SVGs/bold/arrow-up-bold.svg" mode="aspectFit"></image>
       </view>
@@ -19,13 +19,21 @@
     <!-- 加载失败 -->
     <view v-else-if="loadError" class="error-container">
       <text class="error-text">{{ loadError }}</text>
-      <view class="retry-btn" @click="loadQuizData(quizId)">
+      <view class="retry-btn" @click="reloadContent">
         <text class="retry-btn-text">重试</text>
       </view>
     </view>
 
     <!-- 正常内容 -->
     <template v-else>
+      <view v-if="isAssignment" class="assignment-banner">
+        <view class="assignment-banner-row">
+          <text class="assignment-banner-tag">教师测验</text>
+          <text class="assignment-deadline" :class="{ 'assignment-deadline-overdue': assignmentOverdue }">{{ assignmentDeadlineText }}</text>
+        </view>
+        <text v-if="assignmentInstructions" class="assignment-instructions">{{ assignmentInstructions }}</text>
+        <text v-if="hasOjQuestion" class="assignment-oj-notice">本测验含编程题，请前往网页端完成后提交。</text>
+      </view>
       <!-- 答题进度条 -->
       <view class="progress-section">
         <view class="progress-bar">
@@ -123,6 +131,22 @@
         </view>
       </view>
 
+      <!-- OJ 编程题：APP 仅展示题干，不能查看或编辑代码。 -->
+      <view class="question-card oj-question-card" v-else-if="currentQuestion.type === 'code'">
+        <view class="question-header">
+          <view class="question-type-tag question-type-code">编程题</view>
+          <text class="question-number">第 {{ currentIndex + 1 }} 题</text>
+        </view>
+        <text class="question-title">{{ currentQuestion.title }}</text>
+        <view class="oj-web-hint">
+          <image class="oj-web-hint-icon" src="/static/icons/phosphor-icons/SVGs/regular/desktop.svg" mode="aspectFit"></image>
+          <view class="oj-web-hint-copy">
+            <text class="oj-web-hint-title">请前往网页端作答</text>
+            <text class="oj-web-hint-text">编程题仅在网页端提供代码编辑、样例运行和提交。</text>
+          </view>
+        </view>
+      </view>
+
       <!-- 简答题 -->
       <view class="question-card" v-else-if="currentQuestion.type === 'shortanswer'">
         <view class="question-header">
@@ -211,6 +235,8 @@
 
 <script>
 import { getQuizDetail, submitQuiz } from '@/api/space'
+import { getAssignmentDetail, saveAssignmentDraft, submitAssignment } from '@/api/assignments'
+import { assignmentHasOj, buildAssignmentDraftPayload, buildAssignmentSubmitPayload, convertAssignmentDetail } from '@/utils/assignment-adapter'
 import { setPendingEvaluation } from '@/utils/quizEvaluationBus'
 import { setQuizEvaluationResult } from '@/utils/storage'
 import { clearPendingNavigationIfMatches } from '@/utils/deepLink'
@@ -223,6 +249,12 @@ export default {
     return {
       msgId: null,
       quizId: null,
+      assignmentId: null,
+      itemKind: 'quiz',
+      assignmentTitle: '',
+      assignmentInstructions: '',
+      assignmentDueAt: '',
+      assignmentDetail: null,
       isLoading: true,
       showSubmitSuccess: false,
       submitOverlayAnimated: false,
@@ -280,7 +312,25 @@ export default {
       return (this.answeredCount / this.questions.length) * 100
     },
     canSubmit() {
-      return this.answeredCount === this.questions.length
+      return this.questions.length > 0 && this.answeredCount === this.questions.length && !this.assignmentOverdue && !this.hasOjQuestion
+    },
+    isAssignment() {
+      return this.itemKind === 'assignment'
+    },
+    hasOjQuestion() {
+      return this.isAssignment && assignmentHasOj(this.assignmentDetail)
+    },
+    assignmentOverdue() {
+      if (!this.isAssignment || !this.assignmentDueAt) return false
+      const dueTime = new Date(this.assignmentDueAt).getTime()
+      return Number.isFinite(dueTime) && dueTime <= Date.now()
+    },
+    assignmentDeadlineText() {
+      if (!this.isAssignment) return ''
+      if (this.assignmentOverdue) return '已截止'
+      const due = new Date(this.assignmentDueAt)
+      if (Number.isNaN(due.getTime())) return ''
+      return `截止 ${due.getMonth() + 1}月${due.getDate()}日 ${String(due.getHours()).padStart(2, '0')}:${String(due.getMinutes()).padStart(2, '0')}`
     },
     slideAnimationClass() {
       if (this.slideDirection === 'none') return ''
@@ -293,7 +343,11 @@ export default {
 
   onLoad(options) {
     this.restoreThemeMode({ darkStatusBarBackground: '#1D1E20' })
-    if (options.quizId) {
+    if (options.itemKind === 'assignment' && options.assignmentId) {
+      this.itemKind = 'assignment'
+      this.assignmentId = options.assignmentId
+      this.loadAssignmentData(options.assignmentId)
+    } else if (options.quizId) {
       this.quizId = options.quizId
       clearPendingNavigationIfMatches(`/pages/test/test?quizId=${encodeURIComponent(options.quizId)}`)
       this.loadQuizData(options.quizId)
@@ -360,7 +414,8 @@ export default {
         'single_choice': 'single',
         'multiple_choice': 'multiple',
         'true_false': 'truefalse',
-        'short_answer': 'shortanswer'
+        'short_answer': 'shortanswer',
+        'code': 'code'
       }
 
       const frontendType = typeMap[backendQuestion.question_type] || 'single'
@@ -387,10 +442,37 @@ export default {
       }
     },
 
-    goBack() {
+    async goBack() {
+      if (this.isAssignment) await this.saveAssignmentDraftIfNeeded()
       safeGoBack({
         fallbackUrl: '/pages/index/index'
       })
+    },
+
+    async loadAssignmentData(assignmentId) {
+      try {
+        this.isLoading = true
+        this.loadError = null
+        const response = await getAssignmentDetail(assignmentId)
+        const detail = convertAssignmentDetail(response)
+        this.assignmentDetail = detail
+        this.assignmentTitle = detail.title
+        this.assignmentInstructions = detail.instructions
+        this.assignmentDueAt = detail.dueAt
+        this.currentIndex = Math.min(Math.max(detail.currentQuestionIndex || 0, 0), Math.max(detail.questions.length - 1, 0))
+        this.questions = detail.questions
+        this.userAnswers = detail.userAnswers
+      } catch (error) {
+        this.loadError = error.message || '加载教师测验失败'
+        uni.showToast({ title: '加载教师测验失败', icon: 'none' })
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    reloadContent() {
+      if (this.isAssignment) this.loadAssignmentData(this.assignmentId)
+      else this.loadQuizData(this.quizId)
     },
 
     handleSuccessConfirm() {
@@ -548,6 +630,10 @@ export default {
     },
 
     handleSubmit() {
+      if (this.isAssignment && this.hasOjQuestion) {
+        uni.showToast({ title: '编程题请前往网页端作答并提交', icon: 'none' })
+        return
+      }
       if (!this.canSubmit) {
         uni.showToast({
           title: '请完成所有题目',
@@ -560,6 +646,18 @@ export default {
     },
 
     async submitAnswers() {
+      if (this.isAssignment) {
+        try {
+          await submitAssignment(this.assignmentId, buildAssignmentSubmitPayload(this.assignmentDetail, this.userAnswers))
+          this.showSubmitSuccess = true
+          this.$nextTick(() => {
+            setTimeout(() => { this.submitOverlayAnimated = true }, 10)
+          })
+        } catch (error) {
+          uni.showToast({ title: error.message || '提交失败，请重试', icon: 'none' })
+        }
+        return
+      }
       // 如果有 quizId，调用后端 API 进行评估
       if (this.quizId) {
         await this.submitToBackend()
@@ -648,6 +746,19 @@ export default {
       this.$nextTick(() => {
         setTimeout(() => { this.submitOverlayAnimated = true }, 10)
       })
+    },
+
+    async saveAssignmentDraftIfNeeded() {
+      if (!this.assignmentId || !this.assignmentDetail || this.assignmentOverdue) return
+      try {
+        await saveAssignmentDraft(
+          this.assignmentId,
+          buildAssignmentDraftPayload(this.assignmentDetail, this.userAnswers, this.currentIndex)
+        )
+      } catch (error) {
+        // Do not trap the student on this page when a temporary network error occurs.
+        uni.showToast({ title: error.message || '草稿暂存失败', icon: 'none' })
+      }
     }
   }
 }
@@ -754,6 +865,26 @@ export default {
   color: #ffffff;
 }
 
+.assignment-banner {
+  position: fixed;
+  top: calc(100vh * 1.5 / 26 + 90rpx);
+  left: calc(100vw / 24);
+  right: calc(100vw / 24);
+  z-index: 98;
+  padding: 18rpx 22rpx;
+  border: 1rpx solid rgba(196, 181, 253, 0.28);
+  border-radius: 20rpx;
+  background: rgba(76, 48, 108, 0.9);
+}
+
+.assignment-banner-row { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
+.assignment-banner-tag, .assignment-deadline, .assignment-oj-notice { font-size: 22rpx; }
+.assignment-banner-tag { color: #E9D5FF; font-weight: 600; }
+.assignment-deadline { color: rgba(255, 255, 255, 0.72); }
+.assignment-deadline-overdue { color: #FCA5A5; }
+.assignment-instructions { display: block; margin-top: 10rpx; font-size: 22rpx; line-height: 1.45; color: rgba(255, 255, 255, 0.78); }
+.assignment-oj-notice { display: block; margin-top: 10rpx; color: #FCD34D; }
+
 /* ========== 进度条 ========== */
 .progress-section {
   position: fixed;
@@ -796,6 +927,14 @@ export default {
   padding: calc(100vh * 1.5 / 26 + 140rpx) calc(100vw / 24) 180rpx;
   box-sizing: border-box;
   overflow-x: hidden;
+}
+
+.assignment-banner ~ .progress-section {
+  top: calc(100vh * 1.5 / 26 + 218rpx);
+}
+
+.assignment-banner ~ .question-container {
+  padding-top: calc(100vh * 1.5 / 26 + 340rpx);
 }
 
 /* ========== 题目卡片 ========== */
@@ -843,6 +982,32 @@ export default {
   background: rgba(245, 158, 11, 0.2);
   color: #F59E0B;
 }
+
+.question-type-code {
+  background: rgba(139, 92, 246, 0.22);
+  color: #C4B5FD;
+}
+
+.oj-web-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+  padding: 24rpx;
+  border-radius: 20rpx;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1rpx solid rgba(196, 181, 253, 0.24);
+}
+
+.oj-web-hint-icon {
+  width: 42rpx;
+  height: 42rpx;
+  flex-shrink: 0;
+  filter: brightness(0) saturate(100%) invert(78%) sepia(25%) saturate(906%) hue-rotate(218deg) brightness(98%) contrast(96%);
+}
+
+.oj-web-hint-copy { display: flex; flex-direction: column; gap: 8rpx; }
+.oj-web-hint-title { font-size: 26rpx; font-weight: 600; color: #E9D5FF; }
+.oj-web-hint-text { font-size: 22rpx; line-height: 1.45; color: rgba(255, 255, 255, 0.66); }
 
 .question-number {
   font-size: 24rpx;

@@ -35,7 +35,7 @@
     </view>
 
     <!-- Empty State -->
-    <view v-else-if="quizzes.length === 0 && currentFolders.length === 0" class="state-container">
+    <view v-else-if="assignments.length === 0 && quizzes.length === 0 && currentFolders.length === 0" class="state-container">
       <image class="state-icon" src="/static/icons/phosphor-icons/SVGs/regular/clipboard-text.svg" mode="aspectFit"></image>
       <text class="state-text">暂无测验</text>
     </view>
@@ -43,6 +43,45 @@
     <!-- Quiz List -->
     <scroll-view v-else class="content-scroll" :scroll-y="!isSwiping" @scroll="onListScroll">
       <view class="content-body">
+        <!-- Teacher assignments deliberately live outside personal quiz folders. -->
+        <view v-if="!currentFolderId && assignments.length > 0" class="list-section assignment-section">
+          <view class="assignment-section-heading">
+            <view class="assignment-heading-main">
+              <view class="assignment-heading-dot"></view>
+              <text class="assignment-heading-title">教师布置</text>
+            </view>
+            <text class="section-caption">{{ assignments.length }} 份测验</text>
+          </view>
+          <view
+            v-for="assignment in assignments"
+            :key="`assignment-${assignment.id}`"
+            class="quiz-item assignment-item"
+            @click="handleAssignmentClick(assignment)"
+          >
+            <view class="score-badge" :class="assignmentBadgeClass(assignment)">
+              <text class="score-badge-text">{{ assignmentBadgeText(assignment) }}</text>
+            </view>
+            <view class="quiz-content">
+              <view class="assignment-title-row">
+                <text class="teacher-tag">教师测验</text>
+                <text v-if="assignmentDeadlineLabel(assignment)" class="deadline-tag" :class="`deadline-${assignmentDeadlineState(assignment)}`">{{ assignmentDeadlineLabel(assignment) }}</text>
+              </view>
+              <text class="quiz-title">{{ assignment.title }}</text>
+              <view class="quiz-meta">
+                <text class="meta-item">{{ assignment.total_questions }} 道题</text>
+                <text class="meta-sep">·</text>
+                <text class="meta-item">截止 {{ formatDate(assignment.due_at) }}</text>
+                <text class="meta-sep">·</text>
+                <view class="difficulty-tag" :class="'difficulty-' + assignment.difficulty">
+                  <text class="difficulty-text">{{ difficultyLabel(assignment.difficulty) }}</text>
+                </view>
+              </view>
+              <text class="assignment-status">{{ assignmentStatusText(assignment) }}</text>
+            </view>
+            <image class="item-arrow" src="/static/icons/phosphor-icons/SVGs/regular/caret-right.svg" mode="aspectFit"></image>
+          </view>
+        </view>
+
         <!-- Breadcrumb -->
         <view v-if="breadcrumbs.length > 0" class="breadcrumb-bar">
           <view class="breadcrumb-item" @click="navigateToFolder(null)">
@@ -74,7 +113,7 @@
           </view>
         </view>
 
-        <view v-if="quizzes.length === 0 && currentFolders.length === 0" class="no-results">
+        <view v-if="quizzes.length === 0 && currentFolders.length === 0 && (currentFolderId || assignments.length === 0)" class="no-results">
           <text class="state-text">当前文件夹为空</text>
         </view>
 
@@ -252,6 +291,8 @@
 
 <script>
 import { getQuizzesBySpace, deleteQuiz } from '@/api/space'
+import { getAssignmentsBySpace } from '@/api/assignments'
+import { normalizeAssignmentListItem, sortAssignments } from '@/utils/assignment-adapter'
 import { getFolders, createFolder, updateFolder, deleteFolder as deleteFolderApi, moveQuizzes } from '@/api/folder'
 import UModal from '@/components/u-modal/u-modal.vue'
 import UToast from '@/components/u-toast/u-toast.vue'
@@ -271,6 +312,7 @@ export default {
       loading: true,
       loadError: null,
       quizzes: [],
+      assignments: [],
       showDeleteModal: false,
       quizToDelete: null,
       isDeleting: false,
@@ -364,11 +406,26 @@ export default {
         if (this.currentFolderId) {
           opts.folderId = this.currentFolderId
         }
-        const response = await getQuizzesBySpace(this.spaceId, opts)
-        this.quizzes = response || []
+        const requests = [getQuizzesBySpace(this.spaceId, opts)]
+        if (!this.currentFolderId) requests.push(getAssignmentsBySpace(this.spaceId))
+        const results = await Promise.allSettled(requests)
+        const quizResult = results[0]
+        const assignmentResult = results[1]
+        this.quizzes = quizResult.status === 'fulfilled' ? (quizResult.value || []) : []
+        if (assignmentResult) {
+          this.assignments = assignmentResult.status === 'fulfilled'
+            ? sortAssignments((assignmentResult.value || []).map(normalizeAssignmentListItem))
+            : []
+        }
+        if (quizResult.status === 'rejected' && (!assignmentResult || assignmentResult.status === 'rejected')) {
+          throw quizResult.reason || assignmentResult.reason
+        }
+        if (quizResult.status === 'rejected') this.showCustomToast('自主测验加载失败，教师测验仍可查看', 'info')
+        if (assignmentResult && assignmentResult.status === 'rejected') this.showCustomToast('教师测验加载失败，自主测验仍可查看', 'info')
       } catch (error) {
         this.loadError = error.message || '加载失败，请检查网络后重试'
         this.quizzes = []
+        this.assignments = []
       } finally {
         this.loading = false
       }
@@ -410,6 +467,69 @@ export default {
         ? Math.round(quiz.attempt_score / quiz.attempt_total_score * 100)
         : 0
       return String(pct)
+    },
+
+    assignmentBadgeClass(assignment) {
+      if (assignment.attempt_status === 'completed') return this.scoreBadgeClass({
+        has_attempt: true,
+        attempt_score: assignment.attempt_score,
+        attempt_total_score: assignment.attempt_total_score
+      })
+      if (assignment.attempt_status === 'missed' || assignment.attempt_status === 'failed') return 'score-badge-red'
+      if (assignment.attempt_status === 'evaluating') return 'score-badge-blue'
+      return 'score-badge-pending'
+    },
+
+    assignmentBadgeText(assignment) {
+      if (assignment.attempt_status === 'completed') return this.scoreBadgeText({
+        has_attempt: true,
+        attempt_score: assignment.attempt_score,
+        attempt_total_score: assignment.attempt_total_score
+      })
+      if (assignment.attempt_status === 'evaluating') return '…'
+      if (assignment.attempt_status === 'missed') return '—'
+      return assignment.attempt_status === 'in_progress' ? String(assignment.draft_answer_count || 0) : '—'
+    },
+
+    assignmentDeadlineState(assignment) {
+      if (assignment.attempt_status === 'completed' || assignment.attempt_status === 'evaluating') return ''
+      if (assignment.attempt_status === 'missed') return 'missed'
+      const dueTime = new Date(assignment.due_at || '').getTime()
+      if (!Number.isFinite(dueTime)) return ''
+      if (dueTime <= Date.now()) return 'missed'
+      return dueTime - Date.now() <= 24 * 60 * 60 * 1000 ? 'urgent' : ''
+    },
+
+    assignmentDeadlineLabel(assignment) {
+      const state = this.assignmentDeadlineState(assignment)
+      return state === 'missed' ? '已截止' : (state === 'urgent' ? '即将截止' : '')
+    },
+
+    assignmentStatusText(assignment) {
+      const labels = {
+        in_progress: `草稿 ${assignment.draft_answer_count || 0}/${assignment.total_questions}`,
+        evaluating: '正在批改',
+        completed: assignment.score_label || '已完成',
+        failed: '批改失败，可在网页端查看',
+        missed: '已错过'
+      }
+      return labels[assignment.attempt_status] || '未开始'
+    },
+
+    handleAssignmentClick(assignment) {
+      if (assignment.attempt_status === 'completed' || assignment.attempt_status === 'evaluating' || assignment.attempt_status === 'failed') {
+        uni.navigateTo({
+          url: `/pages/testResult/testResult?itemKind=assignment&assignmentId=${encodeURIComponent(assignment.id)}&fromList=true`
+        })
+        return
+      }
+      if (assignment.attempt_status === 'missed') {
+        this.showCustomToast('该教师测验已截止', 'info')
+        return
+      }
+      uni.navigateTo({
+        url: `/pages/test/test?itemKind=assignment&assignmentId=${encodeURIComponent(assignment.id)}`
+      })
     },
 
     handleQuizClick(quiz) {
@@ -927,6 +1047,89 @@ export default {
   font-size: 22rpx;
   letter-spacing: 1rpx;
   color: rgba(248, 248, 248, 0.52);
+}
+
+.assignment-section {
+  gap: 14rpx;
+}
+
+.assignment-section-heading,
+.assignment-heading-main,
+.assignment-title-row {
+  display: flex;
+  align-items: center;
+}
+
+.assignment-section-heading {
+  justify-content: space-between;
+  padding: 0 6rpx;
+}
+
+.assignment-heading-main {
+  gap: 12rpx;
+}
+
+.assignment-heading-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #8B5CF6;
+  box-shadow: 0 0 14rpx rgba(139, 92, 246, 0.8);
+}
+
+.assignment-heading-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #E9D5FF;
+}
+
+.assignment-section-heading .section-caption {
+  padding: 0;
+  margin: 0;
+}
+
+.assignment-item {
+  border-color: rgba(139, 92, 246, 0.25);
+  background: linear-gradient(135deg, rgba(61, 43, 82, 0.72), rgb(36, 36, 36));
+}
+
+.assignment-title-row {
+  gap: 12rpx;
+  min-height: 30rpx;
+}
+
+.teacher-tag,
+.deadline-tag,
+.assignment-status {
+  font-size: 20rpx;
+  line-height: 1.25;
+}
+
+.teacher-tag {
+  color: #D8B4FE;
+  background: rgba(139, 92, 246, 0.16);
+  border: 1rpx solid rgba(196, 181, 253, 0.28);
+  border-radius: 999rpx;
+  padding: 4rpx 12rpx;
+}
+
+.deadline-tag {
+  padding: 4rpx 10rpx;
+  border-radius: 999rpx;
+}
+
+.deadline-urgent {
+  color: #FCD34D;
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.deadline-missed {
+  color: #FCA5A5;
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.assignment-status {
+  color: rgba(216, 180, 254, 0.78);
 }
 
 /* Swipe Wrapper */

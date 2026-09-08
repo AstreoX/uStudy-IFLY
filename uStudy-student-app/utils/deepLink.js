@@ -88,6 +88,24 @@ function buildQuizResultTarget(quizId, options = {}) {
   return createTarget(`${QUIZ_RESULT_URL}?${query}`, options)
 }
 
+function buildAssignmentTarget(assignmentId, options = {}) {
+  const normalized = String(assignmentId || '').trim()
+  if (!normalized) return null
+  return createTarget(
+    `${QUIZ_URL}?${encodeQuery({ itemKind: 'assignment', assignmentId: normalized })}`,
+    options
+  )
+}
+
+function buildAssignmentResultTarget(assignmentId, options = {}) {
+  const normalized = String(assignmentId || '').trim()
+  if (!normalized) return null
+  return createTarget(
+    `${QUIZ_RESULT_URL}?${encodeQuery({ itemKind: 'assignment', assignmentId: normalized, fromList: 'true' })}`,
+    options
+  )
+}
+
 function extractQuizId(source) {
   if (!source) return ''
   return String(
@@ -130,6 +148,13 @@ function parseRouteTarget(route, query = {}, options = {}) {
     )
   }
 
+  if (normalizedQuery.assignmentId || normalizedQuery.assignment_id) {
+    const targetBuilder = normalizedRoute.includes(QUIZ_RESULT_URL)
+      ? buildAssignmentResultTarget
+      : buildAssignmentTarget
+    return targetBuilder(normalizedQuery.assignmentId || normalizedQuery.assignment_id, options)
+  }
+
   if (normalizedRoute === ANNOUNCEMENT_URL) {
     return createTarget(ANNOUNCEMENT_URL, options)
   }
@@ -154,6 +179,12 @@ function resolveFromQuery(query = {}, options = {}) {
   const normalizedQuery = isPlainObject(query) ? query : {}
 
   const kind = String(normalizedQuery.target || normalizedQuery.kind || '').toLowerCase()
+  if (kind === 'assignment_result') {
+    return buildAssignmentResultTarget(normalizedQuery.assignmentId || normalizedQuery.assignment_id, options)
+  }
+  if (kind === 'assignment' || normalizedQuery.assignmentId || normalizedQuery.assignment_id) {
+    return buildAssignmentTarget(normalizedQuery.assignmentId || normalizedQuery.assignment_id, options)
+  }
   if (kind === 'quiz_result' || kind === 'result') {
     return buildQuizResultTarget(
       normalizedQuery.quizId || normalizedQuery.quiz_id,
@@ -331,6 +362,10 @@ export function resolveNotificationTarget(payload) {
     return buildQuizResultTarget(extractQuizId(source), { openType: 'navigateTo' })
   }
 
+  if (notificationType === 'assignment_graded' || action === 'open_assignment_result') {
+    return buildAssignmentResultTarget(source.assignmentId || source.assignment_id || source.id, { openType: 'navigateTo' })
+  }
+
   if (
     action === 'start_quiz' ||
     notificationType === 'review_quiz_ready'
@@ -351,8 +386,14 @@ export function resolveNotificationTarget(payload) {
 
   const chatMode = String(source.chatMode || source.chat_mode || '').toLowerCase()
   if (chatMode === 'quick_chat') {
+    const spaceId = source.spaceId || source.space_id
+    if (!spaceId) return createTarget(HOME_URL, { openType: 'navigateTo' })
     return createTarget(
-      `/pages/quickChat/quickChat?conversationId=${encodeURIComponent(conversationId)}`,
+      buildUrlFromRouteAndQuery('/pages/spaceChat/spaceChat', {
+        conversationId,
+        spaceId,
+        spaceTitle: source.spaceTitle || source.space_title
+      }),
       { openType: 'navigateTo' }
     )
   }

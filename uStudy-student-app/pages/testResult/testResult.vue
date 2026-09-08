@@ -176,8 +176,14 @@
                 </view>
               </view>
 
+              <!-- OJ code and run details stay on the web client. -->
+              <view v-if="item.questionType === 'code'" class="expand-section oj-result-hint">
+                <text class="expand-label">编程题</text>
+                <text class="expand-value">请前往网页端查看代码、评测结果和反馈。</text>
+              </view>
+
               <!-- Answers Row (non-short-answer) -->
-              <view v-if="item.questionType !== 'short_answer'" class="expand-section answers-row">
+              <view v-else-if="item.questionType !== 'short_answer'" class="expand-section answers-row">
                 <view class="answer-item">
                   <text class="expand-label">你的答案</text>
                   <text class="expand-value user-answer">{{ item.userAnswerDisplay || '（未作答）' }}</text>
@@ -225,6 +231,8 @@
 
 <script>
 import { getQuizAttempt } from '@/api/space'
+import { getAssignmentSubmission } from '@/api/assignments'
+import { mapAssignmentSubmission } from '@/utils/assignment-adapter'
 import { getQuizEvaluationResult, removeQuizEvaluationResult } from '@/utils/storage'
 import { clearPendingNavigationIfMatches } from '@/utils/deepLink'
 import { goBack as safeGoBack } from '@/utils/navigation'
@@ -235,6 +243,8 @@ export default {
   data() {
     return {
       quizId: null,
+      assignmentId: null,
+      itemKind: 'quiz',
       quizTitle: '',
       fromList: false,
       score: 0,
@@ -309,7 +319,10 @@ export default {
 
   onLoad(options) {
     this.restoreThemeMode({ darkStatusBarBackground: '#1D1E20' })
-    if (options.quizId) {
+    if (options.itemKind === 'assignment' && options.assignmentId) {
+      this.itemKind = 'assignment'
+      this.assignmentId = options.assignmentId
+    } else if (options.quizId) {
       this.quizId = options.quizId
       clearPendingNavigationIfMatches(`/pages/testResult/testResult?quizId=${encodeURIComponent(options.quizId)}&fromList=true`)
     }
@@ -350,7 +363,7 @@ export default {
   methods: {
     async loadEvaluationResult() {
       try {
-        if (this.fromList && this.quizId) {
+        if (this.fromList && (this.quizId || this.assignmentId)) {
           await this.loadFromApi()
           return
         }
@@ -373,7 +386,9 @@ export default {
 
     async loadFromApi() {
       try {
-        const result = await getQuizAttempt(this.quizId)
+        const result = this.itemKind === 'assignment'
+          ? mapAssignmentSubmission(await getAssignmentSubmission(this.assignmentId))
+          : await getQuizAttempt(this.quizId)
         this.populateResult(result)
         this.loading = false
       } catch (error) {
@@ -735,6 +750,16 @@ export default {
   width: 48rpx;
   height: 48rpx;
   filter: brightness(0) invert(1);
+}
+
+.oj-result-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  padding: 22rpx;
+  border-radius: 16rpx;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1rpx solid rgba(196, 181, 253, 0.24);
 }
 
 .nav-title {
