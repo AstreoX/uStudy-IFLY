@@ -227,6 +227,19 @@ export function getSpaceDocuments(spaceId) {
 }
 
 /**
+ * 获取 Agentic RAG 工具实际查看的 PDF 页面缩略图。
+ * @param {string} spaceId
+ * @param {string} documentId
+ * @param {string} pages 单页或范围列表，例如 "3,5-8"
+ */
+export function getPdfPagePreviews(spaceId, documentId, pages) {
+  return request({
+    url: `/api/spaces/${spaceId}/documents/${documentId}/pdf-page-previews?pages=${encodeURIComponent(pages)}`,
+    method: 'GET'
+  })
+}
+
+/**
  * 添加链接到学习空间
  * @param {string} spaceId - 学习空间 ID
  * @param {Object} data - { title: string, url: string }

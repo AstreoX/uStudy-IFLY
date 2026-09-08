@@ -109,6 +109,7 @@ assert(loginPage.includes('Student@123'), 'student example password is missing f
 assert(loginPage.includes('setTokens'), 'student example shortcut does not persist login tokens')
 const spaceApi = read('api/space.js')
 assert(spaceApi.includes('/documents'), 'space API no longer exposes document endpoints')
+assert(spaceApi.includes('/pdf-page-previews?pages='), 'space API is missing PDF page preview support')
 const notesApi = read('api/note.js')
 const foldersApi = read('api/folder.js')
 assert(notesApi.includes('/notes'), 'note API endpoints are missing')
@@ -156,10 +157,30 @@ const deepLink = read('utils/deepLink.js')
 assert(deepLink.includes('assignment_graded'), 'assignment grade notifications are not routed')
 assert(deepLink.includes('buildAssignmentResultTarget'), 'assignment result navigation is missing')
 
+const spaceChat = read('pages/spaceChat/spaceChat.vue')
+const pdfAgenticToolCard = read('components/pdf-agentic-tool-card/pdf-agentic-tool-card.vue')
+for (const toolName of [
+  'search_keywords',
+  'search_regex',
+  'list_documents',
+  'read_document',
+  'get_document_outline',
+  'view_document_pages',
+  'view_document_page'
+]) {
+  assert(spaceChat.includes(`'${toolName}'`), `Agentic RAG tool is not routed to the mobile card: ${toolName}`)
+  assert(pdfAgenticToolCard.includes(`${toolName}:`) || pdfAgenticToolCard.includes(`'${toolName}'`), `Agentic RAG card is missing Chinese copy for: ${toolName}`)
+}
+assert(spaceChat.includes('<PdfAgenticToolCard'), 'space chat does not render the Agentic RAG card')
+assert(pdfAgenticToolCard.includes("new Set(['view_document_pages', 'view_document_page'])"), 'PDF expansion is not limited to the two page-view tools')
+assert(pdfAgenticToolCard.includes('getPdfPagePreviews'), 'PDF page-view cards do not load the pages seen by AI')
+assert(pdfAgenticToolCard.includes('uni.previewImage'), 'PDF page images cannot be opened in the native preview')
+
 for (const vueFile of [
   'pages/quizList/quizList.vue',
   'pages/test/test.vue',
-  'pages/testResult/testResult.vue'
+  'pages/testResult/testResult.vue',
+  'components/pdf-agentic-tool-card/pdf-agentic-tool-card.vue'
 ]) assertVueScriptParses(vueFile)
 for (const moduleFile of [
   'api/assignments.js',

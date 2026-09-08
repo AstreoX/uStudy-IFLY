@@ -492,9 +492,9 @@
 							@view="handleViewArtifact(seg.toolCall)"
 						/>
 
-						<!-- 图表生成工具：pill + 可折叠图片详情卡片 -->
+						<!-- 图片生成工具：pill + 可折叠图片详情卡片 -->
 						<view
-							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'generate_chart'"
+							v-else-if="seg.type === 'tool' && seg.toolCall.tool === 'generate_image'"
 							:key="'chart-tool-' + segIdx"
 							class="chart-tool-wrap"
 							:class="{ 'chart-expanded-container': seg.toolCall.status === 'done' && seg.toolCall.success && (isChartExpanded(seg.toolCall.id) || isToolCollapsing(seg.toolCall.id)) }"
@@ -544,7 +544,7 @@
 
 							<!-- 错误信息（done + failed 时显示） -->
 							<view v-else-if="seg.toolCall.status === 'done' && !seg.toolCall.success" class="chart-error-msg">
-								<text class="chart-error-text">{{ seg.toolCall.result?.message || '图表生成失败' }}</text>
+								<text class="chart-error-text">{{ seg.toolCall.result?.message || '图片生成失败' }}</text>
 							</view>
 						</view>
 
@@ -1190,6 +1190,15 @@
 							</view>
 						</view>
 
+						<!-- Agentic RAG：文字工具仅中文化，PDF 查看工具可展开实际页面 -->
+						<PdfAgenticToolCard
+							v-else-if="seg.type === 'tool' && isPdfAgenticRagTool(seg.toolCall.tool)"
+							:key="'pdf-agentic-tool-' + segIdx"
+							:tool-call="seg.toolCall"
+							:space-id="spaceId"
+							:theme-mode="homeThemeMode"
+						/>
+
 						<!-- 默认工具：pill 胶囊样式 -->
 						<view
 							v-else-if="seg.type === 'tool'"
@@ -1215,8 +1224,14 @@
 						</view>
 					</template>
 
+					<!-- 断线恢复状态（显示在已有内容之后） -->
+					<view v-if="msg.isStreaming && msg.isRecovering" class="ai-recovering-indicator">
+						<view class="ai-recovering-spinner"></view>
+						<text class="ai-recovering-text">{{ msg.recoveringText || '正在恢复连接，继续接收...' }}</text>
+					</view>
+
 					<!-- 等待输出加载动画（显示在已有内容之后） -->
-					<view v-if="msg.isStreaming && msg.isWaitingOutput" class="typing-indicator">
+					<view v-if="msg.isStreaming && msg.isWaitingOutput && !msg.isRecovering" class="typing-indicator">
 						<view class="typing-dot"></view>
 						<view class="typing-dot"></view>
 						<view class="typing-dot"></view>
@@ -1430,7 +1445,7 @@
 					<view class="model-menu-accent"></view>
 					<view class="model-menu-item-info">
 						<text class="model-menu-item-name">{{ m.display_name }}</text>
-						<text class="model-menu-item-desc">{{ m.locked ? '升级订阅解锁' : m.description }}</text>
+						<text class="model-menu-item-desc">{{ m.locked ? '当前实验服务不可用' : m.description }}</text>
 					</view>
 					<image v-if="m.locked" class="model-menu-lock" src="/static/icons/phosphor-icons/SVGs/regular/lock.svg" mode="aspectFit"></image>
 				</view>
@@ -1767,6 +1782,7 @@
 	import ArtifactGenerationCard from '@/components/artifact-generation-card/artifact-generation-card.vue'
 	import PythonExecutionCard from '@/components/python-execution-card/python-execution-card.vue'
 	import KnowledgeTreeMini from '@/components/knowledge-tree-mini/knowledge-tree-mini.vue'
+	import PdfAgenticToolCard from '@/components/pdf-agentic-tool-card/pdf-agentic-tool-card.vue'
 	import { generateQuiz, getTaskStatus, getSpaceGraph } from '@/api/space'
 	import { createConversation, getConversation, getConversationTodos, updateConversationTodoStatus, sendMessage as sendChatMessage, submitFeedback, submitToolResult, getModels, getStreamingStatus, rollbackLastMessage, stopStreamingReply } from '@/api/chat'
 	import { connectNotificationStream } from '@/api/notification'
@@ -1788,6 +1804,7 @@
 	// #endif
 
 	const MAX_MESSAGE_LENGTH = 10000
+	const SPACE_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 	// 工具名称映射
 	const TOOL_DISPLAY_NAMES = {
@@ -1850,8 +1867,8 @@
 		view_note_detail: '查看笔记详情',
 		update_note: '更新笔记',
 		delete_note: '删除笔记',
-		// 图表生成工具
-		generate_chart: '生成图表',
+		// 图片生成工具
+		generate_image: '生成图片',
 		// 交互演示工具
 		create_artifact: '创建交互演示',
 		update_artifact: '更新交互演示',
@@ -1924,8 +1941,8 @@
 		view_note_detail: '/static/icons/phosphor-icons/SVGs/regular/notebook.svg',
 		update_note: '/static/icons/phosphor-icons/SVGs/regular/pencil-simple.svg',
 		delete_note: '/static/icons/phosphor-icons/SVGs/regular/trash.svg',
-		// 图表生成工具
-		generate_chart: '/static/icons/lucide/chart-area.svg',
+		// 图片生成工具
+		generate_image: '/static/icons/phosphor-icons/SVGs/regular/image.svg',
 		// 交互演示工具
 		create_artifact: '/static/icons/phosphor-icons/SVGs/regular/code.svg',
 		update_artifact: '/static/icons/phosphor-icons/SVGs/regular/code.svg',
@@ -2093,6 +2110,16 @@
 		web_fetch:        { running: '正在获取网页…', done: '已获取网页', failed: '获取网页失败' }
 	}
 
+	const PDF_AGENTIC_RAG_TOOLS = new Set([
+		'search_keywords',
+		'search_regex',
+		'list_documents',
+		'read_document',
+		'get_document_outline',
+		'view_document_pages',
+		'view_document_page'
+	])
+
 	const AGENT_TODO_TOOL_NAMES = new Set([
 		'create_todo', 'update_todo', 'complete_todo', 'delete_todo'
 	])
@@ -2115,6 +2142,7 @@
 			ArtifactGenerationCard,
 			PythonExecutionCard,
 			KnowledgeTreeMini,
+			PdfAgenticToolCard,
 			// #ifdef APP-PLUS
 			SseRenderjs,
 			// #endif
@@ -2222,6 +2250,8 @@
 				agentTodoExpanded: false,
 				agentTodoUpdatingTaskIds: [],
 				isSendingMessage: false,
+				isSseReconnecting: false,
+				sseReconnectAttempt: 0,
 
 				// 前置知识卡片状态
 				showPreKnowledgeCard: false,
@@ -2420,6 +2450,9 @@
 			if (options.id) {
 				this.spaceId = options.id
 			}
+			if (!SPACE_ID_REGEX.test(String(this.spaceId || '').trim())) {
+				this.spaceId = null
+			}
 
 			if (options.name) {
 				try {
@@ -2434,7 +2467,7 @@
 			this.calculateGraphPreviewSize()
 
 			// 如果传入了 conversationId，加载历史消息
-			if (options.conversationId) {
+			if (options.conversationId && this.spaceId) {
 				this.conversationId = options.conversationId
 				await this.loadConversationHistory()
 			} else {
@@ -2761,7 +2794,7 @@
 			selectModel(id) {
 				const model = this.availableModels.find(m => m.id === id)
 				if (model?.locked) {
-					uni.showToast({ title: '升级订阅以解锁该模型', icon: 'none' })
+					uni.showToast({ title: '当前实验服务暂不支持该模型', icon: 'none' })
 					return
 				}
 				this.selectedModelId = id
@@ -3242,6 +3275,10 @@
 			},
 
 			openSettings() {
+				if (!SPACE_ID_REGEX.test(String(this.spaceId || '').trim())) {
+					uni.showToast({ title: '学习空间不存在，请返回重试', icon: 'none' })
+					return
+				}
 				uni.navigateTo({
 					url: `/pages/chatHistory/chatHistory?spaceId=${this.spaceId}&spaceName=${encodeURIComponent(this.spaceTitle)}`
 				})
@@ -4114,18 +4151,52 @@
 			/**
 			 * 重连到 resume-stream 端点继续接收
 			 */
+			setAiRecovering(aiMsg, attempt = 0) {
+				if (!aiMsg) return
+				this.isSseReconnecting = true
+				this.sseReconnectAttempt = attempt
+				aiMsg.isRecovering = true
+				aiMsg.recoveringText = '正在恢复连接，继续接收...'
+				aiMsg.isWaitingOutput = false
+			},
+
+			clearAiRecovering(aiMsg) {
+				this.isSseReconnecting = false
+				this.sseReconnectAttempt = 0
+				if (!aiMsg) return
+				aiMsg.isRecovering = false
+				aiMsg.recoveringText = ''
+			},
+
+			hasAiPartialContent(aiMsg) {
+				if (!aiMsg) return false
+				const hasContent = !!(aiMsg.content && aiMsg.content.trim())
+				const hasThinking = !!(aiMsg.thinkingContent && aiMsg.thinkingContent.trim())
+				const hasTextSegment = aiMsg.streamSegments && aiMsg.streamSegments.some(seg => (
+					seg.type === 'text' && seg.content && seg.content.trim()
+				))
+				const hasFinalTextSegment = aiMsg.segments && aiMsg.segments.some(seg => (
+					seg.type === 'text' && seg.content && seg.content.trim()
+				))
+				return hasContent || hasThinking || hasTextSegment || hasFinalTextSegment
+			},
+
 			reconnectToResumeStream(aiMsg, offset) {
 				console.log('[SpaceChat] Reconnecting to resume-stream, offset:', offset)
+				this.setAiRecovering(aiMsg)
 
 				this.cancelSSE = connectSSE({
 					url: `/api/conversations/${this.conversationId}/resume-stream?offset=${offset}`,
 					method: 'GET',
 					onEvent: (eventType, data) => {
 						if (eventType === 'text_delta') {
+							this.clearAiRecovering(aiMsg)
 							aiMsg.content += data.content || ''
 						} else if (eventType === 'thinking_delta') {
+							this.clearAiRecovering(aiMsg)
 							aiMsg.thinkingContent = (aiMsg.thinkingContent || '') + (data.content || '')
 						} else if (eventType === 'done') {
+							this.clearAiRecovering(aiMsg)
 							aiMsg.isStreaming = false
 							aiMsg.isWaitingOutput = false
 							// done 事件的 content 是完整内容，如果有且不是续传就用它
@@ -4137,12 +4208,24 @@
 						}
 					},
 					onComplete: () => {
+						this.clearAiRecovering(aiMsg)
+						const wasStreaming = !!aiMsg.isStreaming
 						aiMsg.isStreaming = false
+						aiMsg.isWaitingOutput = false
+						if (wasStreaming) {
+							if (this.hasAiPartialContent(aiMsg)) {
+								aiMsg.responseStatus = 'interrupted'
+							} else {
+								aiMsg.content = aiMsg.content || '网络连接中断，AI 未能完成回复。请重新发送消息。'
+								aiMsg.isError = true
+							}
+						}
 						this.cancelSSE = null
 						stopBackgroundMonitor()
 					},
 					onError: (err) => {
 						console.warn('[SpaceChat] Resume SSE error:', err)
+						this.clearAiRecovering(aiMsg)
 						// 重连失败不标记错误，后台监控会继续处理
 					},
 				})
@@ -4233,6 +4316,8 @@
 					thinkingDuration: 0,
 					isStreaming: true,
 					isWaitingOutput: true,
+					isRecovering: false,
+					recoveringText: '',
 					citations: null,
 					responseStatus: 'completed'
 				})
@@ -4245,6 +4330,7 @@
 					onThinking: (content) => {
 						const msg = this.messages.find(m => m.id === aiMsgId)
 						if (msg) {
+							this.clearAiRecovering(msg)
 							if (msg.isWaitingOutput) msg.isWaitingOutput = false
 							if (!msg.thinkingStartTime) {
 								msg.thinkingStartTime = Date.now()
@@ -4256,6 +4342,9 @@
 					onTextDelta: (content) => {
 						// Auto-collapse thinking + calculate duration
 						const thinkMsg = this.messages.find(m => m.id === aiMsgId)
+						if (thinkMsg) {
+							this.clearAiRecovering(thinkMsg)
+						}
 						if (thinkMsg && thinkMsg.isThinkingExpanded) {
 							this.flushThinkingBuffer()
 							thinkMsg.isThinkingExpanded = false
@@ -4291,6 +4380,8 @@
 					},
 
 					onClientToolRequest: (data) => {
+						const msg = this.messages.find(m => m.id === aiMsgId)
+						this.clearAiRecovering(msg)
 						this.handleClientToolRequest(aiMsgId, data)
 					},
 
@@ -4308,6 +4399,7 @@
 
 						const msg = this.messages.find(m => m.id === aiMsgId)
 						if (msg) {
+							this.clearAiRecovering(msg)
 							// 构建最终的片段数组（保持文本与工具调用的交错顺序）
 							const finalSegments = []
 
@@ -4395,18 +4487,15 @@
 						uni.showModal({
 							title: '配额已达上限',
 							content: isDaily
-								? '今日消息次数已用完，明日自动重置。升级后可无限对话'
-								: (info.message || '当前套餐不支持此功能，升级后可使用'),
-							confirmText: '去升级',
+								? '今日消息次数已用完，明日自动重置。'
+								: '当前实验服务配额已达上限，请联系管理员',
+                            confirmText: '知道了',
 							cancelText: '知道了',
-							success: (res) => {
-								if (res.confirm) {
-									uni.navigateTo({ url: '/pages/subscription/subscription' })
-								}
-							}
+                            success: () => {}
 						})
 						const msg = this.messages.find(m => m.id === aiMsgId)
 						if (msg) {
+							this.clearAiRecovering(msg)
 							msg.content = shortText
 							msg.isWaitingOutput = false
 							msg.isStreaming = false
@@ -4425,10 +4514,12 @@
 
 						const msg = this.messages.find(m => m.id === aiMsgId)
 						if (msg) {
+							this.clearAiRecovering(msg)
 							msg.content = msg.content || '请求失败'
 							msg.isWaitingOutput = false
 							msg.isStreaming = false
 							msg.isError = true
+							msg.responseStatus = 'interrupted'
 						}
 						this.stopHeightMonitor()
 						uni.showToast({ title: message || '请求失败', icon: 'none' })
@@ -4458,23 +4549,19 @@
 								this.schedulePreKnowledgeDismiss()
 							}
 							this.preKnowledgeParser = null
+							this.clearAiRecovering(msg)
 							msg.isWaitingOutput = false
 							msg.isStreaming = false
 							this.stopHeightMonitor()
 							this.activeToolCalls = []
 
-							// 若 AI 未生成任何文本（仅有工具卡片），显示断连提示
-							const hasText = msg.content && msg.content.trim() !== ''
-							const hasTextSegments = msg.streamSegments && msg.streamSegments.some(s => s.type === 'text' && s.content.trim())
-							if (!hasText && !hasTextSegments) {
+							// 若 AI 未生成任何文本，显示断连提示；已有部分回复则原样保留
+							const hasPartial = this.hasAiPartialContent(msg)
+							if (!hasPartial) {
 								msg.content = '网络连接中断，AI 未能完成回复。请重新发送消息。'
-							}
-							// 标记用户消息为失败
-							if (pendingId) {
-								const userMsg = this.messages.find(m => m.pendingId === pendingId)
-								if (userMsg) {
-									userMsg.isFailed = true
-								}
+								msg.isError = true
+							} else {
+								msg.responseStatus = 'interrupted'
 							}
 						}
 						// 清理残留 running 状态的工具卡片（标记为超时失败）
@@ -4490,6 +4577,14 @@
 						}
 						this.cancelSSE = null
 						this.isSendingMessage = false
+					},
+					onReconnecting: (attempt) => {
+						const msg = this.messages.find(m => m.id === aiMsgId)
+						this.setAiRecovering(msg, attempt)
+					},
+					onReconnected: () => {
+						const msg = this.messages.find(m => m.id === aiMsgId)
+						this.clearAiRecovering(msg)
 					}
 				}, attachmentIds.length > 0 ? attachmentIds : null, this.selectedModelId, { thinking: this.thinkingEnabled })
 			},
@@ -4538,7 +4633,7 @@
 
 				// 添加 AI 消息占位并启动 SSE
 				const aiMsgId = this.nextId++
-				this.messages.push({ id: aiMsgId, role: 'ai', content: '', thinkingContent: '', isThinkingExpanded: true, thinkingStartTime: 0, thinkingDuration: 0, isStreaming: true, isWaitingOutput: true, citations: null, responseStatus: 'completed' })
+				this.messages.push({ id: aiMsgId, role: 'ai', content: '', thinkingContent: '', isThinkingExpanded: true, thinkingStartTime: 0, thinkingDuration: 0, isStreaming: true, isWaitingOutput: true, isRecovering: false, recoveringText: '', citations: null, responseStatus: 'completed' })
 				this.scrollToLatestMessage()
 				this.startHeightMonitor(aiMsgId)
 				this.activeToolCalls = []
@@ -4547,6 +4642,7 @@
 					onThinking: (content) => {
 						const msg = this.messages.find(m => m.id === aiMsgId)
 						if (msg) {
+							this.clearAiRecovering(msg)
 							if (msg.isWaitingOutput) msg.isWaitingOutput = false
 							if (!msg.thinkingStartTime) {
 								msg.thinkingStartTime = Date.now()
@@ -4557,6 +4653,9 @@
 					onTextDelta: (content) => {
 						// Auto-collapse thinking + calculate duration
 						const thinkMsg = this.messages.find(m => m.id === aiMsgId)
+						if (thinkMsg) {
+							this.clearAiRecovering(thinkMsg)
+						}
 						if (thinkMsg && thinkMsg.isThinkingExpanded) {
 							this.flushThinkingBuffer()
 							thinkMsg.isThinkingExpanded = false
@@ -4575,7 +4674,11 @@
 						if (cleanText) this.appendToTypewriter(aiMsgId, cleanText)
 					},
 					onToolCall: (data) => { this.handleToolCallEvent(aiMsgId, data) },
-					onClientToolRequest: (data) => { this.handleClientToolRequest(aiMsgId, data) },
+					onClientToolRequest: (data) => {
+						const aiMsg = this.messages.find(m => m.id === aiMsgId)
+						this.clearAiRecovering(aiMsg)
+						this.handleClientToolRequest(aiMsgId, data)
+					},
 					onDone: (fullContent, citations, doneData) => {
 						this.flushThinkingBuffer()
 						this.flushTypewriter()
@@ -4584,6 +4687,7 @@
 
 						const aiMsg = this.messages.find(m => m.id === aiMsgId)
 						if (aiMsg) {
+							this.clearAiRecovering(aiMsg)
 							const finalSegments = []
 							if (aiMsg.streamSegments && aiMsg.streamSegments.length > 0) {
 								for (const seg of aiMsg.streamSegments) {
@@ -4641,18 +4745,15 @@
 						uni.showModal({
 							title: '配额已达上限',
 							content: isDaily
-								? '今日消息次数已用完，明日自动重置。升级后可无限对话'
-								: (info.message || '当前套餐不支持此功能，升级后可使用'),
-							confirmText: '去升级',
+								? '今日消息次数已用完，明日自动重置。'
+								: '当前实验服务配额已达上限，请联系管理员',
+                            confirmText: '知道了',
 							cancelText: '知道了',
-							success: (res) => {
-								if (res.confirm) {
-									uni.navigateTo({ url: '/pages/subscription/subscription' })
-								}
-							}
+                            success: () => {}
 						})
 						const aiMsg = this.messages.find(m => m.id === aiMsgId)
 						if (aiMsg) {
+							this.clearAiRecovering(aiMsg)
 							aiMsg.content = shortText
 							aiMsg.isWaitingOutput = false
 							aiMsg.isStreaming = false
@@ -4665,10 +4766,12 @@
 						this.flushTypewriter()
 						const aiMsg = this.messages.find(m => m.id === aiMsgId)
 						if (aiMsg) {
+							this.clearAiRecovering(aiMsg)
 							aiMsg.content = aiMsg.content || '请求失败'
 							aiMsg.isWaitingOutput = false
 							aiMsg.isStreaming = false
 							aiMsg.isError = true
+							aiMsg.responseStatus = 'interrupted'
 						}
 						this.stopHeightMonitor()
 						uni.showToast({ title: message || '请求失败', icon: 'none' })
@@ -4683,21 +4786,29 @@
 							this.flushThinkingBuffer()
 							this.flushTypewriter()
 							this.preKnowledgeParser = null
+							this.clearAiRecovering(aiMsg)
 							aiMsg.isWaitingOutput = false
 							aiMsg.isStreaming = false
 							this.stopHeightMonitor()
 							this.activeToolCalls = []
-							const hasText = aiMsg.content && aiMsg.content.trim() !== ''
-							if (!hasText) {
+							const hasPartial = this.hasAiPartialContent(aiMsg)
+							if (!hasPartial) {
 								aiMsg.content = '网络连接中断，AI 未能完成回复。请重新发送消息。'
-							}
-							if (pendingId) {
-								const userMsg = this.messages.find(m => m.pendingId === pendingId)
-								if (userMsg) userMsg.isFailed = true
+								aiMsg.isError = true
+							} else {
+								aiMsg.responseStatus = 'interrupted'
 							}
 						}
 						this.cancelSSE = null
 						this.isSendingMessage = false
+					},
+					onReconnecting: (attempt) => {
+						const aiMsg = this.messages.find(m => m.id === aiMsgId)
+						this.setAiRecovering(aiMsg, attempt)
+					},
+					onReconnected: () => {
+						const aiMsg = this.messages.find(m => m.id === aiMsgId)
+						this.clearAiRecovering(aiMsg)
 					}
 				}, attachmentIds && attachmentIds.length > 0 ? attachmentIds : null, this.selectedModelId, { thinking: this.thinkingEnabled })
 			},
@@ -4826,6 +4937,7 @@
 			handleToolCallEvent(aiMsgId, data) {
 				const msg = this.messages.find(m => m.id === aiMsgId)
 				if (!msg) return
+				this.clearAiRecovering(msg)
 
 				const { id, tool, status, success, result, arguments: args } = data
 				if (this.isAgentTodoTool(tool) && status === 'done') {
@@ -5152,10 +5264,10 @@
 			},
 
 			getChartToolText(toolCall) {
-				if (toolCall.status === 'running') return '正在生成图表…'
-				if (toolCall.status === 'done' && toolCall.success) return '已生成图表'
-				if (toolCall.status === 'done' && !toolCall.success) return '图表生成失败'
-				return '生成图表'
+				if (toolCall.status === 'running') return '正在生成图片…'
+				if (toolCall.status === 'done' && toolCall.success) return '已生成图片'
+				if (toolCall.status === 'done' && !toolCall.success) return '图片生成失败'
+				return '生成图片'
 			},
 
 			// ===== Artifact 辅助方法 =====
@@ -5992,6 +6104,10 @@
 
 			isDocRetrievalTool(toolName) {
 				return DOC_RETRIEVAL_TOOLS.has(toolName)
+			},
+
+			isPdfAgenticRagTool(toolName) {
+				return PDF_AGENTIC_RAG_TOOLS.has(toolName)
 			},
 
 			getDocRetrievalToolText(toolCall) {
@@ -9008,7 +9124,7 @@
 		color: rgba(138, 180, 248, 0.9);
 	}
 
-	/* ========== 图表生成卡片（pill + 详情） ========== */
+	/* ========== 图片生成卡片（pill + 详情） ========== */
 	.chart-tool-wrap {
 		display: flex;
 		flex-direction: column;
@@ -9812,6 +9928,35 @@
 	}
 
 	/* ========== 等待输出加载动画 ========== */
+	.ai-recovering-indicator {
+		display: flex;
+		align-items: center;
+		gap: 10rpx;
+		padding: 10rpx 0;
+	}
+
+	.ai-recovering-spinner {
+		width: 22rpx;
+		height: 22rpx;
+		border-radius: 50%;
+		border: 2rpx solid rgba(255, 255, 255, 0.2);
+		border-top-color: rgba(255, 255, 255, 0.75);
+		animation: ai-recovering-spin 0.9s linear infinite;
+		flex: 0 0 auto;
+	}
+
+	.ai-recovering-text {
+		font-size: 24rpx;
+		line-height: 1.4;
+		color: rgba(255, 255, 255, 0.58);
+	}
+
+	@keyframes ai-recovering-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
 	.typing-indicator {
 		display: flex;
 		align-items: center;
@@ -10441,6 +10586,15 @@
 
 	.chat-page.theme-light .typing-dot {
 		background-color: rgba(31, 26, 22, 0.72);
+	}
+
+	.chat-page.theme-light .ai-recovering-spinner {
+		border-color: rgba(31, 26, 22, 0.16);
+		border-top-color: rgba(31, 26, 22, 0.68);
+	}
+
+	.chat-page.theme-light .ai-recovering-text {
+		color: rgba(31, 26, 22, 0.58);
 	}
 
 	.chat-page.theme-light .msg-retry-btn {
