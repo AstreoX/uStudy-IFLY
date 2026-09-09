@@ -262,7 +262,6 @@ export default {
 
 <style scoped>
 .tool-wrap { width: min(100%, 560px); }
-.tool-wrap.compact { width: min(100%, 420px); }
 .tool-pill { min-height: 40px; display: flex; align-items: center; gap: 9px; padding: 7px 11px; box-sizing: border-box; border: 1px solid rgba(255,255,255,.09); border-radius: 11px; background: rgba(255,255,255,.045); cursor: pointer; transition: border-color .2s ease, background .2s ease; }
 .tool-wrap.compact .tool-pill { min-height: 32px; gap: 7px; padding: 5px 9px; border-radius: 9px; cursor: default; }
 .tool-wrap.compact .tool-pill-expandable { cursor: pointer; }
