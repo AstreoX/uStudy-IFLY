@@ -26,14 +26,6 @@
 
     <!-- 正常内容 -->
     <template v-else>
-      <view v-if="isAssignment" class="assignment-banner">
-        <view class="assignment-banner-row">
-          <text class="assignment-banner-tag">教师测验</text>
-          <text class="assignment-deadline" :class="{ 'assignment-deadline-overdue': assignmentOverdue }">{{ assignmentDeadlineText }}</text>
-        </view>
-        <text v-if="assignmentInstructions" class="assignment-instructions">{{ assignmentInstructions }}</text>
-        <text v-if="hasOjQuestion" class="assignment-oj-notice">本测验含编程题，请前往网页端完成后提交。</text>
-      </view>
       <!-- 答题进度条 -->
       <view class="progress-section">
         <view class="progress-bar">
@@ -138,12 +130,8 @@
           <text class="question-number">第 {{ currentIndex + 1 }} 题</text>
         </view>
         <text class="question-title">{{ currentQuestion.title }}</text>
-        <view class="oj-web-hint">
-          <image class="oj-web-hint-icon" src="/static/icons/phosphor-icons/SVGs/regular/desktop.svg" mode="aspectFit"></image>
-          <view class="oj-web-hint-copy">
-            <text class="oj-web-hint-title">请前往网页端作答</text>
-            <text class="oj-web-hint-text">编程题仅在网页端提供代码编辑、样例运行和提交。</text>
-          </view>
+        <view class="option-item option-item-selected oj-web-hint">
+          <text class="option-text oj-web-hint-text">请前往网页端作答</text>
         </view>
       </view>
 
@@ -252,7 +240,6 @@ export default {
       assignmentId: null,
       itemKind: 'quiz',
       assignmentTitle: '',
-      assignmentInstructions: '',
       assignmentDueAt: '',
       assignmentDetail: null,
       isLoading: true,
@@ -324,13 +311,6 @@ export default {
       if (!this.isAssignment || !this.assignmentDueAt) return false
       const dueTime = new Date(this.assignmentDueAt).getTime()
       return Number.isFinite(dueTime) && dueTime <= Date.now()
-    },
-    assignmentDeadlineText() {
-      if (!this.isAssignment) return ''
-      if (this.assignmentOverdue) return '已截止'
-      const due = new Date(this.assignmentDueAt)
-      if (Number.isNaN(due.getTime())) return ''
-      return `截止 ${due.getMonth() + 1}月${due.getDate()}日 ${String(due.getHours()).padStart(2, '0')}:${String(due.getMinutes()).padStart(2, '0')}`
     },
     slideAnimationClass() {
       if (this.slideDirection === 'none') return ''
@@ -457,7 +437,6 @@ export default {
         const detail = convertAssignmentDetail(response)
         this.assignmentDetail = detail
         this.assignmentTitle = detail.title
-        this.assignmentInstructions = detail.instructions
         this.assignmentDueAt = detail.dueAt
         this.currentIndex = Math.min(Math.max(detail.currentQuestionIndex || 0, 0), Math.max(detail.questions.length - 1, 0))
         this.questions = detail.questions
@@ -865,26 +844,6 @@ export default {
   color: #ffffff;
 }
 
-.assignment-banner {
-  position: fixed;
-  top: calc(100vh * 1.5 / 26 + 90rpx);
-  left: calc(100vw / 24);
-  right: calc(100vw / 24);
-  z-index: 98;
-  padding: 18rpx 22rpx;
-  border: 1rpx solid rgba(196, 181, 253, 0.28);
-  border-radius: 20rpx;
-  background: rgba(76, 48, 108, 0.9);
-}
-
-.assignment-banner-row { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
-.assignment-banner-tag, .assignment-deadline, .assignment-oj-notice { font-size: 22rpx; }
-.assignment-banner-tag { color: #E9D5FF; font-weight: 600; }
-.assignment-deadline { color: rgba(255, 255, 255, 0.72); }
-.assignment-deadline-overdue { color: #FCA5A5; }
-.assignment-instructions { display: block; margin-top: 10rpx; font-size: 22rpx; line-height: 1.45; color: rgba(255, 255, 255, 0.78); }
-.assignment-oj-notice { display: block; margin-top: 10rpx; color: #FCD34D; }
-
 /* ========== 进度条 ========== */
 .progress-section {
   position: fixed;
@@ -927,14 +886,6 @@ export default {
   padding: calc(100vh * 1.5 / 26 + 140rpx) calc(100vw / 24) 180rpx;
   box-sizing: border-box;
   overflow-x: hidden;
-}
-
-.assignment-banner ~ .progress-section {
-  top: calc(100vh * 1.5 / 26 + 218rpx);
-}
-
-.assignment-banner ~ .question-container {
-  padding-top: calc(100vh * 1.5 / 26 + 340rpx);
 }
 
 /* ========== 题目卡片 ========== */
@@ -984,30 +935,16 @@ export default {
 }
 
 .question-type-code {
-  background: rgba(139, 92, 246, 0.22);
-  color: #C4B5FD;
+  background: rgba(0, 136, 255, 0.2);
+  color: #0088FF;
 }
 
 .oj-web-hint {
-  display: flex;
-  align-items: flex-start;
-  gap: 18rpx;
-  padding: 24rpx;
-  border-radius: 20rpx;
-  background: rgba(139, 92, 246, 0.12);
-  border: 1rpx solid rgba(196, 181, 253, 0.24);
+  justify-content: center;
+  text-align: center;
 }
 
-.oj-web-hint-icon {
-  width: 42rpx;
-  height: 42rpx;
-  flex-shrink: 0;
-  filter: brightness(0) saturate(100%) invert(78%) sepia(25%) saturate(906%) hue-rotate(218deg) brightness(98%) contrast(96%);
-}
-
-.oj-web-hint-copy { display: flex; flex-direction: column; gap: 8rpx; }
-.oj-web-hint-title { font-size: 26rpx; font-weight: 600; color: #E9D5FF; }
-.oj-web-hint-text { font-size: 22rpx; line-height: 1.45; color: rgba(255, 255, 255, 0.66); }
+.oj-web-hint-text { flex: none; }
 
 .question-number {
   font-size: 24rpx;
@@ -1502,7 +1439,8 @@ export default {
   border-color: rgba(63, 53, 42, 0.18);
 }
 
-.test-page.theme-light .question-type-single {
+.test-page.theme-light .question-type-single,
+.test-page.theme-light .question-type-code {
   background: rgba(47, 110, 234, 0.12);
   color: #2F6EEA;
 }
