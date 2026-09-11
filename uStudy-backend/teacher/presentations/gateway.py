@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.llm.client import LLMClient
 from agents.llm.stream_driver import stream_tool_completion
+from config import get_settings
 from db.database import get_db
 from db.models import (
     PresentationAssetKind,
@@ -51,7 +52,7 @@ def _presentation_llm_client(
     *, request: GatewayLLMRequest, context: UsageContext
 ) -> LLMClient:
     return LLMClient(
-        model_override=request.model,
+        model_override=request.model or get_settings().presentation_llm_model,
         usage_context=context,
     )
 

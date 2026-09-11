@@ -16,17 +16,25 @@ LEGACY_MODEL_IDS: dict[str, str] = {
 }
 
 ALLOWED_MODELS: dict[str, dict[str, Any]] = {
-    "glm-5.3-flash": {
-        "model_id": "z-ai/glm-5.3-flash",
-        "display_name": "GLM 5.3 Flash",
+    "deepseek-v4.1-flash": {
+        "model_id": "deepseek/deepseek-v4.1-flash",
+        "display_name": "DeepSeek V4.1 Flash",
         "description": "OpenRouter 多模态推理模型",
         "is_default": True,
         "max_output_tokens": 65536,
         "supports_thinking": True,
     },
+    "glm-5.3-flash": {
+        "model_id": "z-ai/glm-5.3-flash",
+        "display_name": "GLM 5.3 Flash",
+        "description": "OpenRouter 多模态推理模型",
+        "is_default": False,
+        "max_output_tokens": 65536,
+        "supports_thinking": True,
+    },
 }
 
-DEFAULT_MODEL_ID = "glm-5.3-flash"
+DEFAULT_MODEL_ID = "deepseek-v4.1-flash"
 
 
 def normalize_model_id(model_id: str | None) -> str | None:

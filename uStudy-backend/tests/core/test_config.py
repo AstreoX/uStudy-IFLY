@@ -71,11 +71,11 @@ class TestPublicConfig:
         assert settings.image_generation_quality == "low"
         assert settings.image_generation_output_format == "png"
 
-    def test_background_llm_defaults_use_minimax(self):
+    def test_background_llm_defaults_use_deepseek(self):
         settings = Settings(_env_file=None)
 
         assert settings.minimax_base_url == "https://api.minimaxi.com/v1"
-        assert settings.background_llm_model == "MiniMax-M2.7-highspeed"
+        assert settings.background_llm_model == "deepseek/deepseek-v4.1-flash"
         assert settings.gemini_model == settings.background_llm_model
         assert settings.quiz_reasoning_model == settings.background_llm_model
         assert settings.memory_extraction_model == settings.background_llm_model
@@ -85,7 +85,9 @@ class TestPublicConfig:
         assert settings.learning_path_expand_model == settings.background_llm_model
         assert settings.suggestion_model == settings.background_llm_model
         assert settings.title_generation_model == settings.background_llm_model
-        assert settings.artifact_model != settings.background_llm_model
+        assert settings.artifact_model == settings.background_llm_model
+        assert settings.presentation_llm_model == settings.background_llm_model
+        assert settings.vlm_model == settings.background_llm_model
 
     def test_teacher_presentation_agent_defaults(self):
         settings = Settings(_env_file=None)

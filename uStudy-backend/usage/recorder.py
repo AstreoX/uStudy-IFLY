@@ -14,6 +14,8 @@ _background_tasks: set[asyncio.Task] = set()
 
 # Model pricing (input, output) per 1M tokens in USD
 MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # OpenRouter list price, checked 2026-09-11 (excludes cache discounts).
+    "deepseek/deepseek-v4.1-flash": (0.15, 0.60),
     "deepseek/deepseek-chat": (0.14, 0.28),
     "google/gemini-flash-1.5": (0.075, 0.30),
     "google/gemini-2.0-flash-001": (0.10, 0.40),

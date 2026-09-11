@@ -151,10 +151,10 @@ class Settings(BaseSettings):
     openrouter_bridge_url: str = ""
     minimax_api_key: str = ""
     minimax_base_url: str = "https://api.minimaxi.com/v1"
-    background_llm_model: str = "MiniMax-M2.7-highspeed"
-    llm_default_model: str = "z-ai/glm-5.3-flash"
-    gemini_model: str = "MiniMax-M2.7-highspeed"
-    quiz_reasoning_model: str = "MiniMax-M2.7-highspeed"
+    background_llm_model: str = "deepseek/deepseek-v4.1-flash"
+    llm_default_model: str = "deepseek/deepseek-v4.1-flash"
+    gemini_model: str = "deepseek/deepseek-v4.1-flash"
+    quiz_reasoning_model: str = "deepseek/deepseek-v4.1-flash"
     llm_timeout_seconds: int = 60  # 非流式请求默认超时
     llm_stream_connect_timeout_seconds: int = 10
     llm_stream_read_timeout_seconds: int = 600
@@ -269,7 +269,7 @@ class Settings(BaseSettings):
 
     # VLM 视觉处理配置
     vlm_processing_enabled: bool = True
-    vlm_model: str = "qwen3.6-plus"
+    vlm_model: str = "deepseek/deepseek-v4.1-flash"
     vlm_ocr_enabled: bool = True
     vlm_image_description_enabled: bool = True
     vlm_min_image_size_bytes: int = 5000       # 跳过 <5KB 小图
@@ -309,10 +309,10 @@ class Settings(BaseSettings):
     memory_search_top_k_space: int = 5  # 空间记忆语义检索数量
     memory_search_score_threshold: float = 0.3  # 最低相似度阈值
     memory_auto_extract_enabled: bool = True  # 是否启用自动记忆提取
-    memory_extraction_model: str = "MiniMax-M2.7-highspeed"  # 记忆提取用的 LLM 模型
+    memory_extraction_model: str = "deepseek/deepseek-v4.1-flash"  # 记忆提取用的 LLM 模型
 
     # 知识图谱生成配置
-    knowledge_graph_model: str = "MiniMax-M2.7-highspeed"
+    knowledge_graph_model: str = "deepseek/deepseek-v4.1-flash"
     knowledge_graph_timeout_seconds: int = 90  # 图谱生成通常比普通补全更慢
     knowledge_graph_max_tokens: int = 1024  # 图谱输出结构固定，限制输出长度以降低超时概率
 
@@ -321,11 +321,11 @@ class Settings(BaseSettings):
     document_kg_max_chunks: int = 200  # 单次任务最大处理 chunk 数
 
     # 整卷综合评估配置
-    quiz_evaluation_model: str = "MiniMax-M2.7-highspeed"
+    quiz_evaluation_model: str = "deepseek/deepseek-v4.1-flash"
 
     # 掌握分评估配置
     mastery_evaluation_enabled: bool = True
-    mastery_evaluation_model: str = "MiniMax-M2.7-highspeed"
+    mastery_evaluation_model: str = "deepseek/deepseek-v4.1-flash"
     # 论文评估层：候选节点相关性二分类 + 掌握变化五分类。
     # 训练完成并配置 checkpoint 前保持关闭，运行时自动沿用原 LLM 分支。
     mastery_dual_task_enabled: bool = False
@@ -341,12 +341,12 @@ class Settings(BaseSettings):
 
     # 学习路径自动扩展
     learning_path_auto_expand_enabled: bool = True
-    learning_path_expand_model: str = "MiniMax-M2.7-highspeed"
+    learning_path_expand_model: str = "deepseek/deepseek-v4.1-flash"
     learning_path_mastery_threshold: int = 80  # 掌握度阈值
     learning_path_ratio_threshold: float = 0.6  # 高掌握节点占比阈值
 
     # 学习建议配置
-    suggestion_model: str = "MiniMax-M2.7-highspeed"  # 学习建议生成用的 LLM 模型
+    suggestion_model: str = "deepseek/deepseek-v4.1-flash"  # 学习建议生成用的 LLM 模型
 
     # 对话连续性配置
     conversation_continuity_enabled: bool = True  # 是否启用上一次对话上下文加载
@@ -354,7 +354,7 @@ class Settings(BaseSettings):
     conversation_continuity_max_content_length: int = 1000  # 单条消息最大截断长度
 
     # Artifact 生成配置
-    artifact_model: str = "z-ai/glm-5.3-flash"
+    artifact_model: str = "deepseek/deepseek-v4.1-flash"
     artifact_timeout_seconds: int = 300
 
     # Teacher Presentation Agent control plane. The complete agent runs in a
@@ -365,6 +365,8 @@ class Settings(BaseSettings):
     )
     presentation_sandbox_manager_url: str = "http://presentation-sandbox-manager:8090"
     presentation_sandbox_manager_token: str = ""
+    # Keep PPT jobs independent of the main chat's default and per-request choice.
+    presentation_llm_model: str = "deepseek/deepseek-v4.1-flash"
     presentation_private_dir: str = "private-presentations"
 
     # 代码沙箱配置
@@ -399,7 +401,7 @@ class Settings(BaseSettings):
 
     # 对话标题自动生成配置
     title_generation_enabled: bool = True
-    title_generation_model: str = "MiniMax-M2.7-highspeed"
+    title_generation_model: str = "deepseek/deepseek-v4.1-flash"
     title_generation_timeout: int = 10  # 秒
 
 

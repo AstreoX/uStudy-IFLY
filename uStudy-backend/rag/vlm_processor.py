@@ -10,6 +10,7 @@ from typing import Awaitable, Callable
 
 import httpx
 
+from agents.llm.client import LLMClient
 from config import get_settings
 from usage.metering import UsageContext, record_and_charge_usage
 from usage.observability import record_ai_request_log
@@ -58,7 +59,7 @@ class VLMProcessor:
 
     def _get_headers(self) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {self.settings.dashscope_api_key}",
+            "Authorization": f"Bearer {LLMClient(model_override=self.model).api_key}",
             "Content-Type": "application/json",
         }
 
@@ -237,7 +238,7 @@ class VLMProcessor:
 
     async def _call_vlm(self, messages: list[dict]) -> str:
         """调用 VLM API"""
-        base_url = self.settings.dashscope_base_url
+        base_url = LLMClient(model_override=self.model).base_url
         t_start = time.monotonic()
         response_status: int | None = None
 
