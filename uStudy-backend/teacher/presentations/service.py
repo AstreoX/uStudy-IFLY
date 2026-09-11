@@ -47,6 +47,7 @@ from db.models import (
 )
 from documents.service import schedule_document_processing
 from teacher.dependencies import has_course_teacher_access
+from teacher.presentations.errors import normalize_run_error
 from teacher.presentations.manager import SandboxManagerClient, SandboxManagerError
 from teacher.service import TeacherAnalyticsService
 
@@ -280,7 +281,7 @@ async def create_run(
         capability_expires_at=utcnow() + timedelta(hours=6),
         prompt=content,
         attempt_count=1,
-        retry_deadline_at=utcnow() + timedelta(minutes=30),
+        retry_deadline_at=None,
     )
     db.add(run)
     db.add(Message(conversation_id=project.conversation_id, role=MessageRole.USER, content=content))
@@ -321,8 +322,6 @@ async def create_run(
         "instruction": content,
         "gateway_url": run_gateway_url,
         "capability_token": token,
-        "max_iterations": 60,
-        "max_seconds": 1800,
         "max_attempts": 5,
         "retry_backoff_seconds": [2, 5, 10, 20, 30],
         "metadata": {
@@ -439,6 +438,12 @@ async def verify_capability(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="run scope 已失效")
     if not await has_course_teacher_access(db, run.space_id, run.user_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="教师权限已失效")
+    if (
+        run.status in ACTIVE_RUN_STATUSES
+        and _as_aware(run.capability_expires_at) < utcnow() + timedelta(hours=1)
+    ):
+        run.capability_expires_at = utcnow() + timedelta(hours=6)
+        await db.commit()
     return run, project
 
 
@@ -500,6 +505,8 @@ async def append_event(
     payload: dict[str, Any],
     commit: bool = True,
 ) -> TeacherPresentationEvent:
+    if event_type == "error":
+        payload = normalize_run_error(payload)
     if sequence is None:
         # Event producers are single-writer per run. Locking the run serializes
         # retries/reconnects before allocating the next persisted SSE cursor.
@@ -933,7 +940,7 @@ async def resume_run(
     run.capability_expires_at = utcnow() + timedelta(hours=6)
     run.status = PresentationRunStatus.RECOVERING
     run.attempt_count = 1
-    run.retry_deadline_at = utcnow() + timedelta(minutes=30)
+    run.retry_deadline_at = None
     run.completed_at = None
     run.error_message = None
     revision.status = PresentationRevisionStatus.DRAFT
@@ -946,6 +953,10 @@ async def resume_run(
         event_type="recovery_started",
         payload={"stage": "recovery_queued", "attempt": 1, "run_id": str(run.id)},
     )
+    # Rebuild from actual text/tool events, discarding the old synthetic failure
+    # message while retaining the complete run trace.
+    await _persist_terminal_assistant(db, run=run, project=project, fallback_text="")
+    await db.commit()
     payload = {
         "run_id": str(run.id),
         "project_id": str(project.id),
@@ -955,10 +966,7 @@ async def resume_run(
         "instruction": run.prompt,
         "gateway_url": f"{gateway_url.rstrip('/')}/{run.id}",
         "capability_token": token,
-        "max_iterations": 60,
-        "max_seconds": 1800,
         "max_attempts": 5,
-        "reset_iterations": True,
         "retry_backoff_seconds": [2, 5, 10, 20, 30],
         "metadata": {
             "revision_id": str(revision.id),

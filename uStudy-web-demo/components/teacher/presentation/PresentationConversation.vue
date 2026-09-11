@@ -58,7 +58,7 @@
             <view v-if="message.runStatus === 'failed'" class="recovery-card" :class="{ blocked: !message.recoverable }">
               <view class="recovery-copy">
                 <text>{{ message.runError || '任务已中断，过程和工作区已经保存' }}</text>
-                <text>{{ message.recoverable ? '可以从最近的 checkpoint 继续，无需重新发送需求。' : '当前服务配置或外部依赖未就绪，请管理员检查沙盒服务。' }}</text>
+                <text>{{ message.recoverable ? '可以从上次进度继续，无需重新发送需求。' : message.errorCode === 'runtime_dependencies' ? '课件运行依赖不完整，请管理员检查沙盒服务。' : '任务未完成，请根据上述原因处理后重试。' }}</text>
               </view>
               <view v-if="message.recoverable" class="recovery-action" @tap="$emit('resume-run', message)">继续任务</view>
             </view>
@@ -69,8 +69,8 @@
         </view>
 
         <view v-if="running" class="run-progress">
-          <view class="progress-heading"><text>{{ progressText }}</text><text>{{ progressValue }}%</text></view>
-          <view class="progress-track"><view class="progress-fill" :style="{ width: `${progressValue}%` }"></view></view>
+          <view class="progress-heading"><text>{{ progressText }}</text><text v-if="progressValue !== null">{{ progressValue }}%</text></view>
+          <view v-if="progressValue !== null" class="progress-track"><view class="progress-fill" :style="{ width: `${progressValue}%` }"></view></view>
           <text class="progress-note">Agent 正在独立沙盒中调用课件技能、构建并检查文件。</text>
         </view>
         <view id="message-end" class="message-end"></view>
@@ -141,7 +141,9 @@ export default {
       return !this.running && !this.uploading && (!!this.draft.trim() || this.sources.some(source => source.id))
     },
     progressValue() {
-      const value = Number(this.progress?.percent ?? this.progress?.progress ?? 0)
+      const raw = this.progress?.percent ?? this.progress?.progress
+      if (raw === undefined || raw === null) return null
+      const value = Number(raw)
       return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0))
     },
     progressText() {

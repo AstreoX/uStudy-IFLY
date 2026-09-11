@@ -193,8 +193,6 @@ def build_docker_run_command(
         "--label",
         f"ustudy.presentation.created={created_epoch}",
         "--label",
-        f"ustudy.presentation.max-seconds={request.max_seconds}",
-        "--label",
         f"ustudy.presentation.attempt={request.attempt}",
         "--label",
         f"ustudy.presentation.max-attempts={request.max_attempts}",
@@ -218,11 +216,8 @@ def build_docker_run_command(
         "PRESENTATION_GATEWAY_URL": str(request.gateway_url).rstrip("/"),
         "PRESENTATION_CAPABILITY_TOKEN": request.capability_token,
         "PRESENTATION_INSTRUCTION_B64": instruction,
-        "PRESENTATION_MAX_ITERATIONS": str(request.max_iterations),
-        "PRESENTATION_MAX_SECONDS": str(request.max_seconds),
         "PRESENTATION_ATTEMPT": str(request.attempt),
         "PRESENTATION_MAX_ATTEMPTS": str(request.max_attempts),
-        "PRESENTATION_RESET_ITERATIONS": "1" if request.reset_iterations else "0",
     }
     for key, value in environment.items():
         command.extend(["--env", f"{key}={value}"])
@@ -336,8 +331,7 @@ class DockerCLI:
         return parse_du_bytes(result.stdout)
 
     def stop_expired_runs(self, now_epoch: int) -> list[str]:
-        """Enforce wall-clock limits and retire idle containers, preserving volumes."""
-
+        """Enforce workspace limits and retire finished containers, preserving volumes."""
         names = self.list_managed_containers()
         if not names:
             return []
@@ -345,33 +339,24 @@ class DockerCLI:
         stopped: list[str] = []
         for item in json.loads(result.stdout):
             state = item.get("State", {})
-            labels = item.get("Config", {}).get("Labels", {}) or {}
-            try:
-                created = int(labels["ustudy.presentation.created"])
-                max_seconds = int(labels["ustudy.presentation.max-seconds"])
-            except (KeyError, TypeError, ValueError):
-                continue
             name = item.get("Name", "").lstrip("/")
             if not name.startswith("ustudy-presentation-run-"):
                 continue
-            if state.get("Status") == "running" and now_epoch > created + max_seconds + 15:
-                if name.startswith("ustudy-presentation-run-"):
-                    self._run(["docker", "kill", name], timeout=15)
-                    stopped.append(name)
-            elif state.get("Status") == "running":
+            if state.get("Status") == "running":
                 try:
                     used_bytes = self.workspace_size(name)
                 except DockerCommandError:
-                    # The container may have exited between inspect and exec;
-                    # the next watcher pass will reconcile its terminal state.
-                    continue
+                    continue  # The container may have exited since inspect.
                 if used_bytes > self.config.max_workspace_bytes:
                     self._run(["docker", "kill", name], timeout=15)
                     stopped.append(name)
-            elif (
-                state.get("Status") in {"exited", "dead"}
-                and now_epoch
-                > created + max_seconds + self.config.container_retention_seconds
-            ):
-                self._run(["docker", "rm", name], timeout=15)
+            elif state.get("Status") in {"exited", "dead"}:
+                try:
+                    finished = datetime.fromisoformat(
+                        state["FinishedAt"].replace("Z", "+00:00")
+                    ).timestamp()
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    continue
+                if finished > 0 and now_epoch > finished + self.config.container_retention_seconds:
+                    self._run(["docker", "rm", name], timeout=15)
         return stopped

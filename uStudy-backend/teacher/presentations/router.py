@@ -35,6 +35,7 @@ from db.models import (
     User,
 )
 from teacher.dependencies import require_course_teacher
+from teacher.presentations.errors import normalize_run_error
 from teacher.presentations.schemas import (
     AssetResponse,
     ConversationMessageResponse,
@@ -272,7 +273,7 @@ async def get_presentation_messages(
         ).all()
     )
     for error_event in error_events:
-        last_errors[error_event.run_id] = error_event.payload or {}
+        last_errors[error_event.run_id] = normalize_run_error(error_event.payload or {})
 
     def run_recoverable(run: TeacherPresentationRun | None) -> bool:
         if run is None:
@@ -281,7 +282,7 @@ async def get_presentation_messages(
             return True
         if run.status != PresentationRunStatus.FAILED:
             return False
-        return last_errors.get(run.id, {}).get("retryable") is not False
+        return last_errors.get(run.id, {}).get("recoverable") is not False
     responses: list[ConversationMessageResponse] = []
     represented_runs: set[str] = set()
     for message in stored_messages:
@@ -290,19 +291,25 @@ async def get_presentation_messages(
         run = run_map.get(raw_run_id)
         if raw_run_id:
             represented_runs.add(raw_run_id)
+        snapshot = {}
+        if run and run.status in ACTIVE_RUN_STATUSES:
+            content, context, tool_calls = await build_run_message_trace(db, run.id, "")
+            snapshot = {"content": content, "llm_context": context, "tool_calls": tool_calls or None}
         responses.append(
             ConversationMessageResponse.model_validate(message).model_copy(
                 update={
+                    **snapshot,
                     "run_id": run.id if run else None,
                     "run_status": run.status.value if run else context.get("run_status"),
                     "stream_sequence": int(
-                        maxima.get(run.id, context.get("stream_sequence", 0)) if run else context.get("stream_sequence", 0)
+                        max(maxima.get(run.id, 0), context.get("stream_sequence", 0)) if run else context.get("stream_sequence", 0)
                     ),
                     "streaming": bool(run and run.status in ACTIVE_RUN_STATUSES),
                     "recoverable": run_recoverable(run),
+                    "error_code": last_errors.get(run.id, {}).get("error_code") if run and run.status == PresentationRunStatus.FAILED else None,
                     "run_error": (
                         str(last_errors.get(run.id, {}).get("message") or run.error_message or "")
-                        if run
+                        if run and run.status == PresentationRunStatus.FAILED
                         else None
                     )
                     or None,
@@ -337,10 +344,9 @@ async def get_presentation_messages(
                 stream_sequence=int(maxima.get(run.id, 0)),
                 streaming=run.status in ACTIVE_RUN_STATUSES,
                 recoverable=run_recoverable(run),
-                run_error=str(
-                    last_errors.get(run.id, {}).get("message") or run.error_message or ""
-                )
-                or None,
+                error_code=last_errors.get(run.id, {}).get("error_code") if run.status == PresentationRunStatus.FAILED else None,
+                run_error=(str(last_errors.get(run.id, {}).get("message") or run.error_message or "") or None)
+                if run.status == PresentationRunStatus.FAILED else None,
             )
         )
     responses.sort(key=lambda item: (item.created_at, item.role == "assistant", str(item.id)))

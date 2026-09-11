@@ -59,7 +59,10 @@ export function getAgentMessageSegments(message, activeToolCalls = []) {
     if (segment?.type !== 'tool') return { ...segment }
     const id = segment.toolCall?.id
     const active = activeToolCalls.find(tool => String(tool.id) === String(id))
-    return { type: 'tool', toolCall: { ...(active || segment.toolCall) } }
+    // Historical activeToolCalls may still carry backend statuses (success/error).
+    // Normalize after selecting the authoritative record so it cannot undo the
+    // segment normalization and leave an already finished card spinning.
+    return { type: 'tool', toolCall: normalizeAgentToolCall(active || segment.toolCall) }
   })
   if (message.isStreaming && message.content && !message.segmentsContainCurrentText) {
     segments.push({ type: 'text', content: message.content })

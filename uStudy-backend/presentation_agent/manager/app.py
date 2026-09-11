@@ -66,17 +66,13 @@ def _new_run_state(request: RunCreateRequest) -> dict:
         "request": request.model_dump(mode="json"),
         "attempt": 1,
         "created_at": now,
-        "deadline_at": now + request.max_seconds,
         "next_retry_at": None,
     }
 
 
 def _request_for_attempt(state: dict, attempt: int) -> RunCreateRequest:
-    remaining = max(30, int(float(state["deadline_at"]) - time.time()))
     request = RunCreateRequest.model_validate(state["request"])
-    return request.model_copy(
-        update={"attempt": attempt, "max_seconds": min(request.max_seconds, remaining)}
-    )
+    return request.model_copy(update={"attempt": attempt})
 
 
 def _retry_delay(state: dict) -> int:
@@ -91,7 +87,6 @@ def _is_retryable(state: dict, status_value: RunStatus, now: float) -> bool:
         status_value.status == "failed"
         and status_value.exit_code not in {78, 124}
         and int(state.get("attempt", 1)) < request.max_attempts
-        and now < float(state["deadline_at"])
         and not _cancel_marker(request.run_id).exists()
     )
 

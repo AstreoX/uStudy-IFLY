@@ -92,6 +92,7 @@ class ConversationMessageResponse(BaseModel):
     streaming: bool = False
     recoverable: bool = False
     run_error: str | None = None
+    error_code: str | None = None
 
     model_config = {"from_attributes": True}
 

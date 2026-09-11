@@ -64,6 +64,20 @@ export function normalizePresentationRevision(revision = {}) {
   }
 }
 
+export function normalizePresentationError(event = {}) {
+  const message = event.message || event.run_error || event.runError || event.detail || 'PPT Agent 执行失败'
+  if (message.includes('maximum presentation-agent iterations reached') || event.error_code === 'legacy_iteration_limit') {
+    return { ...event, message: '任务因旧版执行轮次限制停止，可继续执行。', error_code: 'legacy_iteration_limit', retryable: false, recoverable: true }
+  }
+  const dependencies = event.error_code === 'runtime_dependencies' || event.reason === 'runtime_dependencies'
+  return {
+    ...event,
+    message,
+    error_code: dependencies ? 'runtime_dependencies' : (event.error_code || event.errorCode || 'agent_execution_failed'),
+    recoverable: dependencies ? false : (event.recoverable ?? (event.retryable !== false))
+  }
+}
+
 export function normalizePresentationMessage(message = {}) {
   const role = valueOf(message, 'role', 'sender_role', 'senderRole') || 'assistant'
   const llmContextRaw = valueOf(message, 'llm_context', 'llmContext') || {}
@@ -78,6 +92,7 @@ export function normalizePresentationMessage(message = {}) {
     || llmContext.presentation_segments
     || []
   const segments = normalizeAgentSegments(rawSegments, content, toolCalls)
+  const error = normalizePresentationError(message)
   return {
     ...message,
     id: String(valueOf(message, 'id', 'message_id', 'messageId') || `${role}-${Date.now()}-${Math.random()}`),
@@ -100,8 +115,9 @@ export function normalizePresentationMessage(message = {}) {
     streamSequence: Number(valueOf(message, 'stream_sequence', 'streamSequence')
       ?? llmContext.stream_sequence
       ?? 0),
-    recoverable: Boolean(valueOf(message, 'recoverable') || false),
-    runError: valueOf(message, 'run_error', 'runError') || '',
+    recoverable: Boolean(error.recoverable),
+    errorCode: error.error_code,
+    runError: valueOf(message, 'run_error', 'runError') ? error.message : '',
     isThinking: Boolean(valueOf(message, 'streaming', 'is_streaming', 'isStreaming')),
     isStreaming: Boolean(valueOf(message, 'streaming', 'is_streaming', 'isStreaming')),
     streaming: Boolean(valueOf(message, 'streaming', 'is_streaming', 'isStreaming'))
@@ -228,7 +244,11 @@ function connectPresentationEvents(options, callbacks = {}) {
         case 'presentation_revision': callbacks.onRevision?.(payload); break
         case 'presentation_ready': callbacks.onReady?.(payload); break
         case 'done': callbacks.onDone?.(payload); break
-        case 'error': callbacks.onError?.(payload.message || payload.detail || '生成失败', payload); break
+        case 'error': {
+          const error = normalizePresentationError(payload)
+          callbacks.onError?.(error.message, error)
+          break
+        }
       }
     },
     onComplete: () => {

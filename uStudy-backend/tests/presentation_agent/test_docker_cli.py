@@ -58,8 +58,9 @@ def test_command_enforces_container_boundary_and_named_project_volume():
     assert created.run_id == "run-123"
     assert "PRESENTATION_ATTEMPT=1" in command
     assert "PRESENTATION_MAX_ATTEMPTS=5" in command
-    assert "PRESENTATION_MAX_ITERATIONS=60" in command
-    assert "PRESENTATION_RESET_ITERATIONS=0" in command
+    assert "PRESENTATION_MAX_ITERATIONS" not in joined
+    assert "PRESENTATION_MAX_SECONDS" not in joined
+    assert "PRESENTATION_RESET_ITERATIONS" not in joined
 
 
 @pytest.mark.parametrize(

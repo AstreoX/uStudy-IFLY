@@ -10,6 +10,7 @@ import re
 import signal
 import tempfile
 import time
+from itertools import count
 from pathlib import Path
 from typing import Any
 
@@ -196,7 +197,7 @@ class PresentationAgentRuntime:
         workspace: str | Path,
         instruction: str,
         sources: list[dict[str, Any]] | None = None,
-        max_iterations: int = 24,
+        max_iterations: int | None = None,  # Accepted only for legacy callers; never enforced.
         command_output_limit: int = 50_000,
     ) -> None:
         self.gateway = gateway
@@ -205,7 +206,6 @@ class PresentationAgentRuntime:
         self.workspace = Path(workspace).resolve()
         self.instruction = instruction
         self.sources = sources or []
-        self.max_iterations = max_iterations
         self.command_output_limit = command_output_limit
         self.checkpoint_path = self.workspace / ".presentation-agent" / "checkpoint.json"
         self._tool_ledger: dict[str, dict[str, Any]] = {}
@@ -289,9 +289,8 @@ Mounted skill resources (use read_skill_resource or shell tools to inspect as ne
             except (OSError, ValueError):
                 pass
         current_run_id = str(getattr(getattr(self.gateway, "scope", None), "run_id", "local-run"))
-        reset_iterations = os.environ.get("PRESENTATION_RESET_ITERATIONS", "0") == "1"
         self._checkpoint_run_id = saved_run_id
-        if saved_run_id == current_run_id and not reset_iterations:
+        if saved_run_id == current_run_id:
             self._resume_iteration = (
                 max(saved_iteration - 1, 0)
                 if saved_stage == "llm_stream"
@@ -326,37 +325,6 @@ Mounted skill resources (use read_skill_resource or shell tools to inspect as ne
             self._tool_ledger = {}
             self._recovered_interruption = None
             messages.append({"role": "user", "content": self.instruction})
-        elif reset_iterations:
-            self._resume_iteration = 0
-            compacted: list[dict[str, Any]] = []
-            for message in messages[1:]:
-                role = message.get("role")
-                raw_content = message.get("content")
-                # Old multimodal data URIs are single-turn inputs. Never stringify
-                # them into a resumed checkpoint or they permanently consume context.
-                if isinstance(raw_content, list):
-                    continue
-                content = str(raw_content or "").strip()
-                if role == "user" and content and not content.startswith(
-                    "The deck exists but the authoritative Presentations skill QA is incomplete."
-                ):
-                    compacted.append({"role": "user", "content": content})
-                elif role == "assistant" and content and not message.get("tool_calls"):
-                    compacted.append({"role": "assistant", "content": content})
-            messages = [messages[0], *compacted[-12:]]
-            self._tool_ledger = {}
-            self._pending_tool = None
-            self._recovered_interruption = None
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "The sandbox runtime environment has been repaired. Continue the same task "
-                        "from the persisted workspace and inspect existing files before rebuilding. "
-                        f"The original request was: {self.instruction}"
-                    ),
-                }
-            )
         return messages
 
     def _save_checkpoint(self, messages: list[dict[str, Any]], iteration: int) -> None:
@@ -763,16 +731,17 @@ Mounted skill resources (use read_skill_resource or shell tools to inspect as ne
         self._ensure_workspace_node_modules()
         messages = self._load_messages()
         tools = [*LOCAL_TOOLS, *CAPABILITY_TOOLS]
-        reset_iterations = os.environ.get("PRESENTATION_RESET_ITERATIONS", "0") == "1"
-        # An existing deck on a same-run manual recovery is unfinished work from
-        # that run, not an unrelated prior revision. It still needs QA + upload.
-        initial_deck_state = None if reset_iterations else self._deck_state()
+        # A same-run checkpoint owns unfinished artifacts, including a deck that
+        # was exported before interruption but has not yet been delivered.
+        current_run_id = str(getattr(getattr(self.gateway, "scope", None), "run_id", "local-run"))
+        initial_deck_state = (
+            None if self._checkpoint_run_id == current_run_id else self._deck_state()
+        )
         self._checkpoint_stage = "starting"
         self._save_checkpoint(messages, self._resume_iteration)
         await self.gateway.emit(
             "run_started",
             {
-                "max_iterations": self.max_iterations,
                 "skill_root": str(self.skill.root),
                 "attempt": int(os.environ.get("PRESENTATION_ATTEMPT", "1")),
                 "resume_iteration": self._resume_iteration,
@@ -793,7 +762,7 @@ Mounted skill resources (use read_skill_resource or shell tools to inspect as ne
                     "iteration": 0,
                 },
             )
-        for iteration in range(self._resume_iteration + 1, self.max_iterations + 1):
+        for iteration in count(self._resume_iteration + 1):
             self._checkpoint_stage = "llm_stream"
             self._save_checkpoint(messages, iteration)
             content_parts: list[str] = []
@@ -1016,7 +985,6 @@ Mounted skill resources (use read_skill_resource or shell tools to inspect as ne
             messages.extend(image_followups)
             self._save_checkpoint(messages, iteration)
             await self.gateway.emit("checkpoint", {"iteration": iteration})
-        raise RuntimeError("maximum presentation-agent iterations reached")
 
 
 def _without_image_base64(value: Any) -> Any:

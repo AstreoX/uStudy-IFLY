@@ -133,6 +133,9 @@ async def main() -> int:
                 {
                     "message": "PPT Agent 运行依赖不完整",
                     "reason": "runtime_dependencies",
+                    "error_code": "runtime_dependencies",
+                    "retryable": False,
+                    "recoverable": False,
                     "details": blockers,
                 },
             )
@@ -141,7 +144,7 @@ async def main() -> int:
             skill = PresentationSkillLoader(skill_root).load()
         except SkillUnavailable as exc:
             await _emit_direct(
-                gateway, "blocked", {"message": str(exc), "reason": str(exc)}
+                gateway, "blocked", {"message": str(exc), "error_code": "runtime_dependencies", "retryable": False, "recoverable": False}
             )
             return 78
         await gateway.emit(
@@ -156,19 +159,9 @@ async def main() -> int:
             workspace=workspace,
             instruction=_decode_instruction(),
             sources=sources,
-            max_iterations=int(os.environ.get("PRESENTATION_MAX_ITERATIONS", "24")),
         )
-        max_seconds = int(os.environ.get("PRESENTATION_MAX_SECONDS", "1800"))
         stage = "agent_runtime"
-        try:
-            await asyncio.wait_for(runtime.run(), timeout=max_seconds)
-        except asyncio.TimeoutError:
-            await _emit_direct(
-                gateway,
-                "error",
-                {"message": f"PPT Agent exceeded its {max_seconds}s wall-clock limit"},
-            )
-            return 124
+        await runtime.run()
         return 0
     except Exception as exc:  # noqa: BLE001 - container boundary converts all failures to events
         attempt = int(os.environ.get("PRESENTATION_ATTEMPT", "1"))
@@ -182,6 +175,8 @@ async def main() -> int:
             "error_type": exc.__class__.__name__,
             "stage": stage,
             "retryable": retryable,
+            "recoverable": _is_retryable_exception(exc),
+            "error_code": "agent_execution_failed",
             "attempt": attempt,
             "max_attempts": max_attempts,
             "trace_id": trace_id,

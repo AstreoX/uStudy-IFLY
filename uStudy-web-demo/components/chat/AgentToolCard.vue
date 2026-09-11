@@ -38,6 +38,23 @@
           部分页面暂不可用：{{ previewMissingRanges.join('、') }}
         </text>
       </template>
+      <template v-else-if="imageTool">
+        <view v-if="succeeded && imageUrl" class="generated-image-result">
+          <img
+            :src="imageUrl"
+            :alt="resultData.note_title || resultData.title || '生成的图片'"
+            class="generated-image"
+            @click.stop="openGeneratedImage"
+          />
+          <text v-if="resultData.auto_saved" class="generated-image-note">
+            已保存到笔记{{ resultData.note_title ? ` · ${resultData.note_title}` : '' }}
+          </text>
+        </view>
+        <view v-else class="tool-section">
+          <text class="section-label">错误</text>
+          <text class="section-value error">{{ resultText || '图片生成失败' }}</text>
+        </view>
+      </template>
       <template v-else>
         <view v-if="argumentText" class="tool-section">
           <text class="section-label">参数</text>
@@ -54,6 +71,7 @@
 
 <script>
 import { getPdfPagePreviews } from '@/api/space'
+import config from '@/config'
 
 const TOOL_LABELS = {
   get_course_graph_overview: ['读取课程知识图谱', '已读取课程知识图谱', '课程知识图谱读取失败'],
@@ -71,9 +89,9 @@ const TOOL_LABELS = {
   write_file: ['编写课件构建脚本', '已编写课件构建脚本', '课件构建脚本编写失败'],
   apply_patch: ['修改课件构建脚本', '已修改课件构建脚本', '课件构建脚本修改失败'],
   view_image: ['检查课件页面', '已检查课件页面', '课件页面检查失败'],
-  execute_command: ['执行课件构建命令', '已执行课件构建命令', '课件构建命令失败'],
-  run_command: ['执行课件构建命令', '已执行课件构建命令', '课件构建命令失败'],
-  shell: ['执行课件构建命令', '已执行课件构建命令', '课件构建命令失败']
+  execute_command: ['执行命令', '命令执行完成', '命令执行失败'],
+  run_command: ['执行命令', '命令执行完成', '命令执行失败'],
+  shell: ['执行命令', '命令执行完成', '命令执行失败']
 }
 
 const COMPACT_TOOL_LABELS = {
@@ -140,6 +158,7 @@ export default {
     statusClass() { return this.running ? 'running' : this.succeeded ? 'succeeded' : 'failed' },
     compact() { return COMPACT_TOOL_NAMES.has(this.toolCall.tool) },
     previewTool() { return PDF_PREVIEW_TOOL_NAMES.has(this.toolCall.tool) },
+    imageTool() { return this.toolCall.tool === 'generate_image' },
     compactLabels() { return COMPACT_TOOL_LABELS[this.toolCall.tool] || this.labels },
     labels() { return TOOL_LABELS[this.toolCall.tool] || [`正在调用 ${this.toolCall.tool || '工具'}`, `已完成 ${this.toolCall.tool || '工具'}`, `${this.toolCall.tool || '工具'}调用失败`] },
     displayLabel() {
@@ -155,6 +174,12 @@ export default {
     resultData() {
       const result = this.toolCall.result
       return result && typeof result === 'object' && !Array.isArray(result) ? result : {}
+    },
+    imageUrl() {
+      const url = this.resultData.image_url
+      if (!url || typeof url !== 'string') return ''
+      if (/^(?:https?:|data:|blob:|\/\/)/i.test(url)) return url
+      return `${config.API_BASE_URL}${url}`
     },
     argumentData() {
       const value = this.toolCall.arguments || this.toolCall.params
@@ -202,6 +227,7 @@ export default {
     },
     expandable() {
       if (this.previewTool) return !this.running && this.succeeded && Boolean(this.previewPageQuery)
+      if (this.imageTool) return !this.running && (this.succeeded ? Boolean(this.imageUrl) : Boolean(this.resultText))
       return !this.compact && Boolean(this.argumentText || this.resultText)
     },
     iconSvg() {
@@ -255,6 +281,10 @@ export default {
     },
     retryPreview() {
       this.loadPreviews(true)
+    },
+    openGeneratedImage() {
+      if (!this.imageUrl || typeof window === 'undefined') return
+      window.open(this.imageUrl, '_blank', 'noopener,noreferrer')
     }
   }
 }
@@ -302,6 +332,9 @@ export default {
 .preview-error { color: rgba(255,158,158,.76); }
 .preview-retry { margin-left: 8px; color: #9dbbff; cursor: pointer; }
 .preview-missing { display: block; margin-top: 6px; color: rgba(255,196,128,.72); font-size: 9px; line-height: 1.4; }
+.generated-image-result { display: flex; flex-direction: column; gap: 7px; }
+.generated-image { display: block; width: 100%; max-height: 420px; object-fit: contain; border: 1px solid rgba(255,255,255,.1); border-radius: 7px; background: rgba(255,255,255,.04); cursor: zoom-in; }
+.generated-image-note { color: rgba(255,255,255,.46); font-size: 9px; line-height: 1.4; }
 @keyframes tool-spin { to { transform: rotate(360deg); } }
 @keyframes panel-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .tool-spinner { animation-duration: 1.6s; } .tool-chevron, .tool-panel { transition: none; animation: none; } }

@@ -497,7 +497,7 @@ export default {
       this.messages = [...this.messages, userMessage, assistantMessage]
       this.sources = []
       this.running = true
-      this.progress = { phase: 'queued', percent: 0, label: '正在启动隔离工作区' }
+      this.progress = { phase: 'queued', percent: null, label: '正在启动隔离工作区' }
       this.currentRunId = ''
       this.updateProjectStatus(project.id, 'running')
 
@@ -560,7 +560,7 @@ export default {
           this.progress = {
             ...event,
             phase: event.phase || event.stage || this.progress.phase,
-            percent: Number(event.percent ?? event.progress ?? this.progress.percent ?? 0),
+            percent: event.percent ?? event.progress ?? null,
             label: event.label || event.message || ''
           }
         },
@@ -595,7 +595,8 @@ export default {
               { status: 'failed' }
             ),
             runId: item.runId || this.currentRunId,
-            recoverable: event.retryable !== false,
+            recoverable: event.recoverable ?? (event.retryable !== false),
+            errorCode: event.error_code,
             runStatus: 'failed',
             runError: message
           }))
@@ -651,7 +652,7 @@ export default {
       }
       this.running = true
       this.currentRunId = String(runId)
-      this.progress = { phase: 'running', percent: 0, label: '正在恢复课件任务' }
+      this.progress = { phase: 'running', percent: null, label: '正在恢复课件任务' }
       const streamContextVersion = this.contextVersion
       const streamSpaceId = this.spaceId
       const isCurrentStream = () => streamContextVersion === this.contextVersion && streamSpaceId === this.spaceId
@@ -705,7 +706,7 @@ export default {
             this.progress = {
               ...event,
               phase: event.phase || event.stage || this.progress.phase,
-              percent: Number(event.percent ?? event.progress ?? this.progress.percent ?? 0),
+              percent: event.percent ?? event.progress ?? null,
               label: event.label || event.message || ''
             }
           },
@@ -737,7 +738,8 @@ export default {
                 { status: 'failed' }
               ),
               runId: item.runId || String(runId),
-              recoverable: event.retryable !== false,
+              recoverable: event.recoverable ?? (event.retryable !== false),
+              errorCode: event.error_code,
               runStatus: 'failed',
               runError: message
             }))
@@ -759,6 +761,7 @@ export default {
       if (this.running || !message?.runId || !this.selectedProjectId) return
       try {
         const resumed = await restartPresentationRun(this.spaceId, this.selectedProjectId, message.runId)
+        this.messages = await getPresentationMessages(this.spaceId, this.selectedProjectId)
         this.updateProjectStatus(this.selectedProjectId, 'recovering')
         this.resumeActiveRun(message.runId, message.id, resumed.lastSequence)
       } catch (error) {
@@ -803,27 +806,27 @@ export default {
       if (String(event.status || '').toLowerCase() !== 'running') return
       const tool = String(event.tool || event.name || '')
       const stages = {
-        get_course_graph_overview: ['preparing', 10, '正在读取课程知识图谱'],
-        list_documents: ['preparing', 12, '正在读取课程资料'],
-        search_keywords: ['preparing', 15, '正在检索课程内容'],
-        read_document: ['preparing', 18, '正在阅读课程资料'],
-        read_skill_resource: ['planning', 22, '正在读取课件技能规范'],
-        load_workspace_dependencies: ['planning', 25, '正在准备课件运行环境'],
-        read_file: ['building', 32, '正在检查课件工作文件'],
-        write_file: ['building', 40, '正在编写课件构建脚本'],
-        apply_patch: ['building', 50, '正在修改课件构建脚本'],
-        generate_image: ['generating_assets', 55, '正在生成课件配图'],
-        execute_command: ['building', 62, '正在构建或渲染课件'],
-        view_image: ['validating', 82, '正在逐页检查课件'],
-        publish_presentation_to_space: ['completed', 95, '正在准备发布课件']
+        get_course_graph_overview: ['preparing', '正在读取课程知识图谱'],
+        list_documents: ['preparing', '正在读取课程资料'],
+        search_keywords: ['preparing', '正在检索课程内容'],
+        read_document: ['preparing', '正在阅读课程资料'],
+        read_skill_resource: ['planning', '正在读取课件技能规范'],
+        load_workspace_dependencies: ['planning', '正在准备课件运行环境'],
+        read_file: ['building', '正在检查课件工作文件'],
+        write_file: ['building', '正在编写课件构建脚本'],
+        apply_patch: ['building', '正在修改课件构建脚本'],
+        generate_image: ['generating_assets', '正在生成课件配图'],
+        execute_command: ['working', '正在执行命令'],
+        view_image: ['validating', '正在逐页检查课件'],
+        publish_presentation_to_space: ['completed', '正在准备发布课件']
       }
       const stage = stages[tool]
       if (!stage) return
       this.progress = {
         ...this.progress,
         phase: stage[0],
-        percent: Math.max(Number(this.progress.percent || 0), stage[1]),
-        label: stage[2]
+        percent: null,
+        label: stage[1]
       }
     },
     async handleRevisionEvent(event, ready = false) {

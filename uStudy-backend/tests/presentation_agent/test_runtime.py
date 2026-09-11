@@ -421,7 +421,7 @@ async def test_pending_tool_becomes_interrupted_result_after_restart(tmp_path: P
     )
 
 
-def test_manual_resume_resets_exhausted_iteration_budget(tmp_path: Path, monkeypatch):
+def test_manual_resume_preserves_checkpoint_even_with_legacy_reset_flag(tmp_path: Path, monkeypatch):
     workspace = tmp_path / "workspace"
     checkpoint = workspace / ".presentation-agent" / "checkpoint.json"
     checkpoint.parent.mkdir(parents=True)
@@ -429,7 +429,7 @@ def test_manual_resume_resets_exhausted_iteration_budget(tmp_path: Path, monkeyp
         json.dumps(
             {
                 "run_id": "run-test",
-                "iteration": 24,
+                "iteration": 60,
                 "stage": "assistant_received",
                 "messages": [
                     {"role": "user", "content": "prior task"},
@@ -466,11 +466,10 @@ def test_manual_resume_resets_exhausted_iteration_budget(tmp_path: Path, monkeyp
 
     messages = runtime._load_messages()
 
-    assert runtime._resume_iteration == 0
-    assert "runtime environment has been repaired" in messages[-1]["content"]
-    assert runtime._tool_ledger == {}
-    assert all(message.get("role") != "tool" for message in messages)
-    assert all("base64" not in str(message.get("content")) for message in messages)
+    assert runtime._resume_iteration == 60
+    assert "prior task" in [m.get("content") for m in messages]
+    assert "old" in runtime._tool_ledger
+    assert not any("runtime environment has been repaired" in str(m) for m in messages)
 
 
 def test_runtime_links_linux_artifact_dependencies_into_tmp(tmp_path: Path, monkeypatch):

@@ -41,11 +41,9 @@ class RunCreateRequest(AgentScope):
         max_length=131_072,
         validation_alias=AliasChoices("instruction", "prompt"),
     )
-    max_iterations: int = Field(default=60, ge=1, le=100)
-    max_seconds: int = Field(default=1800, ge=30, le=3600)
+    # Legacy max_iterations/max_seconds fields are ignored by Pydantic.
     max_attempts: int = Field(default=5, ge=1, le=10)
     attempt: int = Field(default=1, ge=1, le=10)
-    reset_iterations: bool = False
     retry_backoff_seconds: list[int] = Field(
         default_factory=lambda: [2, 5, 10, 20, 30], min_length=1, max_length=10
     )

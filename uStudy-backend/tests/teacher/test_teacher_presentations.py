@@ -106,7 +106,9 @@ async def test_create_run_scopes_manager_and_rejects_stale_revision(
     assert len(token) >= 48
     assert manager.payload["run_id"] == str(run.id)
     assert manager.payload["instruction"] == "生成图的遍历课件"
-    assert manager.payload["max_iterations"] == 60
+    assert "max_iterations" not in manager.payload
+    assert "max_seconds" not in manager.payload
+    assert run.retry_deadline_at is None
     assert manager.payload["gateway_url"].endswith(str(run.id))
     assert manager.payload["metadata"]["revision_id"] == str(run.revision_id)
 
@@ -510,7 +512,7 @@ async def test_attempt_failure_recovers_same_run_and_manual_resume_rotates_token
     assert resumed.status == PresentationRunStatus.RECOVERING
     assert resumed.capability_token_hash != old_hash
     assert manager.payload["run_id"] == str(run.id)
-    assert manager.payload["reset_iterations"] is True
+    assert "reset_iterations" not in manager.payload
 
 
 @pytest.mark.asyncio
@@ -594,7 +596,7 @@ async def test_conversation_complete_without_artifact_can_resume_same_draft_run(
     )
 
     assert resumed.status == PresentationRunStatus.RECOVERING
-    assert manager.payload["reset_iterations"] is True
+    assert "reset_iterations" not in manager.payload
 
 
 @pytest.mark.asyncio
